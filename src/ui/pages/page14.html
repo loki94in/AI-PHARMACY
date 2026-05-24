@@ -137,3 +137,32 @@
       </div>
     </div>
   </div>
+<script>
+  // Simple Settings Save handler
+  async function saveSettings(section) {
+    const inputs = document.querySelectorAll(`.page#page14 .${section} input, .page#page14 .${section} select`);
+    const payload = {};
+    inputs.forEach(el => {
+      if (el.id) payload[el.id] = el.value;
+    });
+    try {
+      const resp = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!resp.ok) throw new Error('Network error');
+      const data = await resp.json();
+      alert(data.message || 'Settings saved');
+    } catch (e) {
+      console.error('Settings save error:', e);
+      alert('Failed to save settings');
+    }
+  }
+  // Attach to all Save buttons
+  document.querySelectorAll('.page#page14 .btn-primary.ml-auto').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const card = btn.closest('.card');
+      if (card) {
+        const sectionClass = card.classList.contains('card') ? 'card' : '';
+        saveSettings(sectionClass);
+      }
+    });
+  });
+</script>

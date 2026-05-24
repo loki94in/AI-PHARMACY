@@ -12,20 +12,56 @@ const router = express.Router();
 
 // Get inventory master
 router.get('/', async (req, res) => {
-  // TODO (Agent A): Fetch inventory joined with medicines
-  res.json([]);
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all(`
+      SELECT im.id, im.medicine_id, m.name as medicine_name, im.quantity, im.rack_location, im.batch_no, im.expiry_date
+      FROM inventory_master im
+      LEFT JOIN medicines m ON im.medicine_id = m.id
+    `);
+    await db.close();
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching inventory:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Update stock (Stock Override)
 router.post('/override', async (req, res) => {
-  // TODO (Agent A): Implement stock override
-  res.json({ success: true });
+  try {
+    const { inventory_id, quantity } = req.body;
+    if (!inventory_id) {
+      return res.status(400).json({ error: 'inventory_id required' });
+    }
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('UPDATE inventory_master SET quantity = ? WHERE id = ?', [quantity, inventory_id]);
+    await db.close();
+    res.json({ success: true, message: 'Stock updated' });
+  } catch (error) {
+    console.error('Error overriding stock:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Smart-Hover Peek (Price Comparison Logs)
 router.get('/peek/:medicine_id', async (req, res) => {
-  // TODO (Agent A): Return historical purchase costs for the medicine
-  res.json([]);
+  try {
+    const { medicine_id } = req.params;
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    // Simplified: return last purchase price from purchases table joined via inventory_master
+    const rows = await db.all(
+      `SELECT p.invoice_no, p.total_amount, im.quantity, im.unit_price FROM purchases p
+       JOIN inventory_master im ON im.id = p.id
+       WHERE im.medicine_id = ? ORDER BY p.date DESC LIMIT 5`,
+      [medicine_id]
+    );
+    await db.close();
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching peek data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 export default router;

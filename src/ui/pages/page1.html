@@ -227,6 +227,19 @@
           <div>Disc (₹): <span class="text-white">14.00</span></div>
           <div>Bill Amt (₹): <span class="text-white">145.30</span></div>
           <div>Margin%: <span class="text-white">18.50%</span></div>
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/next-invoice');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const data = await res.json();
+    const invInput = document.querySelector('input[value^="INV-"]');
+    if (invInput) invInput.value = data.invoice_no;
+  } catch (e) {
+    console.error('Failed to fetch next invoice:', e);
+  }
+})();
+</script>
         </div>
       </div>
     </div>

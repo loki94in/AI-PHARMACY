@@ -20,7 +20,7 @@
             <div class="progress-track"><div class="progress-fill" style="width:22%"></div></div>
           </div>
           <div class="btn-row mt14">
-            <button class="btn btn-primary">💾 Backup Now</button>
+            <button class="btn btn-primary" id="backupNowBtn">💾 Backup Now</button>
             <button class="btn btn-ghost" data-requires="cloud_backup">☁️ Upload to Telegram</button>
           </div>
         </div>
@@ -34,3 +34,16 @@
       </div>
     </div>
   </div>
+<script>
+  document.getElementById('backupNowBtn').addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/api/utilities/backup', { method: 'POST' });
+      if (!resp.ok) throw new Error('Network error');
+      const data = await resp.json();
+      alert(data.message || 'Backup completed');
+    } catch (e) {
+      console.error('Backup error:', e);
+      alert('Backup failed');
+    }
+  });
+</script>

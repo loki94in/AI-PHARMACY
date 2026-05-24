@@ -11,6 +11,23 @@ import { initClient, sendMessage } from './whatsappClient.js';
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
 import utilitiesRouter from './routes/utilities.js';
+// Agent 1 (Core) Routers
+import salesRouter from './routes/sales.js';
+import inventoryRouter from './routes/inventory.js';
+import dashboardRouter from './routes/dashboard.js';
+import purchasesRouter from './routes/purchases.js';
+import returnsRouter from './routes/returns.js';
+import ordersRouter from './routes/orders.js';
+import expiryRouter from './routes/expiry.js';
+import reportsRouter from './routes/reports.js';
+import complianceRouter from './routes/compliance.js';
+import emailRouter from './routes/email.js';
+import migrationRouter from './routes/migration.js';
+import settingsRouter from './routes/settings.js';
+import dispatchRouter from './routes/dispatch.js';
+import archiveRouter from './routes/archive.js';
+import learningRouter from './routes/learning.js';
+import messagingRouter from './routes/messaging.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -126,6 +143,23 @@ const PORT = process.env.PORT || 3000;
 // Mount Agent 2 Routers
 app.use('/api/crm', crmRouter);
 app.use('/api/utilities', utilitiesRouter);
+app.use('/api/email', emailRouter);
+app.use('/api/migration', migrationRouter);
+app.use('/api/settings', settingsRouter);
+app.use('/api/dispatch', dispatchRouter);
+app.use('/api/archive', archiveRouter);
+app.use('/api/learning', learningRouter);
+app.use('/api/messaging', messagingRouter);
+// Core API routes
+app.use('/api/sales', salesRouter);
+app.use('/api/inventory', inventoryRouter);
+app.use('/api/dashboard', dashboardRouter);
+app.use('/api/purchases', purchasesRouter);
+app.use('/api/returns', returnsRouter);
+app.use('/api/orders', ordersRouter);
+app.use('/api/expiry', expiryRouter);
+app.use('/api/reports', reportsRouter);
+app.use('/api/compliance', complianceRouter);
 
 // Manual refill reminder endpoint
 app.post('/api/patients/send-refill', async (req, res) => {

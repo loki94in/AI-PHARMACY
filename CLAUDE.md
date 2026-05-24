@@ -20,8 +20,15 @@ If you run `npm test` and no tests match, the framework is configured to exit wi
 ## 5. Tool Formatting (CRITICAL)
 When using your `Bash` or `Command` tools, **YOU MUST NEVER leave the `command` parameter blank.** Always provide the actual valid shell command string you wish to run. Leaving it empty will crash your tool execution with an `InputValidation` error.
 
-## 6. Avoiding Edit Failures
-When editing an existing file with a find/replace tool, **always read the file first** (using your read or view tools) to capture the exact whitespace and indentation. If your target search string has even one mismatched space, your edit will be blocked and fail.
+## 6. Avoiding Edit Failures (HTML & Script Injection)
+When editing an existing HTML file, your native find/replace tool will frequently throw an "Edit failed" error if you try to replace large chunks of nested HTML. This is because even a single hidden tab, invisible space, or newline mismatch will cause the exact-match algorithm to fail.
+
+**FOOLPROOF RULES FOR NEVER FAILING AN EDIT:**
+1. **Never attempt to replace large blocks of nested `<div>`s.**
+2. If you need to append a `<script>` or add new content, target a **tiny, unique, single-line anchor** (like `</body>` or `</main>`).
+   - *Example:* Replace `</body>` with `<script> // your code </script>\n</body>`.
+3. If you must modify a large HTML component, either write a quick Node.js script using `fs.writeFileSync` to rewrite the file directly, OR read the file first and replace only small 1-3 line chunks at a time.
+4. **ALWAYS read the file first** to capture the exact whitespace and indentation before attempting a replace.
 
 ## 7. Artifacts & File Writing Paths
 If you are asked to generate a "plan" or an "artifact", **do not save it to the project root.** You must strictly use the designated absolute artifact folder path provided by your system prompt (e.g., `C:\Users\...`). Attempting to write artifacts to unauthorized folders will result in an `Invalid tool parameters` or `Write failed` error.

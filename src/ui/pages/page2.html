@@ -1,4 +1,25 @@
 <div class="page" id="page2">
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/dashboard');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const data = await res.json();
+    const map = {
+      sales: data.todaySales,
+      profit: data.grossProfit,
+      lowStock: data.lowStock,
+      tasks: data.pendingTasks
+    };
+    for (const [field, value] of Object.entries(map)) {
+      const el = document.querySelector(`[data-key="page2"][data-field="${field}"]`);
+      if (el) el.textContent = typeof value === 'number' ? `₹${value}` : value;
+    }
+  } catch (e) {
+    console.error('Dashboard fetch error:', e);
+  }
+})();
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">📊 Dashboard — Command Center</div>

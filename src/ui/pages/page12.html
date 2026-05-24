@@ -41,3 +41,29 @@
       </div>
     </div>
   </div>
+<script>
+  // Barcode generation UI
+  const container = document.createElement('div');
+  container.innerHTML = `
+    <div class="card">
+      <div class="card-title"><span class="icon">📋</span> Items for Barcodes</div>
+      <textarea id="barcodeItems" rows="6" placeholder='Enter JSON array e.g. [{"name":"Paracetamol","batch":"B-2024-11"}]'></textarea>
+      <button class="btn" id="generateBarcodeBtn">Generate Barcodes PDF</button>
+      <div id="barcodeResult" class="notice mt8"></div>
+    </div>`;
+  document.querySelector('.page#page12 .content').appendChild(container);
+  document.getElementById('generateBarcodeBtn').addEventListener('click', async () => {
+    const txt = document.getElementById('barcodeItems').value;
+    let items;
+    try { items = JSON.parse(txt); } catch { document.getElementById('barcodeResult').textContent = 'Invalid JSON'; return; }
+    try {
+      const resp = await fetch('/api/barcode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+      if (!resp.ok) throw new Error('Network error');
+      const data = await resp.json();
+      document.getElementById('barcodeResult').innerHTML = `<a href="${data.pdfUrl}" target="_blank">Download PDF</a>`;
+    } catch (e) {
+      console.error('Barcode error:', e);
+      document.getElementById('barcodeResult').textContent = 'Error generating barcodes';
+    }
+  });
+</script>

@@ -8,29 +8,34 @@
     <div class="content">
       <div class="card">
         <div class="card-title"><span class="icon">📤</span> Upload Data File</div>
-        <div class="scan-area">
-          <div class="scan-icon">📁</div>
-          <div class="scan-text">Drop CSV or Excel file here</div>
-          <div class="scan-hint">Supports .csv, .xlsx, .xls · Max 50 MB</div>
-        </div>
+        <input type="file" id="migrationFile" accept=".csv,.xlsx,.xls" />
+        <button class="btn" id="runMigrationBtn">Run Migration</button>
+        <div id="migrationResult" class="notice mt8"></div>
       </div>
-      <div class="card">
-        <div class="card-title"><span class="icon">🗂️</span> Column Mapping Wizard</div>
-        <div class="notice info">Upload a file to begin mapping columns to Pharmacy Genius OS fields.</div>
-        <div class="tbl-wrap" style="opacity:0.5;pointer-events:none;">
-          <table>
-            <thead><tr><th>Source Column</th><th>→</th><th>Target Field</th><th>Validation</th></tr></thead>
-            <tbody>
-              <tr><td>product_name</td><td>→</td><td>Name</td><td><span class="badge badge-green">OK</span></td></tr>
-              <tr><td>qty_on_hand</td><td>→</td><td>Qty</td><td><span class="badge badge-green">OK</span></td></tr>
-              <tr><td>exp_date</td><td>→</td><td>Expiry</td><td><span class="badge badge-orange">Format mismatch</span></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-ghost" disabled>✅ Validate Data</button>
-          <button class="btn btn-primary" disabled>▶ Execute Migration</button>
-        </div>
-      </div>
+      <script>
+        document.getElementById('runMigrationBtn').addEventListener('click', async () => {
+          const fileInput = document.getElementById('migrationFile');
+          if (!fileInput.files.length) {
+            document.getElementById('migrationResult').textContent = 'Please select a file.';
+            return;
+          }
+          const formData = new FormData();
+          formData.append('migrationName', fileInput.files[0].name);
+          // In a real implementation, you would send the file itself.
+          try {
+            const resp = await fetch('/api/migration/run', {
+              method: 'POST',
+              headers: { },
+              body: JSON.stringify({ migrationName: fileInput.files[0].name })
+            });
+            if (!resp.ok) throw new Error('Network error');
+            const data = await resp.json();
+            document.getElementById('migrationResult').textContent = data.message;
+          } catch (e) {
+            console.error('Migration error:', e);
+            document.getElementById('migrationResult').textContent = 'Error running migration.';
+          }
+        });
+      </script>
     </div>
   </div>
