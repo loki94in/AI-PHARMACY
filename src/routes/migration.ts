@@ -4,32 +4,53 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { migrationStatus, runManualMigration } from '../worker/migrationWorker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const MIGRATION_DIR = path.resolve(__dirname, '..', '..', 'MIGRATION SAMPEL');
 
 const router = express.Router();
 
-// Trigger a migration script (placeholder implementation)
+// Get live migration status
+router.get('/status', (req, res) => {
+  res.json(migrationStatus);
+});
+
+// List files in the MIGRATION SAMPEL folder
+router.get('/files', (req, res) => {
+  try {
+    if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
+    const files = fs.readdirSync(MIGRATION_DIR).filter(f => f.endsWith('.zip'));
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list files' });
+  }
+});
+
+// Trigger a manual migration script
 router.post('/run', async (req, res) => {
-  const { migrationName } = req.body;
-  if (!migrationName) {
-    return res.status(400).json({ error: 'migrationName required' });
+  const { fileName } = req.body;
+  if (!fileName) {
+    return res.status(400).json({ error: 'fileName required' });
   }
   try {
-    // Log the migration request
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-      ['MIGRATION', `Requested migration: ${migrationName}`]
+      ['MIGRATION', `Requested manual migration for: ${fileName}`]
     );
     await db.close();
-    // TODO: Execute actual migration scripts in background
-    res.json({ success: true, message: `Migration ${migrationName} queued` });
-  } catch (error) {
+    
+    // Call the worker
+    await runManualMigration(fileName);
+    
+    res.json({ success: true, message: `Migration for ${fileName} started` });
+  } catch (error: any) {
     console.error('Migration error:', error);
-    res.status(500).json({ error: 'Failed to queue migration' });
+    res.status(500).json({ error: error.message || 'Failed to start migration' });
   }
 });
 
