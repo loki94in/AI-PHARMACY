@@ -1,4 +1,17 @@
 <div class="page" id="page6">
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/orders');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const orders = await res.json();
+    console.log('Orders:', orders);
+    // TODO: render orders list
+  } catch (e) {
+    console.error('Orders fetch error:', e);
+  }
+})();
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">📋 Orders & Special Requests</div>

@@ -1,4 +1,33 @@
 <div class="page" id="page3">
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/inventory');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const items = await res.json();
+    const tbody = document.getElementById('inventory-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    items.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-white fw700">${item.medicine_name}</td>
+        <td class="text-muted">${item.composition || ''}</td>
+        <td class="text-white fw700">${item.quantity}</td>
+        <td class="mono">${item.rack_location}</td>
+        <td class="mono">${item.batch_no}</td>
+        <td class="expiry-${item.expiry_date ? 'green' : 'red'}">${item.expiry_date}</td>
+        <td>${item.reorder_level || ''}</td>
+        <td><span class="badge badge-${item.quantity < (item.reorder_level||10) ? 'danger' : 'green'}">${item.quantity < (item.reorder_level||10) ? 'Low Stock' : 'OK'}</span></td>
+        <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Edit</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.error('Inventory fetch error:', e);
+  }
+})();
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">📦 Inventory Management — Stock Master</div>
@@ -85,7 +114,7 @@
           <thead><tr>
             <th>Name</th><th>Composition</th><th>Qty</th><th>Rack/Bin</th><th>Batch</th><th>Expiry</th><th>Reorder Lvl</th><th>Status</th><th>Actions</th>
           </tr></thead>
-          <tbody>
+          <tbody id="inventory-body">
             <tr>
               <td class="text-white fw700">Paracetamol 500mg</td>
               <td class="text-muted">Paracetamol 500mg</td>

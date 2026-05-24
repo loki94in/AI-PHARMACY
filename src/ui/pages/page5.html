@@ -1,4 +1,17 @@
 <div class="page" id="page5">
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/returns');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const data = await res.json();
+    console.log('Returns data:', data);
+    // TODO: populate UI with return entries
+  } catch (e) {
+    console.error('Returns fetch error:', e);
+  }
+})();
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">↩️ Returns & Expiry — Correction Page</div>

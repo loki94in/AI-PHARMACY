@@ -1,4 +1,27 @@
 <div class="page" id="page4">
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/purchases');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const purchases = await res.json();
+    const tbody = document.getElementById('purchases-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    purchases.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${p.distributor}</td>
+        <td>${p.invoice_no}</td>
+        <td>${p.total_amount}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.error('Purchases fetch error:', e);
+  }
+})();
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">🛒 Purchases — Distributor Billing</div>
@@ -64,7 +87,7 @@
               <th style="padding: 8px; text-align: right; width: 40px;"><button style="background:#374151; border:none; color:white; width: 20px; height: 20px; border-radius: 4px; cursor: pointer;">+</button></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="purchases-body">
             <!-- Highlighted Autocomplete Row -->
             <tr style="background: rgba(251,146,60,0.2); color: var(--white);">
               <td style="padding: 6px 8px;"><input type="checkbox" checked style="accent-color: #374151;" /></td>

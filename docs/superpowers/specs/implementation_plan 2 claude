@@ -47,6 +47,11 @@ This plan provides a detailed, page-by-page roadmap for two Claude CLI agents to
 3. **No Direct DOM Manipulation Overlap:**
    - The agents will never edit the same `index.html` navigation sidebar. The sidebar will be rendered dynamically from a JSON config file (`routes.json`). Each agent will just append their pages to `routes.json`.
 
+4. **Migration Engine Architecture (Agent 2):**
+   - **Hot Folder Streaming:** Agent 2 must build a background worker that watches a `MIGRATION SAMPEL` directory. When a 1.5GB+ ZIP file is dropped, it must stream the extraction to disk to prevent RAM crashes.
+   - **Multi-Format Adapter:** The parser must identify the file extension. `.csv`/`.json` go to standard streaming parsers. `.xlsx`, `.xml`, `.dbf`, or `.sql` must be routed to specialized adapter plugins.
+   - **AI Inference Fallback:** For completely unknown legacy formats, extract the first 100 rows and send them to the AI Learning Engine API to infer the column mapping. If the AI fails, trigger a "Needs Manual Mapping" alert on the Frontend UI.
+
 ## Verification Plan
 1. **Setup Phase:** I (Antigravity) will split `ui-demo.html` into the folder structure required for the agents (`src/ui/pages/`).
 2. **Execution Phase:** You will open two terminal windows, run `claude` in each, and assign them their respective domain (Agent 1 vs Agent 2) by providing them this plan.

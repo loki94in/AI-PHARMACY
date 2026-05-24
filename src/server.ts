@@ -179,6 +179,8 @@ app.post('/api/patients/send-refill', async (req, res) => {
 });
 
 initClient().catch(err => console.error('WhatsApp init error:', err));
+import { startEmailPoller } from './worker/emailPoller.js';
+startEmailPoller();
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);

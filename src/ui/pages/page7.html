@@ -1,4 +1,30 @@
 <div class="page" id="page7">
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/expiry');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const items = await res.json();
+    const tbody = document.getElementById('expiry-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    items.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.product}</td>
+        <td class="mono">${item.batch}</td>
+        <td>${item.qty}</td>
+        <td>${item.expiry}</td>
+        <td>${item.days_left}</td>
+        <td><span class="badge badge-${item.alert}">${item.alert}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.error('Expiry fetch error:', e);
+  }
+})();
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">⏳ Expiry Monitor</div>
@@ -19,7 +45,7 @@
       <div class="tbl-wrap">
         <table>
           <thead><tr><th>Product</th><th>Batch</th><th>Qty</th><th>Expiry</th><th>Days Left</th><th>Alert</th></tr></thead>
-          <tbody>
+          <tbody id="expiry-body">
             <tr><td class="text-white fw700">Losartan 50mg</td><td class="mono">B-2023-12</td><td>6</td><td class="expiry-red">Dec 2024</td><td class="expiry-red fw700">Expired!</td><td><span class="badge badge-danger">Critical</span></td></tr>
             <tr><td class="text-white fw700">Cetirizine 10mg</td><td class="mono">B-2024-05</td><td>44</td><td class="expiry-orange">Jun 2025</td><td class="expiry-orange fw700">12 days</td><td><span class="badge badge-orange">Urgent</span></td></tr>
             <tr><td class="text-white fw700">Pantoprazole 40mg</td><td class="mono">B-2024-07</td><td>60</td><td class="expiry-orange">Aug 2025</td><td class="expiry-orange fw700">41 days</td><td><span class="badge badge-orange">Soon</span></td></tr>
