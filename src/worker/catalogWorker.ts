@@ -2,17 +2,21 @@ import fs from 'fs';
 import path from 'path';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { ensureSchema } from '../../database';
-import { extractFromPdf, extractFromCsv } from '../../extractor';
+import { ensureSchema } from '../database.js';
+import { extractFromPdf, extractFromCsv } from '../extractor.js';
 
-const DB_PATH = path.resolve(__dirname, '..', '..', '..', 'data', 'app.db');
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 function findApiReference(text: string): string | null {
   const match = text.match(/https?:\/\/[^\s]+/i);
   return match ? match[0] : null;
 }
 
-async function processJob(job: { id: number; file_path: string }) {
+export async function processJob(job: { id: number; file_path: string }) {
   const { id, file_path } = job;
   const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
   await db.run(`UPDATE catalog_jobs SET status='processing' WHERE id=?`, id);
@@ -56,7 +60,9 @@ async function workerLoop() {
   }
 }
 
-workerLoop().catch((err) => {
-  console.error('Worker crashed:', err);
-  process.exit(1);
-});
+if (process.env.NODE_ENV !== 'test') {
+  workerLoop().catch((err) => {
+    console.error('Worker crashed:', err);
+    process.exit(1);
+  });
+}

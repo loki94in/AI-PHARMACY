@@ -1207,9 +1207,81 @@
         <div class="page-title">📦 Inventory Management — Stock Master</div>
         <div class="page-subtitle">Page 3 · CRUD, low-stock highlights — always on</div>
       </div>
-      <button class="btn btn-primary">+ Add Item</button>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-ghost" style="border: 1px solid var(--border); font-size: 13px;"><span class="icon">📄</span> Upload PDF</button>
+        <button class="btn btn-ghost" style="border: 1px solid var(--border); font-size: 13px;"><span class="icon">📊</span> Upload CSV</button>
+        <button class="btn btn-primary">+ Add Item</button>
+      </div>
     </div>
     <div class="content">
+      <!-- Pre-Store Section -->
+      <div class="card" style="border: 1px dashed var(--sky); background: rgba(56, 189, 248, 0.05); margin-bottom: 24px; padding: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">
+          <div>
+            <div style="font-weight: 700; color: var(--sky); font-size: 14px;">📥 Pending Imports (Pre-Store)</div>
+            <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Source: <strong style="color: var(--white);">distributor_invoice_august.pdf</strong> • 3 items extracted</div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-ghost" style="color: var(--danger); font-size: 12px; padding: 6px 12px;">Discard All</button>
+            <button class="btn btn-primary" style="font-size: 12px; padding: 6px 12px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
+          </div>
+        </div>
+        
+        <div class="tbl-wrap" style="border: none; background: transparent; margin: 0; box-shadow: none;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead style="background: rgba(0,0,0,0.2);">
+              <tr>
+                <th style="padding: 8px 12px; width: 40px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></th>
+                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Extracted Name</th>
+                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Match Status</th>
+                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Batch</th>
+                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Expiry</th>
+                <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px;">Qty</th>
+                <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px;">Free</th>
+                <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px;">Rate</th>
+                <th style="padding: 8px 12px; text-align: center; color: var(--muted); font-size: 11px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
+                <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">Augmentin 625 Duo Tablet</td>
+                <td style="padding: 8px 12px;"><span style="background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3);">Linked to Inventory</span></td>
+                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">B-88392</td>
+                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">10/26</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">50</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">5</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">₹125.40</td>
+                <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--sky); padding: 4px 8px;">Edit</button></td>
+              </tr>
+              <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
+                <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">Dolo 650 Tablet</td>
+                <td style="padding: 8px 12px;"><span style="background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3);">Linked to Inventory</span></td>
+                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">DL-1102</td>
+                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">12/25</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">200</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">20</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">₹22.10</td>
+                <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--sky); padding: 4px 8px;">Edit</button></td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
+                <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">New Unknown Syrup 100ml</td>
+                <td style="padding: 8px 12px;"><span style="background: rgba(248, 113, 113, 0.15); color: var(--danger); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(248, 113, 113, 0.3);">⚠ New Item (Needs Setup)</span></td>
+                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">SYR-991</td>
+                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">05/27</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">20</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">0</td>
+                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">₹85.00</td>
+                <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--danger); padding: 4px 8px;">Setup Item</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="font-weight: 700; margin-bottom: 12px; color: var(--white); font-size: 15px;">📦 Active Inventory</div>
       <div class="notice warn">⚠️ 17 items are at or below their reorder level. Review highlighted rows.</div>
       <div class="tbl-wrap">
         <table>

@@ -43,7 +43,7 @@ export async function extractFromPdf(filePath: string): Promise<string[]> {
  * If such a column is found, all distinct values from that column are returned.
  */
 export async function extractFromCsv(filePath: string): Promise<string[]> {
-  const content = await fs.promises.readFile(filePath, 'utf‑8');
+  const content = await fs.promises.readFile(filePath, 'utf-8');
   const records = parse(content, { columns: true, skip_empty_lines: true });
   if (!Array.isArray(records) || records.length === 0) return [];
 

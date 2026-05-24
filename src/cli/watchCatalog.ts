@@ -2,7 +2,7 @@ import chokidar from 'chokidar';
 import path from 'path';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { ensureSchema } from '../../database';
+import { ensureSchema } from '../database.js';
 
 const CATALOG_DIR = path.resolve(__dirname, '..', '..', '..', 'catalog');
 const DB_PATH = path.resolve(__dirname, '..', '..', '..', 'data', 'app.db');

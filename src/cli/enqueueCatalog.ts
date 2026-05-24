@@ -2,12 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { ensureSchema } from '../../database';
+import { ensureSchema } from '../database.js';
+
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Directory containing catalog files (relative to project root)
-const CATALOG_DIR = path.resolve(__dirname, '..', '..', '..', 'catalog');
+const CATALOG_DIR = process.env.CATALOG_DIR || path.resolve(__dirname, '..', '..', 'catalog');
 // SQLite database path (store under data folder)
-const DB_PATH = path.resolve(__dirname, '..', '..', '..', 'data', 'app.db');
+const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 async function enqueue() {
   await ensureSchema(DB_PATH);
