@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "start": "tsx src/server.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "enqueue-catalog": "tsx ./src/cli/enqueueCatalog.ts",
     "worker": "tsx ./src/worker/catalogWorker.ts",
@@ -10,12 +11,16 @@
   },
   "dependencies": {
     "chokidar": "^3.5.3",
+    "cors": "^2.8.6",
     "csv-parse": "^5.5.2",
+    "express": "^5.2.1",
     "pdf-parse": "^1.1.1",
     "sqlite": "^5.0.2",
     "sqlite3": "^6.0.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/jest": "^29.5.2",
     "@types/node": "^25.9.1",
     "@types/pdf-parse": "^1.1.5",

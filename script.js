@@ -28,13 +28,44 @@ function apiGet(endpoint) {
 }
 
 function loadPageData(pageId) {
-  const endpoint = \`/api/\${pageId}\`;
+  if (pageId === 'page3') {
+    fetch('http://localhost:3000/api/medicines')
+      .then(res => res.json())
+      .then(data => {
+        const tbody = document.getElementById('pending-imports-body');
+        if (!tbody) return;
+        tbody.innerHTML = ''; // Clear hardcoded data
+        
+        document.getElementById('pending-imports-count').textContent = data.length + ' items extracted';
+
+        data.forEach(med => {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid var(--border)';
+          tr.innerHTML = `
+            <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
+            <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">${med.name || 'Unknown'}</td>
+            <td style="padding: 8px 12px;"><span style="background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3);">Extracted</span></td>
+            <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">${med.batch || 'N/A'}</td>
+            <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">${med.expiry || 'N/A'}</td>
+            <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">${med.quantity || 0}</td>
+            <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">0</td>
+            <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">₹${med.mrp || '0.00'}</td>
+            <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--sky); padding: 4px 8px;">Edit</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      })
+      .catch(err => console.error('Failed to load medicines from API:', err));
+  }
+
+  // Fallback to mock logic for other pages
+  const endpoint = `/api/${pageId}`;
   apiGet(endpoint).then(data => {
     if (data) {
       console.log('Loaded mock data for', pageId, data);
       
       // Bind text and values
-      document.querySelectorAll(\`[data-key="\${pageId}"]\`).forEach(el => {
+      document.querySelectorAll(`[data-key="${pageId}"]`).forEach(el => {
         if (!el.dataset.field) return;
         const val = data[el.dataset.field];
         if (val !== undefined) {
@@ -44,7 +75,7 @@ function loadPageData(pageId) {
       });
 
       // Bind lists (arrays)
-      document.querySelectorAll(\`[data-list-key="\${pageId}"]\`).forEach(listEl => {
+      document.querySelectorAll(`[data-list-key="${pageId}"]`).forEach(listEl => {
         const listField = listEl.dataset.list;
         const items = data[listField] || [];
         const template = listEl.querySelector('template');
