@@ -1,0 +1,36 @@
+<div class="page" id="page13">
+    <div class="topbar">
+      <div>
+        <div class="page-title">🛡️ Safety & Backup</div>
+        <div class="page-subtitle">Page 13 · Hourly auto backup · Cloud upload to Telegram</div>
+      </div>
+      <span class="flag-pill sky" data-requires="cloud_backup">cloud_backup</span>
+    </div>
+    <div class="content">
+      <div class="flag-section">
+        <span class="flag-section-label">Active Flags:</span>
+        <span class="flag-pill sky" data-requires="cloud_backup">cloud_backup ON → Cloud upload to Telegram active</span>
+      </div>
+      <div class="notice success">✅ Hourly automatic backup always running. Last: 14:00 today.</div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title"><span class="icon">⚡</span> Manual Controls</div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Next scheduled backup</span><span>in 47 min</span></div>
+            <div class="progress-track"><div class="progress-fill" style="width:22%"></div></div>
+          </div>
+          <div class="btn-row mt14">
+            <button class="btn btn-primary">💾 Backup Now</button>
+            <button class="btn btn-ghost" data-requires="cloud_backup">☁️ Upload to Telegram</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="icon">📁</span> Backup Files</div>
+          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1400.db</strong><br><span class="fs11 text-muted">2.4 MB · Telegram ✓</span></div><div class="log-time">14:00</div></div>
+          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1300.db</strong><br><span class="fs11 text-muted">2.3 MB · Telegram ✓</span></div><div class="log-time">13:00</div></div>
+          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1200.db</strong><br><span class="fs11 text-muted">2.3 MB · Local only</span></div><div class="log-time">12:00</div></div>
+          <button class="btn btn-ghost mt8">🔄 Restore from Backup…</button>
+        </div>
+      </div>
+    </div>
+  </div>

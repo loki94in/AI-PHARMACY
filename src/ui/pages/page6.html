@@ -1,0 +1,45 @@
+<div class="page" id="page6">
+    <div class="topbar">
+      <div>
+        <div class="page-title">📋 Orders & Special Requests</div>
+        <div class="page-subtitle">Page 6 · Log out-of-stock requests, track status</div>
+      </div>
+      <span class="flag-pill orange" data-requires="email_parser">email_parser</span>
+    </div>
+    <div class="content">
+      <div class="flag-section">
+        <span class="flag-section-label">Active Flags:</span>
+        <span class="flag-pill orange" data-requires="email_parser">email_parser ON → Orders auto-created from email</span>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title"><span class="icon">➕</span> Log New Request</div>
+          <div class="field mb6"><label>Product Name</label><input type="text" placeholder="Out-of-stock product…" /></div>
+          <div class="field mb6"><label>Patient / Doctor</label><input type="text" placeholder="Requester name…" /></div>
+          <div class="field mb6"><label>Qty Required</label><input type="number" placeholder="1" /></div>
+          <div class="field mb6"><label>Priority</label>
+            <select><option>Normal</option><option>Urgent</option><option>Critical</option></select>
+          </div>
+          <button class="btn btn-primary mt8">📝 Log Request</button>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="icon">📊</span> Request Tracker</div>
+          <div class="log-entry">
+            <div class="log-dot" style="background:var(--danger)"></div>
+            <div class="log-msg"><strong class="text-white">Insulin Glargine 100U</strong><br><span class="fs11 text-muted">Patient: Ramesh K. · Qty: 2 vials</span></div>
+            <span class="badge badge-danger">Urgent</span>
+          </div>
+          <div class="log-entry">
+            <div class="log-dot" style="background:var(--accent-orange)"></div>
+            <div class="log-msg"><strong class="text-white">Clopidogrel 75mg</strong><br><span class="fs11 text-muted">Auto-created from email · Dr. Patel</span></div>
+            <span class="badge badge-orange">Pending</span>
+          </div>
+          <div class="log-entry">
+            <div class="log-dot" style="background:var(--green)"></div>
+            <div class="log-msg"><strong class="text-white">Metformin 1000mg</strong><br><span class="fs11 text-muted">Patient: Priya M. · Qty: 30 tabs</span></div>
+            <span class="badge badge-green">Ordered</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>

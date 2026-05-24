@@ -1,0 +1,99 @@
+{
+  "routes": [
+    {
+      "id": "page1",
+      "title": "POS Billing",
+      "file": "src/ui/pages/page1.html"
+    },
+    {
+      "id": "page2",
+      "title": "Dashboard",
+      "file": "src/ui/pages/page2.html"
+    },
+    {
+      "id": "page3",
+      "title": "Inventory",
+      "file": "src/ui/pages/page3.html"
+    },
+    {
+      "id": "page4",
+      "title": "Purchases",
+      "file": "src/ui/pages/page4.html"
+    },
+    {
+      "id": "page5",
+      "title": "Returns & Expiry",
+      "file": "src/ui/pages/page5.html"
+    },
+    {
+      "id": "page6",
+      "title": "Orders & Requests",
+      "file": "src/ui/pages/page6.html"
+    },
+    {
+      "id": "page7",
+      "title": "Expiry Monitor",
+      "file": "src/ui/pages/page7.html"
+    },
+    {
+      "id": "page8",
+      "title": "CRM",
+      "file": "src/ui/pages/page8.html"
+    },
+    {
+      "id": "page9",
+      "title": "Reports",
+      "file": "src/ui/pages/page9.html"
+    },
+    {
+      "id": "page10",
+      "title": "Email Parser",
+      "file": "src/ui/pages/page10.html"
+    },
+    {
+      "id": "page11",
+      "title": "Migration Tool",
+      "file": "src/ui/pages/page11.html"
+    },
+    {
+      "id": "page12",
+      "title": "Barcode & Labels",
+      "file": "src/ui/pages/page12.html"
+    },
+    {
+      "id": "page13",
+      "title": "Safety & Backup",
+      "file": "src/ui/pages/page13.html"
+    },
+    {
+      "id": "page14",
+      "title": "Settings",
+      "file": "src/ui/pages/page14.html"
+    },
+    {
+      "id": "page15",
+      "title": "Support & Dispatch",
+      "file": "src/ui/pages/page15.html"
+    },
+    {
+      "id": "page16",
+      "title": "Archive & Purge",
+      "file": "src/ui/pages/page16.html"
+    },
+    {
+      "id": "page17",
+      "title": "Legal & Compliance",
+      "file": "src/ui/pages/page17.html"
+    },
+    {
+      "id": "page18",
+      "title": "Learning Engine",
+      "file": "src/ui/pages/page18.html"
+    },
+    {
+      "id": "page19",
+      "title": "Messaging Hub",
+      "file": "src/ui/pages/page19.html"
+    }
+  ]
+}

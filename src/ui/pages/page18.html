@@ -1,0 +1,45 @@
+<div class="page" id="page18" data-requires="learning_engine">
+    <div class="topbar">
+      <div>
+        <div class="page-title">🧠 Intelligent Clinical Learning Engine</div>
+        <div class="page-subtitle">Page 18 · Sensitivity settings, per-doctor usage stats, model refresh</div>
+      </div>
+      <span class="flag-pill purple">learning_engine</span>
+    </div>
+    <div class="content">
+      <div class="flag-section">
+        <span class="flag-section-label">Active Flags:</span>
+        <span class="flag-pill purple">learning_engine ON → Sidebar suggestions active in POS</span>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title"><span class="icon">⚙️</span> Engine Configuration</div>
+          <div class="field mb6">
+            <label>Learning Sensitivity</label>
+            <input type="range" min="1" max="10" value="7" style="accent-color:var(--accent-purple);width:100%;margin-top:6px;" />
+            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--accent-purple);margin-top:4px;">7 / 10 — High Sensitivity</div>
+          </div>
+          <div class="field mb6">
+            <label>Suggestion Count (per doctor)</label>
+            <select><option>3</option><option>4</option><option selected>5</option><option>8</option></select>
+          </div>
+          <div class="btn-row mt14">
+            <button class="btn btn-ghost" style="color:var(--accent-purple);border-color:rgba(167,139,250,0.3);">🔄 Refresh Model</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="icon">📊</span> Per-Doctor Usage Stats</div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Doctor</th><th>Top Product</th><th>Suggestions Used</th><th>Accuracy</th></tr></thead>
+              <tbody>
+                <tr><td class="text-white">Dr. Sharma</td><td>Metformin 500mg</td><td>42</td><td><span class="badge badge-green">91%</span></td></tr>
+                <tr><td class="text-white">Dr. Patel</td><td>Atorvastatin 10mg</td><td>28</td><td><span class="badge badge-sky">84%</span></td></tr>
+                <tr><td class="text-white">Dr. Iyer</td><td>Amoxicillin 250mg</td><td>15</td><td><span class="badge badge-orange">72%</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>

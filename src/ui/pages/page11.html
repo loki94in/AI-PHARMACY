@@ -1,0 +1,36 @@
+<div class="page" id="page11">
+    <div class="topbar">
+      <div>
+        <div class="page-title">🔀 Migration Tool — Data Bridge</div>
+        <div class="page-subtitle">Page 11 · CSV/Excel uploader, column mapping, validation — always on</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="card-title"><span class="icon">📤</span> Upload Data File</div>
+        <div class="scan-area">
+          <div class="scan-icon">📁</div>
+          <div class="scan-text">Drop CSV or Excel file here</div>
+          <div class="scan-hint">Supports .csv, .xlsx, .xls · Max 50 MB</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🗂️</span> Column Mapping Wizard</div>
+        <div class="notice info">Upload a file to begin mapping columns to Pharmacy Genius OS fields.</div>
+        <div class="tbl-wrap" style="opacity:0.5;pointer-events:none;">
+          <table>
+            <thead><tr><th>Source Column</th><th>→</th><th>Target Field</th><th>Validation</th></tr></thead>
+            <tbody>
+              <tr><td>product_name</td><td>→</td><td>Name</td><td><span class="badge badge-green">OK</span></td></tr>
+              <tr><td>qty_on_hand</td><td>→</td><td>Qty</td><td><span class="badge badge-green">OK</span></td></tr>
+              <tr><td>exp_date</td><td>→</td><td>Expiry</td><td><span class="badge badge-orange">Format mismatch</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" disabled>✅ Validate Data</button>
+          <button class="btn btn-primary" disabled>▶ Execute Migration</button>
+        </div>
+      </div>
+    </div>
+  </div>

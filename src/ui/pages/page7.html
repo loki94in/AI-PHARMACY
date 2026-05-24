@@ -1,0 +1,35 @@
+<div class="page" id="page7">
+    <div class="topbar">
+      <div>
+        <div class="page-title">⏳ Expiry Monitor</div>
+        <div class="page-subtitle">Page 7 · Items expiring within 90 days, colour-coded alerts</div>
+      </div>
+      <span class="flag-pill green" data-requires="whatsapp">whatsapp</span>
+    </div>
+    <div class="content">
+      <div class="flag-section">
+        <span class="flag-section-label">Active Flags:</span>
+        <span class="flag-pill green" data-requires="whatsapp">whatsapp ON → Daily expiry summary sent via WhatsApp</span>
+      </div>
+      <div class="grid3" style="margin-bottom:16px;">
+        <div class="kpi sky"><div class="kpi-label">Expiring &lt; 30 days</div><div class="kpi-value">4</div><div class="kpi-delta neg">Critical</div></div>
+        <div class="kpi orange"><div class="kpi-label">Expiring 30–60 days</div><div class="kpi-value">11</div><div class="kpi-delta">Review soon</div></div>
+        <div class="kpi green"><div class="kpi-label">Expiring 60–90 days</div><div class="kpi-value">23</div><div class="kpi-delta">Monitor</div></div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Product</th><th>Batch</th><th>Qty</th><th>Expiry</th><th>Days Left</th><th>Alert</th></tr></thead>
+          <tbody>
+            <tr><td class="text-white fw700">Losartan 50mg</td><td class="mono">B-2023-12</td><td>6</td><td class="expiry-red">Dec 2024</td><td class="expiry-red fw700">Expired!</td><td><span class="badge badge-danger">Critical</span></td></tr>
+            <tr><td class="text-white fw700">Cetirizine 10mg</td><td class="mono">B-2024-05</td><td>44</td><td class="expiry-orange">Jun 2025</td><td class="expiry-orange fw700">12 days</td><td><span class="badge badge-orange">Urgent</span></td></tr>
+            <tr><td class="text-white fw700">Pantoprazole 40mg</td><td class="mono">B-2024-07</td><td>60</td><td class="expiry-orange">Aug 2025</td><td class="expiry-orange fw700">41 days</td><td><span class="badge badge-orange">Soon</span></td></tr>
+            <tr><td class="text-white fw700">Azithromycin 500mg</td><td class="mono">B-2024-09</td><td>20</td><td class="expiry-green">Sep 2025</td><td class="expiry-green fw700">72 days</td><td><span class="badge badge-sky">Monitor</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-requires="whatsapp">💬 Send WhatsApp Summary</button>
+        <button class="btn btn-ghost">📄 Export Report</button>
+      </div>
+    </div>
+  </div>

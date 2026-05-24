@@ -1,0 +1,39 @@
+<div class="page" id="page5">
+    <div class="topbar">
+      <div>
+        <div class="page-title">↩️ Returns & Expiry — Correction Page</div>
+        <div class="page-subtitle">Page 5 · Customer returns, distributor returns, credit/debit notes</div>
+      </div>
+      <span class="flag-pill sky" data-requires="ai_camera">ai_camera</span>
+    </div>
+    <div class="content">
+      <div class="flag-section">
+        <span class="flag-section-label">Active Flags:</span>
+        <span class="flag-pill sky" data-requires="ai_camera">ai_camera ON → Batch scan for expired strips enabled</span>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:16px;">
+        <button class="btn btn-primary">👤 Customer Returns</button>
+        <button class="btn btn-ghost">🏪 Distributor Returns</button>
+      </div>
+      <div class="card">
+        <div class="card-title" data-requires="ai_camera"><span class="icon">📷</span> AI Camera — Batch Scan Expired Strips</div>
+        <div class="scan-area" data-requires="ai_camera">
+          <div class="scan-icon">📷</div>
+          <div class="scan-text">Scan Multiple Expired Strips at Once</div>
+          <div class="scan-hint">Uses AI-Camera OCR to identify batches · Requires <strong>ai_camera</strong> flag</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">↩️</span> Return Entry</div>
+        <div class="form-row">
+          <div class="field"><label>Customer / Distributor</label><input type="text" placeholder="Search name…" /></div>
+          <div class="field"><label>Original Bill / Invoice No.</label><input type="text" placeholder="BILL-XXXXX" /></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost">📄 Generate Credit Note</button>
+          <button class="btn btn-ghost">📄 Generate Debit Note</button>
+          <button class="btn btn-primary ml-auto">✅ Process Return</button>
+        </div>
+      </div>
+    </div>
+  </div>
