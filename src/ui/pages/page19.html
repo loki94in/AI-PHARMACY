@@ -270,7 +270,7 @@ startQRCodePolling();
 document.getElementById('sendTestMsgBtn')?.addEventListener('click', async () => {
   try {
     const payload = { chatId: null, message: 'Test message from Pharmacy OS' };
-    const resp = await fetch('/api/whatsapp/send-test', {
+    const resp = await fetch('/api/utilities/whatsapp/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

@@ -41,25 +41,33 @@
           </div>
         </div>
       </div>
+
+      <!-- AI Learning Engine Data Processing Section -->
+      <div class="card" style="grid-column: 1 / -1; margin-top: 24px;">
+        <div class="card-title"><span class="icon">🔧</span> Data Processing</div>
+        <div class="field mb6">
+          <label for="raw-data">Legacy Data</label>
+          <textarea id="raw-data" placeholder="Paste messy legacy CSV or SQL data here..." rows="8" style="width:100%;"></textarea>
+        </div>
+        <div class="btn-row mb6">
+          <button class="btn btn-primary" id="analyzeStructureBtn">Analyze Structure</button>
+        </div>
+        <div class="field mb6">
+          <label>Mapping Result</label>
+          <pre id="mapping-result" style="background:#111;color:#0f0;padding:8px;max-height:200px;overflow:auto;border-radius:4px;"></pre>
+        </div>
+        <div class="btn-row mt14">
+          <button class="btn btn-success" id="processDataBtn">Process Data</button>
+        </div>
+      </div>
     </div>
 <script>
 // JS as before
 
-// UI for AI Learning Engine
-
-// Elements
-const legacyArea = document.createElement('div');
-legacyArea.innerHTML = `
-  <div class="field mb6"><label>Legacy Data</label><textarea id="legacyData" rows="6" placeholder="Paste raw data here"></textarea></div>
-  <button class="btn btn-primary" id="analyzeBtn">Analyze Data</button>
-  <pre id="mappingOutput" style="background:#111;color:#0f0;padding:8px;margin-top:8px;max-height:200px;overflow:auto;"></pre>
-  <button class="btn btn-success" id="processDataBtn">Process Data</button>
-`;
-document.querySelector('.page#page18 .content').appendChild(legacyArea);
-
-document.getElementById('analyzeBtn')?.addEventListener('click', async () => {
-  const legacyEl = document.getElementById('legacyData');
-  const raw = legacyEl ? (legacyEl as any).value : '';
+// UI for AI Learning Engine - Data Processing
+document.getElementById('analyzeStructureBtn')?.addEventListener('click', async () => {
+  const textarea = document.getElementById('raw-data');
+  const raw = textarea ? textarea.value : '';
   if (!raw) return alert('Enter legacy data');
   try {
     const resp = await fetch('/api/learning/analyze', {
@@ -69,7 +77,7 @@ document.getElementById('analyzeBtn')?.addEventListener('click', async () => {
     });
     const result = await resp.json();
     if (result.success) {
-      document.getElementById('mappingOutput')!.textContent = JSON.stringify(result.mapping, null, 2);
+      document.getElementById('mapping-result')!.textContent = JSON.stringify(result.mapping, null, 2);
     } else {
       alert('Analysis failed: ' + (result.error || result.raw));
     }
@@ -80,9 +88,10 @@ document.getElementById('analyzeBtn')?.addEventListener('click', async () => {
 });
 
 document.getElementById('processDataBtn')?.addEventListener('click', async () => {
-  const legacyEl = document.getElementById('legacyData');
-  const raw = legacyEl ? (legacyEl as any).value : '';
-  const mappingText = document.getElementById('mappingOutput')?.textContent;
+  const textarea = document.getElementById('raw-data');
+  const raw = textarea ? textarea.value : '';
+  const mappingPre = document.getElementById('mapping-result');
+  const mappingText = mappingPre ? mappingPre.textContent : '';
   if (!raw || !mappingText) return alert('Provide data and mapping');
   let mapping;
   try { mapping = JSON.parse(mappingText); } catch { return alert('Invalid mapping JSON'); }
@@ -99,5 +108,18 @@ document.getElementById('processDataBtn')?.addEventListener('click', async () =>
     alert('Error applying model');
   }
 });
+
+// Keep existing refresh model button functionality if needed
+document.getElementById('refreshModelBtn')?.addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/learning/refresh-model', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Model refreshed');
+  } catch (e) {
+    console.error('Refresh model error:', e);
+    alert('Failed to refresh model');
+  }
+});
 </script>
-  </div>
+</div>

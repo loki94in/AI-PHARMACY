@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import unzipper from 'unzipper';
+import zlib from 'zlib';
 import chokidar from 'chokidar';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
@@ -48,13 +49,30 @@ async function processZipMigration(zipPath: string) {
     const extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
     fs.mkdirSync(extractPath, { recursive: true });
     
-    // Stream unzip
-    await new Promise<void>((resolve, reject) => {
-      fs.createReadStream(zipPath)
-        .pipe(unzipper.Extract({ path: extractPath }))
-        .on('close', resolve)
-        .on('error', reject);
-    });
+    // Stream unzip with fallback for fake zip files
+    try {
+      await new Promise<void>((resolve, reject) => {
+        fs.createReadStream(zipPath)
+          .pipe(unzipper.Extract({ path: extractPath }))
+          .on('close', resolve)
+          .on('error', reject);
+      });
+    } catch (unzipError: any) {
+      // Check if it's the invalid signature error from unzipper
+      if (unzipError.message?.includes('invalid signature')) {
+        // Fallback: treat as gzipped SQL file
+        const backupSqlPath = path.join(extractPath, 'extracted_backup.sql');
+        await new Promise<void>((resolve, reject) => {
+          fs.createReadStream(zipPath)
+            .pipe(zlib.createGunzip())
+            .pipe(fs.createWriteStream(backupSqlPath))
+            .on('close', resolve)
+            .on('error', reject);
+        });
+      } else {
+        throw unzipError;
+      }
+    }
     
     migrationStatus.message = 'Scanning extracted files...';
     

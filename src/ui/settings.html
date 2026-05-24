@@ -1,9 +1,139 @@
 <div class="page" id="page14">
-  <div class="topbar">
-    <div class="page-title">Settings & System Utilities (Agent B)</div>
-  </div>
-  <div class="content">
-    <!-- TODO: Agent B to extract Settings UI from ui-demo.html -->
-    <p>Settings UI goes here.</p>
-  </div>
+    <div class="topbar">
+      <div>
+        <div class="page-title">⚙️ Settings & Preferences</div>
+        <div class="page-subtitle">Page 14 · Feature flags, theme, automation, WhatsApp templates</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="card-title"><span class="icon">🚀</span> Feature Flags</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">📷 AI Camera OCR <span class="badge badge-sky" style="margin-left:6px;">ai_camera</span></div>
+            <div class="toggle-desc">Enables camera-based product scanning on POS and Returns pages</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-ai_camera" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">📧 Email Parser <span class="badge badge-orange" style="margin-left:6px;">email_parser</span></div>
+            <div class="toggle-desc">Gmail integration for auto-importing distributor invoices and orders</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-email_parser" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">💬 WhatsApp Integration <span class="badge badge-green" style="margin-left:6px;">whatsapp</span></div>
+            <div class="toggle-desc">Expiry alerts, refill reminders, dispatch notifications via WhatsApp</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-whatsapp" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">☁️ Cloud Backup <span class="badge badge-sky" style="margin-left:6px;">cloud_backup</span></div>
+            <div class="toggle-desc">Upload hourly backups to Telegram channel</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-cloud_backup" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">🧠 Learning Engine <span class="badge badge-purple" style="margin-left:6px;">learning_engine</span></div>
+            <div class="toggle-desc">Doctor-wise suggestion sidebar in POS billing</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-learning_engine" checked /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">⚖️ Legal Register <span class="badge badge-danger" style="margin-left:6px;">legal_register</span></div>
+            <div class="toggle-desc">Schedule H1/Narcotic tracking, mandatory doctor ID in POS</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-legal_register" /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">🏷️ Custom Labels <span class="badge badge-sky" style="margin-left:6px;">custom_labels</span></div>
+            <div class="toggle-desc">Dynamic label templates in Barcode Generator</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-custom_labels" /><span class="slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">☁️ Cloud Export <span class="badge badge-sky" style="margin-left:6px;">cloud_export</span></div>
+            <div class="toggle-desc">Push generated PDFs to cloud storage from Reports page</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="flag-cloud_export" /><span class="slider"></span></label>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🎨</span> Theme & Appearance</div>
+        <div class="form-row">
+          <div class="field"><label>Color Theme</label>
+            <select><option>Dark (Default)</option><option>Light</option><option>Midnight Blue</option></select>
+          </div>
+          <div class="field"><label>Accent Color</label>
+            <select><option>Sky Blue + Green (Default)</option><option>Purple + Teal</option><option>Orange + Sky</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🔐</span> Security</div>
+        <div class="field"><label>Encryption Key</label><input type="password" placeholder="●●●●●●●●●●●●●●●●●●●●" /></div>
+        <div class="btn-row mt14"><button class="btn btn-danger" id="rotateKeyBtn">🔄 Rotate Encryption Key</button></div>
+      </div>
+
+      <h3 style="margin-top: 24px; color: var(--text);">🔌 Integration Settings</h3>
+      <div class="grid3" style="margin-top: 16px;">
+        <div class="card">
+          <div class="card-title"><span class="icon">📧</span> Gmail Settings</div>
+          <div class="field mb6"><label>Gmail Address</label><input type="email" placeholder="pharmacy@gmail.com" /></div>
+          <div class="field mb6">
+            <label>16-Digit App Password</label>
+            <input type="password" placeholder="xxxx xxxx xxxx xxxx" />
+            <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;">Required for secure inbox access</div>
+          </div>
+          <div class="field mb6"><label>Polling Interval</label>
+            <select><option>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>1 hour</option></select>
+          </div>
+          <div class="btn-row mt14">
+            <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
+            <button class="btn btn-primary ml-auto">💾 Save</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="icon">💬</span> WhatsApp Settings</div>
+          <div class="field mb6"><label>API Token</label><input type="password" placeholder="wa_api_token_..." /></div>
+          <div class="field mb6"><label>Instance ID / Phone ID</label><input type="text" placeholder="Instance ID..." /></div>
+          <div class="field mb6"><label>Sender Number</label><input type="text" placeholder="+91 98765 43210" /></div>
+          <div class="field mb6"><label>Default Template</label>
+            <select><option>Refill Reminder</option><option>Expiry Alert</option></select>
+          </div>
+          <div class="btn-row mt14">
+            <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
+            <button class="btn btn-primary ml-auto">💾 Save</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="icon">✈️</span> Telegram Settings</div>
+          <div class="field mb6">
+            <label>Bot Token</label>
+            <input type="password" placeholder="123456:ABC-DEF1234ghIkl..." />
+          </div>
+          <div class="field mb6">
+            <label>Chat ID</label>
+            <input type="text" placeholder="-1001234567890" />
+            <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;">Target group or channel ID</div>
+          </div>
+          <div class="field mb6"><label>Notification Level</label>
+            <select><option>All Backups</option><option>Only Errors</option></select>
+          </div>
+          <div class="btn-row mt14">
+            <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
+            <button class="btn btn-primary ml-auto">💾 Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
 </div>

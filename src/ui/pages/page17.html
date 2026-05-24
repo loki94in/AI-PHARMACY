@@ -30,6 +30,7 @@
 // Compliance add entry handler
 function openAddEntryModal() { document.getElementById('add-entry-modal').style.display = 'flex'; }
 function closeAddEntryModal() { document.getElementById('add-entry-modal').style.display = 'none'; }
+function closeScheduleH1Modal() { document.getElementById('schedule-h1-modal').style.display = 'none'; }
 async function saveComplianceEntry() {
   const payload = {
     date: document.getElementById('entry-date').value,

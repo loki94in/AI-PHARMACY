@@ -37,4 +37,28 @@ router.post('/add', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// New route for Schedule H1 dispensing events
+router.post('/add-schedule-h1', async (req, res) => {
+  const { drug_name, patient_name, doctor_name } = req.body;
+  if (!drug_name || !patient_name || !doctor_name) {
+    return res.status(400).json({ error: 'Missing required fields: drug_name, patient_name, doctor_name' });
+  }
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    // Insert a record indicating a Schedule H1 dispensing event occurred
+    // We'll map the fields to the action_logs table: drug_name -> product, patient_name -> patient_id, doctor_name -> doctor_id
+    // For license_no, qty, bill_no we'll use placeholder values to indicate Schedule H1 dispensing
+    await db.run(
+      'INSERT INTO action_logs (date, product, patient_id, doctor_id, license_no, qty, bill_no) VALUES (DATE("now"), ?, ?, ?, "SCH-H1", 1, "SCH-H1-DISP")',
+      [drug_name, patient_name, doctor_name]
+    );
+    await db.close();
+    res.json({ success: true, message: 'Schedule H1 dispensing event logged' });
+  } catch (err) {
+    console.error('Add Schedule H1 compliance entry error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
