@@ -24,4 +24,17 @@ router.get('/', async (_req, res) => {
   }
 });
 
+router.post('/add', async (req, res) => {
+  const { date, product, patient_id, doctor_id, license_no, qty, bill_no } = req.body;
+  if (!date || !product) return res.status(400).json({ error: 'Missing required fields' });
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('INSERT INTO action_logs (date, product, patient_id, doctor_id, license_no, qty, bill_no) VALUES (?,?,?,?,?,?,?)', [date, product, patient_id, doctor_id, license_no, qty, bill_no]);
+    await db.close();
+    res.json({ success: true, message: 'Compliance entry added' });
+  } catch (err) {
+    console.error('Add compliance entry error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 export default router;

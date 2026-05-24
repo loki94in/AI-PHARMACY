@@ -26,6 +26,34 @@
   }
 })();
 </script>
+<script>
+// Compliance add entry handler
+function openAddEntryModal() { document.getElementById('add-entry-modal').style.display = 'flex'; }
+function closeAddEntryModal() { document.getElementById('add-entry-modal').style.display = 'none'; }
+async function saveComplianceEntry() {
+  const payload = {
+    date: document.getElementById('entry-date').value,
+    product: document.getElementById('entry-product').value,
+    patient_id: document.getElementById('entry-patient').value,
+    doctor_id: document.getElementById('entry-doctor').value,
+    license_no: document.getElementById('entry-license').value,
+    qty: document.getElementById('entry-qty').value,
+    bill_no: document.getElementById('entry-bill').value
+  };
+  try {
+    const resp = await fetch('/api/compliance/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Entry added');
+    closeAddEntryModal();
+    location.reload();
+  } catch (e) { console.error(e); alert('Failed to add entry'); }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const addBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Add Entry');
+  if (addBtn) addBtn.addEventListener('click', openAddEntryModal);
+});
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">⚖️ Legal & Compliance Register</div>
@@ -70,6 +98,20 @@
           <button class="btn btn-primary">➕ Add Entry</button>
           <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=compliance', '_blank')">📄 Export Register PDF</button>
         </div>
-      </div>
+      <div id="add-entry-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div style="background:#222;padding:20px;max-width:400px;">
+    <h3>Add Compliance Entry</h3>
+    <input id="entry-date" type="date" placeholder="Date"/><br/>
+    <input id="entry-product" placeholder="Product"/><br/>
+    <input id="entry-patient" placeholder="Patient ID"/><br/>
+    <input id="entry-doctor" placeholder="Doctor ID"/><br/>
+    <input id="entry-license" placeholder="License No"/><br/>
+    <input id="entry-qty" type="number" placeholder="Qty"/><br/>
+    <input id="entry-bill" placeholder="Bill No"/><br/>
+    <button onclick="saveComplianceEntry()">Save</button>
+    <button onclick="closeAddEntryModal()">Cancel</button>
+  </div>
+</div>
+</div>
     </div>
   </div>

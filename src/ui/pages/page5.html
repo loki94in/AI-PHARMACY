@@ -25,6 +25,46 @@
 })();
 </script>
 <script>
+// Financial note handlers (Credit/Debit)
+document.querySelectorAll('button.btn-ghost').forEach(btn => {
+  const txt = btn.textContent.trim();
+  if (txt.includes('Credit Note')) {
+    btn.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/returns/financial-note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'credit' })
+        });
+        if (!resp.ok) throw new Error('Network error');
+        const data = await resp.json();
+        alert(data.message || 'Credit note generated');
+      } catch (e) {
+        console.error(e);
+        alert('Failed to generate credit note');
+      }
+    });
+  }
+  if (txt.includes('Debit Note')) {
+    btn.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/returns/financial-note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'debit' })
+        });
+        if (!resp.ok) throw new Error('Network error');
+        const data = await resp.json();
+        alert(data.message || 'Debit note generated');
+      } catch (e) {
+        console.error(e);
+        alert('Failed to generate debit note');
+      }
+    });
+  }
+});
+</script>
+<script>
 function handleCustomerReturn() {
   // Example POST for customer return
   fetch('/api/returns', {
@@ -50,6 +90,46 @@ function processReturn() {
   console.log('Process Return clicked');
   // Implement processing logic as needed
 }
+</script>
+<script>
+// Financial note handlers (Credit/Debit)
+document.querySelectorAll('button.btn-ghost').forEach(btn => {
+  const txt = btn.textContent.trim();
+  if (txt.includes('Credit Note')) {
+    btn.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/returns/financial-note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'credit' })
+        });
+        if (!resp.ok) throw new Error('Network error');
+        const data = await resp.json();
+        alert(data.message || 'Credit note generated');
+      } catch (e) {
+        console.error(e);
+        alert('Failed to generate credit note');
+      }
+    });
+  }
+  if (txt.includes('Debit Note')) {
+    btn.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/returns/financial-note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'debit' })
+        });
+        if (!resp.ok) throw new Error('Network error');
+        const data = await resp.json();
+        alert(data.message || 'Debit note generated');
+      } catch (e) {
+        console.error(e);
+        alert('Failed to generate debit note');
+      }
+    });
+  }
+});
 </script>
     <div class="topbar">
       <div>

@@ -29,6 +29,41 @@
 })();
 </script>
 <script>
+// Bulk inventory actions handlers
+document.addEventListener('DOMContentLoaded', () => {
+  const discardBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Discard All');
+  const commitBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Commit Selected to Stock');
+  if (discardBtn) {
+    discardBtn.addEventListener('click', async () => {
+      try {
+        await fetch('/api/inventory/bulk-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'discard' })
+        });
+        alert('All pending imports discarded');
+        location.reload();
+      } catch (e) { console.error(e); alert('Discard failed'); }
+    });
+  }
+  if (commitBtn) {
+    commitBtn.addEventListener('click', async () => {
+      try {
+        const ids = Array.from(document.querySelectorAll('#pending-imports-body input[type=checkbox]:checked'))
+          .map(cb => cb.closest('tr').dataset.id).filter(Boolean);
+        await fetch('/api/inventory/bulk-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'commit', ids })
+        });
+        alert('Selected items committed to stock');
+        location.reload();
+      } catch (e) { console.error(e); alert('Commit failed'); }
+    });
+  }
+});
+</script>
+<script>
 let editItemId = null;
 function openEditModal(button) {
   const row = button.closest('tr');

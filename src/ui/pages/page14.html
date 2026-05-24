@@ -146,7 +146,7 @@
       if (el.id) payload[el.id] = el.value;
     });
     try {
-      const resp = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const resp = await fetch('/api/settings/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!resp.ok) throw new Error('Network error');
       const data = await resp.json();
       alert(data.message || 'Settings saved');
@@ -177,5 +177,32 @@ document.getElementById('rotateKeyBtn').addEventListener('click', async () => {
     console.error('Rotate key error:', e);
     alert('Failed to rotate key');
   }
+});
+</script>
+<script>
+document.querySelectorAll('.page#page14 .test-conn-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const card = btn.closest('.card');
+    let service = '';
+    if (card) {
+      const titleEl = card.querySelector('.card-title');
+      if (titleEl) {
+        const txt = titleEl.textContent.toLowerCase();
+        if (txt.includes('gmail')) service = 'gmail';
+        else if (txt.includes('whatsapp')) service = 'whatsapp';
+        else if (txt.includes('telegram')) service = 'telegram';
+      }
+    }
+    try {
+      const url = service ? `/api/utilities/test-connection?service=${service}` : '/api/utilities/test-connection';
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Network error');
+      const data = await resp.json();
+      alert(data.message || 'Connection successful');
+    } catch (e) {
+      console.error('Test connection error:', e);
+      alert('Failed to test connection');
+    }
+  });
 });
 </script>

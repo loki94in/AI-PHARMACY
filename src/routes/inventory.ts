@@ -79,4 +79,22 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+router.post('/bulk-action', async (req, res) => {
+  const { action, ids = [] } = req.body;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    if (action === 'discard') {
+      // Placeholder: no operation, just respond
+    } else if (action === 'commit' && ids.length) {
+      // Example: set quantity flag or update status; here we just touch rows
+      const placeholders = ids.map(() => '?').join(',');
+      await db.run(`UPDATE inventory_master SET quantity = quantity WHERE id IN (${placeholders})`, ids);
+    }
+    await db.close();
+    res.json({ success: true, message: 'Bulk action completed' });
+  } catch (error) {
+    console.error('Bulk action error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 export default router;

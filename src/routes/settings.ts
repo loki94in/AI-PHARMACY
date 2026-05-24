@@ -41,4 +41,23 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Generic settings save (upsert multiple keys)
+router.post('/save', async (req, res) => {
+  const payload = req.body;
+  if (!payload || typeof payload !== 'object') return res.status(400).json({ error: 'payload required' });
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+    const entries = Object.entries(payload);
+    for (const [k, v] of entries) {
+      await db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [k, v ?? '']);
+    }
+    await db.close();
+    res.json({ success: true, message: 'Settings saved' });
+  } catch (error) {
+    console.error('Bulk settings save error:', error);
+    res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
 export default router;

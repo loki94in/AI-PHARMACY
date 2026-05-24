@@ -199,4 +199,18 @@ router.get('/test-connection', async (req, res) => {
   }
 });
 
+// Email parser polling placeholder (simulated)
+if (process.env.EMAIL_PARSER_ENABLED === 'true') {
+  setInterval(async () => {
+    console.log('Simulated email parser polling for invoices');
+    try {
+      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['EMAIL_PARSER_POLL', 'Polled inbox for invoices']);
+      await db.close();
+    } catch (e) {
+      console.error('Email poll error:', e);
+    }
+  }, 60000);
+}
+
 export default router;

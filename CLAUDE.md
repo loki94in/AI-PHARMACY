@@ -37,4 +37,13 @@ If you are asked to generate a "plan" or an "artifact", **do not save it to the 
 If you are generating a massive checklist, log output, or plan, the terminal streaming may freeze or hang (e.g., getting stuck "Generating..." for 15+ minutes). To avoid this:
 **Rule:** Write large outputs directly to a markdown file in the workspace or artifact directory rather than attempting to stream thousands of tokens directly to the chat console. 
 
+## 9. Windows Operating System Rules (CRITICAL)
+This project is running natively on **Windows**. You MUST adhere to these Windows-specific rules:
+1. **Line Endings:** Windows uses `\r\n` (CRLF) for line endings. If you use a strict string-matching Edit tool, DO NOT try to type literal `\n` characters in your code blocks to guess invisible whitespace. Your guess will fail because of the CRLF mismatch. Always copy the EXACT text from the `Read` command output, or use `fs.writeFileSync` / `fs.appendFileSync` if you are getting stuck in an Edit loop.
+2. **Commands:** When running shell commands, you are in a Windows Command Prompt (`cmd`) or PowerShell. 
+   - DO NOT use `cp`, use `copy`.
+   - DO NOT use `ls`, use `dir`.
+   - DO NOT use `rm -rf`, use `rmdir /s /q` or `del /s /q`.
+   - DO NOT use `grep` or `cat` in your shell terminal. Use native Node.js scripts or PowerShell equivalents if absolutely necessary.
+
 By following these rules, we will build a flawless application together!

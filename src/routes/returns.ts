@@ -2,6 +2,9 @@ import express from 'express';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
+import fs from 'fs';
+import PDFDocument from 'pdfkit';
+import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,4 +43,27 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.post('/financial-note', async (req, res) => {
+  const { type } = req.body;
+  if (!type) return res.status(400).json({ error: 'type required' });
+  try {
+    const doc = new PDFDocument();
+    const filename = `financial-note-${Date.now()}.pdf`;
+    const outPath = path.resolve(__dirname, '..', '..', 'catalog', filename);
+    const stream = fs.createWriteStream(outPath);
+    doc.pipe(stream);
+    doc.fontSize(20).text(`${type.charAt(0).toUpperCase() + type.slice(1)} Note`, { align: 'center' });
+    doc.moveDown().fontSize(12).text(`Generated on ${new Date().toLocaleString()}`);
+    doc.end();
+    await new Promise((resolve, reject) => {
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    });
+    const url = `/catalog/${filename}`;
+    res.json({ url, message: `${type} note generated` });
+  } catch (err) {
+    console.error('Financial note error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 export default router;
