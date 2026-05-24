@@ -28,6 +28,7 @@ router.post('/', async (req, res) => {
     console.error('Learning endpoint error:', error);
     res.status(500).json({ error: 'Failed to store learning data' });
   }
+});
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || ''

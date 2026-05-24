@@ -2474,7 +2474,7 @@ function processReturn() {
       <div class="card">
         <div class="card-title"><span class="icon">🔐</span> Security</div>
         <div class="field"><label>Encryption Key</label><input type="password" placeholder="●●●●●●●●●●●●●●●●●●●●" /></div>
-        <div class="btn-row mt14"><button class="btn btn-danger">🔄 Rotate Encryption Key</button></div>
+        <div class="btn-row mt14"><button class="btn btn-danger" id="rotateKeyBtn">🔄 Rotate Encryption Key</button></div>
       </div>
       
       <h3 style="margin-top: 24px; color: var(--text);">🔌 Integration Settings</h3>
@@ -2491,7 +2491,7 @@ function processReturn() {
             <select><option>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>1 hour</option></select>
           </div>
           <div class="btn-row mt14">
-            <button class="btn btn-ghost">🔗 Test Connection</button>
+            <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
             <button class="btn btn-primary ml-auto">💾 Save</button>
           </div>
         </div>
@@ -2505,7 +2505,7 @@ function processReturn() {
             <select><option>Refill Reminder</option><option>Expiry Alert</option></select>
           </div>
           <div class="btn-row mt14">
-            <button class="btn btn-ghost">🔗 Test Connection</button>
+            <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
             <button class="btn btn-primary ml-auto">💾 Save</button>
           </div>
         </div>
@@ -2525,7 +2525,7 @@ function processReturn() {
             <select><option>All Backups</option><option>Only Errors</option></select>
           </div>
           <div class="btn-row mt14">
-            <button class="btn btn-ghost">🔗 Test Connection</button>
+            <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
             <button class="btn btn-primary ml-auto">💾 Save</button>
           </div>
         </div>
@@ -2810,7 +2810,7 @@ function runArchive(){
             <select><option>Select recipient…</option><option>All Patients (Refill Due)</option><option>Specific Patient</option><option>All Distributors</option></select>
           </div>
           <div class="btn-row">
-            <button class="btn btn-ghost">💬 Send Test Message</button>
+            <button class="btn btn-ghost" id="sendTestMsgBtn">💬 Send Test Message</button>
             <button class="btn btn-primary">📤 Send</button>
           </div>
         </div>
@@ -3049,6 +3049,25 @@ function startQRCodePolling() {
   setInterval(updateQR, 5000);
 }
 startQRCodePolling();
+
+// Send Test Message button handler
+document.getElementById('sendTestMsgBtn')?.addEventListener('click', async () => {
+  try {
+    const payload = { chatId: null, message: 'Test message from Pharmacy OS' };
+    const resp = await fetch('/api/utilities/telegram/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Message sent');
+  } catch (e) {
+    console.error('Send test message error:', e);
+    alert('Failed to send test message');
+  }
+});
+
 </script>
 
 <!-- Modals -->

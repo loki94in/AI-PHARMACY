@@ -24,7 +24,7 @@
             <select><option>3</option><option>4</option><option selected>5</option><option>8</option></select>
           </div>
           <div class="btn-row mt14">
-            <button class="btn btn-ghost" style="color:var(--accent-purple);border-color:rgba(167,139,250,0.3);">🔄 Refresh Model</button>
+            <button class="btn btn-ghost" id="refreshModelBtn" style="color:var(--accent-purple);border-color:rgba(167,139,250,0.3);">🔄 Refresh Model</button>
           </div>
         </div>
         <div class="card">
@@ -42,4 +42,62 @@
         </div>
       </div>
     </div>
+<script>
+// JS as before
+
+// UI for AI Learning Engine
+
+// Elements
+const legacyArea = document.createElement('div');
+legacyArea.innerHTML = `
+  <div class="field mb6"><label>Legacy Data</label><textarea id="legacyData" rows="6" placeholder="Paste raw data here"></textarea></div>
+  <button class="btn btn-primary" id="analyzeBtn">Analyze Data</button>
+  <pre id="mappingOutput" style="background:#111;color:#0f0;padding:8px;margin-top:8px;max-height:200px;overflow:auto;"></pre>
+  <button class="btn btn-success" id="processDataBtn">Process Data</button>
+`;
+document.querySelector('.page#page18 .content').appendChild(legacyArea);
+
+document.getElementById('analyzeBtn')?.addEventListener('click', async () => {
+  const legacyEl = document.getElementById('legacyData');
+  const raw = legacyEl ? (legacyEl as any).value : '';
+  if (!raw) return alert('Enter legacy data');
+  try {
+    const resp = await fetch('/api/learning/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sampleData: raw })
+    });
+    const result = await resp.json();
+    if (result.success) {
+      document.getElementById('mappingOutput')!.textContent = JSON.stringify(result.mapping, null, 2);
+    } else {
+      alert('Analysis failed: ' + (result.error || result.raw));
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Error calling analyze');
+  }
+});
+
+document.getElementById('processDataBtn')?.addEventListener('click', async () => {
+  const legacyEl = document.getElementById('legacyData');
+  const raw = legacyEl ? (legacyEl as any).value : '';
+  const mappingText = document.getElementById('mappingOutput')?.textContent;
+  if (!raw || !mappingText) return alert('Provide data and mapping');
+  let mapping;
+  try { mapping = JSON.parse(mappingText); } catch { return alert('Invalid mapping JSON'); }
+  try {
+    const resp = await fetch('/api/learning/apply-model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawData: raw, mapping })
+    });
+    const result = await resp.json();
+    alert(result.message || 'Processed');
+  } catch (e) {
+    console.error(e);
+    alert('Error applying model');
+  }
+});
+</script>
   </div>
