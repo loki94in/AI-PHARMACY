@@ -1,0 +1,7 @@
+node_modules/
+.wwebjs_auth/
+.env
+data/*.db
+backup/
+catalog/*.pdf
+.wwebjs_cache/

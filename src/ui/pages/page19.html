@@ -26,7 +26,7 @@
             <select><option>Select recipient…</option><option>All Patients (Refill Due)</option><option>Specific Patient</option><option>All Distributors</option></select>
           </div>
           <div class="btn-row">
-            <button class="btn btn-ghost">💬 Send Test Message</button>
+            <button class="btn btn-ghost" id="sendTestMsgBtn">💬 Send Test Message</button>
             <button class="btn btn-primary">📤 Send</button>
           </div>
         </div>
@@ -265,6 +265,25 @@ function startQRCodePolling() {
   setInterval(updateQR, 5000);
 }
 startQRCodePolling();
+
+// Send Test Message button handler
+document.getElementById('sendTestMsgBtn')?.addEventListener('click', async () => {
+  try {
+    const payload = { chatId: null, message: 'Test message from Pharmacy OS' };
+    const resp = await fetch('/api/utilities/telegram/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Message sent');
+  } catch (e) {
+    console.error('Send test message error:', e);
+    alert('Failed to send test message');
+  }
+});
+
 </script>
 
 <!-- Modals -->
