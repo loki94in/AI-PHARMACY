@@ -141,6 +141,18 @@ router.post('/cloud/push', async (req, res) => {
 });
 
 // Restore backup placeholder
+// New placeholder route: backup/restore
+router.post('/backup/restore', async (req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['RESTORE_BACKUP', 'Backup restore triggered via /backup/restore']);
+    await db.close();
+    res.json({ success: true, message: 'Backup restored (simulated)' });
+  } catch (e) {
+    console.error('Backup restore error:', e);
+    res.status(500).json({ error: 'Failed to restore backup' });
+  }
+});
 router.post('/restore', async (req, res) => {
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
@@ -175,7 +187,12 @@ router.get('/test-connection', async (req, res) => {
     const row = await db.get('SELECT 1 as ok');
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', [actionType, `Test connection ${service ? 'for ' + service : 'generic'}`]);
     await db.close();
-    res.json({ success: true, message: `Connection OK${service ? ' for ' + service : ''}`, result: row });
+    let message = 'Connection test OK';
+    if (service) {
+      const friendly = service.charAt(0).toUpperCase() + service.slice(1);
+      message = `${friendly} test OK`;
+    }
+    res.json({ success: true, message, result: row });
   } catch (e) {
     console.error('Test connection error:', e);
     res.status(500).json({ error: 'Connection test failed' });

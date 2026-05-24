@@ -11,6 +11,7 @@ import { initClient, sendMessage } from './whatsappClient.js';
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
 import utilitiesRouter from './routes/utilities.js';
+import securityRouter from './routes/security.js';
 // Agent 1 (Core) Routers
 import salesRouter from './routes/sales.js';
 import inventoryRouter from './routes/inventory.js';
@@ -143,6 +144,7 @@ const PORT = process.env.PORT || 3000;
 // Mount Agent 2 Routers
 app.use('/api/crm', crmRouter);
 app.use('/api/utilities', utilitiesRouter);
+app.use('/api/security', securityRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/migration', migrationRouter);
 app.use('/api/settings', settingsRouter);
