@@ -4,5 +4,29 @@
       "Bash(dir C:\\\\Users\\\\ratna *)",
       "WebFetch(domain:gemini.google.com)"
     ]
+  },
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -c \"[System.Media.SystemSounds]::Exclamation.Play()\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -c \"[System.Media.SystemSounds]::Exclamation.Play()\""
+          }
+        ]
+      }
+    ]
   }
 }

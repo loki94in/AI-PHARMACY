@@ -6,6 +6,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import multer from 'multer';
+import { initClient, sendMessage } from './whatsappClient.js';
+
+// Agent 2 (CRM & Utilities) Routers
+import crmRouter from './routes/crm.js';
+import utilitiesRouter from './routes/utilities.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,18 +25,25 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 // Multer storage config
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, UPLOAD_DIR);
   },
-  filename: (req, file, cb) => {
+  filename: (_req, file, cb) => {
     cb(null, Date.now() + '-' + file.originalname);
   }
 });
 const upload = multer({ storage });
 
 const app = express();
+
+// Ensure DB schema is up to date
+import { ensureSchema } from './database.js';
+ensureSchema(DB_PATH).catch(err => console.error('Schema init error:', err));
 app.use(cors());
 app.use(express.json());
+
+// Serve UI static files
+app.use('/ui', express.static(path.join(__dirname, 'ui')));
 
 // API to upload file and enqueue it directly
 app.post('/api/upload', upload.single('file'), async (req, res) => {
@@ -65,7 +77,7 @@ app.get('/api/medicines', async (req, res) => {
 });
 
 // Purchases Engine APIs
-app.get('/api/distributors', async (req, res) => {
+app.get('/api/distributors', async (_req, res) => {
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const distributors = await db.all('SELECT * FROM distributors ORDER BY name');
@@ -97,7 +109,7 @@ app.post('/api/purchases', async (req, res) => {
 });
 
 // API to fetch all catalog jobs
-app.get('/api/jobs', async (req, res) => {
+app.get('/api/jobs', async (_req, res) => {
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const jobs = await db.all('SELECT * FROM catalog_jobs ORDER BY created_at DESC');
@@ -110,6 +122,30 @@ app.get('/api/jobs', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// Mount Agent 2 Routers
+app.use('/api/crm', crmRouter);
+app.use('/api/utilities', utilitiesRouter);
+
+// Manual refill reminder endpoint
+app.post('/api/patients/send-refill', async (req, res) => {
+  const { whatsapp_number, name } = req.body;
+  if (!whatsapp_number) {
+    return res.status(400).json({ error: 'WhatsApp number required' });
+  }
+  try {
+    // Simple reminder text – can be templated later
+    const message = `Hello ${name || ''}, your medication refill is due soon. Please visit the pharmacy.`;
+    await sendMessage(whatsapp_number, undefined, message);
+    res.json({ success: true, message: 'Reminder sent' });
+  } catch (err) {
+    console.error('WhatsApp send error:', err);
+    res.status(500).json({ error: 'Failed to send reminder' });
+  }
+});
+
+initClient().catch(err => console.error('WhatsApp init error:', err));
+
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });

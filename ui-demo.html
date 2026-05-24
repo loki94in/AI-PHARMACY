@@ -1130,6 +1130,7 @@
             <div style="display: flex; gap: 8px; margin-top: 8px;">
               <button id="btn-save" class="btn btn-ghost" style="padding: 4px 12px; font-size: 11px;" onclick="processSale(false)">Save [F10]</button>
               <button id="btn-save-print" class="btn btn-primary" style="padding: 4px 12px; font-size: 11px; box-shadow: 0 0 10px rgba(52,211,153,0.3);" onclick="processSale(true)">Save & Print [F11]</button>
+                <button id="btn-reminder" class="btn btn-primary" style="padding: 4px 12px; font-size: 11px; box-shadow: 0 0 10px rgba(56,189,248,0.3);" onclick="sendRefillReminder()">Send Refill Reminder</button>
             </div>
           </div>
         </div>
@@ -2773,6 +2774,31 @@ async function loadMedicines() {
   }
 }
 loadMedicines();
+</script>
+<script>
+async function sendRefillReminder() {
+  const phone = document.getElementById('pos-patient-input').value;
+  if (!phone) {
+    alert('Enter patient WhatsApp number first');
+    return;
+  }
+  try {
+    const resp = await fetch('/api/patients/send-refill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ whatsapp_number: phone })
+    });
+    const result = await resp.json();
+    if (result.success) {
+      alert('Reminder sent');
+    } else {
+      alert('Failed: ' + (result.error || 'unknown'));
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Error sending reminder');
+  }
+}
 </script>
 </body>
 </html>

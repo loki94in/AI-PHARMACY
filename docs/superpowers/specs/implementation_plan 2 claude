@@ -1,0 +1,84 @@
+# AI Pharmacy Implementation Plan (Dual-Agent Strategy)
+
+This plan outlines the current state of the application and proposes a structured execution strategy that allows two Claude agents to work side-by-side without conflicting with each other. 
+
+## 1. Current State Assessment
+
+Currently, the following foundation is established in the workspace:
+* **Server Foundation (`src/server.ts`)**: Basic Express API server connected to SQLite.
+* **Database Schema (`src/database.ts`)**: Tables for `medicines`, `catalog_jobs`, `processed_files`, `distributors`, and `purchases`.
+* **Data Extraction (`src/extractor.ts`)**: Logic for extracting medicine names from PDFs (via `pdf-parse`) and CSVs.
+* **WhatsApp Integration (`src/whatsappClient.ts`)**: Initialized connection and simple message-sending capability using `whatsapp-web.js`.
+* **UI Skeleton (`ui-demo.html`, `script.js`)**: A massive front-end demo file containing layout and mock API responses for 18 distinct pages.
+* **Documentation (`AI PHARMACY.MD`)**: A comprehensive breakdown of system rules, 18 pages, core workflows, and end-of-cycle rules.
+
+## 2. Side-by-Side Execution Strategy
+
+To enable 2 Claude agents to build side-by-side, we must isolate their workspaces by domain boundaries. They will share the `database.ts` and `server.ts` files, so they must be careful to append their endpoints and table schemas cleanly or work on separate router files.
+
+### ⚠️ User Review Required
+> [!IMPORTANT]
+> The current `ui-demo.html` is a monolithic 150KB+ file. For two agents to work concurrently on the UI without causing massive merge conflicts, we strongly recommend splitting the UI into separate modular components (e.g., using distinct HTML/JS files per page or adopting a lightweight component structure) before proceeding.
+> 
+> *Do you approve breaking `ui-demo.html` into modular pieces as step 1?*
+
+---
+
+## 3. Agent A: Core Business Operations & Inventory
+
+**Domain**: Sales, Inventory, Returns, and Financial Logic.
+
+### Proposed Changes
+#### [MODIFY] `src/database.ts`
+* Add schemas for `sales_invoices`, `sale_items`, `inventory_master`, `returns`, and `orders`.
+
+#### [NEW] `src/routes/sales.ts`
+* API endpoints for generating sequential numbers (`S-YYYY-XXXX`).
+* Endpoints for processing a cart and calculating totals/taxes.
+
+#### [NEW] `src/routes/inventory.ts`
+* CRUD operations for `inventory_master`.
+* Endpoints for "Smart-Hover Peek" price comparison logs.
+* Stock override adjustments.
+
+#### [NEW] `src/ui/sales.html` / `src/ui/inventory.html`
+* Split these pages out of `ui-demo.html`.
+* Implement actual API wiring replacing the mock functions in `script.js`.
+
+---
+
+## 4. Agent B: CRM, Communication, & System Utilities
+
+**Domain**: Customers, WhatsApp hooks, Backup, Email Imports, Barcodes, Settings.
+
+### Proposed Changes
+#### [MODIFY] `src/database.ts`
+* Add schemas for `customers`, `settings`, `action_logs`.
+
+#### [NEW] `src/routes/crm.ts`
+* API for customer profile ledger, search, and history.
+* Special order requests and arrival flags.
+
+#### [NEW] `src/routes/utilities.ts`
+* Endpoints to generate barcodes (via `pdfkit`).
+* Endpoints to trigger manual database backups and archives.
+
+#### [NEW] `src/services/backgroundWorker.ts`
+* Expand `catalogWorker` into a broader background service.
+* Implement email/gmail polling logic for distributors.
+* Implement cron jobs for "Expiry-Near" alerts and "Medication Refill" WhatsApp notifications.
+
+#### [NEW] `src/ui/customers.html` / `src/ui/settings.html`
+* Split these pages out of `ui-demo.html`.
+* Wire up real APIs for WhatsApp notifications and Settings modifications.
+
+## 5. Verification Plan
+
+### Automated Tests
+- Both agents will run `npm test` after pushing their features to ensure they haven't broken the shared database connections or WhatsApp logic.
+- Agent A will write unit tests for financial math (Tax, GST, Subtotals).
+- Agent B will write unit tests for the Backup loop and Notification scheduling.
+
+### Manual Verification
+- Verify the offline-first requirement: Turn off Wi-Fi and ensure Agent A's Sales page can still add items and complete a transaction.
+- Agent B's WhatsApp notifications should gracefully queue and wait until an internet connection is restored.

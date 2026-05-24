@@ -38,6 +38,61 @@ export async function ensureSchema(dbPath: string) {
     );
     CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines (name);
     CREATE INDEX IF NOT EXISTS idx_catalog_jobs_status ON catalog_jobs (status);
+
+    -- Agent A: Core Business & Inventory Schemas
+    CREATE TABLE IF NOT EXISTS inventory_master (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      medicine_id INTEGER,
+      quantity INTEGER DEFAULT 0,
+      rack_location TEXT,
+      batch_no TEXT,
+      expiry_date DATETIME,
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+    CREATE TABLE IF NOT EXISTS sales_invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_no TEXT UNIQUE,
+      customer_id INTEGER,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      total_amount REAL,
+      tax_amount REAL
+    );
+    CREATE TABLE IF NOT EXISTS sale_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER,
+      inventory_id INTEGER,
+      quantity INTEGER,
+      unit_price REAL,
+      FOREIGN KEY(invoice_id) REFERENCES sales_invoices(id),
+      FOREIGN KEY(inventory_id) REFERENCES inventory_master(id)
+    );
+    CREATE TABLE IF NOT EXISTS returns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_no TEXT UNIQUE,
+      original_invoice_id INTEGER,
+      type TEXT CHECK(type IN ('sale', 'purchase')),
+      date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      total_amount REAL
+    );
+
+    -- Agent B: CRM, Communication, & Utilities Schemas
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      phone TEXT,
+      address TEXT,
+      notes TEXT
+    );
+    CREATE TABLE IF NOT EXISTS action_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action_type TEXT,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
   await db.close();
 }
