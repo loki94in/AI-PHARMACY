@@ -1,41 +1,53 @@
-# Make `ui-demo.html` Functional
+# Dual-Agent Technical Implementation Plan (19 Pages)
 
-Based on the `2026-05-23-page-wise-design.md` specifications, I will make `ui-demo.html` functional by implementing the JavaScript logic to handle Feature Flags dynamically. When a user toggles a feature flag in Page 14 (Settings), the corresponding UI elements across all pages will instantly show/hide or update.
+This plan provides a detailed, page-by-page roadmap for two Claude CLI agents to develop the Pharmacy Genius OS concurrently. The strategy relies on **strict file isolation**, **modular UI architecture**, and **independent database schemas** to prevent the agents from interfering with each other and getting stuck in undo/redo loops.
 
 ## User Review Required
-Please review the list of proposed changes to ensure all feature flag behaviors match your expectations.
+> [!IMPORTANT]  
+> **UI Modularization is Mandatory:** To prevent merge conflicts, the monolithic `ui-demo.html` and `script.js` must be split into separate files before the agents begin. Each page will have its own `.html` template and `.ts/.js` controller.
+> **Database Modularization:** The agents must NOT modify a single `database.ts` file concurrently. They will write their table schemas in isolated files (e.g., `src/db/schemas/sales.ts`) which the core server will automatically ingest.
+> 
+> *Do you approve breaking down the codebase into these strict domain modules before the agents start coding?*
 
-## Proposed Changes
+## Page-by-Page Agent Delegation Table
 
-### Add IDs to Settings Toggles (Page 14)
-I will assign specific IDs to the checkbox inputs in the Settings page:
-- `flag-ai_camera`
-- `flag-email_parser`
-- `flag-whatsapp`
-- `flag-cloud_backup`
-- `flag-learning_engine`
-- `flag-legal_register`
-- `flag-custom_labels`
-- `flag-cloud_export`
+| Page # | Page Name | Assigned Agent | Primary API Route | Dedicated UI Files | Feature Flags & Dependencies |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1** | POS Billing (Counter) | **Agent 1** (Core) | `/api/sales` | `sales.html`, `sales.js` | `ai_camera`, `learning_engine`. *Depends on Agent 2 for Learning Engine data.* |
+| **2** | Dashboard | **Agent 1** (Core) | `/api/dashboard` | `dashboard.html`, `dashboard.js` | Aggregates data; *Agent 2 must not modify dashboard API, only underlying data.* |
+| **3** | Inventory (Stock) | **Agent 1** (Core) | `/api/inventory` | `inventory.html`, `inventory.js` | None. Core data master. |
+| **4** | Purchases | **Agent 1** (Core) | `/api/purchases` | `purchases.html`, `purchases.js` | `email_parser`. *Depends on Agent 2's Email polling service.* |
+| **5** | Returns & Expiry | **Agent 1** (Core) | `/api/returns` | `returns.html`, `returns.js` | `ai_camera`. |
+| **6** | Orders & Requests | **Agent 1** (Core) | `/api/orders` | `orders.html`, `orders.js` | `email_parser`. |
+| **7** | Expiry Monitor | **Agent 1** (Core) | `/api/expiry` | `expiry.html`, `expiry.js` | `whatsapp`. *Pushes alerts to Agent 2's Messaging Hub.* |
+| **9** | Reports & Analytics | **Agent 1** (Core) | `/api/reports` | `reports.html`, `reports.js` | `cloud_export`. |
+| **17** | Legal Compliance | **Agent 1** (Core) | `/api/compliance` | `compliance.html`, `compliance.js` | `legal_register`. |
+| **8** | CRM / Customers | **Agent 2** (Utils) | `/api/crm` | `crm.html`, `crm.js` | `whatsapp`. |
+| **10** | Email Parser | **Agent 2** (Utils) | `/api/email` | `email.html`, `email.js` | `email_parser`. *Feeds data to Agent 1's Purchases.* |
+| **11** | Migration Tool | **Agent 2** (Utils) | `/api/migration` | `migration.html`, `migration.js` | None. Independent utility. |
+| **12** | Barcode Generator | **Agent 2** (Utils) | `/api/barcode` | `barcode.html`, `barcode.js` | `custom_labels`. *Reads Agent 1's Inventory data.* |
+| **13** | Safety & Backup | **Agent 2** (Utils) | `/api/backup` | `backup.html`, `backup.js` | `cloud_backup`. Independent utility. |
+| **14** | Settings | **Agent 2** (Utils) | `/api/settings` | `settings.html`, `settings.js` | Modifies global `config.json`. Both agents read this file. |
+| **15** | Support & Dispatch | **Agent 2** (Utils) | `/api/dispatch` | `dispatch.html`, `dispatch.js` | `whatsapp`. |
+| **16** | Archive & Purge | **Agent 2** (Utils) | `/api/archive` | `archive.html`, `archive.js` | `legal_register`. *Deletes old Agent 1 data safely.* |
+| **18** | Learning Engine | **Agent 2** (Utils) | `/api/learning` | `learning.html`, `learning.js` | `learning_engine`. *Exposes API for Agent 1's POS.* |
+| **19** | Messaging Hub | **Agent 2** (Utils) | `/api/messaging` | `messaging.html`, `messaging.js` | `whatsapp`. |
 
-### Add Target Classes/IDs to Conditional UI Elements
-I will add CSS classes to the elements that need to be toggled on or off based on the flags, such as:
-- **`ai_camera`**: Scan area on Page 1, Batch scan on Page 5.
-- **`email_parser`**: "Import from Email" button on Page 4, Orders sync UI on Page 6, Email Parser nav item and Page 10 contents.
-- **`whatsapp`**: "Send WhatsApp" buttons on Page 7 & Page 15, Messaging Hub nav item (Page 19).
-- **`learning_engine`**: Doctor suggestions sidebar on Page 1.
-- **`cloud_backup`**: "Upload to Telegram" button on Page 13.
-- **`legal_register`**: Schedule H1 toggle on Page 16 (will update its state).
-- **`custom_labels`**: Dynamic template UI on Page 12.
-- **`cloud_export`**: "Push to Cloud" button on Page 9.
+## Interference Prevention Rules (How to Avoid Loops)
 
-### Implement JavaScript Logic
-I will add a JavaScript function `updateFlags()` that:
-1. Reads the current `checked` state of all feature flag toggles.
-2. Toggles a CSS class (like `.hidden`) or updates `display` styles for the dependent UI elements.
-3. Automatically runs on page load and whenever a toggle is changed.
+1. **The "Read-Only Boundary" Rule:**
+   - Agent 1 owns the *creation* of transaction and inventory tables.
+   - Agent 2 can *read* these tables (e.g., Barcode Generator reading Inventory), but **must not alter the schema**.
+   - If Agent 2 needs a new column in an Agent 1 table, Agent 2 must create a separate relational table (e.g., `inventory_metadata`) instead of modifying Agent 1's file.
+
+2. **Isolated Background Tasks:**
+   - Agent 2 owns all background chron jobs (Email Parsing, WhatsApp, Backups).
+   - Agent 1 must not write background loops. Agent 1 simply pushes tasks to Agent 2's queues (e.g., saving a `Pending Message` record that Agent 2's worker picks up).
+
+3. **No Direct DOM Manipulation Overlap:**
+   - The agents will never edit the same `index.html` navigation sidebar. The sidebar will be rendered dynamically from a JSON config file (`routes.json`). Each agent will just append their pages to `routes.json`.
 
 ## Verification Plan
-1. Open `ui-demo.html` in the browser.
-2. Navigate to Page 14 (Settings) and toggle various feature flags.
-3. Navigate to dependent pages (like POS Billing, Purchases, Messaging Hub) and verify that the UI elements appear and disappear correctly based on the toggle state.
+1. **Setup Phase:** I (Antigravity) will split `ui-demo.html` into the folder structure required for the agents (`src/ui/pages/`).
+2. **Execution Phase:** You will open two terminal windows, run `claude` in each, and assign them their respective domain (Agent 1 vs Agent 2) by providing them this plan.
+3. **Automated Testing:** Both agents will be instructed to run `npm run lint` and verify file boundaries before committing.
