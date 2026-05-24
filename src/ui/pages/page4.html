@@ -22,7 +22,49 @@
   }
 })();
 </script>
+<script>
+let editPurchaseId = null;
+function openAddPurchaseModal() { editPurchaseId = null; document.getElementById('edit-purchase-modal').style.display = 'flex'; }
+function openEditPurchaseModal(button) {
+  const row = button.closest('tr');
+  // Placeholder: assume row has data-id attribute
+  editPurchaseId = row.dataset.id;
+  document.getElementById('purchase-field').value = row.cells[0].textContent.trim();
+  document.getElementById('edit-purchase-modal').style.display = 'flex';
+}
+function closePurchaseModal() { document.getElementById('edit-purchase-modal').style.display = 'none'; }
+function savePurchaseEdit() {
+  const val = document.getElementById('purchase-field').value;
+  if (editPurchaseId) {
+    fetch(`/api/purchases/${editPurchaseId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invoice_no: val })
+    })
+      .then(r => r.json())
+      .then(d => { console.log('Purchase updated', d); location.reload(); })
+      .catch(e => console.error(e));
+  } else {
+    console.log('Add purchase not implemented');
+  }
+  closePurchaseModal();
+}
+// Attach edit click handlers after DOM loads
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('button').forEach(btn => {
+    if (btn.textContent.trim() === 'Edit') btn.setAttribute('onclick', 'openEditPurchaseModal(this)');
+  });
+});
+</script>
     <div class="topbar">
+<div id="edit-purchase-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div style="background:#222;padding:20px;max-width:400px;">
+    <h3>Edit Purchase</h3>
+    <input id="purchase-field" placeholder="Value"/>
+    <button onclick="savePurchaseEdit()">Save</button>
+    <button onclick="closePurchaseModal()">Cancel</button>
+  </div>
+</div>
       <div>
         <div class="page-title">🛒 Purchases — Distributor Billing</div>
         <div class="page-subtitle">Page 4 · Manual invoice entry with rate comparison</div>
@@ -61,6 +103,7 @@
         </div>
         <div style="margin-left: auto;">
           <button class="btn btn-primary" id="btn-submit-purchase" onclick="submitPurchase()" style="padding: 4px 12px; font-size: 11px; background: #374151; color: white;">⬆ Upload [F2]</button>
+          <button class="btn btn-primary" onclick="openAddPurchaseModal()">+ Add Purchase</button>
         </div>
       </div>
 

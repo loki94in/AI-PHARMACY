@@ -22,6 +22,13 @@
                 <div class="field"><label>Body</label><textarea id="emailBody" rows="4" placeholder="Email content..."></textarea></div>
               </div>
               <button class="btn" id="sendEmailBtn">Send Email</button>
+              <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="telegram" onclick="
+          const message = 'Daily Pharmacy Summary: Total Sales and Purchases have been recorded successfully.';
+          fetch('/api/utilities/telegram/send', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ message })
+          }).then(res => res.json()).then(data => alert(data.message)).catch(err => alert('Telegram Error'));
+        ">☁️ Upload to Telegram</button>
               <div id="emailResult" class="notice mt8"></div>
             <script>
               document.getElementById('sendEmailBtn').addEventListener('click', async () => {

@@ -7,6 +7,22 @@
       <span class="flag-pill purple" data-requires="legal_register">legal_register</span>
     </div>
     <div class="content">
+<script>
+function previewArchive(){
+  // Simple preview: fetch records older than default threshold (3 years)
+  fetch('/api/archive/preview?days=1095')
+    .then(r=>r.json())
+    .then(data=>{ console.log('Preview records:', data); alert('Preview: ' + JSON.stringify(data)); })
+    .catch(e=>console.error(e));
+}
+function runArchive(){
+  // Execute sweep of old action_logs into archive
+  fetch('/api/archive/sweep', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({days:1095})})
+    .then(r=>r.json())
+    .then(d=>{ console.log('Archive result:', d); alert('Archive completed'); })
+    .catch(e=>console.error(e));
+}
+</script>
       <div class="flag-section">
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill purple" data-requires="legal_register">legal_register → Schedule H1/Narcotic rows preserved from purge</span>
@@ -27,8 +43,8 @@
           <label class="toggle"><input type="checkbox" id="preserve-h1-toggle" disabled /><span class="slider"></span></label>
         </div>
         <div class="btn-row mt8">
-          <button class="btn btn-ghost">📊 Preview Records to Archive</button>
-          <button class="btn btn-danger ml-auto">🗄️ Run Archive</button>
+          <button class="btn btn-ghost" onclick="previewArchive()">📊 Preview Records to Archive</button>
+          <button class="btn btn-danger ml-auto" onclick="runArchive()">🗄️ Run Archive</button>
         </div>
         <div class="progress-wrap mt14" style="display:none;">
           <div class="progress-label"><span>Archiving…</span><span>0%</span></div>

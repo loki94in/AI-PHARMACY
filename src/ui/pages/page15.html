@@ -7,6 +7,14 @@
       <span class="flag-pill green" data-requires="whatsapp">whatsapp</span>
     </div>
     <div class="content">
+<script>
+function openDispatchWizard(){
+  // Placeholder: could open a modal or navigate to wizard UI
+  console.log('Dispatch Wizard opened');
+  // Example: open a new window or modal
+  // window.open('/dispatch-wizard', '_blank');
+}
+</script>
       <div class="flag-section">
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill green" data-requires="whatsapp">whatsapp ON → Automated dispatch active</span>
@@ -24,8 +32,8 @@
           </table>
         </div>
         <div class="btn-row mt8">
-          <button class="btn btn-ghost">📄 Export Logs</button>
-          <button class="btn btn-green" data-requires="whatsapp">💬 Dispatch Wizard</button>
+          <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=logs', '_blank')">📄 Export Logs</button>
+          <button class="btn btn-green" data-requires="whatsapp" onclick="openDispatchWizard()">💬 Dispatch Wizard</button>
         </div>
       </div>
     </div>

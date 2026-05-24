@@ -23,4 +23,17 @@ router.get('/', async (_req, res) => {
   }
 });
 
+router.put('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { distributor, invoice_no, total_amount } = req.body;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('UPDATE purchases SET distributor = ?, invoice_no = ?, total_amount = ? WHERE id = ?', [distributor, invoice_no, total_amount, id]);
+    await db.close();
+    res.json({ success: true, message: 'Purchase updated' });
+  } catch (error) {
+    console.error('Purchase update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 export default router;

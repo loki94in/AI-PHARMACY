@@ -64,4 +64,19 @@ router.get('/peek/:medicine_id', async (req, res) => {
   }
 });
 
+router.put('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { quantity, rack_location, batch_no, expiry_date, reorder_level } = req.body;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run(`UPDATE inventory_master SET quantity = ?, rack_location = ?, batch_no = ?, expiry_date = ?, reorder_level = ? WHERE id = ?`,
+      [quantity, rack_location, batch_no, expiry_date, reorder_level, id]
+    );
+    await db.close();
+    res.json({ success: true, message: 'Inventory updated' });
+  } catch (error) {
+    console.error('Inventory update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 export default router;

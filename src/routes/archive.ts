@@ -37,4 +37,41 @@ router.post('/purge', async (req, res) => {
   }
 });
 
+router.get('/preview', async (req, res) => {
+  const days = parseInt(req.query.days as string) || 1095; // default 3 years
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const iso = cutoff.toISOString();
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all('SELECT * FROM action_logs WHERE created_at < ?', iso);
+    await db.close();
+    res.json(rows);
+  } catch (error) {
+    console.error('Archive preview error:', error);
+    res.status(500).json({ error: 'Failed to preview archive' });
+  }
+});
+
+router.post('/sweep', async (req, res) => {
+  const { days = 1095 } = req.body; // default 3 years
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const iso = cutoff.toISOString();
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run(`CREATE TABLE IF NOT EXISTS archived_action_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, action_type TEXT, description TEXT, timestamp TEXT)`);
+    const rows = await db.all('SELECT * FROM action_logs WHERE created_at < ?', iso);
+    for (const row of rows) {
+      await db.run('INSERT INTO archived_action_logs (action_type, description, timestamp) VALUES (?,?,?)', [row.action_type, row.description, row.timestamp]);
+    }
+    await db.run('DELETE FROM action_logs WHERE created_at < ?', iso);
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['ARCHIVE', `Archived ${rows.length} logs older than ${days} days`]);
+    await db.close();
+    res.json({ success: true, archived: rows.length });
+  } catch (error) {
+    console.error('Archive sweep error:', error);
+    res.status(500).json({ error: 'Failed to sweep archive' });
+  }
+});
 export default router;

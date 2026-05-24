@@ -45,8 +45,13 @@
         </div>
         <div class="btn-row">
           <button class="btn btn-primary">📊 Generate Report</button>
-          <button class="btn btn-ghost">📄 Export PDF</button>
-          <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="cloud_export">☁️ Push to Cloud Storage</button>
+          <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=sales', '_blank')">📄 Export PDF</button>
+          <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="cloud_export" onclick="
+            fetch('/api/utilities/cloud/push', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => alert(data.message))
+            .catch(err => alert('Cloud push error'));
+          ">☁️ Push to Cloud Storage</button>
         </div>
       </div>
       <div class="grid2">

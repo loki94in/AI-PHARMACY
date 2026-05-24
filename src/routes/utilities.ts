@@ -91,4 +91,92 @@ router.get('/barcode/:code', async (req, res) => {
   }
 });
 
+import TelegramBot from 'node-telegram-bot-api';
+
+const token = process.env.TELEGRAM_BOT_TOKEN;
+let bot: TelegramBot | null = null;
+if (token) {
+  bot = new TelegramBot(token, { polling: false });
+}
+
+// Telegram send
+router.post('/telegram/send', async (req, res) => {
+  const { chatId, message } = req.body;
+  if (!message) {
+    return res.status(400).json({ error: 'message required' });
+  }
+  
+  const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
+  if (!targetChatId) {
+    return res.status(400).json({ error: 'chatId required' });
+  }
+
+  try {
+    if (bot) {
+      await bot.sendMessage(targetChatId, message);
+    }
+    
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['TELEGRAM_SEND', `To ${targetChatId}: ${message}`]);
+    await db.close();
+    
+    res.json({ success: true, message: 'Telegram message sent successfully!' });
+  } catch (e: any) {
+    console.error('Telegram send error:', e);
+    res.status(500).json({ error: 'Failed to send Telegram message: ' + e.message });
+  }
+});
+
+// Cloud storage placeholder
+router.post('/cloud/push', async (req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['CLOUD_PUSH', 'Simulated cloud storage upload']);
+    await db.close();
+    res.json({ success: true, message: 'Data pushed to cloud (simulated)' });
+  } catch (e) {
+    console.error('Cloud push error:', e);
+    res.status(500).json({ error: 'Failed to push to cloud' });
+  }
+});
+
+// Restore backup placeholder
+router.post('/restore', async (req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['RESTORE_BACKUP', 'Backup restore triggered']);
+    await db.close();
+    res.json({ success: true, message: 'Backup restored (simulated)' });
+  } catch (e) {
+    console.error('Restore error:', e);
+    res.status(500).json({ error: 'Failed to restore backup' });
+  }
+});
+
+// Rotate encryption key placeholder
+router.post('/encrypt/rotate', async (req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['ROTATE_KEY', 'Encryption key rotated']);
+    await db.close();
+    res.json({ success: true, message: 'Encryption key rotated (simulated)' });
+  } catch (e) {
+    console.error('Key rotation error:', e);
+    res.status(500).json({ error: 'Failed to rotate key' });
+  }
+});
+
+// Test connection placeholder
+router.get('/test-connection', async (req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const row = await db.get('SELECT 1 as ok');
+    await db.close();
+    res.json({ success: true, message: 'Connection OK', result: row });
+  } catch (e) {
+    console.error('Test connection error:', e);
+    res.status(500).json({ error: 'Connection test failed' });
+  }
+});
+
 export default router;

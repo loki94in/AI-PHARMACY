@@ -1,4 +1,6 @@
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
+import fs from 'fs';
 
 let clientInstance: Client | null = null;
 let initializing = false;
@@ -22,7 +24,26 @@ export async function initClient(): Promise<Client> {
   }
   initializing = true;
   return new Promise<Client>((resolve, reject) => {
-    const client = new Client({ authStrategy: new LocalAuth() });
+    
+    // Find local browser executable
+    let execPath = '';
+    const paths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+    ];
+    for (const p of paths) {
+      if (fs.existsSync(p)) {
+        execPath = p;
+        break;
+      }
+    }
+
+    const client = new Client({ 
+      authStrategy: new LocalAuth(),
+      puppeteer: execPath ? { executablePath: execPath } : {}
+    });
     client.on('qr', (qr: string) => {
       console.log('WhatsApp QR code received');
       currentQr = qr;

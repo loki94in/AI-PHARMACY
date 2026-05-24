@@ -25,6 +25,33 @@
   }
 })();
 </script>
+<script>
+function handleCustomerReturn() {
+  // Example POST for customer return
+  fetch('/api/returns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ return_no: 'R-' + Date.now(), type: 'customer', original_invoice_id: '', total_amount: 0 })
+  })
+    .then(r => r.json())
+    .then(d => { console.log('Customer return recorded', d); })
+    .catch(e => console.error(e));
+}
+function handleDistributorReturn() {
+  fetch('/api/returns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ return_no: 'D-' + Date.now(), type: 'distributor', original_invoice_id: '', total_amount: 0 })
+  })
+    .then(r => r.json())
+    .then(d => { console.log('Distributor return recorded', d); })
+    .catch(e => console.error(e));
+}
+function processReturn() {
+  console.log('Process Return clicked');
+  // Implement processing logic as needed
+}
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">↩️ Returns & Expiry — Correction Page</div>
@@ -45,8 +72,8 @@
         <span class="flag-pill sky" data-requires="ai_camera">ai_camera ON → Batch scan for expired strips enabled</span>
       </div>
       <div style="display:flex;gap:12px;margin-bottom:16px;">
-        <button class="btn btn-primary">👤 Customer Returns</button>
-        <button class="btn btn-ghost">🏪 Distributor Returns</button>
+        <button class="btn btn-primary" onclick="handleCustomerReturn()">👤 Customer Returns</button>
+        <button class="btn btn-ghost" onclick="handleDistributorReturn()">🏪 Distributor Returns</button>
       </div>
       <div class="card">
         <div class="card-title" data-requires="ai_camera"><span class="icon">📷</span> AI Camera — Batch Scan Expired Strips</div>
@@ -65,7 +92,7 @@
         <div class="btn-row">
           <button class="btn btn-ghost">📄 Generate Credit Note</button>
           <button class="btn btn-ghost">📄 Generate Debit Note</button>
-          <button class="btn btn-primary ml-auto">✅ Process Return</button>
+          <button class="btn btn-primary ml-auto" onclick="processReturn()">✅ Process Return</button>
         </div>
       </div>
     </div>
