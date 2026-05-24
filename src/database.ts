@@ -23,6 +23,19 @@ export async function ensureSchema(dbPath: string) {
       file_path TEXT PRIMARY KEY,
       last_processed DATETIME
     );
+    CREATE TABLE IF NOT EXISTS distributors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      contact TEXT
+    );
+    CREATE TABLE IF NOT EXISTS purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      distributor_id INTEGER,
+      invoice_no TEXT,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      total_amount REAL,
+      FOREIGN KEY(distributor_id) REFERENCES distributors(id)
+    );
     CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines (name);
     CREATE INDEX IF NOT EXISTS idx_catalog_jobs_status ON catalog_jobs (status);
   `);

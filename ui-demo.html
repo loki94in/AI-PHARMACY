@@ -1208,8 +1208,8 @@
         <div class="page-subtitle">Page 3 · CRUD, low-stock highlights — always on</div>
       </div>
       <div style="display: flex; gap: 8px;">
-        <button class="btn btn-ghost" style="border: 1px solid var(--border); font-size: 13px;"><span class="icon">📄</span> Upload PDF</button>
-        <button class="btn btn-ghost" style="border: 1px solid var(--border); font-size: 13px;"><span class="icon">📊</span> Upload CSV</button>
+        <input type="file" id="file-upload-input" style="display: none;" accept=".pdf,.csv" onchange="uploadFile(this)" />
+        <button class="btn btn-ghost" style="border: 1px solid var(--border); font-size: 13px;" onclick="document.getElementById('file-upload-input').click()"><span class="icon">📤</span> Upload PDF / CSV</button>
         <button class="btn btn-primary">+ Add Item</button>
       </div>
     </div>
@@ -1349,11 +1349,11 @@
       <div style="display: flex; gap: 12px; background: var(--surface2); border: 1px solid var(--border); padding: 8px 12px; align-items: center; font-size: 11px;">
         <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
           <span class="icon" style="color:var(--sky)">⚗️</span>
-          <input type="text" placeholder="DISTRIBUTOR [ALT+1]" style="background: transparent; border: none; color: var(--white); width: 140px; font-size: 11px; text-transform: uppercase;" />
+          <input type="text" id="distributor-input" placeholder="DISTRIBUTOR [ALT+1]" style="background: transparent; border: none; color: var(--white); width: 140px; font-size: 11px; text-transform: uppercase;" />
           <button class="btn btn-ghost" style="padding: 2px 6px;" onclick="openModal('add-distributor-modal')">+</button>
         </div>
         <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
-          <input type="text" placeholder="INVOICE NO [ALT+2]" style="background: transparent; border: none; color: var(--white); width: 120px; font-size: 11px; text-transform: uppercase;" />
+          <input type="text" id="invoice-input" placeholder="INVOICE NO [ALT+2]" style="background: transparent; border: none; color: var(--white); width: 120px; font-size: 11px; text-transform: uppercase;" />
         </div>
         <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
           <input type="text" value="24-05-2026" placeholder="[ALT+3]" style="background: transparent; border: none; color: var(--white); width: 80px; font-size: 11px;" />
@@ -1375,7 +1375,7 @@
           <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" /> TCS%</label>
         </div>
         <div style="margin-left: auto;">
-          <button class="btn btn-primary" style="padding: 4px 12px; font-size: 11px; background: #374151; color: white;">⬆ Upload [F2]</button>
+          <button class="btn btn-primary" id="btn-submit-purchase" onclick="submitPurchase()" style="padding: 4px 12px; font-size: 11px; background: #374151; color: white;">⬆ Upload [F2]</button>
         </div>
       </div>
 
@@ -2743,5 +2743,36 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+async function loadMedicines() {
+  try {
+    const resp = await fetch('/api/medicines');
+    const meds = await resp.json();
+    const tbody = document.getElementById('pending-imports-body');
+    const countSpan = document.getElementById('pending-imports-count');
+    tbody.innerHTML = '';
+    meds.forEach(med => {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--border)';
+      tr.innerHTML = `
+        <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
+        <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">${med.name}</td>
+        <td style="padding: 8px 12px;"><span style="background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3);">Linked to Inventory</span></td>
+        <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">-</td>
+        <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">-</td>
+        <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">-</td>
+        <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">-</td>
+        <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">-</td>
+        <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--sky); padding: 4px 8px;">Edit</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    countSpan.textContent = `${meds.length} items extracted`;
+  } catch (e) {
+    console.error('Failed to load medicines', e);
+  }
+}
+loadMedicines();
+</script>
 </body>
 </html>

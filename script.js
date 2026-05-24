@@ -27,6 +27,88 @@ function apiGet(endpoint) {
   });
 }
 
+async function uploadFile(input) {
+  if (!input.files || input.files.length === 0) return;
+  const file = input.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const btn = input.nextElementSibling;
+  const originalBtnText = btn.innerHTML;
+  btn.innerHTML = '⏳ Uploading...';
+  btn.style.pointerEvents = 'none';
+
+  try {
+    const res = await fetch('http://localhost:3000/api/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const result = await res.json();
+    if (result.success) {
+      btn.innerHTML = '✅ Queued!';
+      setTimeout(() => {
+        btn.innerHTML = originalBtnText;
+        btn.style.pointerEvents = 'auto';
+        loadPageData('page3'); // Refresh data
+      }, 2000);
+    } else {
+      throw new Error(result.error);
+    }
+  } catch (err) {
+    console.error('Upload failed', err);
+    btn.innerHTML = '❌ Failed';
+    setTimeout(() => {
+      btn.innerHTML = originalBtnText;
+      btn.style.pointerEvents = 'auto';
+    }, 2000);
+  }
+}
+
+async function submitPurchase() {
+  const distInput = document.getElementById('distributor-input');
+  const invInput = document.getElementById('invoice-input');
+  const btn = document.getElementById('btn-submit-purchase');
+  
+  if (!distInput.value || !invInput.value) {
+    alert('Please enter Distributor and Invoice No.');
+    return;
+  }
+
+  const payload = {
+    distributor: distInput.value.trim(),
+    invoice_no: invInput.value.trim(),
+    total_amount: 153.33 // Mock total from table
+  };
+
+  const originalBtnText = btn.innerHTML;
+  btn.innerHTML = '⏳ Saving...';
+  btn.style.pointerEvents = 'none';
+
+  try {
+    const res = await fetch('http://localhost:3000/api/purchases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (result.success) {
+      btn.innerHTML = '✅ Saved!';
+      distInput.value = '';
+      invInput.value = '';
+    } else {
+      throw new Error(result.error);
+    }
+  } catch (err) {
+    console.error('Save failed', err);
+    btn.innerHTML = '❌ Failed';
+  }
+
+  setTimeout(() => {
+    btn.innerHTML = originalBtnText;
+    btn.style.pointerEvents = 'auto';
+  }, 2000);
+}
+
 function loadPageData(pageId) {
   if (pageId === 'page3') {
     fetch('http://localhost:3000/api/medicines')
