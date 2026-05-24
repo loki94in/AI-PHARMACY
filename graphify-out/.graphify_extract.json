@@ -1,0 +1,816 @@
+{
+  "nodes": [
+    {
+      "id": "script_js",
+      "label": "script.js",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": "L1"
+    },
+    {
+      "id": "ai_pharmacy_script_mockdb",
+      "label": "mockDb",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": "L4"
+    },
+    {
+      "id": "ai_pharmacy_script_apiget",
+      "label": "apiGet()",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": "L21"
+    },
+    {
+      "id": "update_data_js",
+      "label": "update-data.js",
+      "file_type": "code",
+      "source_file": "update-data.js",
+      "source_location": "L1"
+    },
+    {
+      "id": "ai_pharmacy_update_data_fs",
+      "label": "fs",
+      "file_type": "code",
+      "source_file": "update-data.js",
+      "source_location": "L1"
+    },
+    {
+      "id": "ai_pharmacy_update_data_html",
+      "label": "html",
+      "file_type": "code",
+      "source_file": "update-data.js",
+      "source_location": "L3"
+    },
+    {
+      "id": "claude_settings_local_json",
+      "label": "settings.local.json",
+      "file_type": "code",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L1"
+    },
+    {
+      "id": "claude_settings_local_permissions",
+      "label": "permissions",
+      "file_type": "code",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L2"
+    },
+    {
+      "id": "claude_settings_local_permissions_allow",
+      "label": "allow",
+      "file_type": "code",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3"
+    },
+    {
+      "id": "api_get",
+      "label": "apiGet",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "load_page_data",
+      "label": "loadPageData",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "show",
+      "label": "show",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "init_demo",
+      "label": "initDemo",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "update_flags",
+      "label": "updateFlags",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "mock_db",
+      "label": "mockDb",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "flag_ai_camera",
+      "label": "ai_camera Flag",
+      "file_type": "rationale",
+      "source_file": "docs/superpowers/specs/2026-05-23-page-wise-design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "flag_email_parser",
+      "label": "email_parser Flag",
+      "file_type": "rationale",
+      "source_file": "docs/superpowers/specs/2026-05-23-page-wise-design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "flag_whatsapp",
+      "label": "whatsapp Flag",
+      "file_type": "rationale",
+      "source_file": "docs/superpowers/specs/2026-05-23-page-wise-design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "flag_learning_engine",
+      "label": "learning_engine Flag",
+      "file_type": "rationale",
+      "source_file": "docs/superpowers/specs/2026-05-23-page-wise-design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "flag_cloud_backup",
+      "label": "cloud_backup Flag",
+      "file_type": "rationale",
+      "source_file": "docs/superpowers/specs/2026-05-23-page-wise-design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "flag_legal_register",
+      "label": "legal_register Flag",
+      "file_type": "rationale",
+      "source_file": "docs/superpowers/specs/2026-05-23-page-wise-design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "flag_cloud_export",
+      "label": "cloud_export Flag",
+      "file_type": "rationale",
+      "source_file": "docs/superpowers/specs/2026-05-23-page-wise-design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page1",
+      "label": "POS Billing (Page 1)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page2",
+      "label": "Dashboard (Page 2)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page3",
+      "label": "Inventory Management (Page 3)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page4",
+      "label": "Purchases (Page 4)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page5",
+      "label": "Returns & Expiry (Page 5)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page6",
+      "label": "Orders & Requests (Page 6)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page7",
+      "label": "Expiry Monitor (Page 7)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page8",
+      "label": "CRM (Page 8)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page9",
+      "label": "Reports & Analytics (Page 9)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page10",
+      "label": "Email Parser (Page 10)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page13",
+      "label": "Safety & Backup (Page 13)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page14",
+      "label": "Settings & Preferences (Page 14)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page15",
+      "label": "Support & Dispatch (Page 15)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page16",
+      "label": "Archive & Purge (Page 16)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page17",
+      "label": "Legal & Compliance (Page 17)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page18",
+      "label": "Learning Engine (Page 18)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "page19",
+      "label": "Messaging Hub (Page 19)",
+      "file_type": "document",
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "script_js",
+      "target": "ai_pharmacy_script_mockdb",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "script.js",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "script_js",
+      "target": "ai_pharmacy_script_apiget",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "script.js",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "update_data_js",
+      "target": "fs",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "update-data.js",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "update_data_js",
+      "target": "ai_pharmacy_update_data_fs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "update-data.js",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "update_data_js",
+      "target": "ai_pharmacy_update_data_html",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "update-data.js",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "claude_settings_local_json",
+      "target": "claude_settings_local_permissions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "claude_settings_local_permissions",
+      "target": "claude_settings_local_permissions_allow",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "claude_settings_local_permissions_allow",
+      "target": "ref_bash_dir_c_users_ratna",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "claude_settings_local_permissions_allow",
+      "target": "ref_webfetch_domain_gemini_google_com",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "claude_settings_local_permissions_allow",
+      "target": "ref_bash_pip_install",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "load_page_data",
+      "target": "api_get",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "script.js",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "show",
+      "target": "load_page_data",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "script.js",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "init_demo",
+      "target": "update_flags",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "script.js",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "init_demo",
+      "target": "load_page_data",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "script.js",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "load_page_data",
+      "target": "mock_db",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "script.js",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page1",
+      "target": "flag_ai_camera",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page1",
+      "target": "flag_learning_engine",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page4",
+      "target": "flag_email_parser",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page5",
+      "target": "flag_ai_camera",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page6",
+      "target": "flag_email_parser",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page7",
+      "target": "flag_whatsapp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page8",
+      "target": "flag_whatsapp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page9",
+      "target": "flag_cloud_export",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page10",
+      "target": "flag_email_parser",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page13",
+      "target": "flag_cloud_backup",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_ai_camera",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_email_parser",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_whatsapp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_cloud_backup",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_learning_engine",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_legal_register",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_custom_labels",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page14",
+      "target": "flag_cloud_export",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page15",
+      "target": "flag_whatsapp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page16",
+      "target": "flag_legal_register",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page17",
+      "target": "flag_legal_register",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page18",
+      "target": "flag_learning_engine",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "page19",
+      "target": "flag_whatsapp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "ai_camera_pages",
+      "label": "Pages using ai_camera Flag",
+      "nodes": [
+        "page1",
+        "page5"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html"
+    },
+    {
+      "id": "email_parser_pages",
+      "label": "Pages using email_parser Flag",
+      "nodes": [
+        "page4",
+        "page6",
+        "page10"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html"
+    },
+    {
+      "id": "whatsapp_pages",
+      "label": "Pages using whatsapp Flag",
+      "nodes": [
+        "page7",
+        "page8",
+        "page15",
+        "page19"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "ui-demo.html"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

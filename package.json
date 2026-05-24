@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "enqueue-catalog": "ts-node ./src/cli/enqueueCatalog.ts",
+    "worker": "ts-node ./src/worker/catalogWorker.ts",
+    "watch-catalog": "ts-node ./src/cli/watchCatalog.ts",
     "enqueue-catalog": "node ./src/cli/enqueueCatalog.ts",
     "worker": "node ./src/worker/catalogWorker.ts",
     "watch-catalog": "node ./src/cli/watchCatalog.ts"
   },
   "dependencies": {
     "sqlite3": "^5.1.6",
+    "sqlite": "^5.0.2",
     "pdf-parse": "^1.1.1",
     "csv-parse": "^5.5.2",
     "chokidar": "^3.5.3"

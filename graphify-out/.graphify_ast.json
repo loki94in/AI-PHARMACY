@@ -1,0 +1,165 @@
+{
+  "nodes": [
+    {
+      "id": "script_js",
+      "label": "script.js",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": "L1"
+    },
+    {
+      "id": "ai_pharmacy_script_mockdb",
+      "label": "mockDb",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": "L4"
+    },
+    {
+      "id": "ai_pharmacy_script_apiget",
+      "label": "apiGet()",
+      "file_type": "code",
+      "source_file": "script.js",
+      "source_location": "L21"
+    },
+    {
+      "id": "update_data_js",
+      "label": "update-data.js",
+      "file_type": "code",
+      "source_file": "update-data.js",
+      "source_location": "L1"
+    },
+    {
+      "id": "ai_pharmacy_update_data_fs",
+      "label": "fs",
+      "file_type": "code",
+      "source_file": "update-data.js",
+      "source_location": "L1"
+    },
+    {
+      "id": "ai_pharmacy_update_data_html",
+      "label": "html",
+      "file_type": "code",
+      "source_file": "update-data.js",
+      "source_location": "L3"
+    },
+    {
+      "id": "claude_settings_local_json",
+      "label": "settings.local.json",
+      "file_type": "code",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L1"
+    },
+    {
+      "id": "claude_settings_local_permissions",
+      "label": "permissions",
+      "file_type": "code",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L2"
+    },
+    {
+      "id": "claude_settings_local_permissions_allow",
+      "label": "allow",
+      "file_type": "code",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3"
+    }
+  ],
+  "edges": [
+    {
+      "source": "script_js",
+      "target": "ai_pharmacy_script_mockdb",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "script.js",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "script_js",
+      "target": "ai_pharmacy_script_apiget",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "script.js",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "update_data_js",
+      "target": "fs",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "update-data.js",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "update_data_js",
+      "target": "ai_pharmacy_update_data_fs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "update-data.js",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "update_data_js",
+      "target": "ai_pharmacy_update_data_html",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "update-data.js",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "claude_settings_local_json",
+      "target": "claude_settings_local_permissions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "claude_settings_local_permissions",
+      "target": "claude_settings_local_permissions_allow",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "claude_settings_local_permissions_allow",
+      "target": "ref_bash_dir_c_users_ratna",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "claude_settings_local_permissions_allow",
+      "target": "ref_webfetch_domain_gemini_google_com",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "context": "import"
+    },
+    {
+      "source": "claude_settings_local_permissions_allow",
+      "target": "ref_bash_pip_install",
+      "relation": "extends",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude\\settings.local.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "context": "import"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

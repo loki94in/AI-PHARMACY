@@ -1,14 +1,15 @@
-import { execSync } from 'child_process';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
-import path from 'path';
+const { execSync } = require('child_process');
+const { open } = require('sqlite');
+const sqlite3 = require('sqlite3');
+const path = require('path');
 
 const DB_PATH = path.resolve(__dirname, '..', 'data', 'app.db');
 
 describe('Catalog pipeline', () => {
   beforeAll(() => {
     // Ensure a clean DB for the test run
-    execSync('rm -f data/app.db');
+    const fs = require('fs');
+if (fs.existsSync('data/app.db')) fs.unlinkSync('data/app.db');
   });
 
   test('enqueue adds a job', () => {
