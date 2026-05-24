@@ -29,7 +29,7 @@
           <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1400.db</strong><br><span class="fs11 text-muted">2.4 MB · Telegram ✓</span></div><div class="log-time">14:00</div></div>
           <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1300.db</strong><br><span class="fs11 text-muted">2.3 MB · Telegram ✓</span></div><div class="log-time">13:00</div></div>
           <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1200.db</strong><br><span class="fs11 text-muted">2.3 MB · Local only</span></div><div class="log-time">12:00</div></div>
-          <button class="btn btn-ghost mt8">🔄 Restore from Backup…</button>
+          <button class="btn btn-ghost mt8" id="restoreBackupBtn">🔄 Restore from Backup…</button>
         </div>
       </div>
     </div>
@@ -46,4 +46,17 @@
       alert('Backup failed');
     }
   });
+</script>
+<script>
+document.getElementById('restoreBackupBtn').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/utilities/backup/restore', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Restore completed');
+  } catch (e) {
+    console.error('Restore error:', e);
+    alert('Restore failed');
+  }
+});
 </script>

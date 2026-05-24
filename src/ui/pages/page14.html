@@ -166,3 +166,16 @@
     });
   });
 </script>
+<script>
+document.getElementById('rotateKeyBtn').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/security/rotate-key', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Encryption key rotated');
+  } catch (e) {
+    console.error('Rotate key error:', e);
+    alert('Failed to rotate key');
+  }
+});
+</script>

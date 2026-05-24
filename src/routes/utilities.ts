@@ -169,10 +169,13 @@ router.post('/encrypt/rotate', async (req, res) => {
 // Test connection placeholder
 router.get('/test-connection', async (req, res) => {
   try {
+    const service = (req.query.service as string) || '';
+    const actionType = service ? `TEST_CONNECTION_${service.toUpperCase()}` : 'TEST_CONNECTION';
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const row = await db.get('SELECT 1 as ok');
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', [actionType, `Test connection ${service ? 'for ' + service : 'generic'}`]);
     await db.close();
-    res.json({ success: true, message: 'Connection OK', result: row });
+    res.json({ success: true, message: `Connection OK${service ? ' for ' + service : ''}`, result: row });
   } catch (e) {
     console.error('Test connection error:', e);
     res.status(500).json({ error: 'Connection test failed' });
