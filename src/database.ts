@@ -9,6 +9,7 @@ export async function ensureSchema(dbPath: string) {
   const db = await open({ filename: dbPath, driver: sqlite3.Database });
   await db.exec(`
     CREATE TABLE IF NOT EXISTS medicines (
+      expiry_date TEXT,
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       api_reference TEXT
@@ -22,6 +23,14 @@ export async function ensureSchema(dbPath: string) {
     CREATE TABLE IF NOT EXISTS processed_files (
       file_path TEXT PRIMARY KEY,
       last_processed DATETIME
+    );
+    CREATE TABLE IF NOT EXISTS patients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      whatsapp_number TEXT,
+      refill_due_date DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_notified DATETIME
     );
     CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines (name);
     CREATE INDEX IF NOT EXISTS idx_catalog_jobs_status ON catalog_jobs (status);
