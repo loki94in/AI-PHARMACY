@@ -5,7 +5,20 @@
     const res = await fetch('/api/returns');
     if (!res.ok) throw new Error('Network response was not ok');
     const data = await res.json();
-    console.log('Returns data:', data);
+    const tbody = document.getElementById('returns-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    data.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r.return_no || ''}</td>
+        <td>${r.original_invoice_id || ''}</td>
+        <td>${r.type || ''}</td>
+        <td>${r.total_amount != null ? `₹${r.total_amount}` : ''}</td>
+        <td>${r.date || ''}</td>
+      `;
+      tbody.appendChild(tr);
+    });
     // TODO: populate UI with return entries
   } catch (e) {
     console.error('Returns fetch error:', e);
@@ -20,6 +33,13 @@
       <span class="flag-pill sky" data-requires="ai_camera">ai_camera</span>
     </div>
     <div class="content">
+    <div class="card">
+      <div class="card-title">Return History</div>
+      <table style="width:100%; border-collapse:collapse;">
+        <thead><tr><th>Return No</th><th>Original Invoice</th><th>Type</th><th>Total</th><th>Date</th></tr></thead>
+        <tbody id="returns-body"></tbody>
+      </table>
+    </div>
       <div class="flag-section">
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill sky" data-requires="ai_camera">ai_camera ON → Batch scan for expired strips enabled</span>

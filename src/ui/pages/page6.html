@@ -5,7 +5,20 @@
     const res = await fetch('/api/orders');
     if (!res.ok) throw new Error('Network response was not ok');
     const orders = await res.json();
-    console.log('Orders:', orders);
+    const tbody = document.getElementById('orders-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    orders.forEach(o => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${o.id || ''}</td>
+        <td>${o.product || ''}</td>
+        <td>${o.qty || ''}</td>
+        <td>${o.status || ''}</td>
+        <td>${o.date || ''}</td>
+      `;
+      tbody.appendChild(tr);
+    });
     // TODO: render orders list
   } catch (e) {
     console.error('Orders fetch error:', e);
@@ -20,6 +33,13 @@
       <span class="flag-pill orange" data-requires="email_parser">email_parser</span>
     </div>
     <div class="content">
+    <div class="card">
+      <div class="card-title">Order History</div>
+      <table style="width:100%; border-collapse:collapse;">
+        <thead><tr><th>Order ID</th><th>Product</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody id="orders-body"></tbody>
+      </table>
+    </div>
       <div class="flag-section">
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill orange" data-requires="email_parser">email_parser ON → Orders auto-created from email</span>

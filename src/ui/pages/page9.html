@@ -1,4 +1,26 @@
 <div class="page" id="page9">
+<script>
+(async () => {
+  try {
+    const res = await fetch('/api/reports');
+    if (!res.ok) throw new Error('Network response was not ok');
+    const data = await res.json();
+    // Update KPI elements if they have data-key attributes (example)
+    const map = {
+      revenue: data.monthlyRevenue,
+      profit: data.monthlyProfit,
+      gst: data.gstPayable,
+      topDistributor: data.topDistributor
+    };
+    for (const [key, value] of Object.entries(map)) {
+      const el = document.querySelector(`[data-key="page9"][data-field="${key}"]`);
+      if (el) el.textContent = typeof value === 'number' ? `₹${value}` : value;
+    }
+  } catch (e) {
+    console.error('Reports fetch error:', e);
+  }
+})();
+</script>
     <div class="topbar">
       <div>
         <div class="page-title">📈 Reports & Analytics</div>

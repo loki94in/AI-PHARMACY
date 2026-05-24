@@ -3,6 +3,9 @@ import { Client, LocalAuth } from 'whatsapp-web.js';
 let clientInstance: Client | null = null;
 let initializing = false;
 
+export let currentQr: string | null = null;
+export let isReady: boolean = false;
+
 /** Initialize the WhatsApp client and return it */
 export async function initClient(): Promise<Client> {
   if (clientInstance) return clientInstance;
@@ -21,15 +24,21 @@ export async function initClient(): Promise<Client> {
   return new Promise<Client>((resolve, reject) => {
     const client = new Client({ authStrategy: new LocalAuth() });
     client.on('qr', (qr: string) => {
-      console.log('QR code:', qr);
+      console.log('WhatsApp QR code received');
+      currentQr = qr;
+      isReady = false;
     });
     client.on('ready', () => {
+      console.log('WhatsApp Client is ready!');
       clientInstance = client;
       initializing = false;
+      isReady = true;
+      currentQr = null;
       resolve(client);
     });
     client.on('auth_failure', (msg: string) => {
       initializing = false;
+      isReady = false;
       reject(new Error(msg));
     });
     client.initialize();

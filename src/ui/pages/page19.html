@@ -11,6 +11,7 @@
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill green">whatsapp ON → All notification types route through this hub</span>
       </div>
+      <div id="qr-section" class="card"><div class="card-title"><span class="icon">🔒</span> WhatsApp QR Auth</div><div class="field"><label>Status</label><div id="qr-status">Initializing...</div></div><img id="qr-img" style="display:none; max-width:200px; margin-top:8px;" /></div>
       <div class="notice info">💬 All WhatsApp notifications — expiry alerts, refill reminders, dispatches — route through this hub.</div>
       <div class="grid2">
         <div class="card">
@@ -237,6 +238,33 @@
     }
   }
 
+function startQRCodePolling() {
+  async function updateQR() {
+    try {
+      const resp = await fetch('/api/messaging/qr');
+      if (!resp.ok) throw new Error('Network error');
+      const data = await resp.json();
+      const statusEl = document.getElementById('qr-status');
+      const img = document.getElementById('qr-img');
+      if (data.connected) {
+        statusEl.textContent = 'Connected';
+        img.style.display = 'none';
+      } else if (data.qrDataUrl) {
+        statusEl.textContent = 'Scan QR to connect';
+        img.src = data.qrDataUrl;
+        img.style.display = 'block';
+      } else {
+        statusEl.textContent = 'Waiting for QR...';
+        img.style.display = 'none';
+      }
+    } catch (e) {
+      console.error('QR fetch error:', e);
+    }
+  }
+  updateQR();
+  setInterval(updateQR, 5000);
+}
+startQRCodePolling();
 </script>
 
 <!-- Modals -->
