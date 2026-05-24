@@ -1,0 +1,21 @@
+{
+  "name": "ai-pharmacy",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "enqueue-catalog": "node ./src/cli/enqueueCatalog.ts",
+    "worker": "node ./src/worker/catalogWorker.ts",
+    "watch-catalog": "node ./src/cli/watchCatalog.ts"
+  },
+  "dependencies": {
+    "sqlite3": "^5.1.6",
+    "pdf-parse": "^1.1.1",
+    "csv-parse": "^5.5.2",
+    "chokidar": "^3.5.3"
+  },
+  "devDependencies": {
+    "jest": "^29.6.0",
+    "ts-jest": "^29.1.0",
+    "@types/jest": "^29.5.2"
+  }
+}
