@@ -111,6 +111,7 @@
           </div>
           <div class="btn-row mt14">
             <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
+            <button class="btn btn-primary" onclick="sendWhatsAppTestMessage()">📤 Send Test Message</button>
             <button class="btn btn-primary ml-auto">💾 Save</button>
           </div>
         </div>
@@ -180,22 +181,34 @@ document.getElementById('rotateKeyBtn').addEventListener('click', async () => {
 });
 </script>
 <script>
+async function sendWhatsAppTestMessage() {
+  try {
+    const resp = await fetch('/api/utilities/whatsapp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'WhatsApp test message sent');
+  } catch (e) {
+    console.error('Send WhatsApp test message error:', e);
+    alert('Failed to send WhatsApp test message');
+  }
+}
+</script>
+<script>
 document.querySelectorAll('.page#page14 .test-conn-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const card = btn.closest('.card');
-    let service = '';
+    let endpoint = '';
     if (card) {
       const titleEl = card.querySelector('.card-title');
       if (titleEl) {
         const txt = titleEl.textContent.toLowerCase();
-        if (txt.includes('gmail')) service = 'gmail';
-        else if (txt.includes('whatsapp')) service = 'whatsapp';
-        else if (txt.includes('telegram')) service = 'telegram';
+        if (txt.includes('gmail')) endpoint = '/api/utilities/gmail/test';
+        else if (txt.includes('whatsapp')) endpoint = '/api/utilities/whatsapp/test';
+        else if (txt.includes('telegram')) endpoint = '/api/utilities/test-connection?service=telegram';
       }
     }
     try {
-      const url = service ? `/api/utilities/test-connection?service=${service}` : '/api/utilities/test-connection';
-      const resp = await fetch(url);
+      const resp = await fetch(endpoint);
       if (!resp.ok) throw new Error('Network error');
       const data = await resp.json();
       alert(data.message || 'Connection successful');

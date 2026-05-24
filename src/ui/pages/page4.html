@@ -104,6 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="margin-left: auto;">
           <button class="btn btn-primary" id="btn-submit-purchase" onclick="submitPurchase()" style="padding: 4px 12px; font-size: 11px; background: #374151; color: white;">⬆ Upload [F2]</button>
           <button class="btn btn-primary" onclick="openAddPurchaseModal()">+ Add Purchase</button>
+          <button class="btn btn-ghost" id="discard-all-purchases" style="margin-left: 8px; color: var(--danger); font-size: 11px; padding: 4px 10px;">Discard All</button>
+          <button class="btn btn-primary" id="commit-selected-purchases" style="margin-left: 8px; font-size: 11px; padding: 4px 10px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
         </div>
       </div>
 
@@ -255,4 +257,55 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
     </div>
+
+    <script>
+      // Bulk purchase actions
+      document.addEventListener('DOMContentLoaded', () => {
+        const discardBtn = document.getElementById('discard-all-purchases');
+        const commitBtn = document.getElementById('commit-selected-purchases');
+
+        if (discardBtn) {
+          discardBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#purchases-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/purchases/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'discard', ids })
+              });
+              alert('All selected purchases discarded and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Discard failed');
+            }
+          });
+        }
+
+        if (commitBtn) {
+          commitBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#purchases-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/purchases/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'commit', ids })
+              });
+              alert('Selected purchases committed and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Commit failed');
+            }
+          });
+        }
+      });
+    </script>
+  </div>
   </div>

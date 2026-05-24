@@ -136,8 +136,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Source: <strong style="color: var(--white);">database (SQLite)</strong> • <span id="pending-imports-count">0 items extracted</span></div>
           </div>
           <div style="display: flex; gap: 8px;">
-            <button class="btn btn-ghost" style="color: var(--danger); font-size: 12px; padding: 6px 12px;">Discard All</button>
-            <button class="btn btn-primary" style="font-size: 12px; padding: 6px 12px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
+            <button class="btn btn-ghost" id="discard-all-btn" style="color: var(--danger); font-size: 12px; padding: 6px 12px;">Discard All</button>
+            <button class="btn btn-primary" id="commit-selected-btn" style="font-size: 12px; padding: 6px 12px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
           </div>
         </div>
         
@@ -247,4 +247,55 @@ document.addEventListener('DOMContentLoaded', () => {
         </table>
       </div>
     </div>
+
+    <script>
+      // Bulk inventory actions for Pending Imports section
+      document.addEventListener('DOMContentLoaded', () => {
+        const discardBtn = document.getElementById('discard-all-btn');
+        const commitBtn = document.getElementById('commit-selected-btn');
+
+        if (discardBtn) {
+          discardBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#pending-imports-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/inventory/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'discard', ids })
+              });
+              alert('All selected items discarded and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Discard failed');
+            }
+          });
+        }
+
+        if (commitBtn) {
+          commitBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#pending-imports-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/inventory/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'commit', ids })
+              });
+              alert('Selected items committed to stock and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Commit failed');
+            }
+          });
+        }
+      });
+    </script>
+  </div>
   </div>

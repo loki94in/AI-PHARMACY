@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
+    "aws-sdk": "^2.1693.0",
     "chokidar": "^3.6.0",
     "cors": "^2.8.6",
     "csv-parse": "^5.5.2",

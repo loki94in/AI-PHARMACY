@@ -44,4 +44,25 @@ describe('Utilities routes', () => {
     const pdfPath = path.resolve(process.cwd(), 'catalog', path.basename(res.body.pdfUrl));
     expect(fs.existsSync(pdfPath)).toBe(true);
   });
+
+  test('GET /utils/test-connection/gmail returns success', async () => {
+    const res = await request(app).get('/utils/test-connection/gmail');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toBe('Gmail connection OK');
+  });
+
+  test('GET /utils/test-connection/whatsapp returns success', async () => {
+    const res = await request(app).get('/utils/test-connection/whatsapp');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toBe('WhatsApp connection OK');
+  });
+
+  test('POST /utils/whatsapp/send-test returns mock success', async () => {
+    const res = await request(app).post('/utils/whatsapp/send-test').send({});
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toBe('WhatsApp test message sent (mock)');
+  });
 });

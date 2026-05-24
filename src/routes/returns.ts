@@ -44,7 +44,7 @@ router.post('/', async (req, res) => {
 });
 
 router.post('/financial-note', async (req, res) => {
-  const { type } = req.body;
+  const { type, amount, details } = req.body;
   if (!type) return res.status(400).json({ error: 'type required' });
   try {
     const doc = new PDFDocument();
@@ -53,6 +53,12 @@ router.post('/financial-note', async (req, res) => {
     const stream = fs.createWriteStream(outPath);
     doc.pipe(stream);
     doc.fontSize(20).text(`${type.charAt(0).toUpperCase() + type.slice(1)} Note`, { align: 'center' });
+    if (amount) {
+      doc.moveDown().fontSize(14).text(`Amount: ₹${amount}`, { align: 'center' });
+    }
+    if (details) {
+      doc.moveDown().fontSize(12).text(`Details: ${details}`);
+    }
     doc.moveDown().fontSize(12).text(`Generated on ${new Date().toLocaleString()}`);
     doc.end();
     await new Promise((resolve, reject) => {

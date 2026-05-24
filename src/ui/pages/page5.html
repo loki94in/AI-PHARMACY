@@ -1,139 +1,107 @@
 <div class="page" id="page5">
-<script>
-(async () => {
-  try {
-    const res = await fetch('/api/returns');
-    if (!res.ok) throw new Error('Network response was not ok');
-    const data = await res.json();
-    const tbody = document.getElementById('returns-body');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    data.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${r.return_no || ''}</td>
-        <td>${r.original_invoice_id || ''}</td>
-        <td>${r.type || ''}</td>
-        <td>${r.total_amount != null ? `₹${r.total_amount}` : ''}</td>
-        <td>${r.date || ''}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  } catch (e) {
-    console.error('Returns fetch error:', e);
-  }
-})();
-</script>
-<script>
-// Financial note handlers (Credit/Debit)
-document.querySelectorAll('button.btn-ghost').forEach(btn => {
-  const txt = btn.textContent.trim();
-  if (txt.includes('Credit Note')) {
-    btn.addEventListener('click', async () => {
+  <script>
+    (async () => {
       try {
-        const resp = await fetch('/api/returns/financial-note', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'credit' })
+        const res = await fetch('/api/returns');
+        if (!res.ok) throw new Error('Network response was not ok');
+        const data = await res.json();
+        const tbody = document.getElementById('returns-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        data.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${r.return_no || ''}</td>
+            <td>${r.original_invoice_id || ''}</td>
+            <td>${r.type || ''}</td>
+            <td>${r.total_amount != null ? '₹' + r.total_amount : ''}</td>
+            <td>${r.date || ''}</td>
+          `;
+          tbody.appendChild(tr);
         });
-        if (!resp.ok) throw new Error('Network error');
-        const data = await resp.json();
-        alert(data.message || 'Credit note generated');
       } catch (e) {
-        console.error(e);
-        alert('Failed to generate credit note');
+        console.error('Returns fetch error:', e);
+      }
+    })();
+  </script>
+  <script>
+    // Financial note handlers (Credit/Debit)
+    document.querySelectorAll('button.btn-ghost').forEach(btn => {
+      const txt = btn.textContent.trim();
+      if (txt.includes('Credit Note')) {
+        btn.addEventListener('click', async () => {
+          try {
+            const resp = await fetch('/api/returns/financial-note', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'credit', amount: 0, details: 'Generated from Returns page' })
+            });
+            if (!resp.ok) throw new Error('Network error');
+            const data = await resp.json();
+            if (data.url) {
+              window.open(data.url, '_blank');
+            }
+            alert(data.message || 'Credit note generated');
+          } catch (e) {
+            console.error(e);
+            alert('Failed to generate credit note');
+          }
+        });
+      }
+      if (txt.includes('Debit Note')) {
+        btn.addEventListener('click', async () => {
+          try {
+            const resp = await fetch('/api/returns/financial-note', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'debit', amount: 0, details: 'Generated from Returns page' })
+            });
+            if (!resp.ok) throw new Error('Network error');
+            const data = await resp.json();
+            if (data.url) {
+              window.open(data.url, '_blank');
+            }
+            alert(data.message || 'Debit note generated');
+          } catch (e) {
+            console.error(e);
+            alert('Failed to generate debit note');
+          }
+        });
       }
     });
-  }
-  if (txt.includes('Debit Note')) {
-    btn.addEventListener('click', async () => {
-      try {
-        const resp = await fetch('/api/returns/financial-note', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'debit' })
-        });
-        if (!resp.ok) throw new Error('Network error');
-        const data = await resp.json();
-        alert(data.message || 'Debit note generated');
-      } catch (e) {
-        console.error(e);
-        alert('Failed to generate debit note');
-      }
-    });
-  }
-});
-</script>
-<script>
-function handleCustomerReturn() {
-  // Example POST for customer return
-  fetch('/api/returns', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ return_no: 'R-' + Date.now(), type: 'customer', original_invoice_id: '', total_amount: 0 })
-  })
-    .then(r => r.json())
-    .then(d => { console.log('Customer return recorded', d); })
-    .catch(e => console.error(e));
-}
-function handleDistributorReturn() {
-  fetch('/api/returns', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ return_no: 'D-' + Date.now(), type: 'distributor', original_invoice_id: '', total_amount: 0 })
-  })
-    .then(r => r.json())
-    .then(d => { console.log('Distributor return recorded', d); })
-    .catch(e => console.error(e));
-}
-function processReturn() {
-  console.log('Process Return clicked');
-  // Implement processing logic as needed
-}
-</script>
-<script>
-// Financial note handlers (Credit/Debit)
-document.querySelectorAll('button.btn-ghost').forEach(btn => {
-  const txt = btn.textContent.trim();
-  if (txt.includes('Credit Note')) {
-    btn.addEventListener('click', async () => {
-      try {
-        const resp = await fetch('/api/returns/financial-note', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'credit' })
-        });
-        if (!resp.ok) throw new Error('Network error');
-        const data = await resp.json();
-        alert(data.message || 'Credit note generated');
-      } catch (e) {
-        console.error(e);
-        alert('Failed to generate credit note');
-      }
-    });
-  }
-  if (txt.includes('Debit Note')) {
-    btn.addEventListener('click', async () => {
-      try {
-        const resp = await fetch('/api/returns/financial-note', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'debit' })
-        });
-        if (!resp.ok) throw new Error('Network error');
-        const data = await resp.json();
-        alert(data.message || 'Debit note generated');
-      } catch (e) {
-        console.error(e);
-        alert('Failed to generate debit note');
-      }
-    });
-  }
-});
-</script>
+  </script>
+  <script>
+    function handleCustomerReturn() {
+      // Example POST for customer return
+      fetch('/api/returns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_no: 'R-' + Date.now(), type: 'customer', original_invoice_id: '', total_amount: 0 })
+      })
+        .then(r => r.json())
+        .then(d => { console.log('Customer return recorded', d); })
+        .catch(e => console.error(e));
+    }
+
+    function handleDistributorReturn() {
+      fetch('/api/returns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_no: 'D-' + Date.now(), type: 'distributor', original_invoice_id: '', total_amount: 0 })
+      })
+        .then(r => r.json())
+        .then(d => { console.log('Distributor return recorded', d); })
+        .catch(e => console.error(e));
+    }
+
+    function processReturn() {
+      console.log('Process Return clicked');
+      // Implement processing logic as needed
+    }
+  </script>
     <div class="topbar">
       <div>
-        <div class="page-title">↩️ Returns & Expiry — Correction Page</div>
+        <div class="page-title">↩️ Returns &amp; Expiry — Correction Page</div>
         <div class="page-subtitle">Page 5 · Customer returns, distributor returns, credit/debit notes</div>
       </div>
       <span class="flag-pill sky" data-requires="ai_camera">ai_camera</span>
