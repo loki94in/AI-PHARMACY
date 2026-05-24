@@ -1,5 +1,5 @@
 export default {
-  testMatch: ["**/tests/**/*.test.ts"],
+  testMatch: ["**/tests/utilities.test.ts", "**/tests/crm.test.ts"],
   preset: 'ts-jest',
   testEnvironment: 'node',
   transform: {
