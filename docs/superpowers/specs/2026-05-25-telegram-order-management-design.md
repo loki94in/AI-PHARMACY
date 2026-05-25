@@ -10,6 +10,7 @@ This document outlines the design for adding order management capabilities to th
 - Use interactive command flow for step-by-step interaction
 - Integrate with existing order/sales_invoices database table
 - Maintain security by restricting to authorized users (to be implemented via chat ID verification)
+- Make command responses clear and easy to understand
 
 ## Architecture
 
@@ -73,12 +74,28 @@ Add new method groups:
 #### 4. User Experience Flow
 ```
 User: /orders
-Bot: [Shows list of 5-10 recent orders with ID, customer, date, total, status]
-User: 12345 (order ID)
-Bot: [Shows detailed view of order 12345 with items, quantities, etc.]
-Bot: Select new status: [pending] [processing] [shipped] [delivered] [cancelled]
+Bot: 📋 RECENT ORDERS 📋
+     1. #1001 - John Doe - $1,250 - Pending
+     2. #1002 - Jane Smith - $875 - Processing
+     3. #1003 - Bob Johnson - $2,100 - Shipped
+     (Reply with order number to view details)
+
+User: 1002
+Bot: 📄 ORDER DETAILS: #1002 📄
+     Customer: Jane Smith
+     Phone: 555-1234
+     Date: 2026-05-20
+     Total: $875.00
+     Status: Processing
+     Items: 
+     - Paracetamol 500mg x 20
+     - Amoxicillin 250mg x 10
+     - Cetirizine 10mg x 15
+     Select new status:
+     [pending] [processing] [shipped] [delivered] [cancelled]
+
 User: shipped
-Bot: ✅ Order #12345 status updated to 'shipped'
+Bot: ✅ SUCCESS: Order #1002 status updated to 'shipped'
 ```
 
 ## Integration Points
@@ -88,12 +105,12 @@ Bot: ✅ Order #12345 status updated to 'shipped'
 - Follow same environmental configuration pattern (DB_PATH, TELEGRAM_BOT_TOKEN)
 
 ## Error Cases & Handling
-1. **Unauthorized user**: "Access denied. You are not authorized to use this bot."
-2. **No orders found**: "No recent orders found."
-3. **Invalid order ID**: "Invalid order ID. Please select from the list above."
-4. **Database error**: "Failed to retrieve orders. Please try again later."
-5. **Invalid status**: "Invalid status selected. Please choose from available options."
-6. **Update failed**: "Failed to update order status. Please try again."
+1. **Unauthorized user**: "🔒 Access denied. You are not authorized to use this bot."
+2. **No orders found**: "📭 No recent orders found."
+3. **Invalid order ID**: "❌ Invalid order ID. Please select from the list above."
+4. **Database error**: "💥 Failed to retrieve orders. Please try again later."
+5. **Invalid status**: "❌ Invalid status selected. Please choose from available options."
+6. **Update failed**: "💥 Failed to update order status. Please try again."
 
 ## Testing Strategy
 1. **Unit Tests**:
@@ -127,4 +144,4 @@ Bot: ✅ Order #12345 status updated to 'shipped'
 4. Are there specific status transition rules we should enforce? (e.g., can't go from delivered back to pending)
 
 ---
-*Design ready for review and approval.*
+*Design reviewed and ready for approval. All placeholders addressed.*

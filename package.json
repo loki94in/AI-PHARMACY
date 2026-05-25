@@ -28,6 +28,7 @@
     "qrcode": "^1.5.4",
     "sqlite": "^5.0.2",
     "sqlite3": "^6.0.1",
+    "tesseract.js": "^7.0.0",
     "unzipper": "^0.12.3",
     "whatsapp-web.js": "^1.22.0"
   },

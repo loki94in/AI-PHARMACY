@@ -1,0 +1,2 @@
+- [Using Superpowers - Brainstorming Skill](C:\Users\ratna\.claude\projects\e--CURRENT-PROJECT-ON-WORKING-AI-PHARMACY\memory\superpowers-brainstorming.md) - Explains how to find and use skills before any response
+- [Project Context - AI Pharmacy Telegram & Email Features](C:\Users\ratna\.claude\projects\e--CURRENT-PROJECT-ON-WORKING-AI-PHARMACY\memory\project-ai-pharmacy-telegram-email-features.md) - Telegram order management and email-triggered notifications for delivery boys

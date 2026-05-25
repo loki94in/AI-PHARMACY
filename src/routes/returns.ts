@@ -6,6 +6,7 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
+import { aiCameraService } from '../services/aiCameraService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

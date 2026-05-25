@@ -46,4 +46,10 @@ This project is running natively on **Windows**. You MUST adhere to these Window
    - DO NOT use `rm -rf`, use `rmdir /s /q` or `del /s /q`.
    - DO NOT use `grep` or `cat` in your shell terminal. Use native Node.js scripts or PowerShell equivalents if absolutely necessary.
 
+## 10. Handling Silent Commands
+When executing terminal commands that are naturally silent on success (such as `python -c "import module"` or silent scripts), ALWAYS append a command to print a confirmation (e.g., `&& echo "Success"` or adding `print('OK')`). This ensures you receive text feedback and do not falsely assume the command timed out or failed due to an empty response.
+
+## 11. Skill and Plugin Synchronization
+Whenever you install, update, or configure a new skill, plugin, or tool for the Claude CLI, you MUST automatically check for and run the equivalent installation command for the VS Code extension (if available) to ensure both the CLI and VS Code environments remain perfectly in sync on the PC.
+
 By following these rules, we will build a flawless application together!
