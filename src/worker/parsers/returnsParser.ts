@@ -150,7 +150,6 @@ export async function processReturnsLine(sqlLine: string, db: sqlite3.Database):
     return true;
   } catch (error) {
     console.error('Error processing legacy returns line:', error, line);
-    // Still return true because we attempted to process it (even if it failed)
-    return true;
+    return false;
   }
 }

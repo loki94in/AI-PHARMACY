@@ -19,12 +19,10 @@ describe('salesParser', () => {
     }
 
     // Open a test SQLite database
-    const dbInstance = await open({
+    db = await open({
       filename: TEST_DB_PATH,
       driver: sqlite3.Database
     });
-    // Extract the raw sqlite3 database object
-    db = dbInstance.driver as sqlite3.Database;
 
     // Create the required tables
     await db.exec(`

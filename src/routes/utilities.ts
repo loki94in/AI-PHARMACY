@@ -91,41 +91,7 @@ router.get('/barcode/:code', async (req, res) => {
   }
 });
 
-import TelegramBot from 'node-telegram-bot-api';
-
-const token = process.env.TELEGRAM_BOT_TOKEN;
-let bot: TelegramBot | null = null;
-if (token) {
-  bot = new TelegramBot(token, { polling: false });
-}
-
-// Telegram send
-router.post('/telegram/send', async (req, res) => {
-  const { chatId, message } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: 'message required' });
-  }
-  
-  const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
-  if (!targetChatId) {
-    return res.status(400).json({ error: 'chatId required' });
-  }
-
-  try {
-    if (bot) {
-      await bot.sendMessage(targetChatId, message);
-    }
-    
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['TELEGRAM_SEND', `To ${targetChatId}: ${message}`]);
-    await db.close();
-    
-    res.json({ success: true, message: 'Telegram message sent successfully!' });
-  } catch (e: any) {
-    console.error('Telegram send error:', e);
-    res.status(500).json({ error: 'Failed to send Telegram message: ' + e.message });
-  }
-});
+// Telegram functionality has been moved to src/telegramBot.ts
 
 // Cloud storage with AWS S3
 router.post('/cloud/push', async (req, res) => {

@@ -1,5 +1,67 @@
 import sqlite3 from 'sqlite3';
 
+/**
+ * Helper function to parse CSV-like values string respecting quotes
+ * Handles both single and double quotes
+ */
+function parseValues(valuesStr: string): string[] {
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    let quoteChar: string | null = null;
+
+    for (let i = 0; i < valuesStr.length; i++) {
+        const char = valuesStr[i];
+
+        if (char === '"' || char === "'") {
+            if (!inQuotes) {
+                inQuotes = true;
+                quoteChar = char;
+            } else if (quoteChar === char) {
+                inQuotes = false;
+                quoteChar = null;
+            } else {
+                // Inside quotes but different quote char - treat as literal
+                current += char;
+            }
+        } else if (char === ',' && !inQuotes) {
+            values.push(current);
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+
+    // Push the last value
+    values.push(current);
+
+    // Trim each value and remove surrounding quotes if they exist
+    return values.map(val => {
+        let trimmed = val.trim();
+        if ((trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+            (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+            trimmed = trimmed.slice(1, -1);
+        }
+        return trimmed;
+    });
+}
+
+/**
+ * Helper function to clean a value (remove surrounding quotes)
+ */
+function cleanValue(val: string): string {
+    let cleaned = val.trim();
+    // Remove surrounding single quotes
+    if (cleaned.startsWith("'") && cleaned.endsWith("'") && cleaned.length > 1) {
+        cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+    // Remove surrounding double quotes
+    if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 1) {
+        cleaned = cleaned.substring(1, cleaned.length - 1);
+    }
+    return cleaned;
+}
+
 // Helper function to normalize various date formats to ISO 8601 DATETIME string (YYYY-MM-DD HH:MM:SS)
 // Returns null for invalid dates or NULL input
 // Returns undefined if the input was NULL/empty (to distinguish from invalid dates)
@@ -111,9 +173,8 @@ export async function processInventoryLine(sqlLine: string, db: sqlite3.Database
     // Extract the values string between parentheses
     const valuesStr = afterValues.substring(openParenIndex + 1, closeParenIndex).trim();
 
-    // Split values by comma (naive approach - assumes no commas inside string values)
-    // In a real migration, we'd use a proper SQL parser, but for simplicity we assume clean data
-    const rawValues = valuesStr.split(',').map(v => v.trim());
+    // Use proper CSV-like parsing that respects quotes
+    const rawValues = parseValues(valuesStr);
 
     // We expect 5 columns: medicine_id, quantity, rack_location, batch_no, expiry_date
     if (rawValues.length !== 5) {
@@ -121,21 +182,7 @@ export async function processInventoryLine(sqlLine: string, db: sqlite3.Database
       return false;
     }
 
-    // Extract and clean each value (remove surrounding quotes if present)
-    const cleanValue = (val: string) => {
-      // Remove leading/trailing whitespace
-      let cleaned = val.trim();
-      // Remove surrounding single quotes
-      if (cleaned.startsWith("'") && cleaned.endsWith("'") && cleaned.length > 1) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
-      }
-      // Remove surrounding double quotes
-      if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 1) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
-      }
-      return cleaned;
-    };
-
+    // Extract and clean each value using helper function
     const medicineIdStr = cleanValue(rawValues[0]);
     const quantityStr = cleanValue(rawValues[1]);
     const rackLocation = cleanValue(rawValues[2]);

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "ai-pharmacy-utility",
+  "version": "1.0.0",
+  "description": "General-purpose utility MCP for local filesystem, processes, and OS-level APIs",
+  "author": { "name": "AI Pharmacy Developer" },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"]
+    }
+  },
+  "user_config": {
+    "rootDir": {
+      "type": "directory",
+      "title": "Root Directory",
+      "description": "Root directory for filesystem operations. Defaults to user home.",
+      "default": "${HOME}",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["win32", "linux", "darwin"],
+    "runtimes": { "node": ">=18" }
+  }
+}

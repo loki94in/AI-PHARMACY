@@ -5,7 +5,16 @@
       "WebFetch(domain:gemini.google.com)",
       "Bash(dir *)",
       "Bash(npm list *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(mkdir -p ~/.ssh)",
+      "Bash(chmod 700 ~/.ssh)",
+      "Bash(ssh-keygen *)",
+      "Bash(ssh-add *)",
+      "Bash(ssh-agent bash *)",
+      "Bash(ssh *)",
+      "Bash(xxd)",
+      "Bash(clip.exe)",
+      "Bash(npx @anthropic-ai/mcpb pack)"
     ]
   },
   "hooks": {

@@ -1,0 +1,28 @@
+{
+  "name": "ai-pharmacy-utility-mcpb",
+  "version": "1.0.0",
+  "description": "General-purpose utility MCP for local filesystem, processes, and OS-level APIs",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "echo 'MCPB uses direct source - no build step needed'",
+    "start": "node server/index.js",
+    "test": "echo 'No tests configured'"
+  },
+  "keywords": [
+    "mcp",
+    "mcpb",
+    "claude",
+    "utility",
+    "filesystem"
+  ],
+  "author": "AI Pharmacy Developer",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "zod": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

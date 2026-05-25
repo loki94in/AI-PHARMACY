@@ -46,10 +46,11 @@ export async function runManualMigration(fileName: string) {
 }
 
 async function processZipMigration(zipPath: string) {
+  let extractPath: string | undefined = undefined;
   try {
     migrationStatus = { active: true, progress: 0, message: 'Extracting ZIP file...', file: path.basename(zipPath) };
 
-    const extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
+    extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
     fs.mkdirSync(extractPath, { recursive: true });
 
     // Stream unzip with fallback for fake zip files
@@ -73,7 +74,7 @@ async function processZipMigration(zipPath: string) {
             .on('error', reject);
         });
       } else {
-        throw unzipError;
+        throw new Error(`Failed to extract ZIP file: ${unzipError.message}`);
       }
     }
 
@@ -87,6 +88,7 @@ async function processZipMigration(zipPath: string) {
       throw new Error('No .sql file found in the ZIP archive');
     }
 
+    migrationStatus.message = 'Parsing and Importing SQL Data...';
     await parseAndImportSQL(path.join(extractPath, sqlFile));
 
     migrationStatus = { active: false, progress: 100, message: 'Migration Complete!', file: null };
@@ -99,6 +101,24 @@ async function processZipMigration(zipPath: string) {
   } catch (err: any) {
     console.error('Migration failed:', err);
     migrationStatus = { active: false, progress: 0, message: `Failed: ${err.message}`, file: null };
+
+    // Clean up extraction directory on failure
+    if (extractPath && fs.existsSync(extractPath)) {
+      try {
+        fs.rmdirSync(extractPath, { recursive: true });
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup extraction directory:', cleanupError);
+      }
+    }
+  } finally {
+    // Ensure extraction directory is cleaned up on success too
+    if (extractPath && fs.existsSync(extractPath)) {
+      try {
+        fs.rmdirSync(extractPath, { recursive: true });
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup extraction directory:', cleanupError);
+      }
+    }
   }
 }
 

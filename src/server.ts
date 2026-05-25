@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import multer from 'multer';
 import { initClient, sendMessage } from './whatsappClient.js';
+import { telegramBotService } from './telegramBot.js';
 
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
@@ -59,6 +60,10 @@ import { ensureSchema } from './database.js';
 ensureSchema(DB_PATH).catch(err => console.error('Schema init error:', err));
 app.use(cors());
 app.use(express.json());
+
+// Initialize services
+// Telegram bot will initialize automatically via its constructor when imported
+// Email poller is started below
 
 // Serve UI static files
 app.use('/ui', express.static(path.join(__dirname, 'ui')));
