@@ -1,0 +1,50 @@
+{
+  "en": {
+    "whatsapp": {
+      "expiryAlert": "⚠️ *Medicine Expiry Alert*\nThe following medicines are nearing expiry (within {{months}} months):\n{{list}}\nPlease review stock and consider returning to supplier.",
+      "refillReminder": "🙏 *Refill Reminder from {{pharmacyName}}*\nHi {{patientName}}, this is a friendly reminder that your refill for *{{medicineName}}* is due on {{dueDate}}.\nYou have {{quantityLeft}} {{unit}} left. Please visit the pharmacy or reply with \"REFILL\" to confirm your pickup.\nThank you!",
+      "orderStatus": "📦 *Order Update*\nYour order #{{orderId}} has been received and is being prepared.\nExpected ready for pickup: {{pickupTime}}.\nReply with any questions."
+    },
+    "telegram": {
+      "welcome": "Welcome to AI Pharmacy Bot!\n\nYou can check medicine availability in two ways:\n1. Use command: /check <medicine>\n2. Just type the medicine name directly (e.g., paracetamol)\n\nOther commands:\n/help - Show this help message\n/status - Check application status",
+      "help": "AI Pharmacy Bot Usage:\n\n1. Direct medicine name: Send just the medicine name (e.g., paracetamol)\n2. Command format: Use /check <medicine> (e.g., /check paracetamol)\n\nBoth methods will show:\n• Availability status\n• MRP (price per unit)\n• Quantity in stock\n• Alternative medicine (if out of stock)\n\nOther commands:\n/help - Show this help message\n/status - Check application status",
+      "available": "{{medicine}} – available\n- MRP: ₹ {{mrp}} per unit\n- Quantity in stock: {{quantity}} units",
+      "outOfStock": "{{medicine}} – out of stock\n- MRP: ₹ {{mrp}} per unit\n- Quantity in stock: {{quantity}} units\n- Alternative suggested: {{alternativeName}} (MRP: ₹ {{altMrp}}, Quantity: {{altQuantity}} units)",
+      "notFound": "Sorry, I couldn't find information for \"{{medicine}}\". Please check the spelling or try another name.",
+      "status": "🤖 AI Pharmacy Bot Status: Online\n📊 Database: Connected ({{totalMedicines}} medicines registered)\n⏰ Uptime: Running since startup\n🔄 Polling: Active",
+      "orderNotification": "🛒 Your order #{{orderId}} has been confirmed.\nItems: {{items}}\nTotal: ₹ {{total}}\nExpected pickup: {{pickupTime}}\nReply with any questions."
+    }
+  },
+  "hi": {
+    "whatsapp": {
+      "expiryAlert": "⚠️ *दवा समाप्ति警報*\nनिम्नलिखित दवाएँ {{months}} महीनों के भीतर समाप्त हो रही हैं:\n{{list}}\nकृपया स्टॉक की जाँच करें और सप्लायर से वापस करने पर विचार करें।",
+      "refillReminder": "🙏 *{{pharmacyName}} से रिफिल prom*\nनमस्ते {{patientName}}, यह एक मैत्रीपूर्ण अनुस्मारक है कि आपकी {{medicineName}} की रिफिल {{dueDate}} को देय है।\nआपके पास {{quantityLeft}} {{unit}} बचे हैं। कृपया फ़ार्मेसी आकर अपनी रिफिल की पुष्टि करने के लिए \"REFILL\" उत्तर दें।\nधन्यवाद!",
+      "orderStatus": "📦 *आर्डर अपडेट*\nआपका ऑर्डर #{{orderId}} प्राप्त हो गया है और तैयार किया जा रहा है।\nउपलब्ध होने की संभावित समय: {{pickupTime}}।\nकिसी भी प्रश्न के लिए उत्तर दें।"
+    },
+    "telegram": {
+      "welcome": "AI फार्मेसी बॉट में आपका स्वागत है!\n\nआप दो तरीकों से दवा की उपलब्धता जाँच सकते हैं:\n1. कमांड का उपयोग करें: /check <दवा>\n2. सीधे दवा का नाम लिखें (उदा., पैरासेटामोल)\n\nअन्य कमांड:\n/help - pomoc संदेश देखें\n/status - एप्लीकेशन स्थिति देखें",
+      "help": "AI फार्मेसी बॉट उपयोग:\n\n1. direkten दवा नाम: बस दवा का नाम भेजें (उदा., पैरासेटामोल)\n2. कमांड प्रारूप: /check <दवा> का उपयोग करें (उदा., /check पैरासेटामोल)\n\nदोनों तरीकों से दिखेगा:\n• उपलब्धता स्थिति\n• MRP (प्रति इकाई मूल्य)\n• स्टॉक में मात्र\n• वैकल्पिक दवा (यदि स्टॉक में नहीं)\n\nअन्य कमांड:\n/help - pomoc संदेश देखें\n/status - एप्लीकेशन स्थिति देखें",
+      "available": "{{medicine}} – उपलब्ध है\n- MRP: ₹ {{mrp}} प्रति इकाई\n- स्टॉक में मात्र: {{quantity}} इकाइयाँ",
+      "outOfStock": "{{medicine}} – स्टॉक में नहीं है\n- MRP: ₹ {{mrp}} प्रति इकाई\n- स्टॉक में मात्र: {{quantity}} इकाइयाँ\n- वैकल्पिक सुझाव: {{alternativeName}} (MRP: ₹ {{altMrp}}, मात्र: {{altQuantity}} इकाइयाँ)",
+      "notFound": "क्षमा करें, मैं \"{{medicine}}\" के बारे में जानकारी नहीं खोज सका। कृपया वर्तनी की जाँच करें या दूसरे नाम का प्रयास करें।",
+      "status": "🤖 AI फार्मेसी बॉट स्थिति: ऑनलाइन\n📊 डेटाबेस: जुड़ा हुआ ({{totalMedicines}} दवाएँ पंजीकृत)\n⏰ अपटाइम: स्टार्टअप से चल रहा है\n🔄 पोलिंग: सक्रिय",
+      "orderNotification": "🛒 आपका ऑर्डर #{{orderId}} पुष्टि हुआ है।\nआइटम: {{items}}\nकुल: ₹ {{total}}\nउपलब्ध होने की संभावित समय: {{pickupTime}}\nकिसी भी प्रश्न के लिए उत्तर दें।"
+    }
+  },
+  "mr": {
+    "whatsapp": {
+      "expiryAlert": "⚠️ *ओषधी समाप्ती प्रेत*\nपालले {{months}} महिन्यांचीतील ओषधी समाप्त होऱ्या आहेत:\n{{list}}\nकृपया स्टॉक तपासा व पुरव químकांशीपर्यंत परत वhoven विचारा.",
+      "refillReminder": "🙏 *{{pharmacyName}} पासून रिफिल शैक्षणिक*\nनमस्कार {{patientName}}, हे एक मैत्रीपूर्ण सुचना आहे की तुमच्याकडील {{medicineName}} ची रिफिल {{dueDate}} रोजी पायाभावी आहे.\nतुमच्या पास {{quantityLeft}} {{unit}} शेष आहेत. कृपया ओषधीशाळेत जाण्यावर तुमचा रिफिल bestätigt करण्यासाठी \"REFILL\" उत्तर द्या.\nधन्यवाद!",
+      "orderStatus": "📦 *ऑर्डर अपडेट*\nतुमचा ऑर्डर #{{orderId}} मिळवला आहे व तयार होत आहे.\nतयार होकर मिळवण्याची शक्यता वेळ: {{pickupTime}}.\nकोणतेही प्रश्न असतील तर उत्तर د्या."
+    },
+    "telegram": {
+      "welcome": "AI pharmaceutics बॉटमध्ये आपले स्वागत आहे!\n\nतुम्ही दोन पद्धतींने औषध्याची उपलब्धता तपासू शकता:\n1. निर्देशांचा वापर करा: /check <औषध>\n2. सीधे औषधाचे नाव लिहा (उदा., पारासेटामोल)\n\nअन्य निर्देशे:\n/help - मदत संदेश पहा\n/status - अॅप्लिकेशन स्थिती पहा",
+      "help": "AI औषधशाळा बॉट वापर:\n\n1. सीधे औषधे नाव: फक्त औषधेचे नाव पाठवा (उदा., पारासेटामोल)\n2. निर्देशाचा स्वरूप: /check <औषध> वापरा (उदा., /check पारासेटामोल)\n\nदोना पद्धतींपूर्वे दिसेल:\n• उपलब्धता स्थिती\n• MRP (प्रति युनिट किमत)\n• स्टॉक मध्ये प्रमाण: {{quantity}} युनिटे\n• पर्याय औषध (अगर स्टॉक नाही)\n\nअन्य निर्देशे:\n/help - मदत संदेश पहा\n/status - अॅप्लिकेशन स्थिती पहा",
+      "available": "{{medicine}} – उपलब्ध आहे\n- MRP: ₹ {{mrp}} प्रति युनिट\n- स्टॉक मध्ये प्रमाण: {{quantity}} युनिटे",
+      "outOfStock": "{{medicine}} – स्टॉक नाही\n- MRP: ₹ {{mrp}} प्रति युनिट\n- स्टॉक मध्ये प्रमाण: {{quantity}} युनिटे\n- पर्याय koostavit: {{alternativeName}} (MRP: ₹ {{altMrp}}, प्रमाण: {{altQuantity}} युनिटे)",
+      "notFound": "माफ करा, मी \"{{medicine}}\" बद्दल माहिती शोधू शकला नाही. कृपया वर्तनी पाहा व इतर नावा प्रयās करा.",
+      "status": "🤖 AI औषधशाळा बॉट स्थिती: ऑनलाइन\n📊 डेटाबेस: जुड़लेला ({{totalMedicines}} औषधे損ろん)\n⏰ अपटाइम: स्टार्टअपच्यापासून चालू आहे\n🔄 पोलिंग: सक्रिय",
+      "orderNotification": "🛒 तुमचा ऑर्डर #{{orderId}} पुष्ट झाला.\nआयटम: {{items}}\nएकूण: ₹ {{total}}\nउपलब्ध होण्याची शक्यता वेळ: {{pickupTime}}\nकोणतेही प्रश्न असतील तर उत्तर द्या."
+    }
+  }
+}

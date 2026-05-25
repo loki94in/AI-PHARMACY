@@ -29,7 +29,7 @@ export let migrationStatus = {
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-export async function runManualMigration(fileName: string) {
+export async function runManualMigration(fileName: string): Promise<void> {
   if (migrationStatus.active) {
     throw new Error('A migration is already in progress.');
   }
@@ -41,8 +41,8 @@ export async function runManualMigration(fileName: string) {
     throw new Error('Only .zip files are supported for migration right now.');
   }
 
-  // Fire and forget (runs in background)
-  processZipMigration(filePath).catch(err => console.error(err));
+  // Wait for migration to complete and propagate errors
+  await processZipMigration(filePath);
 }
 
 async function processZipMigration(zipPath: string) {

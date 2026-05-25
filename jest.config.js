@@ -1,5 +1,5 @@
 export default {
-  testMatch: ["**/tests/utilities.test.ts", "**/tests/crm.test.ts", "**/tests/inventoryParser.test.ts", "**/tests/returnsParser.test.ts", "**/tests/salesParser.test.ts"],
+  testMatch: ["**/tests/utilities.test.ts", "**/tests/crm.test.ts", "**/tests/inventoryParser.test.ts", "**/tests/returnsParser.test.ts", "**/tests/salesParser.test.ts", "**/tests/services/productNameFilterService.test.ts"],
   preset: 'ts-jest',
   testEnvironment: 'node',
   transform: {
@@ -16,5 +16,5 @@ export default {
   extensionsToTreatAsEsm: ['.ts'],
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/\\.claude/', '<rootDir>/\\.gemini/'],
   modulePathIgnorePatterns: ['<rootDir>/\\.claude/', '<rootDir>/\\.gemini/'],
-  watchPathIgnorePatterns: ['<rootDir>/\\.claude/', '<rootDir>/\\.gemini/']
+  watchPathIgnorePatterns: ['/node_modules/', '<rootDir>/\\.claude/', '<rootDir>/\\.gemini/']
 };

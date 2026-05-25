@@ -1,4 +1,5 @@
 import sqlite3 from 'sqlite3';
+import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils';
 const Database = sqlite3.Database;
 
 /**
@@ -8,68 +9,6 @@ const invoiceCache = new Map<string, number>();
 const inventoryCache = new Map<number, number>();
 let linesProcessed = 0;
 const CACHE_RESET_THRESHOLD = 10000;
-
-/**
- * Helper function to parse CSV-like values string respecting quotes
- * Similar to the one in inventoryParser.ts
- */
-function parseValues(valuesStr: string): string[] {
-    const values: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    let quoteChar: string | null = null;
-
-    for (let i = 0; i < valuesStr.length; i++) {
-        const char = valuesStr[i];
-
-        if (char === '"' || char === "'") {
-            if (!inQuotes) {
-                inQuotes = true;
-                quoteChar = char;
-            } else if (quoteChar === char) {
-                inQuotes = false;
-                quoteChar = null;
-            } else {
-                // Inside quotes but different quote char - treat as literal
-                current += char;
-            }
-        } else if (char === ',' && !inQuotes) {
-            values.push(current);
-            current = '';
-        } else {
-            current += char;
-        }
-    }
-
-    // Push the last value
-    values.push(current);
-
-    // Trim each value and remove surrounding quotes if they exist
-    return values.map(val => {
-        let trimmed = val.trim();
-        if ((trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-            (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
-            trimmed = trimmed.slice(1, -1);
-        }
-        return trimmed;
-    });
-}
-
-/**
- * Helper function to clean a value (remove surrounding quotes)
- */
-function cleanValue(val: string): string {
-    let cleaned = val.trim();
-    // Remove surrounding single quotes
-    if (cleaned.startsWith("'") && cleaned.endsWith("'") && cleaned.length > 1) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-    // Remove surrounding double quotes
-    if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 1) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-    return cleaned;
-}
 
 /**
  * Processes a single line of legacy SQL INSERT statement for sales data.

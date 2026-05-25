@@ -3,6 +3,7 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getMessage } from './i18n/getMessage';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,6 +15,7 @@ class TelegramBotService {
 
   constructor() {
     this.token = process.env.TELEGRAM_BOT_TOKEN;
+    this.lang = process.env.TELEGRAM_LANG || 'en';
     if (this.token) {
       this.initializeBot();
     }

@@ -1,6 +1,7 @@
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { processSalesLine } from '../src/worker/parsers/salesParser';
+import { ensureSchema } from '../src/database';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -10,7 +11,7 @@ const __dirname = path.dirname(__filename);
 const TEST_DB_PATH = path.resolve(__dirname, '..', 'data', 'test-sales-parser.db');
 
 describe('salesParser', () => {
-  let db: any;
+  let db: sqlite3.Database;
 
   beforeAll(async () => {
     // Clean up any existing test database
@@ -19,45 +20,14 @@ describe('salesParser', () => {
     }
 
     // Open a test SQLite database
-    db = await open({
+    const sqliteDb = await open({
       filename: TEST_DB_PATH,
       driver: sqlite3.Database
     });
+    db = sqliteDb.driver as sqlite3.Database;
 
-    // Create the required tables
-    await db.exec(`
-        CREATE TABLE medicines (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            api_reference TEXT
-        );
-        CREATE TABLE sales_invoices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            invoice_no TEXT UNIQUE,
-            customer_id INTEGER,
-            date DATETIME DEFAULT CURRENT_TIMESTAMP,
-            total_amount REAL,
-            tax_amount REAL
-        );
-        CREATE TABLE inventory_master (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            medicine_id INTEGER,
-            quantity INTEGER DEFAULT 0,
-            rack_location TEXT,
-            batch_no TEXT,
-            expiry_date DATETIME,
-            FOREIGN KEY(medicine_id) REFERENCES medicines(id)
-        );
-        CREATE TABLE sale_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            invoice_id INTEGER,
-            inventory_id INTEGER,
-            quantity INTEGER,
-            unit_price REAL,
-            FOREIGN KEY(invoice_id) REFERENCES sales_invoices(id),
-            FOREIGN KEY(inventory_id) REFERENCES inventory_master(id)
-        );
-    `);
+    // Ensure the database schema matches the production schema
+    await ensureSchema(TEST_DB_PATH);
 
     // Insert some test medicines for foreign key resolution
     await db.exec(`

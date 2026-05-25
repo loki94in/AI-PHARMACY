@@ -1,5 +1,6 @@
 // Test AI Camera OCR functionality with user images
 import { aiCameraService } from './dist/src/services/aiCameraService.js';
+import { productNameFilterService } from './dist/src/services/productNameFilterService.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -37,10 +38,14 @@ async function testUserImages() {
   console.log('');
 
   try {
-    // Initialize the service
+    // Initialize services
     console.log('🔧 Initializing AI Camera Service...');
     await aiCameraService.initialize();
     console.log('✓ AI Camera Service initialized');
+
+    console.log('🔧 Initializing Product Name Filter Service...');
+    await productNameFilterService.initialize();
+    console.log('✓ Product Name Filter Service initialized');
     console.log('');
 
     // Process each image
@@ -60,23 +65,46 @@ async function testUserImages() {
 
         // Process image with AI Camera service
         const processStart = Date.now();
-        const result = await aiCameraService.processImage(imageBase64);
+        const aiCameraResult = await aiCameraService.processImage(imageBase64);
         const processTime = Date.now() - processStart;
+
+        // Filter OCR results to show only registered product names
+        const filterStart = Date.now();
+        const filterResult = await productNameFilterService.filterProductNames(aiCameraResult.text, {
+          enableInternetFallback: process.env.ENABLE_INTERNET_FALLBACK === 'true',
+          internetApiEndpoint: process.env.PRODUCT_API_ENDPOINT,
+          internetApiKey: process.env.PRODUCT_API_KEY,
+          minConfidenceThreshold: parseFloat(process.env.PRODUCT_MIN_CONFIDENCE_THRESHOLD || '0.8'),
+          fallbackTimeoutMs: parseInt(process.env.PRODUCT_FALLBACK_TIMEOUT_MS || '5000')
+        });
+        const filterTime = Date.now() - filterStart;
 
         // Store result
         results.push({
           filename,
-          text: result.text,
-          confidence: result.confidence,
-          wordCount: result.words.length,
-          processTime
+          originalText: aiCameraResult.text,
+          filteredMatches: filterResult.matches,
+          ocrConfidence: aiCameraResult.confidence,
+          filterConfidence: filterResult.confidence,
+          wordCount: aiCameraResult.words.length,
+          processTime,
+          filterTime,
+          sources: filterResult.sources,
+          fallbackUsed: filterResult.fallbackUsed
         });
 
         // Display result
-        console.log(`  📄 OCR Text: "${result.text.trim()}"`);
-        console.log(`  🎯 Confidence: ${result.confidence}%`);
-        console.log(`  📝 Words Detected: ${result.words.length}`);
-        console.log(`  ⏱️  Processing Time: ${processTime}ms`);
+        console.log(`  📄 Original OCR Text: "${aiCameraResult.text.trim()}"`);
+        console.log(`  🎯 OCR Confidence: ${aiCameraResult.confidence}%`);
+        console.log(`  📝 Words Detected: ${aiCameraResult.words.length}`);
+        console.log(`  🔍 Filtered Product Names: ${filterResult.matches.length > 0 ? filterResult.matches.join(', ') : '(none)'}`);
+        console.log(`  📊 Filter Confidence: ${Math.round(filterResult.confidence)}%`);
+        console.log(`  🏪 Sources: Local: ${filterResult.sources.local}, Internet: ${filterResult.sources.internet}`);
+        if (filterResult.fallbackUsed) {
+          console.log(`  🌐 Internet fallback used: Yes`);
+        }
+        console.log(`  ⏱️  OCR Processing Time: ${processTime}ms`);
+        console.log(`  ⏱️  Filtering Time: ${filterTime}ms`);
         console.log('');
 
       } catch (error) {
@@ -86,18 +114,25 @@ async function testUserImages() {
         // Still record the failure
         results.push({
           filename,
-          text: '',
-          confidence: 0,
+          originalText: '',
+          filteredMatches: [],
+          ocrConfidence: 0,
+          filterConfidence: 0,
           wordCount: 0,
           processTime: 0,
+          filterTime: 0,
+          sources: { local: false, internet: false },
+          fallbackUsed: false,
           error: error.message
         });
       }
     }
 
-    // Terminate the service
+    // Terminate services
     await aiCameraService.terminate();
+    await productNameFilterService.terminate ? await productNameFilterService.terminate() : null;
     console.log('✓ AI Camera Service terminated');
+    console.log('✓ Product Name Filter Service terminated');
 
     // Summary
     const totalTime = Date.now() - startTime;
@@ -113,8 +148,13 @@ async function testUserImages() {
     console.log(`Average time per image: ${Math.round(totalTime / imageFiles.length)}ms`);
 
     if (successfulResults.length > 0) {
-      const avgConfidence = successfulResults.reduce((sum, r) => sum + r.confidence, 0) / successfulResults.length;
-      console.log(`Average confidence: ${Math.round(avgConfidence)}%`);
+      const avgOcrConfidence = successfulResults.reduce((sum, r) => sum + r.ocrConfidence, 0) / successfulResults.length;
+      const avgFilterConfidence = successfulResults.reduce((sum, r) => sum + r.filterConfidence, 0) / successfulResults.length;
+      console.log(`Average OCR confidence: ${Math.round(avgOcrConfidence)}%`);
+      console.log(`Average filter confidence: ${Math.round(avgFilterConfidence)}%`);
+
+      const imagesWithMatches = successfulResults.filter(r => r.filteredMatches.length > 0).length;
+      console.log(`Images with product name matches: ${imagesWithMatches}/${successfulResults.length}`);
     }
 
     if (failedResults.length > 0) {
@@ -133,6 +173,7 @@ async function testUserImages() {
     // Try to terminate even if there was an error
     try {
       await aiCameraService.terminate();
+      await productNameFilterService.terminate ? await productNameFilterService.terminate() : null;
     } catch (termError) {
       console.error('Error during termination:', termError);
     }

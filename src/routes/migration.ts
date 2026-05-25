@@ -65,10 +65,10 @@ router.post('/run', async (req, res) => {
     );
     await db.close();
     
-    // Call the worker
+    // Call the worker and wait for completion
     await runManualMigration(fileName);
-    
-    res.json({ success: true, message: `Migration for ${fileName} started` });
+
+    res.json({ success: true, message: `Migration for ${fileName} completed successfully` });
   } catch (error: any) {
     console.error('Migration error:', error);
     res.status(500).json({ error: error.message || 'Failed to start migration' });

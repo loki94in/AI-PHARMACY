@@ -3,7 +3,7 @@ import { open } from 'sqlite';
 
 /**
  * Ensure required SQLite tables exist.
- * Creates `medicines`, `catalog_jobs`, and `processed_files` if they are missing.
+ * Creates `medicines`, `catalog_jobs`, `processed_files`, `message_templates` and others if they are missing.
  */
 export async function ensureSchema(dbPath: string) {
   const db = await open({ filename: dbPath, driver: sqlite3.Database });
@@ -35,6 +35,12 @@ export async function ensureSchema(dbPath: string) {
       date DATETIME DEFAULT CURRENT_TIMESTAMP,
       total_amount REAL,
       FOREIGN KEY(distributor_id) REFERENCES distributors(id)
+    );
+    CREATE TABLE IF NOT EXISTS message_templates (
+      locale TEXT NOT NULL,
+      key    TEXT NOT NULL,
+      value  TEXT NOT NULL,
+      PRIMARY KEY (locale, key)
     );
     CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines (name);
     CREATE INDEX IF NOT EXISTS idx_catalog_jobs_status ON catalog_jobs (status);

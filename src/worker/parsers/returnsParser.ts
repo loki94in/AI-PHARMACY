@@ -1,24 +1,10 @@
 import sqlite3 from 'sqlite3';
+import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils';
 
-// Helper function to ensure date string includes time component (HH:MM:SS)
-function normalizeDate(dateStr: string): string {
-    // Remove surrounding quotes if present
-    let cleaned = dateStr.trim();
-    if ((cleaned.startsWith("'") && cleaned.endsWith("'")) ||
-        (cleaned.startsWith('"') && cleaned.endsWith('"'))) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-
-    // If the date string doesn't contain a time component, add " 00:00:00"
-    if (!cleaned.includes(':')) {
-        // Assume it's a date-only string like YYYY-MM-DD or MM/DD/YYYY etc.
-        // For simplicity, we'll just append the time component
-        // In a more robust implementation, we'd parse and reformat the date
-        return cleaned + ' 00:00:00';
-    }
-
-    return cleaned;
-}
+// Cache for database lookups to avoid repeated queries
+const invoiceCache = new Map<string, number>();
+let linesProcessed = 0;
+const CACHE_RESET_THRESHOLD = 10000;
 
 /**
  * Process a single line of SQL that may be a legacy returns INSERT statement.
@@ -66,9 +52,8 @@ export async function processReturnsLine(sqlLine: string, db: sqlite3.Database):
     // Extract the values string between parentheses
     const valuesStr = afterValues.substring(openParenIndex + 1, closeParenIndex).trim();
 
-    // Split values by comma (naive approach - assumes no commas inside string values)
-    // In a real migration, we'd use a proper SQL parser, but for simplicity we assume clean data
-    const rawValues = valuesStr.split(',').map(v => v.trim());
+    // Use proper CSV-like parsing that respects quotes
+    const rawValues = parseValues(valuesStr);
 
     // We expect 5 columns: return_no, original_invoice_number, type, date, total_amount
     if (rawValues.length < 5) {
