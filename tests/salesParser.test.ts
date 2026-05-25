@@ -23,7 +23,8 @@ describe('salesParser', () => {
       filename: TEST_DB_PATH,
       driver: sqlite3.Database
     });
-    db = dbInstance;
+    // Extract the raw sqlite3 database object
+    db = dbInstance.driver as sqlite3.Database;
 
     // Create the required tables
     await db.exec(`

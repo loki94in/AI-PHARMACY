@@ -26,50 +26,58 @@ const generateInvoiceNo = async (db) => {
 
 // Get next sequential invoice number
 router.get('/next-invoice', async (req, res) => {
+  let db;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const invoice_no = await generateInvoiceNo(db);
     await db.close();
     res.json({ invoice_no });
   } catch (error) {
-    console.error('Failed to get next invoice:', error);
+    if (db) await db.close();
+    console.error(JSON.stringify({
+      message: 'Failed to get next invoice',
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    }));
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Create a new sale
 router.post('/', async (req, res) => {
+  let db;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const { items = [], patient_id, doctor_id, discount = 0 } = req.body;
-    
+
     // Basic validation
     if (!Array.isArray(items) || items.length === 0) {
       await db.close();
       return res.status(400).json({ error: 'Cart items required' });
     }
-    
+
     // Compute totals
     let subtotal = 0;
     for (const item of items) {
       const { quantity = 0, unit_price = 0 } = item;
       subtotal += quantity * unit_price;
     }
-    
+
     const taxRate = 0.05; // 5% tax
     const tax = subtotal * taxRate;
     const total = subtotal + tax - discount;
-    
+
     // Generate invoice number
     const invoice_no = await generateInvoiceNo(db);
-    
+
     // Insert invoice
     const result = await db.run(
       'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount) VALUES (?, ?, ?, ?)',
       [invoice_no, patient_id || null, total, tax]
     );
     const invoiceId = result.lastID;
-    
+
     // Insert line items and update inventory
     for (const item of items) {
       const { inventory_id, quantity = 0, unit_price = 0 } = item;
@@ -80,19 +88,29 @@ router.post('/', async (req, res) => {
       // Decrement stock
       await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
     }
-    
+
     await db.close();
     res.json({ success: true, invoice_no, total, tax });
   } catch (error) {
-    console.error('Failed to create sale:', error);
+    if (db) await db.close();
+    console.error(JSON.stringify({
+      message: 'Failed to create sale',
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    }));
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Hold a bill
 router.post('/hold', async (req, res) => {
+  let dbHold;
   try {
-    const dbHold = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    if (!req.body) {
+      return res.status(400).json({ error: 'Request body required' });
+    }
+    dbHold = await open({ filename: DB_PATH, driver: sqlite3.Database });
     await dbHold.exec(`CREATE TABLE IF NOT EXISTS held_bills (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT, data TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
     const holdData = JSON.stringify(req.body);
     const holdInvoiceNo = await generateInvoiceNo(dbHold);
@@ -100,7 +118,13 @@ router.post('/hold', async (req, res) => {
     await dbHold.close();
     res.json({ success: true, message: 'Bill held', invoice_no: holdInvoiceNo });
   } catch (error) {
-    console.error('Failed to hold bill:', error);
+    if (dbHold) await dbHold.close();
+    console.error(JSON.stringify({
+      message: 'Failed to hold bill',
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    }));
     res.status(500).json({ error: 'Internal server error' });
   }
 });
