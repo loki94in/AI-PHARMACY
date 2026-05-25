@@ -5,6 +5,7 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import multer from 'multer';
 import { migrationStatus, runManualMigration } from '../worker/migrationWorker.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,7 +13,27 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 const MIGRATION_DIR = path.resolve(__dirname, '..', '..', 'MIGRATION SAMPEL');
 
+if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, MIGRATION_DIR);
+  },
+  filename: (_req, file, cb) => {
+    cb(null, file.originalname);
+  }
+});
+const upload = multer({ storage });
+
 const router = express.Router();
+
+// Upload a zip file to MIGRATION SAMPEL directory
+router.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  res.json({ success: true, message: 'File uploaded successfully', file: req.file.filename });
+});
 
 // Get live migration status
 router.get('/status', (req, res) => {

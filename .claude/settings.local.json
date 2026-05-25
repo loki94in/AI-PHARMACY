@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(dir C:\\\\Users\\\\ratna *)",
-      "WebFetch(domain:gemini.google.com)"
+      "WebFetch(domain:gemini.google.com)",
+      "Bash(dir *)",
+      "Bash(npm list *)",
+      "Bash(node *)"
     ]
   },
   "hooks": {

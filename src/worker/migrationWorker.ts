@@ -7,6 +7,9 @@ import chokidar from 'chokidar';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import readline from 'readline';
+import { processReturnsLine } from './parsers/returnsParser';
+import { processInventoryLine } from './parsers/inventoryParser';
+import { processSalesLine } from './parsers/salesParser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,7 +40,7 @@ export async function runManualMigration(fileName: string) {
   if (!filePath.toLowerCase().endsWith('.zip')) {
     throw new Error('Only .zip files are supported for migration right now.');
   }
-  
+
   // Fire and forget (runs in background)
   processZipMigration(filePath).catch(err => console.error(err));
 }
@@ -45,10 +48,10 @@ export async function runManualMigration(fileName: string) {
 async function processZipMigration(zipPath: string) {
   try {
     migrationStatus = { active: true, progress: 0, message: 'Extracting ZIP file...', file: path.basename(zipPath) };
-    
+
     const extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
     fs.mkdirSync(extractPath, { recursive: true });
-    
+
     // Stream unzip with fallback for fake zip files
     try {
       await new Promise<void>((resolve, reject) => {
@@ -73,38 +76,39 @@ async function processZipMigration(zipPath: string) {
         throw unzipError;
       }
     }
-    
+
     migrationStatus.message = 'Scanning extracted files...';
-    
+
     // Find .sql files
     const files = fs.readdirSync(extractPath);
     const sqlFile = files.find(f => f.toLowerCase().endsWith('.sql'));
-    
+
     if (!sqlFile) {
       throw new Error('No .sql file found in the ZIP archive');
     }
-    
+
     await parseAndImportSQL(path.join(extractPath, sqlFile));
-    
+
     migrationStatus = { active: false, progress: 100, message: 'Migration Complete!', file: null };
-    
+
     // Move the processed zip to an archive folder so it doesn't trigger again
     const archiveDir = path.join(PROJECT_ROOT, 'data', 'archived_migrations');
     if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
     fs.renameSync(zipPath, path.join(archiveDir, path.basename(zipPath)));
-    
+
   } catch (err: any) {
     console.error('Migration failed:', err);
     migrationStatus = { active: false, progress: 0, message: `Failed: ${err.message}`, file: null };
   }
 }
 
-// A simple streaming SQL parser adapting foreign SQL INSERTs to our SQLite schema
+// A streaming SQL parser that uses specific parsers for known legacy tables
 async function parseAndImportSQL(sqlPath: string) {
   migrationStatus.message = 'Parsing and Importing SQL Data...';
-  
+
   const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-  
+  const rawDb = db.driver as sqlite3.Database; // Get the underlying sqlite3 database
+
   const fileStream = fs.createReadStream(sqlPath);
   const rl = readline.createInterface({
     input: fileStream,
@@ -112,19 +116,52 @@ async function parseAndImportSQL(sqlPath: string) {
   });
 
   let linesProcessed = 0;
-  
+  let linesMigrated = 0;
+
   for await (const line of rl) {
-    // This is a naive parser. In a real system, you'd use regex to map specific legacy tables 
-    // to your medicines/distributors tables.
-    // Example: If line contains INSERT INTO `medicines`, adapt it.
-    
-    // For demonstration, we just increment progress
+    const trimmedLine = line.trim();
+    if (!trimmedLine) {
+      // Skip empty lines but still count them for progress
+      linesProcessed++;
+      if (linesProcessed % 1000 === 0) {
+        migrationStatus.progress = Math.min(99, Math.floor(linesProcessed / 1000));
+        migrationStatus.message = `Processed ${linesProcessed} lines, migrated ${linesMigrated} rows...`;
+      }
+      continue;
+    }
+
+    let migrated = false;
+
+    // Try returns parser first
+    if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_RETURNS')) {
+      migrated = await processReturnsLine(trimmedLine, rawDb);
+    }
+    // Then try inventory parser for legacy stock/batches
+    else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_STOCK') ||
+             trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_BATCHES')) {
+      migrated = await processInventoryLine(trimmedLine, rawDb);
+    }
+    // Then try sales parser for legacy sales/saleItems
+    else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALES') ||
+             trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALEITEMS') ||
+             trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALE_ITEMS')) {
+      migrated = await processSalesLine(trimmedLine, rawDb);
+    }
+    // For other lines, we don't attempt migration (but we still count the line)
+
+    if (migrated) {
+      linesMigrated++;
+    }
+
     linesProcessed++;
     if (linesProcessed % 1000 === 0) {
       migrationStatus.progress = Math.min(99, Math.floor(linesProcessed / 1000));
-      migrationStatus.message = `Imported ${linesProcessed} rows...`;
+      migrationStatus.message = `Processed ${linesProcessed} lines, migrated ${linesMigrated} rows...`;
     }
   }
-  
+
   await db.close();
+
+  // Final status update
+  migrationStatus.message = `Migration Complete! Processed ${linesProcessed} lines, migrated ${linesMigrated} rows`;
 }

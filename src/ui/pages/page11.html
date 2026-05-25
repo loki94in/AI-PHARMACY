@@ -9,9 +9,15 @@
       <div class="card">
         <div class="card-title"><span class="icon">📥</span> Manual Database Migration</div>
         <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">
-          Select a `.zip` SQL database backup from the <code>MIGRATION SAMPEL</code> folder and click "Run Migration" to start the import.
+          Upload a `.zip` SQL database backup from your computer, or select an existing one, and click "Run Migration" to start the import.
         </p>
         
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center;">
+          <input type="file" id="migration-file-upload" accept=".zip" style="display: none;" />
+          <button id="upload-migration-btn" class="btn btn-secondary" style="background: var(--surface2); border: 1px solid var(--border); color: var(--white); padding: 8px 16px; border-radius: 4px; cursor: pointer;">Select & Upload Zip</button>
+          <span id="upload-status" class="text-muted" style="font-size: 13px; flex: 1;"></span>
+        </div>
+
         <div style="display: flex; gap: 12px; margin-bottom: 20px;">
           <select id="migration-file-select" style="flex: 1; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: var(--white); border-radius: 4px;">
             <option value="">Loading files...</option>
@@ -53,6 +59,42 @@
           }
         }
         loadFiles();
+
+        document.getElementById('upload-migration-btn').addEventListener('click', () => {
+          document.getElementById('migration-file-upload').click();
+        });
+
+        document.getElementById('migration-file-upload').addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          const statusEl = document.getElementById('upload-status');
+          statusEl.textContent = 'Uploading...';
+          
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          try {
+            const resp = await fetch('/api/migration/upload', {
+              method: 'POST',
+              body: formData
+            });
+            const data = await resp.json();
+            if (data.success) {
+              statusEl.textContent = 'Uploaded successfully!';
+              await loadFiles();
+              document.getElementById('migration-file-select').value = data.file;
+              setTimeout(() => { statusEl.textContent = ''; }, 3000);
+            } else {
+              statusEl.textContent = 'Upload failed: ' + (data.error || 'Unknown error');
+            }
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = 'Upload error';
+          }
+          // Clear input so same file can be selected again if needed
+          e.target.value = '';
+        });
 
         document.getElementById('run-migration-btn').addEventListener('click', async () => {
           const select = document.getElementById('migration-file-select');
