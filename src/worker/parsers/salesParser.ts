@@ -1,4 +1,13 @@
-import { Database } from 'sqlite3';
+import sqlite3 from 'sqlite3';
+const Database = sqlite3.Database;
+
+/**
+ * Cache for database lookups to avoid repeated queries
+ */
+const invoiceCache = new Map<string, number>();
+const inventoryCache = new Map<number, number>();
+let linesProcessed = 0;
+const CACHE_RESET_THRESHOLD = 10000;
 
 /**
  * Helper function to parse CSV-like values string respecting quotes
@@ -72,6 +81,14 @@ function cleanValue(val: string): string {
 export async function processSalesLine(sqlLine: string, db: Database): Promise<boolean> {
     const line = sqlLine.trim();
     if (!line) return false;
+
+    // Cache reset logic to prevent memory buildup during large migrations
+    linesProcessed++;
+    if (linesProcessed >= CACHE_RESET_THRESHOLD) {
+        invoiceCache.clear();
+        inventoryCache.clear();
+        linesProcessed = 0;
+    }
 
     const uppercaseLine = line.toUpperCase();
 
@@ -208,35 +225,92 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
             }
 
             // Foreign key resolution: Find the new sales_invoices.id that corresponds to legacy invoice_id/bill_no
-            // We need to look up the sales_invoices record by invoice_no
-            const invoiceLookup = await db.get(
-                'SELECT id FROM sales_invoices WHERE invoice_no = ?',
-                [invoiceIdOrBillNo]
-            );
+            // Use cache to avoid repeated database queries
+            let invoiceId: number | null = null;
+            if (invoiceCache.has(invoiceIdOrBillNo)) {
+                invoiceId = invoiceCache.get(invoiceIdOrBillNo);
+            } else {
+                const invoiceLookup = await db.get(
+                    'SELECT id FROM sales_invoices WHERE invoice_no = ?',
+                    [invoiceIdOrBillNo]
+                );
 
-            if (!invoiceLookup) {
-                console.warn(`Could not find sales invoice with legacy reference '${invoiceIdOrBillNo}' for sale item`);
-                // We could still proceed but it would create orphaned items
-                // For now, let's skip this line to maintain data integrity
-                return false;
+                if (invoiceLookup) {
+                    invoiceId = invoiceLookup.id;
+                    invoiceCache.set(invoiceIdOrBillNo, invoiceId);
+                } else {
+                    console.warn(`Could not find sales invoice with legacy reference '${invoiceIdOrBillNo}' for sale item`);
+                    // We could still proceed but it would create orphaned items
+                    // For now, let's skip this line to maintain data integrity
+                    return false;
+                }
             }
 
-            const invoiceId = invoiceLookup.id;
-
             // Foreign key resolution: Find the new inventory_master.id that corresponds to legacy medicine_id
-            const inventoryLookup = await db.get(
-                'SELECT id FROM inventory_master WHERE medicine_id = ?',
-                [medicineId]
-            );
-
+            // Use cache to avoid repeated database queries
             let inventoryId: number | null = null;
-            if (inventoryLookup) {
-                inventoryId = inventoryLookup.id;
+            if (inventoryCache.has(medicineId)) {
+                inventoryId = inventoryCache.get(medicineId);
             } else {
-                // Legacy medicine_id not found in inventory_master - flag as unmapped
-                console.warn(`Legacy medicine_id ${medicineId} not found in inventory_master - marking as unmapped`);
-                // We could insert a placeholder or skip - let's skip for now to maintain referential integrity
-                return false;
+                const inventoryLookup = await db.get(
+                    'SELECT id FROM inventory_master WHERE medicine_id = ?',
+                    [medicineId]
+                );
+
+                let inventory_id_result: number | null = null;
+                if (inventoryLookup) {
+                    inventory_id_result = inventoryLookup.id;
+                    inventoryCache.set(medicineId, inventory_id_result);
+                } else {
+                    // Legacy medicine_id not found in inventory_master - CREATE IT instead of skipping
+                    console.warn(`Legacy medicine_id ${medicineId} not found in inventory_master - auto-creating medicine record`);
+
+                    // First, check if the medicine exists in medicines table
+                    const medicineLookup = await db.get(
+                        'SELECT id FROM medicines WHERE id = ?',
+                        [medicineId]
+                    );
+
+                    let medicine_record_id: number;
+                    if (medicineLookup) {
+                        medicine_record_id = medicineLookup.id;
+                    } else {
+                        // Create the medicine record
+                        const medicineInsertResult = await new Promise<{ lastID: number }>((resolve, reject) => {
+                            db.run(
+                                'INSERT INTO medicines (id, name) VALUES (?, ?)',
+                                [medicineId, `LEGACY_MEDICINE_${medicineId}`],
+                                function(err) {
+                                    if (err) {
+                                        reject(err);
+                                    } else {
+                                        resolve({ lastID: this.lastID });
+                                    }
+                                }
+                            );
+                        });
+                        medicine_record_id = medicineInsertResult.lastID;
+                    }
+
+                    // Create the inventory_master record
+                    const inventoryInsertResult = await new Promise<{ lastID: number }>((resolve, reject) => {
+                        db.run(
+                            'INSERT INTO inventory_master (id, medicine_id, quantity, rack_location, batch_no, expiry_date) VALUES (?, ?, ?, ?, ?, ?)',
+                            [0, medicine_record_id, 0, 'UNKNOWN', 'LEGACY', null],
+                            function(err) {
+                                if (err) {
+                                    reject(err);
+                                } else {
+                                    resolve({ lastID: this.lastID });
+                                }
+                            }
+                        );
+                    });
+                    inventory_id_result = inventoryInsertResult.lastID;
+                    inventoryCache.set(medicineId, inventory_id_result);
+                }
+
+                inventoryId = inventory_id_result;
             }
 
             // Insert into sale_items

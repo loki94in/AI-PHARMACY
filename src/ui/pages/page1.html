@@ -240,6 +240,118 @@
   }
 })();
 </script>
+
+<script>
+// AI Camera OCR functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const scanArea = document.querySelector('.scan-area[data-requires="ai_camera"]');
+  if (!scanArea) return;
+
+  scanArea.addEventListener('click', async function() {
+    // Check if ai_camera flag is enabled (this would typically come from a global state or API)
+    // For now, we'll proceed and let the backend handle flag validation
+
+    try {
+      // Request camera permission
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      // Create video element to display camera feed
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.play();
+
+      // Create overlay for capture button
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.background = 'rgba(0,0,0,0.5)';
+      overlay.style.color = 'white';
+      overlay.style.display = 'flex';
+      overlay.style.flexDirection = 'column';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.zIndex = '1000';
+
+      const captureButton = document.createElement('button');
+      captureButton.textContent = 'Capture';
+      captureButton.style.padding = '12px 24px';
+      captureButton.style.fontSize = '16px';
+      captureButton.style.background = 'var(--sky)';
+      captureButton.style.border = 'none';
+      captureButton.style.borderRadius = '8px';
+      captureButton.style.cursor = 'pointer';
+
+      const statusText = document.createElement('div');
+      statusText.style.marginTop = '20px';
+      statusText.style.fontSize = '18px';
+
+      overlay.appendChild(video);
+      overlay.appendChild(captureButton);
+      overlay.appendChild(statusText);
+      document.body.appendChild(overlay);
+
+      // Handle capture
+      captureButton.addEventListener('click', async () => {
+        statusText.textContent = 'Processing...';
+
+        // Create canvas to capture frame
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Stop video stream
+        stream.getTracks().forEach(track => track.stop());
+        document.body.removeChild(overlay);
+
+        // Convert canvas to base64
+        const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+        // Send to backend for OCR processing
+        try {
+          const response = await fetch('/api/returns/ai-camera/process', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: imageBase64 })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          if (result.success && result.medicineInfo) {
+            // Fill in the medicine details in the POS form
+            const medicineInput = document.getElementById('inline-search-input');
+            if (medicineInput && result.medicineInfo.potentialName) {
+              medicineInput.value = result.medicineInfo.potentialName;
+            }
+
+            // Show success message
+            alert(`Medicine identified: ${result.medicineInfo.potentialName || 'Unknown'}`);
+          } else {
+            alert('Could not identify medicine from image. Please try again.');
+          }
+        } catch (error) {
+          console.error('AI Camera processing error:', error);
+          alert('Error processing image. Please check connection and try again.');
+        }
+      });
+
+    } catch (err) {
+      console.error('Camera access error:', err);
+      alert('Could not access camera. Please ensure camera permissions are granted.');
+    }
+  });
+});
+</script>
         </div>
       </div>
     </div>

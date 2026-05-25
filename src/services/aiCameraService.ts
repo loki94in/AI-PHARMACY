@@ -50,8 +50,8 @@ class AICameraService {
       // Recognize text from image
       const { data } = await this.worker.recognize(imageData);
 
-      // Process results into structured format
-      const words = data.words.map((word: any) => ({
+      // Process results into structured format (handle undefined data.words)
+      const words = data.words ? data.words.map((word: any) => ({
         text: word.text,
         confidence: word.confidence,
         bbox: {
@@ -60,10 +60,10 @@ class AICameraService {
           x1: word.bbox.x1,
           y1: word.bbox.y1,
         }
-      }));
+      })) : [];
 
       return {
-        text: data.text,
+        text: data.text || '',
         confidence: Math.round(data.confidence),
         words: words
       };

@@ -1,0 +1,176 @@
+import express from 'express';
+import cors from 'cors';
+import { open } from 'sqlite';
+import sqlite3 from 'sqlite3';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+import multer from 'multer';
+import { initClient, sendMessage } from './whatsappClient.js';
+// Agent 2 (CRM & Utilities) Routers
+import crmRouter from './routes/crm.js';
+import utilitiesRouter from './routes/utilities.js';
+import securityRouter from './routes/security.js';
+// Agent 1 (Core) Routers
+import salesRouter from './routes/sales.js';
+import inventoryRouter from './routes/inventory.js';
+import dashboardRouter from './routes/dashboard.js';
+import purchasesRouter from './routes/purchases.js';
+import returnsRouter from './routes/returns.js';
+import ordersRouter from './routes/orders.js';
+import expiryRouter from './routes/expiry.js';
+import reportsRouter from './routes/reports.js';
+import complianceRouter from './routes/compliance.js';
+import emailRouter from './routes/email.js';
+import migrationRouter from './routes/migration.js';
+import settingsRouter from './routes/settings.js';
+import dispatchRouter from './routes/dispatch.js';
+import archiveRouter from './routes/archive.js';
+import learningRouter from './routes/learning.js';
+import messagingRouter from './routes/messaging.js';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', 'data', 'app.db');
+const UPLOAD_DIR = path.resolve(__dirname, '..', 'catalog');
+// Ensure upload directory exists
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+// Multer storage config
+const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, UPLOAD_DIR);
+    },
+    filename: (_req, file, cb) => {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+const upload = multer({ storage });
+const app = express();
+// Ensure DB schema is up to date
+import { ensureSchema } from './database.js';
+ensureSchema(DB_PATH).catch(err => console.error('Schema init error:', err));
+app.use(cors());
+app.use(express.json());
+// Initialize services
+// Telegram bot will initialize automatically via its constructor when imported
+// Email poller is started below
+// Serve UI static files
+app.use('/ui', express.static(path.join(__dirname, 'ui')));
+// API to upload file and enqueue it directly
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        const fullPath = req.file.path;
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        await db.run(`INSERT OR IGNORE INTO catalog_jobs (file_path) VALUES (?)`, fullPath);
+        await db.close();
+        res.json({ success: true, message: 'File uploaded and queued for processing', file: req.file.filename });
+    }
+    catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// API to fetch all extracted medicines
+app.get('/api/medicines', async (req, res) => {
+    try {
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const medicines = await db.all('SELECT * FROM medicines ORDER BY id DESC');
+        await db.close();
+        res.json(medicines);
+    }
+    catch (error) {
+        console.error('Failed to fetch medicines:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// Purchases Engine APIs
+app.get('/api/distributors', async (_req, res) => {
+    try {
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const distributors = await db.all('SELECT * FROM distributors ORDER BY name');
+        await db.close();
+        res.json(distributors);
+    }
+    catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+app.post('/api/purchases', async (req, res) => {
+    const { distributor, invoice_no, total_amount } = req.body;
+    try {
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        // Upsert distributor
+        await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', distributor);
+        const distRow = await db.get('SELECT id FROM distributors WHERE name = ?', distributor);
+        // Insert purchase
+        await db.run('INSERT INTO purchases (distributor_id, invoice_no, total_amount) VALUES (?, ?, ?)', [distRow.id, invoice_no, total_amount]);
+        await db.close();
+        res.json({ success: true, message: 'Purchase saved' });
+    }
+    catch (error) {
+        console.error('Failed to save purchase:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// API to fetch all catalog jobs
+app.get('/api/jobs', async (_req, res) => {
+    try {
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const jobs = await db.all('SELECT * FROM catalog_jobs ORDER BY created_at DESC');
+        await db.close();
+        res.json(jobs);
+    }
+    catch (error) {
+        console.error('Failed to fetch jobs:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+const PORT = process.env.PORT || 3000;
+// Mount Agent 2 Routers
+app.use('/api/crm', crmRouter);
+app.use('/api/utilities', utilitiesRouter);
+app.use('/api/security', securityRouter);
+app.use('/api/email', emailRouter);
+app.use('/api/migration', migrationRouter);
+app.use('/api/settings', settingsRouter);
+app.use('/api/dispatch', dispatchRouter);
+app.use('/api/archive', archiveRouter);
+app.use('/api/learning', learningRouter);
+app.use('/api/messaging', messagingRouter);
+// Core API routes
+app.use('/api/sales', salesRouter);
+app.use('/api/inventory', inventoryRouter);
+app.use('/api/dashboard', dashboardRouter);
+app.use('/api/purchases', purchasesRouter);
+app.use('/api/returns', returnsRouter);
+app.use('/api/orders', ordersRouter);
+app.use('/api/expiry', expiryRouter);
+app.use('/api/reports', reportsRouter);
+app.use('/api/compliance', complianceRouter);
+// Manual refill reminder endpoint
+app.post('/api/patients/send-refill', async (req, res) => {
+    const { whatsapp_number, name } = req.body;
+    if (!whatsapp_number) {
+        return res.status(400).json({ error: 'WhatsApp number required' });
+    }
+    try {
+        // Simple reminder text – can be templated later
+        const message = `Hello ${name || ''}, your medication refill is due soon. Please visit the pharmacy.`;
+        await sendMessage(whatsapp_number, undefined, message);
+        res.json({ success: true, message: 'Reminder sent' });
+    }
+    catch (err) {
+        console.error('WhatsApp send error:', err);
+        res.status(500).json({ error: 'Failed to send reminder' });
+    }
+});
+initClient().catch(err => console.error('WhatsApp init error:', err));
+import { startEmailPoller } from './worker/emailPoller.js';
+startEmailPoller();
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});

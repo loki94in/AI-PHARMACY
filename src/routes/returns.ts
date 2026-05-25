@@ -6,7 +6,7 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
-import { aiCameraService } from '../services/aiCameraService';
+import { aiCameraService } from '../services/aiCameraService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,7 +22,7 @@ router.get('/', async (_req, res) => {
     const rows = await db.all('SELECT * FROM returns ORDER BY date DESC');
     await db.close();
     res.json(rows);
-  } catch (err) {
+  } catch (err: any) {
     if (db) await db.close();
     console.error(JSON.stringify({
       message: 'Returns fetch error',
@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
     await db.run('INSERT INTO returns (return_no, original_invoice_id, type, total_amount) VALUES (?,?,?,?)', [return_no, original_invoice_id, type || null, total_amount || 0]);
     await db.close();
     res.json({ success: true, message: 'Return recorded' });
-  } catch (err) {
+  } catch (err: any) {
     if (db) await db.close();
     console.error(JSON.stringify({
       message: 'Create return error',
@@ -90,7 +90,7 @@ router.post('/financial-note', async (req, res) => {
     });
     const url = `/catalog/${filename}`;
     res.json({ url, message: `${type} note generated` });
-  } catch (err) {
+  } catch (err: any) {
     if (stream) {
       stream.destroy();
     }
@@ -106,4 +106,75 @@ router.post('/financial-note', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// AI Camera OCR endpoint for scanning medicine labels
+router.post('/ai-camera/process', async (req, res) => {
+  try {
+    // Check if image data is provided
+    if (!req.body || !req.body.image) {
+      return res.status(400).json({ error: 'Image data is required' });
+    }
+
+    const imageData = req.body.image;
+
+    // Process the image with Tesseract OCR
+    const result = await aiCameraService.processImage(imageData);
+
+    // Extract potential medicine information from OCR text
+    const medicineInfo = extractMedicineInfo(result.text);
+
+    res.json({
+      success: true,
+      ocrResult: result,
+      medicineInfo: medicineInfo,
+      message: 'Image processed successfully'
+    });
+  } catch (err: any) {
+    console.error(JSON.stringify({
+      message: 'AI Camera processing error',
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString()
+    }));
+    res.status(500).json({ error: 'Internal server error during OCR processing' });
+  }
+});
+
+// Helper function to extract medicine information from OCR text
+function extractMedicineInfo(text: string) {
+  const info: any = {};
+
+  // Common patterns for medicine labels
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+
+  // Look for medicine name (usually the largest/most prominent text)
+  info.potentialName = lines.length > 0 ? lines[0] : '';
+
+  // Look for strength/dosage patterns (e.g., "500mg", "10 mg")
+  const strengthMatch = text.match(/\d+\s*(?:mg|g|ml|μg|iu)/i);
+  if (strengthMatch) {
+    info.strength = strengthMatch[0];
+  }
+
+  // Look for batch/lot numbers
+  const batchMatch = text.match(/(?:batch|lot|#)\s*[:\-]?\s*([A-Z0-9]+)/i);
+  if (batchMatch) {
+    info.batchNumber = batchMatch[1];
+  }
+
+  // Look for expiry dates
+  const expiryMatch = text.match(/(?:exp|expiry)\s*[:\-]?\s*(\d{2}[\/\-]\d{2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{2})/i);
+  if (expiryMatch) {
+    info.expiryDate = expiryMatch[1];
+  }
+
+  // Look for MRP/price
+  const priceMatch = text.match(/(?:mrp|price|₹|rs)\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+  if (priceMatch) {
+    info.mrp = parseFloat(priceMatch[1]);
+  }
+
+  return info;
+}
+
 export default router;
