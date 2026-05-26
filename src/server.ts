@@ -33,6 +33,7 @@ import archiveRouter from './routes/archive.js';
 import learningRouter from './routes/learning.js';
 import messagingRouter from './routes/messaging.js';
 import aiCameraRouter from './routes/aiCamera.js';
+import telegramPrescriptionRouter from './routes/telegramPrescription.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -160,6 +161,7 @@ app.use('/api/archive', archiveRouter);
 app.use('/api/learning', learningRouter);
 app.use('/api/messaging', messagingRouter);
 app.use('/api/aicamera', aiCameraRouter);
+app.use('/api/telegram-prescription', telegramPrescriptionRouter);
 // Core API routes
 app.use('/api/sales', salesRouter);
 app.use('/api/inventory', inventoryRouter);

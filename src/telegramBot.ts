@@ -4,6 +4,8 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getMessage } from './i18n/getMessage.js';
+import { aiCameraService } from './services/aiCameraService.js';
+import { telegramPrescriptionService } from './services/telegramPrescriptionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +22,19 @@ class TelegramBotService {
     if (this.token) {
       this.initializeBot();
     }
+  }
+
+  private initializeBot(): void {
+    if (!this.token) {
+      console.error('Telegram bot token not provided');
+      return;
+    }
+
+    this.bot = new TelegramBot(this.token, { polling: true });
+    this.setupCommandHandlers();
+    this.setupErrorHandling();
+
+    console.log('Telegram bot initialized with polling');
   }
 
   private initializeBot(): void {
@@ -53,7 +68,12 @@ class TelegramBotService {
       this.bot?.sendMessage(chatId,
         'AI Pharmacy Bot Usage:\n\n' +
         '1. Direct medicine name: Send just the medicine name (e.g., paracetamol)\n' +
-        '2. Command format: Use /check <medicine> (e.g., /check paracetamol)\n\n' +
+        '2. Command format: Use /check <medicine> (e.g., /check paracetamol)\n' +
+        '3. Send prescription image: Upload a photo of medicine prescription\n\n' +
+        'Prescription commands:\n' +
+        '/viewcart - View your current cart\n' +
+        '/clearcart - Clear your cart\n' +
+        '/bill - Generate bill from cart\n\n' +
         'Both methods will show:\n' +
         '• Availability status\n' +
         '• MRP (price per unit)\n' +
@@ -98,6 +118,94 @@ class TelegramBotService {
       }
     });
 
+    // Handle /viewcart command
+    this.bot.onText(/\/viewcart/, async (msg) => {
+      const chatId = msg.chat.id;
+      try {
+        const cartItems = telegramPrescriptionService.getCartItems(chatId);
+        const { subtotal, tax, total } = telegramPrescriptionService.calculateCartTotal(chatId);
+
+        if (cartItems.length === 0) {
+          this.bot?.sendMessage(chatId, '🛒 Your cart is empty. Add medicines by sending prescription images or using /check command.');
+          return;
+        }
+
+        let cartText = '🛒 *Your Cart:*\n\n';
+        for (const item of cartItems) {
+          cartText += `• ${item.medicine_name} x${item.quantity} = ₹${(item.quantity * item.unit_price).toFixed(2)}\n`;
+        }
+        cartText += `\n💰 *Subtotal:* ₹${subtotal.toFixed(2)}\n`;
+        cartText += `🧾 *Tax (5%):* ₹${tax.toFixed(2)}\n`;
+        cartText += `💵 *Total:* ₹${total.toFixed(2)}\n\n`;
+        cartText += 'Use /bill to generate invoice or send more prescription images to add items.';
+
+        this.bot?.sendMessage(chatId, cartText, { parse_mode: 'Markdown' });
+      } catch (error) {
+        console.error('Error viewing cart:', error);
+        this.bot?.sendMessage(chatId, '❌ Error viewing cart. Please try again.');
+      }
+    });
+
+    // Handle /clearcart command
+    this.bot.onText(/\/clearcart/, async (msg) => {
+      const chatId = msg.chat.id;
+      telegramPrescriptionService.clearCart(chatId);
+      this.bot?.sendMessage(chatId, '🗑️ Your cart has been cleared.');
+    });
+
+    // Handle /bill command
+    this.bot.onText(/\/bill/, async (msg) => {
+      const chatId = msg.chat.id;
+      try {
+        const cartItems = telegramPrescriptionService.getCartItems(chatId);
+        if (cartItems.length === 0) {
+          this.bot?.sendMessage(chatId, '🛒 Your cart is empty. Add medicines by sending prescription images first.');
+          return;
+        }
+
+        this.bot?.sendMessage(chatId, '🧾 Generating bill from your cart...');
+
+        // Make internal API call to generate bill
+        // Using dynamic import to avoid TypeScript issues with node-fetch types
+        const fetchModule = await import('node-fetch');
+        const fetch = fetchModule.default || fetchModule;
+        const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/telegram-prescription/bill/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            chatId: chatId,
+            patient_id: null, // Could be enhanced to ask for patient details
+            doctor_id: null,  // Could be enhanced to ask for doctor details
+            discount: 0
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to generate bill: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+          this.bot?.sendMessage(chatId,
+            `✅ *Bill Generated Successfully!*\n\n` +
+            `📄 Invoice No: ${result.invoice_no}\n` +
+            `💰 Total Amount: ₹${result.total.toFixed(2)}\n` +
+            `🧾 Tax Amount: ₹${result.tax.toFixed(2)}\n\n` +
+            `Thank you for using AI Pharmacy!`,
+            { parse_mode: 'Markdown' }
+          );
+        } else {
+          this.bot?.sendMessage(chatId, `❌ Failed to generate bill: ${result.error || 'Unknown error'}`);
+        }
+      } catch (error) {
+        console.error('Error generating bill:', error);
+        this.bot?.sendMessage(chatId, '❌ Error generating bill. Please try again or contact support.');
+      }
+    });
+
     // Handle direct medicine name messages (without / prefix)
     this.bot.on('message', (msg) => {
       const chatId = msg.chat.id;
@@ -116,6 +224,61 @@ class TelegramBotService {
 
       // Treat direct messages as medicine name queries
       this.handleMedicineQuery(chatId, messageText);
+    });
+
+    // Handle photo messages (prescription images)
+    this.bot.on('photo', async (msg) => {
+      const chatId = msg.chat.id;
+
+      // Send processing message
+      this.bot?.sendMessage(chatId, '📥 Image received. Processing prescription...')
+        .then(() => {
+          // Get the highest resolution photo
+          const photo = msg.photo.reduce((prev, current) =>
+            (prev.file_size > current.file_size) ? prev : current
+          );
+
+          // Download and process the photo
+          this.bot?.getFileLink(photo.file_id)
+            .then(async (fileLink) => {
+              try {
+                // Fetch the image data
+                const response = await fetch(fileLink);
+                if (!response.ok) {
+                  throw new Error(`Failed to download image: ${response.status}`);
+                }
+                const imageBuffer = await response.arrayBuffer();
+
+                // Process with AI camera service
+                const result = await aiCameraService.processImage(Buffer.from(imageBuffer));
+
+                // Handle the result through prescription service
+                await telegramPrescriptionService.handlePrescriptionResult(
+                  chatId,
+                  result,
+                  msg.caption || '', // Optional caption for additional context
+                  this.bot // Pass bot instance for sending messages
+                );
+
+                // Send feedback messages based on result
+                // Note: The actual messaging is handled within the prescription service now
+              } catch (error) {
+                console.error('Error processing prescription image:', error);
+                this.bot?.sendMessage(chatId,
+                  '❌ Error processing prescription image. Please try again or send a clearer image.'
+                );
+              }
+            })
+            .catch(downloadError => {
+              console.error('Error downloading image:', downloadError);
+              this.bot?.sendMessage(chatId,
+                '❌ Failed to download image. Please try again.'
+              );
+            });
+        })
+        .catch(sendError => {
+          console.error('Error sending processing message:', sendError);
+        });
     });
   }
 
