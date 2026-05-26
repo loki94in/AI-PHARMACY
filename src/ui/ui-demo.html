@@ -7,23 +7,23 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #0b0f1a;
-    --surface: #111827;
-    --surface2: #1a2235;
-    --border: rgba(96,165,250,0.12);
-    --border-bright: rgba(96,165,250,0.28);
-    --sky: #38bdf8;
-    --sky-dim: rgba(56,189,248,0.12);
-    --sky-glow: rgba(56,189,248,0.22);
-    --green: #34d399;
-    --green-dim: rgba(52,211,153,0.12);
-    --green-glow: rgba(52,211,153,0.2);
-    --white: #f0f6ff;
-    --muted: #6b7fa3;
-    --text: #c9d8f0;
-    --accent-orange: #fb923c;
-    --accent-purple: #a78bfa;
-    --danger: #f87171;
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface2: #f1f5f9;
+    --border: rgba(148, 163, 184, 0.15);
+    --border-bright: rgba(14, 165, 233, 0.25);
+    --sky: #0ea5e9;
+    --sky-dim: rgba(14, 165, 233, 0.08);
+    --sky-glow: rgba(14, 165, 233, 0.15);
+    --green: #10b981;
+    --green-dim: rgba(16, 185, 129, 0.08);
+    --green-glow: rgba(16, 185, 129, 0.15);
+    --white: #0f172a;
+    --muted: #64748b;
+    --text: #334155;
+    --accent-orange: #f97316;
+    --accent-purple: #8b5cf6;
+    --danger: #ef4444;
     --sidebar-w: 260px;
   }
 
@@ -224,7 +224,7 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    background: rgba(17, 24, 39, 0.75);
+    background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     position: sticky;
@@ -917,7 +917,7 @@
 (function() {
   const originalFetch = window.fetch;
   window.fetch = function(url, options = {}) {
-    const apiKey = localStorage.getItem('API_KEY') || 'dev-key-123';
+    const apiKey = localStorage.getItem('API_KEY') || 'Pass@123';
     options.headers = options.headers || {};
     if (options.headers instanceof Headers) {
       options.headers.set('X-API-Key', apiKey);
@@ -962,11 +962,11 @@
 
   const currentKey = localStorage.getItem('API_KEY');
   if (!currentKey) {
-    originalFetch('/api/sales/next-invoice', { headers: { 'X-API-Key': 'dev-key-123' } }).then(res => {
+    originalFetch('/api/sales/next-invoice', { headers: { 'X-API-Key': 'Pass@123' } }).then(res => {
       if (res.status === 401) {
         showAuthOverlay();
       } else {
-        localStorage.setItem('API_KEY', 'dev-key-123');
+        localStorage.setItem('API_KEY', 'Pass@123');
       }
     }).catch(() => {
       showAuthOverlay();
@@ -1063,7 +1063,8 @@
           <div style="display: flex; gap: 12px; background: var(--surface2); border: 1px solid var(--border); padding: 8px 12px; border-radius: 8px; align-items: center; font-size: 12px;">
             <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px;">
               <span class="icon" style="color:var(--danger)">👤</span>
-              <input type="text" id="pos-patient-input" placeholder="Patient [ALT+1]" style="background: transparent; border: none; color: var(--white); width: 140px; font-size: 12px;" />
+              <input type="text" id="pos-patient-input" placeholder="Patient Name" style="background: transparent; border: none; color: var(--white); width: 90px; font-size: 12px;" />
+              <input type="text" id="pos-patient-phone-input" placeholder="Phone" style="background: transparent; border: none; color: var(--white); width: 90px; font-size: 12px;" />
               <button class="btn btn-ghost" style="padding: 2px 6px;" onclick="openModal('patient-modal')">+</button>
             </div>
             <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px;">
@@ -1117,68 +1118,21 @@
                   <tr style="background: rgba(251,146,60,0.2); border-bottom: 1px solid var(--sky-dim); box-shadow: inset 0 0 10px rgba(251,146,60,0.15);">
                     <td style="padding: 8px 12px; font-weight: 700; color: var(--sky);">1</td>
                     <td style="padding: 8px 12px;">
-                      <input type="text" id="inline-search-input" value="JUNIOR LANZOL 15MG STRIP OF 15 TABLETS" style="width: 100%; background: transparent; border: none; color: var(--white); outline: none; font-weight: 600;" autofocus />
+                      <input type="text" id="inline-search-input" value="" placeholder="Search or Enter Medicine..." style="width: 100%; background: transparent; border: none; color: var(--white); outline: none; font-weight: 600;" autofocus />
                     </td>
                     <td style="padding: 8px 12px; display: flex; align-items: center; gap: 4px;">
-                      <span style="background: #F87171; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; font-weight: bold;">0:5</span>
-                      <input type="text" value="(0:5)5BA0771(₹184.5)(11/26)" style="width: 140px; background: transparent; border: none; color: var(--white); outline: none; font-size: 11px;" />
+                      <span style="background: #F87171; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; font-weight: bold;">0:0</span>
+                      <input type="text" value="" placeholder="Batch/Details" style="width: 140px; background: transparent; border: none; color: var(--white); outline: none; font-size: 11px;" />
                     </td>
-                    <td style="padding: 8px 12px;"><input type="text" value="11/26" style="width: 50px; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="15.56" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="10" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="2" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
+                    <td style="padding: 8px 12px;"><input type="text" value="" placeholder="Expiry" style="width: 50px; background: transparent; border: none; color: var(--white); outline: none;" /></td>
+                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0.00" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
+                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
                     <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="184.5" style="width: 60px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="1.06" style="width: 60px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right; font-weight: 700; color: var(--sky);">22.14</td>
+                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
+                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0.00" style="width: 60px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
+                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0.00" style="width: 60px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
+                    <td style="padding: 8px 12px; text-align: right; font-weight: 700; color: var(--sky);">0.00</td>
                     <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding: 2px 6px; font-size: 11px; background:#F87171; border:none; color:white; border-radius: 4px; cursor: pointer;">✖</button></td>
-                  </tr>
-
-                  <!-- Bill Items -->
-                  <tr>
-                    <td style="padding: 8px 12px; color: var(--muted);">2</td>
-                    <td style="padding: 8px 12px;" class="text-white fw700">ONDEM MD 4MG TAB</td>
-                    <td style="padding: 8px 12px; display: flex; align-items: center; gap: 4px;" class="mono">
-                      <span style="background: #F87171; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; font-weight: bold;">3:7</span>
-                      <span style="font-size: 11px;">(0:6)25443172(₹54.85)(07/27)</span>
-                    </td>
-                    <td style="padding: 8px 12px;" class="mono">07/27</td>
-                    <td style="padding: 8px 12px; text-align: right;" class="text-green"><span class="margin-value">17.33</span>%</td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" class="disc-input" value="10" min="0" style="width: 40px; text-align: right; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--white);" oninput="validateMargins()" />%</td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="2" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-                    <td style="padding: 8px 12px; text-align: right;">₹54.85</td>
-                    <td style="padding: 8px 12px; text-align: right;">₹0.48</td>
-                    <td style="padding: 8px 12px; text-align: right;" class="text-white fw700">₹9.87</td>
-                    <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px; background:#F87171; border:none; color:white; border-radius: 4px;" onclick="this.closest('tr').remove()">✖</button></td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 12px; color: var(--muted);">3</td>
-                    <td style="padding: 8px 12px;" class="text-white fw700">Amoxicillin 250mg</td>
-                    <td style="padding: 8px 12px;" class="mono">B-2025-02</td>
-                    <td style="padding: 8px 12px;" class="mono">08/26</td>
-                    <td style="padding: 8px 12px; text-align: right;" class="text-green"><span class="margin-value">22</span>%</td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" class="disc-input" value="0" min="0" style="width: 40px; text-align: right; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--white);" oninput="validateMargins()" />%</td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="5" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-                    <td style="padding: 8px 12px; text-align: right;">₹85.00</td>
-                    <td style="padding: 8px 12px; text-align: right;">₹5.00</td>
-                    <td style="padding: 8px 12px; text-align: right;" class="text-white fw700">₹42.50</td>
-                    <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="this.closest('tr').remove()">❌</button></td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 12px; color: var(--muted);">4</td>
-                    <td style="padding: 8px 12px;" class="text-white fw700">Atorvastatin 10mg</td>
-                    <td style="padding: 8px 12px;" class="mono">B-2024-10</td>
-                    <td style="padding: 8px 12px;" class="mono">11/25</td>
-                    <td style="padding: 8px 12px; text-align: right;" class="text-green"><span class="margin-value">18</span>%</td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" class="disc-input" value="10" min="0" style="width: 40px; text-align: right; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--white);" oninput="validateMargins()" />%</td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="1" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="2" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-                    <td style="padding: 8px 12px; text-align: right;">₹64.00</td>
-                    <td style="padding: 8px 12px; text-align: right;">₹7.50</td>
-                    <td style="padding: 8px 12px; text-align: right;" class="text-white fw700">₹70.40</td>
-                    <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="this.closest('tr').remove()">❌</button></td>
                   </tr>
                 </tbody>
               </table>
@@ -1200,22 +1154,9 @@
 
           <div class="card" style="margin-bottom:0; flex-grow: 1; overflow-y: auto;">
             <div class="card-title"><span class="icon">🧠</span> Doctor Suggestions</div>
-            <div class="fs11 text-muted mb6" style="font-family:'DM Mono',monospace;">Dr. Sharma · learning_engine</div>
-            <div class="suggestion-card">
-              <div class="suggestion-name">Metformin 500mg</div>
-              <div class="suggestion-meta">Prescribed 12×  last 90 days</div>
-            </div>
-            <div class="suggestion-card">
-              <div class="suggestion-name">Atorvastatin 10mg</div>
-              <div class="suggestion-meta">Prescribed 8× last 90 days</div>
-            </div>
-            <div class="suggestion-card">
-              <div class="suggestion-name">Amlodipine 5mg</div>
-              <div class="suggestion-meta">Prescribed 7× last 90 days</div>
-            </div>
-            <div class="suggestion-card">
-              <div class="suggestion-name">Losartan 50mg</div>
-              <div class="suggestion-meta">Prescribed 5× last 90 days</div>
+            <div id="doctor-suggestions-container">
+              <div class="fs11 text-muted mb6" style="font-family:'DM Mono',monospace;">Select a doctor to view prescription patterns...</div>
+              <div class="text-muted" style="font-size:12px;text-align:center;padding:20px 0;">No active suggestion data available.</div>
             </div>
           </div>
         </div>
@@ -1585,12 +1526,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
     <div class="topbar">
-<div id="edit-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
-  <div style="background:#222;padding:20px;max-width:400px;">
-    <h3>Edit Item</h3>
-    <input id="modal-field" placeholder="Value"/>
-    <button onclick="saveEdit()">Save</button>
-    <button onclick="closeModal()">Cancel</button>
+<div id="edit-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);justify-content:center;align-items:center;z-index:9999;">
+  <div style="background:var(--surface);padding:24px;border-radius:12px;border:1px solid var(--border);max-width:400px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,0.1);display:flex;flex-direction:column;gap:12px;">
+    <h3 style="font-family:'Syne',sans-serif;font-weight:700;color:var(--white);font-size:16px;">Edit Item</h3>
+    <input id="modal-field" placeholder="Value" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--white);padding:8px 12px;border-radius:6px;outline:none;" />
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEdit()">Save</button>
+    </div>
   </div>
 </div>
       <div>
@@ -1633,38 +1576,8 @@ document.addEventListener('DOMContentLoaded', () => {
               </tr>
             </thead>
             <tbody id="pending-imports-body">
-              <tr style="border-bottom: 1px solid var(--border);">
-                <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
-                <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">Augmentin 625 Duo Tablet</td>
-                <td style="padding: 8px 12px;"><span style="background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3);">Linked to Inventory</span></td>
-                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">B-88392</td>
-                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">10/26</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">50</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">5</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">₹125.40</td>
-                <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--sky); padding: 4px 8px;">Edit</button></td>
-              </tr>
-              <tr style="border-bottom: 1px solid var(--border);">
-                <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
-                <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">Dolo 650 Tablet</td>
-                <td style="padding: 8px 12px;"><span style="background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3);">Linked to Inventory</span></td>
-                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">DL-1102</td>
-                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">12/25</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">200</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">20</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">₹22.10</td>
-                <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--sky); padding: 4px 8px;">Edit</button></td>
-              </tr>
               <tr>
-                <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
-                <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">New Unknown Syrup 100ml</td>
-                <td style="padding: 8px 12px;"><span style="background: rgba(248, 113, 113, 0.15); color: var(--danger); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(248, 113, 113, 0.3);">⚠ New Item (Needs Setup)</span></td>
-                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">SYR-991</td>
-                <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">05/27</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">20</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">0</td>
-                <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">₹85.00</td>
-                <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--danger); padding: 4px 8px;">Setup Item</button></td>
+                <td colspan="9" style="text-align: center; padding: 20px; color: var(--muted);">No pending imports. Upload a PDF or CSV file to queue items.</td>
               </tr>
             </tbody>
           </table>
@@ -1680,44 +1593,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </tr></thead>
           <tbody id="inventory-body">
             <tr>
-              <td class="text-white fw700">Paracetamol 500mg</td>
-              <td class="text-muted">Paracetamol 500mg</td>
-              <td class="text-white fw700">320</td>
-              <td class="mono">A-12</td><td class="mono">B-2024-11</td>
-              <td class="expiry-green">Jun 2026</td>
-              <td>50</td>
-              <td><span class="badge badge-green">OK</span></td>
-              <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Edit</button></td>
-            </tr>
-            <tr style="background:rgba(248,113,113,0.04)">
-              <td class="text-white fw700">Metformin 500mg</td>
-              <td class="text-muted">Metformin HCl</td>
-              <td class="text-danger fw700">12</td>
-              <td class="mono">B-03</td><td class="mono">B-2024-08</td>
-              <td class="expiry-orange">Aug 2025</td>
-              <td>100</td>
-              <td><span class="badge badge-danger">Low Stock</span></td>
-              <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Edit</button></td>
-            </tr>
-            <tr>
-              <td class="text-white fw700">Amoxicillin 250mg</td>
-              <td class="text-muted">Amoxicillin Trihydrate</td>
-              <td class="text-white fw700">88</td>
-              <td class="mono">C-07</td><td class="mono">B-2025-02</td>
-              <td class="expiry-green">Feb 2027</td>
-              <td>40</td>
-              <td><span class="badge badge-green">OK</span></td>
-              <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Edit</button></td>
-            </tr>
-            <tr style="background:rgba(248,113,113,0.04)">
-              <td class="text-white fw700">Losartan 50mg</td>
-              <td class="text-muted">Losartan Potassium</td>
-              <td class="text-danger fw700">6</td>
-              <td class="mono">A-05</td><td class="mono">B-2023-12</td>
-              <td class="expiry-red">Dec 2024 ⚠</td>
-              <td>80</td>
-              <td><span class="badge badge-danger">Near Expiry</span></td>
-              <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Edit</button></td>
+              <td colspan="9" style="text-align: center; padding: 20px; color: var(--muted);">Loading active inventory...</td>
             </tr>
           </tbody>
         </table>
@@ -1835,12 +1711,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
     <div class="topbar">
-<div id="edit-purchase-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
-  <div style="background:#222;padding:20px;max-width:400px;">
-    <h3>Edit Purchase</h3>
-    <input id="purchase-field" placeholder="Value"/>
-    <button onclick="savePurchaseEdit()">Save</button>
-    <button onclick="closePurchaseModal()">Cancel</button>
+<div id="edit-purchase-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);justify-content:center;align-items:center;z-index:9999;">
+  <div style="background:var(--surface);padding:24px;border-radius:12px;border:1px solid var(--border);max-width:400px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,0.1);display:flex;flex-direction:column;gap:12px;">
+    <h3 style="font-family:'Syne',sans-serif;font-weight:700;color:var(--white);font-size:16px;">Edit Purchase</h3>
+    <input id="purchase-field" placeholder="Value" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--white);padding:8px 12px;border-radius:6px;outline:none;" />
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="closePurchaseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="savePurchaseEdit()">Save</button>
+    </div>
   </div>
 </div>
       <div>
@@ -1911,88 +1789,8 @@ document.addEventListener('DOMContentLoaded', () => {
             </tr>
           </thead>
           <tbody id="purchases-body">
-            <!-- Highlighted Autocomplete Row -->
-            <tr style="background: rgba(251,146,60,0.2); color: var(--white);">
-              <td style="padding: 6px 8px;"><input type="checkbox" checked style="accent-color: #374151;" /></td>
-              <td style="padding: 6px 8px; font-weight: bold;">1</td>
-              <td style="padding: 6px 8px; position: relative;">
-                <div style="display: flex; gap: 4px; align-items: center;">
-                  <input type="text" value="DERMICOOL 50 POWDER 1" style="flex: 1; background: transparent; border: 1px solid var(--border); color: var(--white); font-size: 12px; padding: 4px 6px; border-radius: 2px; font-weight: bold;" />
-                  <button onclick="openModal('add-medicine-modal')" style="background: #374151; color: white; border: none; border-radius: 2px; width: 24px; height: 24px; cursor: pointer;">+</button>
-                </div>
-              </td>
-              <td style="padding: 6px 8px; color: var(--white); display: flex; align-items: center; gap: 4px;">
-                <span style="background: #F87171; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; font-weight: bold;">4</span>
-                FT0211
-              </td>
-              <td style="padding: 6px 8px; color: var(--white);">02/29</td>
-              <td style="padding: 6px 8px; color: var(--white);">44.64</td>
-              <td style="padding: 6px 8px; color: #F87171;">13.76</td>
-              <td style="padding: 6px 8px; color: var(--white);">50</td>
-              <td style="padding: 6px 8px; color: var(--white);">2</td>
-              <td style="padding: 6px 8px; color: var(--white);">0</td>
-              <td style="padding: 6px 8px; color: var(--white);">2.5</td>
-              <td style="padding: 6px 8px; color: var(--white);">2.5</td>
-              <td style="padding: 6px 8px; color: var(--white);">0.00</td>
-              <td style="padding: 6px 8px; color: var(--white);">7.14</td>
-              <td style="padding: 6px 8px; color: var(--white);">0</td>
-              <td style="padding: 6px 8px; color: var(--white);">86.24</td>
-              <td style="padding: 6px 8px; text-align: right;"><button style="background:#F87171; border:none; color:white; width: 20px; height: 20px; border-radius: 4px; cursor: pointer;">✖</button></td>
-            </tr>
-
-            <!-- Completed Row -->
-            <tr style="border-bottom: 1px solid var(--border);">
-              <td style="padding: 6px 8px;"><input type="checkbox" checked /></td>
-              <td style="padding: 6px 8px;">2</td>
-              <td style="padding: 6px 8px; background: rgba(16, 185, 129, 0.2); font-weight: bold;">
-                <span style="color: var(--sky);">CANDID POWDER-50GM</span>
-              </td>
-              <td style="padding: 6px 8px; display: flex; align-items: center; gap: 4px;">
-                <span style="background: #F87171; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; font-weight: bold;">3</span>
-                62250435
-              </td>
-              <td style="padding: 6px 8px; position: relative;" class="purchase-hover-cell">
-                08/29
-                <!-- Smart Hover Tooltip -->
-                <div class="purchase-hover-tooltip" style="position: absolute; top: 100%; left: 0; background: var(--surface2); border: 1px solid var(--border); color: var(--white); padding: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.5); z-index: 60; font-size: 10px; width: 280px; display: none;">
-                  <div style="display: flex; font-weight: bold; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 4px;">
-                    <div style="flex: 2;">Distributor</div>
-                    <div style="flex: 1; text-align: right;">Margin</div>
-                    <div style="flex: 1; text-align: right;">CP</div>
-                    <div style="flex: 1; text-align: right;">Net CP</div>
-                    <div style="flex: 1; text-align: right;">Sch(₹)</div>
-                    <div style="flex: 1; text-align: right;">MRP</div>
-                  </div>
-                  <div style="display: flex; margin-bottom: 2px;">
-                    <div style="flex: 2;">AMIT MEDICO</div>
-                    <div style="flex: 1; text-align: right;">32.54%</div>
-                    <div style="flex: 1; text-align: right;">6.2</div>
-                    <div style="flex: 1; text-align: right;">6.01</div>
-                    <div style="flex: 1; text-align: right;">0</div>
-                    <div style="flex: 1; text-align: right;">9.65</div>
-                  </div>
-                  <div style="display: flex; margin-bottom: 2px;">
-                    <div style="flex: 2;">SUCCESS SURGICALL</div>
-                    <div style="flex: 1; text-align: right;">28.97%</div>
-                    <div style="flex: 1; text-align: right;">7.26</div>
-                    <div style="flex: 1; text-align: right;">7.88</div>
-                    <div style="flex: 1; text-align: right;">0</div>
-                    <div style="flex: 1; text-align: right;">11.09</div>
-                  </div>
-                </div>
-              </td>
-              <td style="padding: 6px 8px;">74.29</td>
-              <td style="padding: 6px 8px; color: #F87171;">31.19</td>
-              <td style="padding: 6px 8px;">97.5</td>
-              <td style="padding: 6px 8px;">1</td>
-              <td style="padding: 6px 8px;">0</td>
-              <td style="padding: 6px 8px;">2.5</td>
-              <td style="padding: 6px 8px;">2.5</td>
-              <td style="padding: 6px 8px;">0.00</td>
-              <td style="padding: 6px 8px;">10.4</td>
-              <td style="padding: 6px 8px;">0</td>
-              <td style="padding: 6px 8px;">67.09</td>
-              <td style="padding: 6px 8px; text-align: right;"><button style="background:#F87171; border:none; color:white; width: 20px; height: 20px; border-radius: 4px; cursor: pointer;">✖</button></td>
+            <tr>
+              <td colspan="17" style="text-align: center; padding: 20px; color: var(--muted);">Loading purchases history...</td>
             </tr>
           </tbody>
         </table>
@@ -2400,21 +2198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📊</span> Request Tracker</div>
-          <div class="log-entry">
-            <div class="log-dot" style="background:var(--danger)"></div>
-            <div class="log-msg"><strong class="text-white">Insulin Glargine 100U</strong><br><span class="fs11 text-muted">Patient: Ramesh K. · Qty: 2 vials</span></div>
-            <span class="badge badge-danger">Urgent</span>
-          </div>
-          <div class="log-entry">
-            <div class="log-dot" style="background:var(--accent-orange)"></div>
-            <div class="log-msg"><strong class="text-white">Clopidogrel 75mg</strong><br><span class="fs11 text-muted">Auto-created from email · Dr. Patel</span></div>
-            <span class="badge badge-orange">Pending</span>
-          </div>
-          <div class="log-entry">
-            <div class="log-dot" style="background:var(--green)"></div>
-            <div class="log-msg"><strong class="text-white">Metformin 1000mg</strong><br><span class="fs11 text-muted">Patient: Priya M. · Qty: 30 tabs</span></div>
-            <span class="badge badge-green">Ordered</span>
-          </div>
+          <div style="text-align: center; padding: 20px; color: var(--muted); font-size: 12px;">No active requests logged.</div>
         </div>
       </div>
     </div>
@@ -2468,10 +2252,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <table>
           <thead><tr><th>Product</th><th>Batch</th><th>Qty</th><th>Expiry</th><th>Days Left</th><th>Alert</th></tr></thead>
           <tbody id="expiry-body">
-            <tr><td class="text-white fw700">Losartan 50mg</td><td class="mono">B-2023-12</td><td>6</td><td class="expiry-red">Dec 2024</td><td class="expiry-red fw700">Expired!</td><td><span class="badge badge-danger">Critical</span></td></tr>
-            <tr><td class="text-white fw700">Cetirizine 10mg</td><td class="mono">B-2024-05</td><td>44</td><td class="expiry-orange">Jun 2025</td><td class="expiry-orange fw700">12 days</td><td><span class="badge badge-orange">Urgent</span></td></tr>
-            <tr><td class="text-white fw700">Pantoprazole 40mg</td><td class="mono">B-2024-07</td><td>60</td><td class="expiry-orange">Aug 2025</td><td class="expiry-orange fw700">41 days</td><td><span class="badge badge-orange">Soon</span></td></tr>
-            <tr><td class="text-white fw700">Azithromycin 500mg</td><td class="mono">B-2024-09</td><td>20</td><td class="expiry-green">Sep 2025</td><td class="expiry-green fw700">72 days</td><td><span class="badge badge-sky">Monitor</span></td></tr>
+            <tr>
+              <td colspan="6" style="text-align: center; padding: 20px; color: var(--muted);">Loading expiring inventory...</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -2982,9 +2765,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <table>
               <thead><tr><th>☐</th><th>Product</th><th>Batch</th><th>MRP</th></tr></thead>
               <tbody>
-                <tr><td><input type="checkbox" checked /></td><td class="text-white">Paracetamol 500mg</td><td class="mono">B-2024-11</td><td>₹18.00</td></tr>
-                <tr><td><input type="checkbox" /></td><td class="text-white">Amoxicillin 250mg</td><td class="mono">B-2025-02</td><td>₹85.00</td></tr>
-                <tr><td><input type="checkbox" checked /></td><td class="text-white">Atorvastatin 10mg</td><td class="mono">B-2024-10</td><td>₹64.00</td></tr>
+                <tr><td colspan="4" style="text-align:center; padding: 12px; color: var(--muted);">No items ready.</td></tr>
               </tbody>
             </table>
           </div>
@@ -3178,6 +2959,52 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
         <div class="field"><label>Encryption Key</label><input type="password" placeholder="●●●●●●●●●●●●●●●●●●●●" /></div>
         <div class="btn-row mt14"><button class="btn btn-danger" id="rotateKeyBtn">🔄 Rotate Encryption Key</button></div>
       </div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🔑</span> API Authentication Key</div>
+        <div class="field"><label>API Key</label><input type="password" id="ui-api-key-input" placeholder="Enter API key..." /></div>
+        <div class="btn-row mt14"><button class="btn btn-primary" id="save-api-key-btn">💾 Save API Key</button></div>
+      </div>
+      
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-title"><span class="icon">🔄</span> Patient Refill Manager</div>
+        <div class="grid2">
+          <div>
+            <h4 style="color: var(--white); margin-bottom: 10px;">Add New Refill Schedule</h4>
+            <div class="field mt8"><label>Patient Name</label><input type="text" id="refill-patient-name" placeholder="John Doe" /></div>
+            <div class="field mt8"><label>Patient WhatsApp Phone</label><input type="text" id="refill-patient-phone" placeholder="+919876543210" /></div>
+            <div class="field mt8">
+              <label>Medicine</label>
+              <select id="refill-medicine-select">
+                <option value="">Select Medicine...</option>
+              </select>
+            </div>
+            <div class="field mt8"><label>Refill Interval (Days)</label><input type="number" id="refill-interval" value="30" /></div>
+            <div class="btn-row mt14">
+              <button class="btn btn-primary" id="save-refill-btn">💾 Register Refill</button>
+              <button class="btn btn-ghost" id="check-refills-now-btn">⚡ Run Refill Check</button>
+            </div>
+          </div>
+          <div>
+            <h4 style="color: var(--white); margin-bottom: 10px;">Active Refill Schedules</h4>
+            <div class="tbl-wrap mt8" style="max-height: 250px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Patient</th>
+                    <th>Phone</th>
+                    <th>Medicine</th>
+                    <th>Next Date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="refills-list-body">
+                  <tr><td colspan="5" style="text-align:center;">Loading refills...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
       
       <h3 style="margin-top: 24px; color: var(--text);">🔌 Integration Settings</h3>
       <div class="grid3" style="margin-top: 16px;">
@@ -3276,6 +3103,119 @@ document.getElementById('rotateKeyBtn').addEventListener('click', async () => {
     alert('Failed to rotate key');
   }
 });
+
+// Load API key in settings
+const storedApiKey = localStorage.getItem('API_KEY') || 'Pass@123';
+const apiKeyField = document.getElementById('ui-api-key-input');
+if (apiKeyField) {
+  apiKeyField.value = storedApiKey;
+}
+
+// Save API key handler
+const saveApiKeyBtn = document.getElementById('save-api-key-btn');
+if (saveApiKeyBtn) {
+  saveApiKeyBtn.addEventListener('click', () => {
+    const val = apiKeyField.value.trim();
+    if (val) {
+      localStorage.setItem('API_KEY', val);
+      alert('API Key updated successfully! Reloading...');
+      window.location.reload();
+    } else {
+      alert('API Key cannot be empty.');
+    }
+  });
+}
+
+// --- Patient Refill Manager Logic ---
+async function loadRefillManager() {
+  try {
+    const medResp = await fetch('/api/medicines');
+    if (medResp.ok) {
+      const medicines = await medResp.json();
+      const selectEl = document.getElementById('refill-medicine-select');
+      if (selectEl) {
+        selectEl.innerHTML = '<option value="">Select Medicine...</option>';
+        medicines.forEach(med => {
+          const opt = document.createElement('option');
+          opt.value = med.id;
+          opt.textContent = med.name;
+          selectEl.appendChild(opt);
+        });
+      }
+    }
+
+    const refillsResp = await fetch('/api/refills');
+    if (refillsResp.ok) {
+      const refills = await refillsResp.json();
+      const tbody = document.getElementById('refills-list-body');
+      if (tbody) {
+        tbody.innerHTML = '';
+        if (refills.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 12px; color: var(--muted);">No active refills found.</td></tr>';
+          return;
+        }
+        refills.forEach(item => {
+          const tr = document.createElement('tr');
+          const statusBadge = item.status === 'notified' ? 'badge-green' : 'badge-orange';
+          tr.innerHTML = `
+            <td>${item.patient_name}</td>
+            <td class="mono">${item.patient_phone}</td>
+            <td>${item.medicine_name}</td>
+            <td class="mono">${item.next_refill_date ? item.next_refill_date.split(' ')[0] : 'N/A'}</td>
+            <td><span class="badge ${statusBadge}">${item.status}</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Refill manager load error:', err);
+  }
+}
+
+// Load it shortly after page load
+setTimeout(loadRefillManager, 1000);
+
+// Register refill handler
+document.getElementById('save-refill-btn')?.addEventListener('click', async () => {
+  const patient_name = document.getElementById('refill-patient-name').value.trim();
+  const patient_phone = document.getElementById('refill-patient-phone').value.trim();
+  const medicine_id = document.getElementById('refill-medicine-select').value;
+  const refill_interval_days = document.getElementById('refill-interval').value;
+
+  if (!patient_name || !patient_phone || !medicine_id) {
+    return alert('Patient name, phone, and medicine are required.');
+  }
+
+  try {
+    const resp = await fetch('/api/refills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient_name, patient_phone, medicine_id, refill_interval_days })
+    });
+    if (!resp.ok) throw new Error('Failed to save');
+    const data = await resp.json();
+    alert(data.message || 'Refill registered!');
+    loadRefillManager();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to register refill schedule.');
+  }
+});
+
+// Run manual check
+document.getElementById('check-refills-now-btn')?.addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/refills/check', { method: 'POST' });
+    if (!resp.ok) throw new Error('Failed to run check');
+    const data = await resp.json();
+    alert(data.message || 'Refill check executed!');
+    loadRefillManager();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to run manual refill check.');
+  }
+});
 </script>
 <script>
 async function sendWhatsAppTestMessage() {
@@ -3339,9 +3279,7 @@ document.querySelectorAll('.page#page14 .test-conn-btn').forEach(btn => {
             <table>
               <thead><tr><th>Time</th><th>Recipient</th><th>Message Type</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
-                <tr><td class="mono text-muted">14:02</td><td class="text-white">Ramesh Kumar</td><td>Refill Reminder</td><td><span class="badge badge-green">Sent</span></td><td><button class="btn btn-ghost" style="padding:3px 8px;font-size:11px;">Resend</button></td></tr>
-                <tr><td class="mono text-muted">13:45</td><td class="text-white">PharmaDist Ltd</td><td>Order Dispatch</td><td><span class="badge badge-green">Sent</span></td><td><button class="btn btn-ghost" style="padding:3px 8px;font-size:11px;">Resend</button></td></tr>
-                <tr><td class="mono text-muted">12:00</td><td class="text-white">Priya Mehta</td><td>Expiry Alert</td><td><span class="badge badge-orange">Pending</span></td><td><button class="btn btn-primary" style="padding:3px 8px;font-size:11px;">Send</button></td></tr>
+                <tr><td colspan="5" style="text-align:center; padding: 12px; color: var(--muted);">No dispatch entries found.</td></tr>
               </tbody>
             </table>
           </div>
@@ -3691,9 +3629,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <table>
               <thead><tr><th>Doctor</th><th>Top Product</th><th>Suggestions Used</th><th>Accuracy</th></tr></thead>
               <tbody>
-                <tr><td class="text-white">Dr. Sharma</td><td>Metformin 500mg</td><td>42</td><td><span class="badge badge-green">91%</span></td></tr>
-                <tr><td class="text-white">Dr. Patel</td><td>Atorvastatin 10mg</td><td>28</td><td><span class="badge badge-sky">84%</span></td></tr>
-                <tr><td class="text-white">Dr. Iyer</td><td>Amoxicillin 250mg</td><td>15</td><td><span class="badge badge-orange">72%</span></td></tr>
+                <tr><td colspan="4" style="text-align:center; padding: 12px; color: var(--muted);">No statistics loaded.</td></tr>
               </tbody>
             </table>
           </div>
@@ -3735,7 +3671,10 @@ document.getElementById('analyzeStructureBtn')?.addEventListener('click', async 
     });
     const result = await resp.json();
     if (result.success) {
-      document.getElementById('mapping-result')!.textContent = JSON.stringify(result.mapping, null, 2);
+      const mappingResultEl = document.getElementById('mapping-result');
+      if (mappingResultEl) {
+        mappingResultEl.textContent = JSON.stringify(result.mapping, null, 2);
+      }
     } else {
       alert('Analysis failed: ' + (result.error || result.raw));
     }
@@ -3933,7 +3872,9 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
 
   function savePatient() {
     const name = document.getElementById('new-patient-name').value;
+    const phone = document.getElementById('new-patient-phone').value;
     if(name) document.getElementById('pos-patient-input').value = name;
+    if(phone) document.getElementById('pos-patient-phone-input').value = phone;
     
     const noWhatsApp = document.getElementById('no-whatsapp');
     if (noWhatsApp) {
@@ -3943,16 +3884,43 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
     closeModal('patient-modal');
   }
 
-  function processSale(print) {
+  async function processSale(print) {
     if (document.getElementById('btn-save').disabled) return;
     
-    let msg = print ? "Bill saved and printed!" : "Bill saved!";
-    if (!currentPatientNoWhatsApp) {
-      msg += "\n\n✅ WhatsApp message with Purchase PDF has been automatically sent to the patient.";
-    } else {
-      msg += "\n\n❌ WhatsApp message skipped (Patient preference).";
+    const patientName = document.getElementById('pos-patient-input').value.trim();
+    const patientPhone = document.getElementById('pos-patient-phone-input').value.trim();
+    
+    // Construct dummy items for demo checkout
+    const items = [{
+      inventory_id: 1,
+      quantity: 2,
+      unit_price: 54.85
+    }];
+
+    try {
+      const resp = await fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items,
+          patient_name: patientName,
+          patient_phone: patientPhone
+        })
+      });
+      
+      if (!resp.ok) throw new Error('Checkout failed');
+      const result = await resp.json();
+      
+      let msg = print ? "Bill saved and printed!" : "Bill saved!";
+      msg += `\nInvoice No: ${result.invoice_no}\nTotal Amount: ₹${result.total}`;
+      if (patientName) {
+        msg += `\n\n✅ Patient details for "${patientName}" auto-saved to CRM.`;
+      }
+      alert(msg);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save sale on server: ' + err.message);
     }
-    alert(msg);
   }
 
   function saveDoctor() {
@@ -4105,7 +4073,7 @@ document.getElementById('sendTestMsgBtn')?.addEventListener('click', async () =>
       <!-- Phone -->
       <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
         <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Phone</div>
-        <input type="tel" placeholder="Add Phone" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+        <input type="tel" id="new-patient-phone" placeholder="Add Phone" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
       </div>
 
       <!-- Pincode -->
