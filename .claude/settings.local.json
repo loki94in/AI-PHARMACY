@@ -18,7 +18,8 @@
       "Bash(bash *)",
       "Bash(gzip *)",
       "Bash(ren *)",
-      "Bash(npm audit *)"
+      "Bash(npm audit *)",
+      "PowerShell(npm audit *)"
     ]
   },
   "hooks": {
