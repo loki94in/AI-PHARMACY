@@ -13,6 +13,7 @@ import { telegramBotService } from './telegramBot.js';
 import { ensureSchema } from './database.js';
 import { startEmailPoller } from './worker/emailPoller.js';
 import { imageArchiveService } from './services/imageArchiveService.js';
+import { authenticateApiKey } from './middleware/auth.js';
 
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
@@ -105,6 +106,9 @@ app.use(express.json({ limit: '1mb' }));
 // Serve UI static files
 app.use('/ui', express.static(path.join(__dirname, 'ui')));
 app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads')));
+
+// Protect all /api routes with API Key authentication
+app.use('/api', authenticateApiKey);
 
 // API to upload file and enqueue it directly
 app.post('/api/upload', upload.single('file'), async (req, res) => {

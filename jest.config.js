@@ -1,5 +1,5 @@
 export default {
-  testMatch: ["**/tests/utilities.test.ts", "**/tests/crm.test.ts", "**/tests/inventoryParser.test.ts", "**/tests/returnsParser.test.ts", "**/tests/salesParser.test.ts", "**/tests/services/productNameFilterService.test.ts", "**/tests/aiCamera.test.ts"],
+  testMatch: ["**/tests/utilities.test.ts", "**/tests/crm.test.ts", "**/tests/inventoryParser.test.ts", "**/tests/returnsParser.test.ts", "**/tests/salesParser.test.ts", "**/tests/services/productNameFilterService.test.ts", "**/tests/aiCamera.test.ts", "**/tests/auth.test.ts"],
   preset: 'ts-jest',
   testEnvironment: 'node',
   transform: {

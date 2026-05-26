@@ -845,9 +845,135 @@
   .purchase-hover-cell:hover .purchase-hover-tooltip {
     display: block !important;
   }
+
+  /* --- API Authentication Overlay --- */
+  .auth-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(11, 15, 26, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    transition: opacity 0.3s ease;
+  }
+  .auth-box {
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 16px;
+    padding: 30px;
+    width: 400px;
+    box-shadow: 0 0 30px rgba(56, 189, 248, 0.15);
+    text-align: center;
+  }
+  .auth-box h2 {
+    font-family: 'Syne', sans-serif;
+    color: var(--white);
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+  .auth-box p {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .auth-box input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--white);
+    font-size: 14px;
+    margin-bottom: 16px;
+    outline: none;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .auth-box input:focus {
+    border-color: var(--sky);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+  }
+  .auth-box button {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    background: linear-gradient(135deg, var(--sky) 0%, #0ea5e9 100%);
+    color: var(--bg);
+    transition: all 0.2s;
+  }
+  .auth-box button:hover {
+    filter: brightness(1.1);
+  }
 </style>
 </head>
 <body>
+<script>
+(function() {
+  const originalFetch = window.fetch;
+  window.fetch = function(url, options = {}) {
+    const apiKey = localStorage.getItem('API_KEY') || 'dev-key-123';
+    options.headers = options.headers || {};
+    if (options.headers instanceof Headers) {
+      options.headers.set('X-API-Key', apiKey);
+    } else if (Array.isArray(options.headers)) {
+      options.headers.push(['X-API-Key', apiKey]);
+    } else {
+      options.headers['X-API-Key'] = apiKey;
+    }
+    return originalFetch(url, options).then(response => {
+      if (response.status === 401) {
+        localStorage.removeItem('API_KEY');
+        showAuthOverlay();
+      }
+      return response;
+    });
+  };
+
+  function showAuthOverlay() {
+    if (document.getElementById('auth-overlay-el')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'auth-overlay-el';
+    overlay.className = 'auth-overlay';
+    overlay.innerHTML = `
+      <div class="auth-box">
+        <h2>🔒 Security Verification</h2>
+        <p>Please enter your Pharmacy Genius OS API Key to access the counter system.</p>
+        <input type="password" id="auth-key-input" placeholder="Enter API Key" />
+        <button id="auth-submit-btn">Verify & Connect</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    document.getElementById('auth-submit-btn').addEventListener('click', () => {
+      const key = document.getElementById('auth-key-input').value;
+      if (key) {
+        localStorage.setItem('API_KEY', key);
+        overlay.remove();
+        window.location.reload();
+      }
+    });
+  }
+
+  const currentKey = localStorage.getItem('API_KEY');
+  if (!currentKey) {
+    originalFetch('/api/sales/next-invoice', { headers: { 'X-API-Key': 'dev-key-123' } }).then(res => {
+      if (res.status === 401) {
+        showAuthOverlay();
+      } else {
+        localStorage.setItem('API_KEY', 'dev-key-123');
+      }
+    }).catch(() => {
+      showAuthOverlay();
+    });
+  }
+})();
+</script>
 
 <!-- ══════════════════════════ SIDEBAR ══════════════════════════ -->
 <aside>
