@@ -14,7 +14,10 @@
       "Bash(ssh *)",
       "Bash(xxd)",
       "Bash(clip.exe)",
-      "Bash(npx @anthropic-ai/mcpb pack)"
+      "Bash(npx @anthropic-ai/mcpb pack)",
+      "Bash(bash *)",
+      "Bash(gzip *)",
+      "Bash(ren *)"
     ]
   },
   "hooks": {

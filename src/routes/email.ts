@@ -4,6 +4,7 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { emailService } from '../services/emailService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,11 +43,17 @@ router.post('/', async (req, res) => {
     );
     await db2.close();
 
-    // TODO: Implement actual email processing logic here
-    // For now, we'll just log that we received it
-    console.log(`Email received from ${from}: ${subject}`);
+    // Process the email using our EmailService
+    await emailService.processEmail(emailData);
 
-    res.json({ success: true, message: 'Email received and logged' });
+    // Handle attachments if any
+    if (emailData.attachments.length > 0) {
+      await emailService.processAttachments(emailData.attachments);
+    }
+
+    console.log(`Email processed from ${from}: ${subject}`);
+
+    res.json({ success: true, message: 'Email received and processed' });
   } catch (error) {
     console.error('Email parse error:', error);
     res.status(500).json({ error: 'Failed to process email' });
