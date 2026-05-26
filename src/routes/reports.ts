@@ -3,6 +3,8 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+// @ts-ignore — @types/pdfkit not installed; pdfkit works at runtime
+import PDFDocument from 'pdfkit';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,7 +26,6 @@ router.get('/', async (_req, res) => {
   }
 });
 
-import PDFDocument from 'pdfkit';
 
 // Generic PDF export endpoint
 router.get('/export-pdf', async (req, res) => {
@@ -44,16 +45,21 @@ router.get('/export-pdf', async (req, res) => {
     let query = '';
     
     if (type === 'expiry') {
-      query = 'SELECT item_name, expiry_date, quantity FROM inventory WHERE expiry_date <= date("now", "+90 days")';
+      query = `SELECT m.name as item_name, im.expiry_date, im.quantity
+               FROM inventory_master im
+               JOIN medicines m ON im.medicine_id = m.id
+               WHERE date(im.expiry_date) <= date('now', '+90 days')`;
     } else if (type === 'sales') {
-      query = 'SELECT invoice_number, total_amount, payment_method FROM sales_invoices LIMIT 100';
+      query = 'SELECT invoice_no, total_amount, tax_amount FROM sales_invoices ORDER BY date DESC LIMIT 100';
     } else if (type === 'logs') {
-      query = 'SELECT timestamp, action_type, description FROM action_logs ORDER BY id DESC LIMIT 100';
+      query = 'SELECT created_at as timestamp, action_type, description FROM action_logs ORDER BY id DESC LIMIT 100';
     } else if (type === 'compliance') {
-      query = 'SELECT timestamp, action_type, description FROM action_logs WHERE action_type="DISPENSE_RX" ORDER BY id DESC LIMIT 100';
+      query = `SELECT created_at as timestamp, action_type, description FROM action_logs
+               WHERE action_type IN ('DISPENSE_RX','SCHEDULE_H1_DISPENSE','COMPLIANCE_ENTRY') ORDER BY id DESC LIMIT 100`;
     } else {
       query = 'SELECT * FROM action_logs LIMIT 10';
     }
+
     
     const rows = await db.all(query);
     await db.close();

@@ -3,15 +3,16 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getMessage } from './i18n/getMessage';
+import { getMessage } from './i18n/getMessage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', 'data', 'app.db');
 
 class TelegramBotService {
   private bot: TelegramBot | null = null;
   private readonly token: string | undefined;
+  private lang: string;
 
   constructor() {
     this.token = process.env.TELEGRAM_BOT_TOKEN;
@@ -173,6 +174,38 @@ class TelegramBotService {
       }
     }
     return sentCount;
+  }
+
+  // Query medicine availability from inventory
+  private async handleMedicineQuery(chatId: number, medicineName: string): Promise<void> {
+    try {
+      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const medicine = await db.get(
+        `SELECT m.name, im.quantity FROM medicines m
+         LEFT JOIN inventory_master im ON im.medicine_id = m.id
+         WHERE LOWER(m.name) LIKE ?
+         ORDER BY im.quantity DESC LIMIT 1`,
+        [`%${medicineName.toLowerCase()}%`]
+      );
+      await db.close();
+
+      if (!medicine) {
+        this.bot?.sendMessage(chatId, `\u274C Medicine "${medicineName}" not found in our system.`);
+      } else if ((medicine.quantity ?? 0) > 0) {
+        this.bot?.sendMessage(
+          chatId,
+          `\u2705 *${medicine.name}*\n\u{1F4E6} Stock: ${medicine.quantity} units\n\nAvailable at the pharmacy.`
+        );
+      } else {
+        this.bot?.sendMessage(
+          chatId,
+          `\u26A0\uFE0F *${medicine.name}* is currently OUT OF STOCK.\n\nPlease check back later or ask our pharmacist.`
+        );
+      }
+    } catch (error) {
+      console.error('handleMedicineQuery error:', error);
+      this.bot?.sendMessage(chatId, '\u274C Error looking up medicine. Please try again.');
+    }
   }
 
   // Graceful shutdown

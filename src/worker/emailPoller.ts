@@ -1,4 +1,5 @@
-import { emailService } from '../services/emailService';
+import { emailService } from '../services/emailService.js';
+
 
 /**
  * Email Poller Worker

@@ -8,6 +8,8 @@ import fs from 'fs';
 import multer from 'multer';
 import { initClient, sendMessage } from './whatsappClient.js';
 import { telegramBotService } from './telegramBot.js';
+import { ensureSchema } from './database.js';
+import { startEmailPoller } from './worker/emailPoller.js';
 
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
@@ -56,7 +58,6 @@ const upload = multer({ storage });
 const app = express();
 
 // Ensure DB schema is up to date
-import { ensureSchema } from './database.js';
 ensureSchema(DB_PATH).catch(err => console.error('Schema init error:', err));
 app.use(cors());
 app.use(express.json());
@@ -186,7 +187,6 @@ app.post('/api/patients/send-refill', async (req, res) => {
 });
 
 initClient().catch(err => console.error('WhatsApp init error:', err));
-import { startEmailPoller } from './worker/emailPoller.js';
 startEmailPoller();
 
 app.listen(PORT, () => {

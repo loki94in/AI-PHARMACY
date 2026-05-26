@@ -4,9 +4,9 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
-import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 import { aiCameraService } from '../services/aiCameraService.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

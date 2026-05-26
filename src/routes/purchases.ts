@@ -28,7 +28,17 @@ router.put('/:id', async (req, res) => {
   const { distributor, invoice_no, total_amount } = req.body;
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('UPDATE purchases SET distributor = ?, invoice_no = ?, total_amount = ? WHERE id = ?', [distributor, invoice_no, total_amount, id]);
+    // Upsert distributor name → get its id
+    if (distributor) {
+      await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distributor]);
+    }
+    const distRow = distributor
+      ? await db.get('SELECT id FROM distributors WHERE name = ?', [distributor])
+      : null;
+    await db.run(
+      'UPDATE purchases SET distributor_id = ?, invoice_no = ?, total_amount = ? WHERE id = ?',
+      [distRow ? distRow.id : null, invoice_no, total_amount, id]
+    );
     await db.close();
     res.json({ success: true, message: 'Purchase updated' });
   } catch (error) {
@@ -36,13 +46,17 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 router.post('/bulk-action', async (req, res) => {
   const { action, ids = [] } = req.body;
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    // Log the bulk action to action_logs
-    await db.run('INSERT INTO action_logs (date, product, patient_id, doctor_id, license_no, qty, bill_no) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [new Date().toISOString().split('T')[0], `Bulk ${action}`, '', '', '', ids.length, `Bulk action: ${action}`]);
+    // Log the bulk action to action_logs using the correct schema
+    await db.run(
+      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+      [`BULK_PURCHASE_${(action as string).toUpperCase()}`, `Bulk ${action} on ${ids.length} purchases: [${(ids as any[]).join(',')}]`]
+    );
+
     await db.close();
     res.json({ success: true, message: `Bulk ${action} completed and logged` });
   } catch (error) {

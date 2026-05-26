@@ -4,6 +4,7 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { createTransport, Transporter, SendMailOptions } from 'nodemailer';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { ensureSchema } from '../database.js';
 
@@ -482,10 +483,6 @@ export class EmailService {
     }
   }
 }
-
-// Export singleton instance
-export const emailService = new EmailService();
-export default emailService;
 
 // Export singleton instance
 export const emailService = new EmailService();

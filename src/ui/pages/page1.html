@@ -230,7 +230,8 @@
 <script>
 (async () => {
   try {
-    const res = await fetch('/api/next-invoice');
+    const res = await fetch('/api/sales/next-invoice');
+
     if (!res.ok) throw new Error('Network response was not ok');
     const data = await res.json();
     const invInput = document.querySelector('input[value^="INV-"]');

@@ -29,7 +29,10 @@ router.post('/add', async (req, res) => {
   if (!date || !product) return res.status(400).json({ error: 'Missing required fields' });
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (date, product, patient_id, doctor_id, license_no, qty, bill_no) VALUES (?,?,?,?,?,?,?)', [date, product, patient_id, doctor_id, license_no, qty, bill_no]);
+    await db.run(
+      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+      ['COMPLIANCE_ENTRY', `Date: ${date} | Product: ${product} | Patient: ${patient_id} | Doctor: ${doctor_id} | Lic: ${license_no} | Qty: ${qty} | Bill: ${bill_no}`]
+    );
     await db.close();
     res.json({ success: true, message: 'Compliance entry added' });
   } catch (err) {
@@ -50,8 +53,8 @@ router.post('/add-schedule-h1', async (req, res) => {
     // We'll map the fields to the action_logs table: drug_name -> product, patient_name -> patient_id, doctor_name -> doctor_id
     // For license_no, qty, bill_no we'll use placeholder values to indicate Schedule H1 dispensing
     await db.run(
-      'INSERT INTO action_logs (date, product, patient_id, doctor_id, license_no, qty, bill_no) VALUES (DATE("now"), ?, ?, ?, "SCH-H1", 1, "SCH-H1-DISP")',
-      [drug_name, patient_name, doctor_name]
+      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+      ['SCHEDULE_H1_DISPENSE', `Drug: ${drug_name} | Patient: ${patient_name} | Doctor: ${doctor_name} | Schedule: H1`]
     );
     await db.close();
     res.json({ success: true, message: 'Schedule H1 dispensing event logged' });

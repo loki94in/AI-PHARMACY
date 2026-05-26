@@ -246,17 +246,18 @@ function startQRCodePolling() {
       const data = await resp.json();
       const statusEl = document.getElementById('qr-status');
       const img = document.getElementById('qr-img');
-      if (data.connected) {
-        statusEl.textContent = 'Connected';
+      if (data.isReady) {
+        statusEl.textContent = '✅ Connected';
         img.style.display = 'none';
-      } else if (data.qrDataUrl) {
+      } else if (data.qrUrl) {
         statusEl.textContent = 'Scan QR to connect';
-        img.src = data.qrDataUrl;
+        img.src = data.qrUrl;
         img.style.display = 'block';
       } else {
         statusEl.textContent = 'Waiting for QR...';
         img.style.display = 'none';
       }
+
     } catch (e) {
       console.error('QR fetch error:', e);
     }

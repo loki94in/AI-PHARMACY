@@ -63,7 +63,8 @@ router.post('/sweep', async (req, res) => {
     await db.run(`CREATE TABLE IF NOT EXISTS archived_action_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, action_type TEXT, description TEXT, timestamp TEXT)`);
     const rows = await db.all('SELECT * FROM action_logs WHERE created_at < ?', iso);
     for (const row of rows) {
-      await db.run('INSERT INTO archived_action_logs (action_type, description, timestamp) VALUES (?,?,?)', [row.action_type, row.description, row.timestamp]);
+      await db.run('INSERT INTO archived_action_logs (action_type, description, timestamp) VALUES (?,?,?)', [row.action_type, row.description, row.created_at]);
+
     }
     await db.run('DELETE FROM action_logs WHERE created_at < ?', iso);
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['ARCHIVE', `Archived ${rows.length} logs older than ${days} days`]);

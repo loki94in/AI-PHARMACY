@@ -100,5 +100,60 @@ export async function ensureSchema(dbPath: string) {
       value TEXT
     );
   `);
+
+  // Safely add new columns to existing tables (SQLite throws if column exists — we catch and ignore)
+  const alterStatements = [
+    `ALTER TABLE inventory_master ADD COLUMN unit_price REAL DEFAULT 0`,
+    `ALTER TABLE inventory_master ADD COLUMN cost_price REAL DEFAULT 0`,
+    `ALTER TABLE inventory_master ADD COLUMN reorder_level INTEGER DEFAULT 10`,
+    `ALTER TABLE medicines ADD COLUMN mrp REAL DEFAULT 0`,
+    `ALTER TABLE medicines ADD COLUMN hsn_code TEXT`,
+    `ALTER TABLE medicines ADD COLUMN schedule_type TEXT DEFAULT 'None'`,
+    `ALTER TABLE medicines ADD COLUMN manufacturer TEXT`,
+    `ALTER TABLE medicines ADD COLUMN category TEXT`,
+  ];
+  for (const stmt of alterStatements) {
+    try {
+      await db.run(stmt);
+    } catch (_e) {
+      // Column already exists — safe to ignore
+    }
+  }
+
+  // New tables needed by various routes
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS doctors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      degree TEXT,
+      reg_no TEXT,
+      hospital TEXT,
+      phone TEXT,
+      address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS held_bills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_no TEXT,
+      data TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS compliance_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT,
+      drug_name TEXT,
+      patient_name TEXT,
+      doctor_name TEXT,
+      license_no TEXT,
+      qty INTEGER,
+      bill_no TEXT,
+      schedule_type TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   await db.close();
+
 }

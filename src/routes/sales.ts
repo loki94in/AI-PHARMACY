@@ -1,5 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
+import { open, Database } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,7 +10,7 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
-const generateInvoiceNo = async (db) => {
+const generateInvoiceNo = async (db: Database) => {
   const year = new Date().getFullYear();
   const prefix = `S-${year}-`;
   const row = await db.get('SELECT invoice_no FROM sales_invoices WHERE invoice_no LIKE ? ORDER BY invoice_no DESC LIMIT 1', `${prefix}%`);
@@ -34,10 +34,11 @@ router.get('/next-invoice', async (req, res) => {
     res.json({ invoice_no });
   } catch (error) {
     if (db) await db.close();
+    const err = error as Error;
     console.error(JSON.stringify({
       message: 'Failed to get next invoice',
-      error: error.message,
-      stack: error.stack,
+      error: err.message,
+      stack: err.stack,
       timestamp: new Date().toISOString()
     }));
     res.status(500).json({ error: 'Internal server error' });
@@ -93,10 +94,11 @@ router.post('/', async (req, res) => {
     res.json({ success: true, invoice_no, total, tax });
   } catch (error) {
     if (db) await db.close();
+    const err = error as Error;
     console.error(JSON.stringify({
       message: 'Failed to create sale',
-      error: error.message,
-      stack: error.stack,
+      error: err.message,
+      stack: err.stack,
       timestamp: new Date().toISOString()
     }));
     res.status(500).json({ error: 'Internal server error' });
@@ -111,18 +113,19 @@ router.post('/hold', async (req, res) => {
       return res.status(400).json({ error: 'Request body required' });
     }
     dbHold = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await dbHold.exec(`CREATE TABLE IF NOT EXISTS held_bills (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT, data TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
     const holdData = JSON.stringify(req.body);
+
     const holdInvoiceNo = await generateInvoiceNo(dbHold);
     await dbHold.run('INSERT INTO held_bills (invoice_no, data) VALUES (?, ?)', [holdInvoiceNo, holdData]);
     await dbHold.close();
     res.json({ success: true, message: 'Bill held', invoice_no: holdInvoiceNo });
   } catch (error) {
     if (dbHold) await dbHold.close();
+    const err = error as Error;
     console.error(JSON.stringify({
       message: 'Failed to hold bill',
-      error: error.message,
-      stack: error.stack,
+      error: err.message,
+      stack: err.stack,
       timestamp: new Date().toISOString()
     }));
     res.status(500).json({ error: 'Internal server error' });

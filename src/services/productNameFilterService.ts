@@ -163,7 +163,7 @@ export class ProductNameFilterService {
 
     // Combine results (prioritizing local matches, then adding unique internet matches)
     const allMatches = [...localMatches];
-    for const match of internetMatches) {
+    for (const match of internetMatches) {
       if (!allMatches.includes(match)) {
         allMatches.push(match);
       }
