@@ -80,4 +80,32 @@ router.get('/export-pdf', async (req, res) => {
   doc.end();
 });
 
+// Fetch report raw data lists
+router.get('/data', async (req, res) => {
+  const { type } = req.query;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    let data: any[] = [];
+    if (type === 'sales') {
+      data = await db.all('SELECT invoice_no, total_amount, date FROM sales_invoices ORDER BY date DESC LIMIT 50');
+    } else if (type === 'purchases') {
+      data = await db.all('SELECT p.invoice_no, p.total_amount, d.name as distributor, p.date FROM purchases p LEFT JOIN distributors d ON p.distributor_id = d.id ORDER BY p.date DESC LIMIT 50');
+    } else if (type === 'expiry') {
+      data = await db.all(`SELECT m.name as product, im.batch_no as batch, im.quantity as qty, im.expiry_date as expiry
+                           FROM inventory_master im
+                           JOIN medicines m ON im.medicine_id = m.id
+                           WHERE date(im.expiry_date) <= date('now', '+90 days')
+                           ORDER BY im.expiry_date ASC`);
+    } else {
+      data = await db.all('SELECT created_at as timestamp, action_type, description FROM action_logs ORDER BY id DESC LIMIT 50');
+    }
+    await db.close();
+    res.json(data);
+  } catch (err) {
+    console.error('Reports data error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
+

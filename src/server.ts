@@ -14,6 +14,7 @@ import { ensureSchema } from './database.js';
 import { startEmailPoller } from './worker/emailPoller.js';
 import { imageArchiveService } from './services/imageArchiveService.js';
 import { authenticateApiKey } from './middleware/auth.js';
+import { notificationManager } from './utils/notifications.js';
 
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
@@ -38,6 +39,8 @@ import learningRouter from './routes/learning.js';
 import messagingRouter from './routes/messaging.js';
 import aiCameraRouter from './routes/aiCamera.js';
 import telegramPrescriptionRouter from './routes/telegramPrescription.js';
+import refillsRouter from './routes/refills.js';
+import { checkAllRefills } from './services/refillService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -171,6 +174,12 @@ app.post('/api/purchases', async (req, res) => {
       [distRow.id, invoice_no, total_amount]);
       
     await db.close();
+
+    // Trigger checking refills now that new purchase stock is saved
+    const dbCheck = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await checkAllRefills(dbCheck);
+    await dbCheck.close();
+
     res.json({ success: true, message: 'Purchase saved' });
   } catch (error) {
     console.error('Failed to save purchase:', error);
@@ -206,6 +215,7 @@ app.use('/api/learning', learningRouter);
 app.use('/api/messaging', messagingRouter);
 app.use('/api/aicamera', aiCameraRouter);
 app.use('/api/telegram-prescription', telegramPrescriptionRouter);
+app.use('/api/refills', refillsRouter);
 // Core API routes
 app.use('/api/sales', salesRouter);
 app.use('/api/inventory', inventoryRouter);
@@ -216,6 +226,16 @@ app.use('/api/orders', ordersRouter);
 app.use('/api/expiry', expiryRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/compliance', complianceRouter);
+
+// Real-time notifications SSE Stream
+app.get('/api/notifications/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  
+  notificationManager.addClient(res);
+});
 
 // Manual refill reminder endpoint
 app.post('/api/patients/send-refill', async (req, res) => {

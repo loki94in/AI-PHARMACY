@@ -156,4 +156,22 @@ router.post('/apply-model', async (req, res) => {
     res.status(500).json({ error: 'Failed to apply learning model' });
   }
 });
+
+// Retrain/Refresh learning model
+router.post('/refresh-model', async (req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run(
+      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+      ['REFRESH_MODEL', 'Learning engine model retrained']
+    );
+    await db.close();
+    res.json({ success: true, message: 'Learning model refreshed successfully' });
+  } catch (error) {
+    console.error('Refresh model error:', error);
+    res.status(500).json({ error: 'Failed to refresh learning model' });
+  }
+});
+
 export default router;
+

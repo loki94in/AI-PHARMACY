@@ -75,7 +75,7 @@ router.get('/inbox', async (req, res) => {
 
 // POST /api/email/import-manual
 router.post('/import-manual', async (req, res) => {
-  const { subject, from, body, attachments } = req.body;
+  const { subject, from, body, date, attachments } = req.body;
   if (!subject || !from) {
     return res.status(400).json({ error: 'subject and from are required' });
   }
@@ -84,6 +84,7 @@ router.post('/import-manual', async (req, res) => {
       from,
       subject,
       body: body || '',
+      date: date ? new Date(date) : new Date(),
       attachments: attachments || []
     };
 

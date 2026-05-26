@@ -50,12 +50,28 @@ router.post('/', async (req, res) => {
   let db;
   try {
     db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    const { items = [], patient_id, doctor_id, discount = 0 } = req.body;
+    const { items = [], patient_id, doctor_id, discount = 0, patient_name, patient_phone, patient_address } = req.body;
 
     // Basic validation
     if (!Array.isArray(items) || items.length === 0) {
       await db.close();
       return res.status(400).json({ error: 'Cart items required' });
+    }
+
+    // Resolve or auto-create customer/patient
+    let customerId = patient_id || null;
+    if (patient_name) {
+      const cleanPhone = patient_phone || '';
+      const existing = await db.get('SELECT id FROM customers WHERE name = ? AND phone = ?', [patient_name, cleanPhone]);
+      if (existing) {
+        customerId = existing.id;
+      } else {
+        const custResult = await db.run(
+          'INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)',
+          [patient_name, cleanPhone, patient_address || '']
+        );
+        customerId = custResult.lastID;
+      }
     }
 
     // Compute totals
@@ -75,7 +91,7 @@ router.post('/', async (req, res) => {
     // Insert invoice
     const result = await db.run(
       'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount) VALUES (?, ?, ?, ?)',
-      [invoice_no, patient_id || null, total, tax]
+      [invoice_no, customerId, total, tax]
     );
     const invoiceId = result.lastID;
 
@@ -132,4 +148,132 @@ router.post('/hold', async (req, res) => {
   }
 });
 
+// Get recommended quantity for a medicine based on sales history mode
+router.get('/recommend-quantity', async (req, res) => {
+  const medicineName = req.query.medicineName as string;
+  if (!medicineName) {
+    return res.status(400).json({ error: 'medicineName query parameter required' });
+  }
+
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    // Look up matching medicine first
+    const med = await db.get(
+      'SELECT id, name FROM medicines WHERE name LIKE ? LIMIT 1',
+      `%${medicineName}%`
+    );
+
+    if (!med) {
+      await db.close();
+      return res.json({ recommendedQty: 1, type: 'strip', message: 'No matching history found' });
+    }
+
+    // Query historical sales quantities for this medicine
+    const history = await db.all(
+      `SELECT si.quantity, COUNT(*) as count 
+       FROM sale_items si
+       JOIN inventory_master im ON si.inventory_id = im.id
+       WHERE im.medicine_id = ?
+       GROUP BY si.quantity
+       ORDER BY count DESC
+       LIMIT 3`,
+      med.id
+    );
+
+    await db.close();
+
+    if (history.length > 0) {
+      const mostFrequent = history[0];
+      const qty = mostFrequent.quantity;
+      let recommendedType = 'strip';
+      let displayQty = qty;
+
+      if (qty < 10) {
+        recommendedType = 'loose';
+        displayQty = qty;
+      } else if (qty % 10 === 0) {
+        recommendedType = 'strip';
+        displayQty = qty / 10;
+      } else {
+        recommendedType = 'loose';
+        displayQty = qty;
+      }
+
+      return res.json({
+        recommendedQty: displayQty,
+        type: recommendedType,
+        actualUnits: qty,
+        message: `Recommended: ${displayQty} ${recommendedType === 'strip' ? 'strip(s)' : 'loose unit(s)'} (based on ${mostFrequent.count} past order(s))`
+      });
+    }
+
+    res.json({ recommendedQty: 1, type: 'strip', message: 'Default: 1 strip recommended' });
+  } catch (error) {
+    if (db) await db.close();
+    console.error('Failed to get recommendation:', error);
+    res.status(500).json({ error: 'Failed to analyze previous sales data' });
+  }
+});
+
+// Hold a bill session
+router.post('/hold', async (req, res) => {
+  const { temp_label, patient_name, patient_phone, doctor_name, discount = 0, remarks, cart_data } = req.body;
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run(
+      `INSERT INTO held_bills (temp_label, patient_name, patient_phone, doctor_name, discount, remarks, cart_data)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        temp_label || patient_name || 'Held Bill',
+        patient_name || '',
+        patient_phone || '',
+        doctor_name || '',
+        discount,
+        remarks || '',
+        typeof cart_data === 'string' ? cart_data : JSON.stringify(cart_data || [])
+      ]
+    );
+    await db.close();
+    res.json({ success: true, message: 'Bill held successfully' });
+  } catch (error) {
+    if (db) await db.close();
+    console.error('Failed to hold bill:', error);
+    res.status(500).json({ error: 'Failed to hold bill' });
+  }
+});
+
+// List all held bills
+router.get('/hold', async (req, res) => {
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all('SELECT * FROM held_bills ORDER BY date DESC');
+    await db.close();
+    res.json(rows);
+  } catch (error) {
+    if (db) await db.close();
+    console.error('Failed to retrieve held bills:', error);
+    res.status(500).json({ error: 'Failed to retrieve held bills' });
+  }
+});
+
+// Delete a held bill session (e.g. upon retrieve or checkout completion)
+router.delete('/hold/:id', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('DELETE FROM held_bills WHERE id = ?', id);
+    await db.close();
+    res.json({ success: true, message: 'Held bill removed' });
+  } catch (error) {
+    if (db) await db.close();
+    console.error('Failed to delete held bill:', error);
+    res.status(500).json({ error: 'Failed to delete held bill' });
+  }
+});
+
 export default router;
+

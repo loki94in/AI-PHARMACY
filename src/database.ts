@@ -106,6 +106,28 @@ export async function ensureSchema(dbPath: string) {
       telegram_chat_id TEXT,
       is_active INTEGER DEFAULT 1
     );
+    CREATE TABLE IF NOT EXISTS patient_refills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_name TEXT NOT NULL,
+      patient_phone TEXT NOT NULL,
+      medicine_id INTEGER NOT NULL,
+      refill_interval_days INTEGER DEFAULT 30,
+      last_refill_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      next_refill_date DATETIME,
+      status TEXT CHECK(status IN ('pending', 'notified')) DEFAULT 'pending',
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+    CREATE TABLE IF NOT EXISTS held_bills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      temp_label TEXT,
+      patient_name TEXT,
+      patient_phone TEXT,
+      doctor_name TEXT,
+      discount REAL DEFAULT 0,
+      remarks TEXT,
+      cart_data TEXT,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Safely add new columns to existing tables (SQLite throws if column exists — we catch and ignore)
@@ -270,7 +292,19 @@ export async function ensureSchema(dbPath: string) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(medicine_id) REFERENCES medicines(id)
     );
+    -- App Settings table
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
+
+  // Insert default settings if they don't exist
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('medical_name', 'XYZ MEDICAL')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('gmail_user', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('gmail_pass', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('login_password', 'admin123')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('master_password', 'master999')");
 
   // Safely add legacy_id/speciality to doctors if the table already existed without them
   const doctorAlters = [

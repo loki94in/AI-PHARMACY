@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 const router = express.Router();
+import { triggerPendingRefillsForMedicine } from '../services/refillService.js';
 
 // Get inventory master
 router.get('/', async (req, res) => {
@@ -47,6 +48,13 @@ router.post('/override', async (req, res) => {
     }
     db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     await db.run('UPDATE inventory_master SET quantity = ? WHERE id = ?', [quantity, inventory_id]);
+    
+    // Check if new stock triggers pending patient refills
+    const invItem = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', [inventory_id]);
+    if (invItem && invItem.medicine_id) {
+      await triggerPendingRefillsForMedicine(db, invItem.medicine_id);
+    }
+
     await db.close();
     res.json({ success: true, message: 'Stock updated' });
   } catch (error) {
@@ -105,6 +113,13 @@ router.put('/:id', async (req, res) => {
     await db.run(`UPDATE inventory_master SET quantity = ?, rack_location = ?, batch_no = ?, expiry_date = ?, reorder_level = ? WHERE id = ?`,
       [quantity, rack_location, batch_no, expiry_date, reorder_level, id]
     );
+
+    // Check if new stock triggers pending patient refills
+    const invItem = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', [id]);
+    if (invItem && invItem.medicine_id) {
+      await triggerPendingRefillsForMedicine(db, invItem.medicine_id);
+    }
+
     await db.close();
     res.json({ success: true, message: 'Inventory updated' });
   } catch (error) {

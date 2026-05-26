@@ -8,6 +8,8 @@ import { ensureSchema } from './database.js';
 import { telegramPrescriptionService } from './services/telegramPrescriptionService.js';
 import { aiCameraService } from './services/aiCameraService.js';
 import { imageArchiveService } from './services/imageArchiveService.js';
+import { notificationManager } from './utils/notifications.js';
+import { extractDateFromText } from './utils/dateExtractor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -258,13 +260,113 @@ class TelegramBotService {
                 // Process with AI camera service
                 const result = await aiCameraService.processImage(buffer);
 
-                // Handle the result through prescription service
-                await telegramPrescriptionService.handlePrescriptionResult(
-                  chatId,
-                  result,
-                  msg.caption || '', // Optional caption for additional context
-                  this.bot! // Pass bot instance for sending messages
-                );
+                // Determine if it is a bill/invoice photo
+                const captionText = (msg.caption || '').toLowerCase();
+                const ocrTextLower = (result.text || '').toLowerCase();
+                const isBill = captionText.includes('bill') || captionText.includes('invoice') || captionText.includes('purchase') ||
+                               ocrTextLower.includes('invoice') || ocrTextLower.includes('bill no') || ocrTextLower.includes('mrp') || ocrTextLower.includes('tax invoice');
+
+                if (isBill) {
+                  this.bot?.sendMessage(chatId, '📄 Invoice detected. Processing items into inventory...');
+                  
+                  const medicines: Array<{ name: string; quantity: number }> = [];
+                  const lines = (result.text || '').split('\n');
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+                    const qtyMatch = trimmed.match(/(?:(?:qty|quantity|x|count)\s*[:\-\s]*\s*(\d+))|(\d+)\s*(?:x|units|pcs)/i);
+                    if (qtyMatch) {
+                      const qty = parseInt(qtyMatch[1] || qtyMatch[2]) || 10;
+                      let name = trimmed.replace(qtyMatch[0], '').replace(/[:\-\t\r\n]/g, ' ').trim();
+                      if (name && name.length > 3 && isNaN(Number(name))) {
+                        medicines.push({ name, quantity: qty });
+                      }
+                    }
+                  }
+
+                  if (medicines.length === 0) {
+                    const potentialName = result.medicineInfo?.potentialName || 'Unknown Product';
+                    medicines.push({ name: potentialName, quantity: 10 });
+                  }
+
+                  const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+                  
+                  let distributorName = 'TELEGRAM IMPORT';
+                  const distMatch = ocrTextLower.match(/(nitin agency|cipla|alkem|abbott|cadila|zydus|intas|lupin)/i);
+                  if (distMatch) {
+                    distributorName = distMatch[1].toUpperCase();
+                  }
+
+                  await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distributorName]);
+                  const dist = await db.get('SELECT id FROM distributors WHERE name = ?', [distributorName]);
+                  
+                  const invoiceNo = 'TG-INV-' + Date.now().toString().slice(-4);
+                  let billDate = new Date().toISOString();
+                  const extractedDate = extractDateFromText(result.text || '');
+                  if (extractedDate) {
+                    billDate = extractedDate;
+                  }
+                  const purchaseResult = await db.run(
+                    'INSERT INTO purchases (distributor_id, invoice_no, total_amount, date, business_date) VALUES (?, ?, ?, ?, ?)',
+                    [dist.id, invoiceNo, 100 * medicines.length, billDate, billDate]
+                  );
+                  const purchaseId = purchaseResult.lastID;
+
+                  let importDetails = '';
+                  for (const item of medicines) {
+                    let med = await db.get('SELECT id FROM medicines WHERE name LIKE ? LIMIT 1', [`%${item.name}%`]);
+                    if (!med) {
+                      const medResult = await db.run('INSERT INTO medicines (name) VALUES (?)', [item.name]);
+                      med = { id: medResult.lastID };
+                    }
+                    
+                    await db.run(
+                      'INSERT INTO purchase_items (purchase_id, medicine_id, quantity, cost_price, mrp) VALUES (?, ?, ?, ?, ?)',
+                      [purchaseId, med.id, item.quantity, 10, 15]
+                    );
+
+                    const existingInv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? LIMIT 1', [med.id]);
+                    if (existingInv) {
+                      await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [item.quantity, existingInv.id]);
+                    } else {
+                      await db.run(
+                        'INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, unit_price, cost_price, reorder_level, mrp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        [med.id, item.quantity, 'B-TG-' + Date.now().toString().slice(-4), '2028-12-31', 10, 8, 10, 15]
+                      );
+                    }
+                    importDetails += `• ${item.name} x${item.quantity}\n`;
+                  }
+
+                  await db.run(
+                    'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+                    ['TELEGRAM_BILL_IMPORTED', `Imported invoice ${invoiceNo} from distributor ${distributorName}`]
+                  );
+                  await db.close();
+
+                  notificationManager.broadcast({
+                    type: 'telegram_bill',
+                    title: 'Telegram Bill Processed',
+                    message: `Imported invoice ${invoiceNo} from ${distributorName}.`,
+                    distributorName,
+                    invoiceNo,
+                    timestamp: new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+                  });
+
+                  this.bot?.sendMessage(chatId, 
+                    `✅ *Invoice Manually Imported!*\n` +
+                    `📦 Distributor: ${distributorName}\n` +
+                    `📄 Invoice No: ${invoiceNo}\n\n` +
+                    `*Added to Inventory:*\n${importDetails}`,
+                    { parse_mode: 'Markdown' }
+                  );
+                } else {
+                  await telegramPrescriptionService.handlePrescriptionResult(
+                    chatId,
+                    result,
+                    msg.caption || '',
+                    this.bot!
+                  );
+                }
 
                 // Send feedback messages based on result
                 // Note: The actual messaging is handled within the prescription service now

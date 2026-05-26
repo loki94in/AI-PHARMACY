@@ -66,6 +66,24 @@
         </div>
       </div>
       <div class="card">
+        <div class="card-title"><span class="icon">🏥</span> General Pharmacy Settings</div>
+        <div class="field mb6">
+          <label>Medical / Pharmacy Name</label>
+          <input type="text" id="medical_name" placeholder="XYZ MEDICAL" />
+        </div>
+        <div class="field mb6">
+          <label>Login Password (API Counter Key)</label>
+          <input type="password" id="login_password" placeholder="Enter Counter Login Password" />
+        </div>
+        <div class="field mb6">
+          <label>Master Security Password</label>
+          <input type="password" id="master_password" placeholder="Enter Master Administrator Password" />
+        </div>
+        <div class="btn-row mt14">
+          <button class="btn btn-primary ml-auto">💾 Save General Settings</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title"><span class="icon">🎨</span> Theme & Appearance</div>
         <div class="form-row">
           <div class="field"><label>Color Theme</label>
@@ -86,18 +104,18 @@
       <div class="grid3" style="margin-top: 16px;">
         <div class="card">
           <div class="card-title"><span class="icon">📧</span> Gmail Settings</div>
-          <div class="field mb6"><label>Gmail Address</label><input type="email" placeholder="pharmacy@gmail.com" /></div>
+          <div class="field mb6"><label>Gmail Address</label><input type="email" id="gmail_user" placeholder="pharmacy@gmail.com" /></div>
           <div class="field mb6">
             <label>16-Digit App Password</label>
-            <input type="password" placeholder="xxxx xxxx xxxx xxxx" />
+            <input type="password" id="gmail_pass" placeholder="xxxx xxxx xxxx xxxx" />
             <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;">Required for secure inbox access</div>
           </div>
           <div class="field mb6"><label>Polling Interval</label>
-            <select><option>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>1 hour</option></select>
+            <select id="email_polling_interval"><option>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>1 hour</option></select>
           </div>
           <div class="btn-row mt14">
             <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
-            <button class="btn btn-primary ml-auto">💾 Save</button>
+            <button class="btn btn-primary ml-auto">💾 Save Gmail Settings</button>
           </div>
         </div>
 
@@ -139,33 +157,67 @@
     </div>
   </div>
 <script>
-  // Simple Settings Save handler
-  async function saveSettings(section) {
-    const inputs = document.querySelectorAll(`.page#page14 .${section} input, .page#page14 .${section} select`);
+  // Simple Settings Save handler targeting only inputs inside the clicked card
+  async function saveSettings(cardElement) {
+    const inputs = cardElement.querySelectorAll('input, select');
     const payload = {};
     inputs.forEach(el => {
       if (el.id) payload[el.id] = el.value;
     });
     try {
-      const resp = await fetch('/api/settings/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const resp = await fetch('/api/settings/save', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
       if (!resp.ok) throw new Error('Network error');
       const data = await resp.json();
-      alert(data.message || 'Settings saved');
+      alert(data.message || 'Settings saved successfully');
+      
+      // If we saved login_password, update localStorage API_KEY automatically
+      if (payload['login_password']) {
+        localStorage.setItem('API_KEY', payload['login_password']);
+      }
     } catch (e) {
       console.error('Settings save error:', e);
       alert('Failed to save settings');
     }
   }
+
   // Attach to all Save buttons
-  document.querySelectorAll('.page#page14 .btn-primary.ml-auto').forEach(btn => {
+  document.querySelectorAll('.page#page14 .btn-primary').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const card = btn.closest('.card');
       if (card) {
-        const sectionClass = card.classList.contains('card') ? 'card' : '';
-        saveSettings(sectionClass);
+        saveSettings(card);
       }
     });
   });
+
+  // Load all database app settings and populate form inputs
+  async function loadAllSettings() {
+    try {
+      const resp = await fetch('/api/settings');
+      if (resp.ok) {
+        const settings = await resp.json();
+        for (const [key, val] of Object.entries(settings)) {
+          const el = document.getElementById(key);
+          if (el) {
+            if (el.type === 'checkbox') {
+              el.checked = val === 'true' || val === '1' || val === true;
+            } else {
+              el.value = val;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+  }
+
+  // Load settings on load
+  document.addEventListener('DOMContentLoaded', loadAllSettings);
 </script>
 <script>
 document.getElementById('rotateKeyBtn').addEventListener('click', async () => {

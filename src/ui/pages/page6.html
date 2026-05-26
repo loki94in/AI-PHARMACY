@@ -13,6 +13,7 @@
       tr.innerHTML = `
         <td>${o.id || ''}</td>
         <td>${o.product || ''}</td>
+        <td>${o.requester || 'Anonymous'} ${o.phone ? `(${o.phone})` : ''}</td>
         <td>${o.qty || ''}</td>
         <td>${o.status || ''}</td>
         <td>${o.date || ''}</td>
@@ -35,7 +36,7 @@
     <div class="card">
       <div class="card-title">Order History</div>
       <table style="width:100%; border-collapse:collapse;">
-        <thead><tr><th>Order ID</th><th>Product</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead>
+        <thead><tr><th>Order ID</th><th>Product</th><th>Requester / Phone</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead>
         <tbody id="orders-body"></tbody>
       </table>
     </div>
@@ -46,13 +47,14 @@
       <div class="grid2">
         <div class="card">
           <div class="card-title"><span class="icon">➕</span> Log New Request</div>
-          <div class="field mb6"><label>Product Name</label><input type="text" placeholder="Out-of-stock product…" /></div>
-          <div class="field mb6"><label>Patient / Doctor</label><input type="text" placeholder="Requester name…" /></div>
-          <div class="field mb6"><label>Qty Required</label><input type="number" placeholder="1" /></div>
+          <div class="field mb6"><label>Product Name</label><input type="text" id="orderProductName" placeholder="Out-of-stock product…" /></div>
+          <div class="field mb6"><label>Patient / Doctor</label><input type="text" id="orderRequesterName" placeholder="Requester name…" /></div>
+          <div class="field mb6"><label>Phone Number (WhatsApp)</label><input type="text" id="orderPhone" placeholder="Requester phone number…" /></div>
+          <div class="field mb6"><label>Qty Required</label><input type="number" id="orderQtyRequired" placeholder="1" /></div>
           <div class="field mb6"><label>Priority</label>
-            <select><option>Normal</option><option>Urgent</option><option>Critical</option></select>
+            <select id="orderPriority"><option>Normal</option><option>Urgent</option><option>Critical</option></select>
           </div>
-          <button class="btn btn-primary mt8">📝 Log Request</button>
+          <button class="btn btn-primary mt8" id="logRequestBtn">📝 Log Request</button>
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📊</span> Request Tracker</div>

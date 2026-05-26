@@ -45,12 +45,12 @@ describe('API Auth Middleware', () => {
     expect(res.body.success).toBe(true);
   });
 
-  test('should fallback to dev-key-123 if API_KEY is not defined', async () => {
+  test('should fallback to Pass@123 if API_KEY is not defined', async () => {
     process.env.NODE_ENV = 'production';
     delete process.env.API_KEY;
     const res = await request(app)
       .get('/test-api')
-      .set('x-api-key', 'dev-key-123');
+      .set('x-api-key', 'Pass@123');
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
   });

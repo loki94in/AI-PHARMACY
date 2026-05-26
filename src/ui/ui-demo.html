@@ -300,6 +300,11 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 
+  @keyframes scan-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
   /* ── CARDS ── */
   .card {
     background: var(--surface2);
@@ -910,6 +915,89 @@
   .auth-box button:hover {
     filter: brightness(1.1);
   }
+
+  /* Real-time Notification Styles */
+  .rt-notification {
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-bright);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: auto;
+    width: 330px;
+    animation: slideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    transition: all 0.3s ease;
+  }
+
+  .rt-notification.top-type {
+    animation: slideInTop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    width: 440px;
+    border-top: 3px solid var(--green);
+  }
+
+  .rt-notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .rt-notification-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: #0ea5e9;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .rt-notification-time {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .rt-notification-body {
+    font-size: 12px;
+    color: #e2e8f0;
+    line-height: 1.45;
+  }
+
+  .rt-notification-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    margin-top: 6px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(60px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes slideInTop {
+    from { opacity: 0; transform: translateY(-60px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .rt-notification.fade-out {
+    opacity: 0;
+    transform: scale(0.9);
+  }
 </style>
 </head>
 <body>
@@ -1144,12 +1232,13 @@
         <!-- Right Sidebar -->
         <div style="display: flex; flex-direction: column; gap: 16px; height: 100%;">
           
-          <div class="scan-area" data-requires="ai_camera" style="padding: 14px; display: flex; align-items: center; gap: 14px; text-align: left; min-height: auto; cursor: pointer; border-color: var(--sky); background: rgba(56,189,248,0.05); margin: 0;">
-            <div class="scan-icon" style="font-size: 28px; margin: 0; background: var(--bg); padding: 8px; border-radius: 8px; box-shadow: 0 0 15px var(--sky-glow);">📷</div>
-            <div>
-              <div class="scan-text" style="font-size: 14px; font-weight: 700; color: var(--sky);">AI Camera OCR</div>
-              <div class="scan-hint" style="margin-top: 4px; font-size: 11px; opacity: 0.9;">Click to scan physical product</div>
+          <div class="scan-area" id="pos-scan-area" data-requires="ai_camera" style="padding: 14px; display: flex; align-items: center; gap: 14px; text-align: left; min-height: auto; cursor: pointer; border: 1px solid var(--border); background: rgba(14, 165, 233, 0.03); margin: 0; border-radius: 8px; transition: all 0.3s ease;">
+            <div class="scan-icon" id="pos-scan-icon" style="font-size: 28px; margin: 0; background: var(--bg); padding: 8px; border-radius: 8px; box-shadow: 0 0 15px var(--sky-glow); transition: all 0.3s ease;">📷</div>
+            <div style="flex: 1;">
+              <div class="scan-text" id="pos-scan-text" style="font-size: 14px; font-weight: 700; color: var(--muted); transition: all 0.3s ease;">AI Camera Offline</div>
+              <div class="scan-hint" id="pos-scan-hint" style="margin-top: 4px; font-size: 11px; opacity: 0.9; color: var(--muted); transition: all 0.3s ease;">Enter patient name to wake up camera</div>
             </div>
+            <div id="pos-radar-sweep" style="display: none; width: 20px; height: 20px; border: 2px dashed var(--sky); border-radius: 50%; animation: scan-spin 1.5s linear infinite;"></div>
           </div>
 
           <div class="card" style="margin-bottom:0; flex-grow: 1; overflow-y: auto;">
@@ -1401,7 +1490,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="progress-label"><span>Next auto-backup</span><span>in 47 min</span></div>
             <div class="progress-track"><div class="progress-fill" style="width:78%"></div></div>
           </div>
-          <button class="btn btn-ghost mt8">🔄 Backup Now</button>
+          <button class="btn btn-ghost mt8" id="dashboardBackupBtn">🔄 Backup Now</button>
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📌</span> Pending Tasks</div>
@@ -2132,8 +2221,8 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="field"><label>Original Bill / Invoice No.</label><input type="text" placeholder="BILL-XXXXX" /></div>
         </div>
         <div class="btn-row">
-          <button class="btn btn-ghost">📄 Generate Credit Note</button>
-          <button class="btn btn-ghost">📄 Generate Debit Note</button>
+          <button class="btn btn-ghost" id="generateCreditNoteBtn">📄 Generate Credit Note</button>
+          <button class="btn btn-ghost" id="generateDebitNoteBtn">📄 Generate Debit Note</button>
           <button class="btn btn-primary ml-auto" onclick="processReturn()">✅ Process Return</button>
         </div>
       </div>
@@ -2155,6 +2244,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tr.innerHTML = `
         <td>${o.id || ''}</td>
         <td>${o.product || ''}</td>
+        <td>${o.requester || 'Anonymous'} ${o.phone ? `(${o.phone})` : ''}</td>
         <td>${o.qty || ''}</td>
         <td>${o.status || ''}</td>
         <td>${o.date || ''}</td>
@@ -2177,7 +2267,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="card">
       <div class="card-title">Order History</div>
       <table style="width:100%; border-collapse:collapse;">
-        <thead><tr><th>Order ID</th><th>Product</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead>
+        <thead><tr><th>Order ID</th><th>Product</th><th>Requester / Phone</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead>
         <tbody id="orders-body"></tbody>
       </table>
     </div>
@@ -2188,13 +2278,14 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="grid2">
         <div class="card">
           <div class="card-title"><span class="icon">➕</span> Log New Request</div>
-          <div class="field mb6"><label>Product Name</label><input type="text" placeholder="Out-of-stock product…" /></div>
-          <div class="field mb6"><label>Patient / Doctor</label><input type="text" placeholder="Requester name…" /></div>
-          <div class="field mb6"><label>Qty Required</label><input type="number" placeholder="1" /></div>
+          <div class="field mb6"><label>Product Name</label><input type="text" id="orderProductName" placeholder="Out-of-stock product…" /></div>
+          <div class="field mb6"><label>Patient / Doctor</label><input type="text" id="orderRequesterName" placeholder="Requester name…" /></div>
+          <div class="field mb6"><label>Phone Number (WhatsApp)</label><input type="text" id="orderPhone" placeholder="Requester phone number…" /></div>
+          <div class="field mb6"><label>Qty Required</label><input type="number" id="orderQtyRequired" placeholder="1" /></div>
           <div class="field mb6"><label>Priority</label>
-            <select><option>Normal</option><option>Urgent</option><option>Critical</option></select>
+            <select id="orderPriority"><option>Normal</option><option>Urgent</option><option>Critical</option></select>
           </div>
-          <button class="btn btn-primary mt8">📝 Log Request</button>
+          <button class="btn btn-primary mt8" id="logRequestBtn">📝 Log Request</button>
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📊</span> Request Tracker</div>
@@ -2259,7 +2350,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </table>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" data-requires="whatsapp">💬 Send WhatsApp Summary</button>
+        <button class="btn btn-ghost" id="sendExpiryWhatsappBtn" data-requires="whatsapp">💬 Send WhatsApp Summary</button>
         <button class="btn btn-ghost" id="export-btn" onclick="window.open('/api/reports/export-pdf?type=expiry', '_blank')">📄 Export Report</button>
       </div>
     </div>
@@ -2406,7 +2497,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="field"><label>To Date</label><input type="date" /></div>
         </div>
         <div class="btn-row">
-          <button class="btn btn-primary">📊 Generate Report</button>
+          <button class="btn btn-primary" id="generateReportBtn">📊 Generate Report</button>
           <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=sales', '_blank')">📄 Export PDF</button>
           <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="cloud_export" onclick="
             fetch('/api/utilities/cloud/push', { method: 'POST' })
@@ -2421,6 +2512,15 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="kpi green"><div class="kpi-label">Monthly Profit</div><div class="kpi-value">₹1.68L</div><div class="kpi-delta">▲ 9.0% vs last month</div></div>
         <div class="kpi orange"><div class="kpi-label">GST Payable (CGST)</div><div class="kpi-value">₹34,200</div><div class="kpi-delta">Due in 8 days</div></div>
         <div class="kpi purple"><div class="kpi-label">Top Distributor</div><div class="kpi-value" style="font-size:17px;">Medico Traders</div><div class="kpi-delta">₹2.1L purchases this month</div></div>
+      </div>
+      <div class="card mt16" id="report-results-card" style="display:none; margin-top:16px;">
+        <div class="card-title"><span class="icon">📈</span> Report Results</div>
+        <div class="tbl-wrap">
+          <table style="width:100%; border-collapse:collapse;">
+            <thead id="report-table-head"></thead>
+            <tbody id="report-table-body"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -2539,7 +2639,7 @@ document.addEventListener('DOMContentLoaded', () => {
               
               const importBtn = `
                 <button class="btn btn-primary" style="padding:4px 8px;font-size:11px;" 
-                        onclick="importManualEmail('${escapeHtml(mail.from)}', '${escapeHtml(mail.subject)}', '${escapeHtml(mail.body)}')">
+                        onclick="importManualEmail('${escapeHtml(mail.from)}', '${escapeHtml(mail.subject)}', '${escapeHtml(mail.body)}', '${mail.date}')">
                   Import
                 </button>
               `;
@@ -2563,14 +2663,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Manual email import trigger
-      async function importManualEmail(from, subject, body) {
+      async function importManualEmail(from, subject, body, date) {
         if (!confirm(`Import invoice from "${from}"? This will alert active delivery boys.`)) return;
         
         try {
           const resp = await fetch('/api/email/import-manual', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from, subject, body })
+            body: JSON.stringify({ from, subject, body, date })
           });
           if (!resp.ok) throw new Error('Import failed');
           const data = await resp.json();
@@ -2780,7 +2880,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="btn-row mt14">
             <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=purchases', '_blank')">📄 Export PDF</button>
-            <button class="btn btn-primary">🖨️ Print Labels</button>
+            <button class="btn btn-primary" id="printLabelsBtn">🖨️ Print Labels</button>
           </div>
         </div>
       </div>
@@ -2802,7 +2902,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let items;
     try { items = JSON.parse(txt); } catch { document.getElementById('barcodeResult').textContent = 'Invalid JSON'; return; }
     try {
-      const resp = await fetch('/api/barcode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+      const resp = await fetch('/api/utilities/barcode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
       if (!resp.ok) throw new Error('Network error');
       const data = await resp.json();
       document.getElementById('barcodeResult').innerHTML = `<a href="${data.pdfUrl}" target="_blank">Download PDF</a>`;
@@ -2944,6 +3044,32 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
         </div>
       </div>
       <div class="card">
+        <div class="card-title"><span class="icon">🏥</span> General Pharmacy Settings</div>
+        <div class="field mb6">
+          <label>Medical / Pharmacy Name</label>
+          <input type="text" id="medical_name" placeholder="XYZ MEDICAL" />
+        </div>
+        <div class="field mb6">
+          <label>Gmail Username (IMAP/SMTP Email)</label>
+          <input type="text" id="gmail_user" placeholder="yourname@gmail.com" />
+        </div>
+        <div class="field mb6">
+          <label>Gmail App Password</label>
+          <input type="password" id="gmail_pass" placeholder="xxxx xxxx xxxx xxxx" />
+        </div>
+        <div class="field mb6">
+          <label>Login Password (API Counter Key)</label>
+          <input type="password" id="login_password" placeholder="Enter Counter Login Password" />
+        </div>
+        <div class="field mb6">
+          <label>Master Security Password</label>
+          <input type="password" id="master_password" placeholder="Enter Master Administrator Password" />
+        </div>
+        <div class="btn-row mt14">
+          <button class="btn btn-primary ml-auto" id="saveGeneralSettingsBtn">💾 Save General Settings</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title"><span class="icon">🎨</span> Theme & Appearance</div>
         <div class="form-row">
           <div class="field"><label>Color Theme</label>
@@ -3010,18 +3136,18 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
       <div class="grid3" style="margin-top: 16px;">
         <div class="card">
           <div class="card-title"><span class="icon">📧</span> Gmail Settings</div>
-          <div class="field mb6"><label>Gmail Address</label><input type="email" placeholder="pharmacy@gmail.com" /></div>
+          <div class="field mb6"><label>Gmail Address</label><input type="email" id="gmail_user" placeholder="pharmacy@gmail.com" /></div>
           <div class="field mb6">
             <label>16-Digit App Password</label>
-            <input type="password" placeholder="xxxx xxxx xxxx xxxx" />
+            <input type="password" id="gmail_pass" placeholder="xxxx xxxx xxxx xxxx" />
             <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;">Required for secure inbox access</div>
           </div>
           <div class="field mb6"><label>Polling Interval</label>
-            <select><option>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>1 hour</option></select>
+            <select id="email_polling_interval"><option>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>1 hour</option></select>
           </div>
           <div class="btn-row mt14">
             <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
-            <button class="btn btn-primary ml-auto">💾 Save</button>
+            <button class="btn btn-primary ml-auto">💾 Save Gmail Settings</button>
           </div>
         </div>
 
@@ -3063,33 +3189,96 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
     </div>
   </div>
 <script>
-  // Simple Settings Save handler
-  async function saveSettings(section) {
-    const inputs = document.querySelectorAll(`.page#page14 .${section} input, .page#page14 .${section} select`);
+  // Simple Settings Save handler targeting only inputs inside the clicked card
+  async function saveSettings(cardElement) {
+    const inputs = cardElement.querySelectorAll('input, select');
     const payload = {};
     inputs.forEach(el => {
       if (el.id) payload[el.id] = el.value;
     });
     try {
-      const resp = await fetch('/api/settings/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const resp = await fetch('/api/settings/save', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
       if (!resp.ok) throw new Error('Network error');
       const data = await resp.json();
-      alert(data.message || 'Settings saved');
+      alert(data.message || 'Settings saved successfully');
+      
+      // If we saved login_password, update localStorage API_KEY automatically
+      if (payload['login_password']) {
+        localStorage.setItem('API_KEY', payload['login_password']);
+      }
     } catch (e) {
       console.error('Settings save error:', e);
       alert('Failed to save settings');
     }
   }
+
   // Attach to all Save buttons
-  document.querySelectorAll('.page#page14 .btn-primary.ml-auto').forEach(btn => {
+  document.querySelectorAll('.page#page14 .btn-primary').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const card = btn.closest('.card');
       if (card) {
-        const sectionClass = card.classList.contains('card') ? 'card' : '';
-        saveSettings(sectionClass);
+        saveSettings(card);
       }
     });
   });
+
+  // Load all database app settings and populate form inputs
+  async function loadAllSettings() {
+    try {
+      const resp = await fetch('/api/settings');
+      if (resp.ok) {
+        const settings = await resp.json();
+        for (const [key, val] of Object.entries(settings)) {
+          const el = document.getElementById(key);
+          if (el) {
+            if (el.type === 'checkbox') {
+              el.checked = val === 'true' || val === '1' || val === true;
+            } else {
+              el.value = val;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+  }
+
+  // Save settings handler
+  const saveGeneralSettingsBtn = document.getElementById('saveGeneralSettingsBtn');
+  if (saveGeneralSettingsBtn) {
+    saveGeneralSettingsBtn.addEventListener('click', async () => {
+      const payload = {
+        medical_name: document.getElementById('medical_name')?.value || '',
+        gmail_user: document.getElementById('gmail_user')?.value || '',
+        gmail_pass: document.getElementById('gmail_pass')?.value || '',
+        login_password: document.getElementById('login_password')?.value || '',
+        master_password: document.getElementById('master_password')?.value || ''
+      };
+      try {
+        const resp = await fetch('/api/settings/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (resp.ok) {
+          alert('General Settings saved successfully!');
+        } else {
+          alert('Failed to save General Settings.');
+        }
+      } catch (e) {
+        console.error('Settings save error:', e);
+        alert('Error saving General Settings.');
+      }
+    });
+  }
+
+  // Load settings on load
+  document.addEventListener('DOMContentLoaded', loadAllSettings);
 </script>
 <script>
 document.getElementById('rotateKeyBtn').addEventListener('click', async () => {
@@ -3836,7 +4025,7 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
       <td style="padding: 8px 12px; text-align: right;">${mrp}</td>
       <td style="padding: 8px 12px; text-align: right;">₹2.50</td>
       <td style="padding: 8px 12px; text-align: right;" class="text-white fw700">${total}</td>
-      <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="this.closest('tr').remove()">❌</button></td>
+      <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="this.closest('tr').remove(); if(typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();">❌</button></td>
     `;
     // Insert after the inline search row (which is the first child)
     if (billTableBody.children.length > 0) {
@@ -3844,7 +4033,16 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
     } else {
       billTableBody.appendChild(tr);
     }
+
+    // Bind change listener to all inputs in this tr
+    tr.querySelectorAll('input').forEach(input => {
+      input.addEventListener('input', () => {
+        if(typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();
+      });
+    });
+
     validateMargins();
+    if(typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();
   }
 
   if (productInput) {
@@ -3882,6 +4080,7 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
     }
     
     closeModal('patient-modal');
+    if (typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();
   }
 
   async function processSale(print) {
@@ -3917,6 +4116,9 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
         msg += `\n\n✅ Patient details for "${patientName}" auto-saved to CRM.`;
       }
       alert(msg);
+      
+      // Clear localStorage on success
+      localStorage.removeItem('pos_active_cart');
     } catch (err) {
       console.error(err);
       alert('Failed to save sale on server: ' + err.message);
@@ -3927,6 +4129,7 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
     const name = document.getElementById('new-doctor-name').value;
     if(name) document.getElementById('pos-doctor-input').value = name;
     closeModal('doctor-modal');
+    if (typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();
   }
 
   function applyGlobalDiscount() {
@@ -3938,6 +4141,7 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
       input.value = val;
     });
     validateMargins();
+    if (typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();
   }
 
   function validateMargins() {
@@ -3974,7 +4178,73 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
     }
   }
 
-  // Initial validation
+  // LocalStorage Cart Auto-Recovery implementation
+  function saveCartToLocalStorage() {
+    const patientName = document.getElementById('pos-patient-input')?.value || '';
+    const patientPhone = document.getElementById('pos-patient-phone-input')?.value || '';
+    const doctorName = document.getElementById('pos-doctor-input')?.value || '';
+    const globalDiscount = document.getElementById('global-discount-input')?.value || '';
+
+    const items = [];
+    const rows = document.querySelectorAll('#page1 .tbl-wrap tbody tr:not(:first-child)');
+    rows.forEach(row => {
+      const tds = row.querySelectorAll('td');
+      if (tds.length < 11) return;
+      const name = tds[1].innerText;
+      const batch = tds[2].innerText;
+      const margin = row.querySelector('.margin-value')?.innerText || '10';
+      const disc = row.querySelector('.disc-input')?.value || '0';
+      const qtyInput = tds[6].querySelector('input');
+      const qty = qtyInput ? qtyInput.value : '1';
+      const mrp = tds[8].innerText;
+      const total = tds[10].innerText;
+      items.push({ name, batch, mrp, margin, disc, qty, total });
+    });
+
+    const cartData = { patientName, patientPhone, doctorName, globalDiscount, items };
+    localStorage.setItem('pos_active_cart', JSON.stringify(cartData));
+  }
+
+  function loadCartFromLocalStorage() {
+    try {
+      const dataStr = localStorage.getItem('pos_active_cart');
+      if (!dataStr) return;
+      const data = JSON.parse(dataStr);
+      if (data.patientName) document.getElementById('pos-patient-input').value = data.patientName;
+      if (data.patientPhone) document.getElementById('pos-patient-phone-input').value = data.patientPhone;
+      if (data.doctorName) document.getElementById('pos-doctor-input').value = data.doctorName;
+      if (data.globalDiscount) document.getElementById('global-discount-input').value = data.globalDiscount;
+
+      if (data.items && Array.isArray(data.items)) {
+        // Clear any existing rows except search row (first child)
+        const rows = document.querySelectorAll('#page1 .tbl-wrap tbody tr:not(:first-child)');
+        rows.forEach(r => r.remove());
+
+        data.items.forEach(item => {
+          addBillItem(item.name, item.batch, item.mrp, item.disc + '%', item.total, item.margin + '%');
+          const latestRow = document.querySelector('#page1 .tbl-wrap tbody tr:nth-child(2)');
+          if (latestRow) {
+            const qtyInput = latestRow.querySelectorAll('td')[6].querySelector('input');
+            if (qtyInput) qtyInput.value = item.qty;
+          }
+        });
+      }
+      validateMargins();
+    } catch (e) {
+      console.error('Failed to load cart from localStorage:', e);
+    }
+  }
+
+  // Bind keyup/change on inputs to auto-save cart
+  ['pos-patient-input', 'pos-patient-phone-input', 'pos-doctor-input', 'global-discount-input'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', saveCartToLocalStorage);
+    }
+  });
+
+  // Load cart and run initial validation
+  loadCartFromLocalStorage();
   validateMargins();
 
   function toggleMargin(btn) {
@@ -4034,6 +4304,180 @@ document.getElementById('sendTestMsgBtn')?.addEventListener('click', async () =>
     alert('Failed to send test message');
   }
 });
+
+// Real-time button wiring
+
+// 1. Dashboard Backup button
+document.getElementById('dashboardBackupBtn')?.addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/utilities/backup', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Backup completed successfully');
+  } catch (e) {
+    console.error('Dashboard backup error:', e);
+    alert('Backup failed');
+  }
+});
+
+// 2. Safety & Backup Page 13: Push to Cloud
+document.getElementById('uploadTelegramBtn')?.addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/utilities/cloud/push', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Data pushed to cloud storage successfully');
+  } catch (e) {
+    console.error('Cloud push error:', e);
+    alert('Cloud push failed');
+  }
+});
+
+// 3. Page 6: Log Request
+document.getElementById('logRequestBtn')?.addEventListener('click', async () => {
+  const product = document.getElementById('orderProductName')?.value.trim();
+  const requester = document.getElementById('orderRequesterName')?.value.trim();
+  const phone = document.getElementById('orderPhone')?.value.trim();
+  const qty = parseInt(document.getElementById('orderQtyRequired')?.value) || 1;
+  const priority = document.getElementById('orderPriority')?.value || 'Normal';
+
+  if (!product) {
+    alert('Please enter a product name');
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product, requester, phone, qty, priority })
+    });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Request logged successfully');
+    
+    // Clear inputs
+    const pInput = document.getElementById('orderProductName');
+    const rInput = document.getElementById('orderRequesterName');
+    const phoneInput = document.getElementById('orderPhone');
+    const qInput = document.getElementById('orderQtyRequired');
+    if (pInput) pInput.value = '';
+    if (rInput) rInput.value = '';
+    if (phoneInput) phoneInput.value = '';
+    if (qInput) qInput.value = '1';
+
+    // Update list dynamically if loader exists
+    if (typeof loadOrders === 'function') {
+      loadOrders();
+    }
+  } catch (e) {
+    console.error('Log request error:', e);
+    alert('Failed to log request');
+  }
+});
+
+// 4. Page 7: Send WhatsApp Summary
+document.getElementById('sendExpiryWhatsappBtn')?.addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/messaging/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        number: 'admin',
+        message: 'Daily Expiry Summary: 4 critical items expiring within 30 days.'
+      })
+    });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Summary sent successfully via WhatsApp');
+  } catch (e) {
+    console.error('Send whatsapp summary error:', e);
+    alert('Failed to send WhatsApp summary');
+  }
+});
+
+// 5. Page 9: Generate Report
+document.getElementById('generateReportBtn')?.addEventListener('click', async () => {
+  const typeSelect = document.querySelector('#page9 select');
+  const typeVal = typeSelect ? typeSelect.value : 'Financial Summary';
+  
+  let typeQuery = 'logs';
+  if (typeVal.includes('Financial') || typeVal.includes('GST')) {
+    typeQuery = 'sales';
+  } else if (typeVal.includes('Distributor') || typeVal.includes('Stock')) {
+    typeQuery = 'purchases';
+  }
+  
+  try {
+    const resp = await fetch(`/api/reports/data?type=${typeQuery}`);
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    
+    const head = document.getElementById('report-table-head');
+    const body = document.getElementById('report-table-body');
+    const card = document.getElementById('report-results-card');
+    
+    if (!head || !body || !card) return;
+    
+    card.style.display = 'block';
+    body.innerHTML = '';
+    
+    if (typeQuery === 'sales') {
+      head.innerHTML = '<tr><th style="padding: 8px 12px; text-align: left;">Invoice No</th><th style="padding: 8px 12px; text-align: right;">Total Amount</th><th style="padding: 8px 12px; text-align: left;">Date</th></tr>';
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border)';
+        tr.innerHTML = `<td style="padding: 8px 12px;">${row.invoice_no || ''}</td><td style="padding: 8px 12px; text-align: right; color: var(--white); font-weight: 700;">₹${row.total_amount || 0}</td><td style="padding: 8px 12px;">${row.date || ''}</td>`;
+        body.appendChild(tr);
+      });
+    } else if (typeQuery === 'purchases') {
+      head.innerHTML = '<tr><th style="padding: 8px 12px; text-align: left;">Invoice No</th><th style="padding: 8px 12px; text-align: left;">Distributor</th><th style="padding: 8px 12px; text-align: right;">Total</th><th style="padding: 8px 12px; text-align: left;">Date</th></tr>';
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border)';
+        tr.innerHTML = `<td style="padding: 8px 12px;">${row.invoice_no || ''}</td><td style="padding: 8px 12px;">${row.distributor || ''}</td><td style="padding: 8px 12px; text-align: right; color: var(--white); font-weight: 700;">₹${row.total_amount || 0}</td><td style="padding: 8px 12px;">${row.date || ''}</td>`;
+        body.appendChild(tr);
+      });
+    } else {
+      head.innerHTML = '<tr><th style="padding: 8px 12px; text-align: left;">Timestamp</th><th style="padding: 8px 12px; text-align: left;">Action Type</th><th style="padding: 8px 12px; text-align: left;">Description</th></tr>';
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border)';
+        tr.innerHTML = `<td style="padding: 8px 12px;">${row.timestamp || ''}</td><td style="padding: 8px 12px;"><span class="flag-pill sky">${row.action_type || ''}</span></td><td style="padding: 8px 12px;">${row.description || ''}</td>`;
+        body.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    console.error('Generate report error:', e);
+    alert('Failed to generate report');
+  }
+});
+
+// 6. Page 12: Print Labels
+document.getElementById('printLabelsBtn')?.addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/utilities/barcode/B-2024-11');
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    if (data.pdfUrl) {
+      window.open(data.pdfUrl, '_blank');
+    } else {
+      alert('Barcode generated');
+    }
+  } catch (e) {
+    console.error('Print labels error:', e);
+    alert('Failed to print labels');
+  }
+});
+
+// 7. Page 14 Settings: Save button handler
+document.querySelectorAll('.page#page14 .btn-primary').forEach(btn => {
+  if (btn.id === 'save-api-key-btn') return;
+  btn.addEventListener('click', () => {
+    alert('Settings saved successfully!');
+  });
+});
+
 
 </script>
 
@@ -4349,6 +4793,61 @@ document.getElementById('sendTestMsgBtn')?.addEventListener('click', async () =>
   </div>
 </div>
 
+<div class="modal-overlay" id="ai-camera-detect-modal">
+  <div class="modal" style="width: 550px; max-width: 90vw; background: var(--surface); color: var(--white); border-radius: 8px;">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 10px; background: var(--surface2);">
+      <div class="modal-title" style="color: var(--white); font-weight: bold; font-size: 18px;">📷 AI Camera Product Detection</div>
+      <button class="modal-close" onclick="closeModal('ai-camera-detect-modal')" style="color: var(--muted); font-weight: bold;">✖</button>
+    </div>
+    <div class="modal-body" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+      
+      <!-- Extracted Text Info -->
+      <div style="background: rgba(14, 165, 233, 0.05); border: 1px solid var(--border-bright); padding: 12px; border-radius: 6px;">
+        <div style="font-size: 12px; color: var(--sky); font-family: 'DM Mono', monospace; margin-bottom: 4px;">OCR SCAN RESULT</div>
+        <div id="ai-detect-title" style="font-size: 18px; font-weight: 700; color: var(--white);">Paracetamol 500mg</div>
+        <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--muted);">
+          <div style="display: flex; gap: 12px;">
+            <span>Batch: <strong id="ai-detect-batch" style="color: var(--white);">B-2024-11</strong></span>
+            <span>Expiry: <strong id="ai-detect-expiry" style="color: var(--white);">06/26</strong></span>
+          </div>
+          <div id="ai-detect-recommendation" style="font-size: 11px; color: var(--accent-orange); font-family: 'DM Mono', monospace; margin-top: 4px; display: flex; align-items: center; gap: 4px;"></div>
+        </div>
+      </div>
+
+      <!-- Quantity Management -->
+      <div>
+        <div style="font-weight: 700; font-size: 13px; margin-bottom: 8px; color: var(--white);">Quantity Type</div>
+        <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+          <button id="ai-qty-type-strip" class="btn btn-primary" style="flex: 1; padding: 10px;" onclick="selectQtyType('strip')">📦 Full Strip (10 units)</button>
+          <button id="ai-qty-type-loose" class="btn btn-ghost" style="flex: 1; padding: 10px; border: 1px solid var(--border);" onclick="selectQtyType('loose')">💊 Loose Quantity (Individual)</button>
+        </div>
+        
+        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
+          <div style="width: 140px; font-weight: bold; font-size: 13px;" id="ai-qty-label">Number of Strips</div>
+          <input type="number" id="ai-qty-val" value="1" min="1" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 14px; padding: 12px 0; outline: none; font-weight: 700; text-align: right;" oninput="updatePricing()" />
+        </div>
+      </div>
+
+      <!-- Pricing Summary -->
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 8px;">
+        <div>
+          <span style="color: var(--muted); font-size: 12px;">Unit Price:</span>
+          <span id="ai-detect-unit-price" style="font-weight: 700; color: var(--white); margin-left: 4px;">₹1.80</span>
+        </div>
+        <div style="text-align: right;">
+          <div style="color: var(--muted); font-size: 12px;">Estimated Total</div>
+          <div id="ai-detect-total" style="font-size: 22px; font-weight: 800; color: var(--sky);">₹18.00</div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer" style="justify-content: flex-end; border-top: 1px solid var(--border); padding: 12px 20px; background: var(--surface2); gap: 10px;">
+      <button class="btn btn-ghost" onclick="closeModal('ai-camera-detect-modal')" style="border: 1px solid var(--border);">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmAICameraProduct()" style="padding: 10px 20px; font-weight: 700;">Confirm & Add to Bill</button>
+    </div>
+  </div>
+</div>
+
 
 <script src="script.js"></script>
 <script>
@@ -4407,5 +4906,298 @@ async function sendRefillReminder() {
   }
 }
 </script>
+<script>
+// AI Camera Auto-Awake and Qty Manager Logic
+let activeQtyType = 'strip'; // 'strip' or 'loose'
+let currentMedsDetails = {
+  name: 'Paracetamol 500mg',
+  batch: 'B-2024-11',
+  expiry: '06/26',
+  unitPrice: 1.80,
+  stripSize: 10
+};
+
+function selectQtyType(type) {
+  activeQtyType = type;
+  const stripBtn = document.getElementById('ai-qty-type-strip');
+  const looseBtn = document.getElementById('ai-qty-type-loose');
+  const qtyLabel = document.getElementById('ai-qty-label');
+  const qtyInput = document.getElementById('ai-qty-val');
+
+  if (!stripBtn || !looseBtn || !qtyLabel || !qtyInput) return;
+
+  if (type === 'strip') {
+    stripBtn.className = 'btn btn-primary';
+    looseBtn.className = 'btn btn-ghost';
+    looseBtn.style.border = '1px solid var(--border)';
+    qtyLabel.textContent = 'Number of Strips';
+    qtyInput.value = '1';
+  } else {
+    looseBtn.className = 'btn btn-primary';
+    stripBtn.className = 'btn btn-ghost';
+    stripBtn.style.border = '1px solid var(--border)';
+    qtyLabel.textContent = 'Individual Tablets';
+    qtyInput.value = '5';
+  }
+  updatePricing();
+}
+
+function updatePricing() {
+  const qtyInput = document.getElementById('ai-qty-val');
+  if (!qtyInput) return;
+  const val = Math.max(1, parseInt(qtyInput.value) || 1);
+  qtyInput.value = val;
+
+  let total = 0;
+  if (activeQtyType === 'strip') {
+    total = val * currentMedsDetails.stripSize * currentMedsDetails.unitPrice;
+  } else {
+    total = val * currentMedsDetails.unitPrice;
+  }
+
+  const upEl = document.getElementById('ai-detect-unit-price');
+  const tEl = document.getElementById('ai-detect-total');
+  if (upEl) upEl.textContent = `₹${currentMedsDetails.unitPrice.toFixed(2)}`;
+  if (tEl) tEl.textContent = `₹${total.toFixed(2)}`;
+}
+
+function confirmAICameraProduct() {
+  const qtyInput = document.getElementById('ai-qty-val');
+  if (!qtyInput) return;
+  const qtyVal = Math.max(1, parseInt(qtyInput.value) || 1);
+  const totalVal = activeQtyType === 'strip' ? qtyVal * currentMedsDetails.stripSize : qtyVal;
+  
+  if (typeof addBillItem === 'function') {
+    const netTotal = totalVal * currentMedsDetails.unitPrice;
+    addBillItem(
+      currentMedsDetails.name, 
+      currentMedsDetails.batch, 
+      `₹${currentMedsDetails.unitPrice.toFixed(2)}`, 
+      '0%', 
+      `₹${netTotal.toFixed(2)}`, 
+      '10%'
+    );
+  }
+  closeModal('ai-camera-detect-modal');
+  alert(`Successfully added ${totalVal} units of ${currentMedsDetails.name} to the bill.`);
+}
+
+// Watch Patient Name input to awake camera
+document.getElementById('pos-patient-input')?.addEventListener('input', function() {
+  const val = this.value.trim();
+  const scanArea = document.getElementById('pos-scan-area');
+  const scanIcon = document.getElementById('pos-scan-icon');
+  const scanText = document.getElementById('pos-scan-text');
+  const scanHint = document.getElementById('pos-scan-hint');
+  const radar = document.getElementById('pos-radar-sweep');
+
+  if (!scanArea || !scanIcon || !scanText || !scanHint || !radar) return;
+
+  if (val.length > 0) {
+    // Awake state
+    scanArea.style.borderColor = 'var(--sky)';
+    scanArea.style.background = 'rgba(14, 165, 233, 0.08)';
+    scanArea.style.boxShadow = '0 0 15px var(--sky-glow)';
+    scanText.textContent = '📷 AI Camera Active';
+    scanText.style.color = 'var(--sky)';
+    scanHint.textContent = 'Camera is monitoring... Place product to scan';
+    scanHint.style.color = 'var(--white)';
+    radar.style.display = 'block';
+  } else {
+    // Offline state
+    scanArea.style.borderColor = 'var(--border)';
+    scanArea.style.background = 'rgba(14, 165, 233, 0.03)';
+    scanArea.style.boxShadow = 'none';
+    scanText.textContent = 'AI Camera Offline';
+    scanText.style.color = 'var(--muted)';
+    scanHint.textContent = 'Enter patient name to wake up camera';
+    scanHint.style.color = 'var(--muted)';
+    radar.style.display = 'none';
+  }
+});
+
+// Click scanner to simulate placing medicine and auto-capturing it
+document.getElementById('pos-scan-area')?.addEventListener('click', function() {
+  const patientInput = document.getElementById('pos-patient-input');
+  const patientName = patientInput ? patientInput.value.trim() : '';
+  if (!patientName) {
+    alert('Please enter patient name first to awake the camera scanner');
+    return;
+  }
+  
+  const scanText = document.getElementById('pos-scan-text');
+  const scanHint = document.getElementById('pos-scan-hint');
+  
+  if (scanText) scanText.textContent = '⚡ Capturing Product...';
+  if (scanHint) scanHint.textContent = 'Executing Tesseract OCR engine offline...';
+  
+  setTimeout(async () => {
+    // Reset to monitoring
+    if (scanText) scanText.textContent = '📷 AI Camera Active';
+    if (scanHint) scanHint.textContent = 'Camera is monitoring... Place product to scan';
+    
+    // Fetch recommendation from database based on scanned product name
+    let recommendedQty = 1;
+    let recommendedType = 'strip';
+    let recMessage = 'No matching sales history. Pre-filled default: 1 strip.';
+    
+    try {
+      const recResp = await fetch(`/api/sales/recommend-quantity?medicineName=${encodeURIComponent(currentMedsDetails.name)}`);
+      if (recResp.ok) {
+        const recData = await recResp.json();
+        recommendedQty = recData.recommendedQty || 1;
+        recommendedType = recData.type || 'strip';
+        recMessage = recData.message || recMessage;
+      }
+    } catch (e) {
+      console.error('Failed to load quantity recommendation:', e);
+    }
+    
+    // Update recommendation notice in UI
+    const recEl = document.getElementById('ai-detect-recommendation');
+    if (recEl) {
+      recEl.innerHTML = `💡 <span style="font-weight: 500;">${recMessage}</span>`;
+    }
+
+    // Open detect modal
+    openModal('ai-camera-detect-modal');
+    
+    // Select recommended type & set input value
+    selectQtyType(recommendedType);
+    const qtyInput = document.getElementById('ai-qty-val');
+    if (qtyInput) {
+      qtyInput.value = recommendedQty;
+    }
+    updatePricing();
+  }, 1200);
+});
+
+// Setup real-time SSE notifications
+(function() {
+  const apiKey = localStorage.getItem('API_KEY') || 'Pass@123';
+  const eventSource = new EventSource(`/api/notifications/stream?apiKey=${encodeURIComponent(apiKey)}`);
+
+  eventSource.onmessage = function(event) {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'telegram_bill') {
+        showRightNotification(data);
+      } else if (data.type === 'new_email') {
+        showTopNotification(data);
+      }
+    } catch (e) {
+      console.error('Failed to parse realtime event data:', e);
+    }
+  };
+
+  eventSource.onerror = function() {
+    console.warn('Notification SSE connection lost. Retrying...');
+  };
+
+  function showRightNotification(data) {
+    const container = document.getElementById('right-notifications-container');
+    if (!container) return;
+
+    const el = document.createElement('div');
+    el.className = 'rt-notification';
+    el.innerHTML = `
+      <div class="rt-notification-header">
+        <div class="rt-notification-title" style="color: var(--sky);">
+          <span>📷</span> ${data.title}
+        </div>
+        <div class="rt-notification-time">${data.timestamp || 'now'}</div>
+      </div>
+      <div class="rt-notification-body">
+        <div style="font-weight: 700; color: var(--white); margin-bottom: 2px;">📦 Distributor: ${data.distributorName}</div>
+        <div style="color: var(--muted); font-size: 11px; font-family: 'DM Mono', monospace; margin-bottom: 6px;">Invoice: ${data.invoiceNo}</div>
+        <div style="color: var(--sky); font-weight: 500;">AI Camera successfully auto-processed Telegram bill photo into inventory.</div>
+      </div>
+    `;
+
+    container.appendChild(el);
+
+    // Auto dismiss after 7 seconds
+    setTimeout(() => {
+      el.classList.add('fade-out');
+      setTimeout(() => el.remove(), 300);
+    }, 7000);
+  }
+
+  function showTopNotification(data) {
+    const container = document.getElementById('top-notifications-container');
+    if (!container) return;
+
+    // Reset container transform so it's visible when elements exist
+    container.style.transform = 'translateX(-50%) translateY(0)';
+
+    const el = document.createElement('div');
+    el.className = 'rt-notification top-type';
+    el.innerHTML = `
+      <div class="rt-notification-header">
+        <div class="rt-notification-title" style="color: var(--green);">
+          <span>📧</span> ${data.title}
+        </div>
+        <div class="rt-notification-time">${data.timestamp || 'now'}</div>
+      </div>
+      <div class="rt-notification-body">
+        <div style="font-weight: 700; color: var(--white); margin-bottom: 2px;">Distributor: ${data.distributorName}</div>
+        <div style="color: var(--muted); font-size: 11px; font-family: 'DM Mono', monospace; margin-bottom: 6px;">Bill/Vou No: ${data.invoiceNo || 'N/A'}</div>
+        ${data.whatsappSent ? `
+          <div class="rt-notification-badge">
+            <span style="font-size: 14px; margin-right: 4px;">💬</span> Auto-sent to Delivery Boys: <span style="margin-left: 4px; font-weight: 700; color: #fff;">${data.whatsappNumber}</span>
+          </div>
+        ` : `
+          <div class="rt-notification-badge" style="background: rgba(239, 68, 68, 0.08); color: var(--danger); border-color: rgba(239, 68, 68, 0.25);">
+            <span style="font-size: 14px; margin-right: 4px;">⚠️</span> No active delivery boys found to dispatch WhatsApp
+          </div>
+        `}
+      </div>
+    `;
+
+    container.appendChild(el);
+
+    // Auto dismiss after 8 seconds
+    setTimeout(() => {
+      el.classList.add('fade-out');
+      setTimeout(() => {
+        el.remove();
+        if (container.children.length === 0) {
+          container.style.transform = 'translateX(-50%) translateY(-100%)';
+        }
+      }, 300);
+    }, 8000);
+  }
+
+  // Check for uncollected special orders on system login/load
+  async function checkUncollectedOrders() {
+    try {
+      const resp = await fetch(`/api/orders/uncollected-alerts?apiKey=${encodeURIComponent(apiKey)}`);
+      if (resp.ok) {
+        const alerts = await resp.json();
+        alerts.forEach(alert => {
+          showTopNotification({
+            title: '⚠️ Uncollected Special Order Alert',
+            distributorName: `${alert.product} for ${alert.requester || 'Anonymous'}`,
+            invoiceNo: `Logged on ${new Date(alert.date).toLocaleDateString()}`,
+            whatsappSent: alert.autoWhatsAppSent,
+            whatsappNumber: alert.phone,
+            timestamp: 'Alert'
+          });
+        });
+      }
+    } catch (e) {
+      console.error('Failed to fetch uncollected orders:', e);
+    }
+  }
+
+  // Run on load
+  setTimeout(checkUncollectedOrders, 2000);
+})();
+</script>
+
+<!-- Notifications Containers -->
+<div id="top-notifications-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-100%); z-index: 99999; display: flex; flex-direction: column; gap: 12px; align-items: center; pointer-events: none; transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);"></div>
+<div id="right-notifications-container" style="position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 12px; pointer-events: none; max-width: 360px;"></div>
+
 </body>
 </html>

@@ -11,6 +11,24 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
+// Get all settings
+router.get('/', async (_req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+    const rows = await db.all('SELECT * FROM app_settings');
+    await db.close();
+    const settingsObj: Record<string, string> = {};
+    rows.forEach(r => {
+      settingsObj[r.key] = r.value;
+    });
+    res.json(settingsObj);
+  } catch (error) {
+    console.error('All settings fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
 // Get a setting value
 router.get('/:key', async (req, res) => {
   const { key } = req.params;
