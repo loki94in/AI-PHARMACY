@@ -14,29 +14,29 @@
 **Files:**
 - Preview: `E:\CURRENT PROJECT ON WORKING\AI PHARMACY\backup\*.db`
 
-- [ ] **Step 1: Write command to list backup files**
+- [x] **Step 1: Write command to list backup files**
 
 ```powershell
 Get-ChildItem -Path ".\backup" -File | Select-Object Name, Length, LastWriteTime
 ```
 
-- [ ] **Step 2: Run command to preview files**
+- [x] **Step 2: Run command to preview files**
 
 Run: `Get-ChildItem -Path ".\backup" -File | Select-Object Name, Length, LastWriteTime`
 Expected: List of approximately 50+ .db files with their sizes and timestamps
 
-- [ ] **Step 3: Count files to be deleted**
+- [x] **Step 3: Count files to be deleted**
 
 ```powershell
 (Get-ChildItem -Path ".\backup" -File).Count
 ```
 
-- [ ] **Step 4: Run count command**
+- [x] **Step 4: Run count command**
 
 Run: `(Get-ChildItem -Path ".\backup" -File).Count`
 Expected: Number showing total files to be deleted (should be ~50+)
 
-- [ ] **Step 5: Commit preview script**
+- [x] **Step 5: Commit preview script**
 
 ```bash
 git add docs/superpowers/plans/2026-05-26-delete-backup-files.md
@@ -48,29 +48,29 @@ git commit -m "feat: add preview step for backup file deletion plan"
 **Files:**
 - Modify: PowerShell execution environment
 
-- [ ] **Step 1: Write delete command**
+- [x] **Step 1: Write delete command**
 
 ```powershell
 Get-ChildItem -Path ".\backup" -File | Remove-Item -Force
 ```
 
-- [ ] **Step 2: Run delete command**
+- [x] **Step 2: Run delete command**
 
 Run: `Get-ChildItem -Path ".\backup" -File | Remove-Item -Force`
 Expected: No output (successful deletion), return to prompt
 
-- [ ] **Step 3: Verify deletion**
+- [x] **Step 3: Verify deletion**
 
 ```powershell
 Get-ChildItem -Path ".\backup" | Measure-Object
 ```
 
-- [ ] **Step 4: Run verification command**
+- [x] **Step 4: Run verification command**
 
 Run: `Get-ChildItem -Path ".\backup" | Measure-Object`
 Expected: Count of 0 (empty directory)
 
-- [ ] **Step 5: Commit deletion verification**
+- [x] **Step 5: Commit deletion verification**
 
 ```bash
 git add docs/superpowers/plans/2026-05-26-delete-backup-files.md
