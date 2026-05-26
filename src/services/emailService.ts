@@ -109,13 +109,18 @@ export class EmailService {
 
       for (const item of results) {
         try {
-          const all = item.parts.find((p: any) => p.which === '' ).body;
-          const parsed = await simpleParser(all);
+          const bodyPart = item.parts.find((p: any) => p.which === '');
+          if (!bodyPart) continue;
+          const parsed = await simpleParser(bodyPart.body);
           const processedEmail: ProcessedEmail = {
             from: parsed.from?.text || '',
             subject: parsed.subject || '',
             body: parsed.text || '',
-            attachments: parsed.attachments || []
+            attachments: (parsed.attachments || []).map((a: any) => ({
+              filename: a.filename || 'unknown',
+              content: a.content,
+              contentType: a.contentType || 'application/octet-stream'
+            }))
           };
 
           // Log the email receipt
@@ -349,7 +354,7 @@ export class EmailService {
       }
 
       // Format notification to the requested simple format
-      const message = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} (invoice number) ${orderInfo.timeStr}`;
+      const message = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} ${orderInfo.timeStr}`;
 
       for (const boy of activeBoys) {
         // Send WhatsApp
@@ -388,7 +393,7 @@ export class EmailService {
       if (isOrderRelated) {
         // Extract order info
         const orderInfo = this.extractOrderInfo(email);
-        const logMsg = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} (invoice number) ${orderInfo.timeStr}`;
+        const logMsg = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} ${orderInfo.timeStr}`;
 
         // Log as potential order for follow-up
         const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
@@ -652,15 +657,20 @@ export class EmailService {
 
       for (const item of limitedResults) {
         try {
-          const all = item.parts.find((p: any) => p.which === '').body;
-          const parsed = await simpleParser(all);
+          const bodyPart = item.parts.find((p: any) => p.which === '');
+          if (!bodyPart) continue;
+          const parsed = await simpleParser(bodyPart.body);
           const isSeen = item.attributes.flags.includes('\\Seen');
           
           const processedEmail: ProcessedEmail = {
             from: parsed.from?.text || '',
             subject: parsed.subject || '',
             body: parsed.text || '',
-            attachments: parsed.attachments || []
+            attachments: (parsed.attachments || []).map((a: any) => ({
+              filename: a.filename || 'unknown',
+              content: a.content,
+              contentType: a.contentType || 'application/octet-stream'
+            }))
           };
 
           const orderInfo = this.extractOrderInfo(processedEmail);

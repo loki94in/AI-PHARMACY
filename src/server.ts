@@ -10,6 +10,7 @@ import { initClient, sendMessage } from './whatsappClient.js';
 import { telegramBotService } from './telegramBot.js';
 import { ensureSchema } from './database.js';
 import { startEmailPoller } from './worker/emailPoller.js';
+import { imageArchiveService } from './services/imageArchiveService.js';
 
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
@@ -78,8 +79,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
     const fullPath = req.file.path;
+    
+    // Process image for archiving/H1-Rx detection
+    const newPath = await imageArchiveService.processAndRouteImage(fullPath);
+    const finalPath = newPath || fullPath;
+
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run(`INSERT OR IGNORE INTO catalog_jobs (file_path) VALUES (?)`, fullPath);
+    await db.run(`INSERT OR IGNORE INTO catalog_jobs (file_path) VALUES (?)`, finalPath);
     await db.close();
     
     res.json({ success: true, message: 'File uploaded and queued for processing', file: req.file.filename });
@@ -192,6 +198,7 @@ app.post('/api/patients/send-refill', async (req, res) => {
 
 initClient().catch(err => console.error('WhatsApp init error:', err));
 startEmailPoller();
+imageArchiveService.initJobs();
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);

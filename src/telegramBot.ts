@@ -1,11 +1,13 @@
 import TelegramBot from 'node-telegram-bot-api';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { getMessage } from './i18n/getMessage.js';
-import { aiCameraService } from './services/aiCameraService.js';
+import { ensureSchema } from './database.js';
 import { telegramPrescriptionService } from './services/telegramPrescriptionService.js';
+import { aiCameraService } from './services/aiCameraService.js';
+import { imageArchiveService } from './services/imageArchiveService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,13 +39,7 @@ class TelegramBotService {
     console.log('Telegram bot initialized with polling');
   }
 
-  private initializeBot(): void {
-    this.bot = new TelegramBot(this.token, { polling: true });
-    this.setupCommandHandlers();
-    this.setupErrorHandling();
 
-    console.log('Telegram bot initialized with polling');
-  }
 
   private setupCommandHandlers(): void {
     if (!this.bot) return;
@@ -88,7 +84,7 @@ class TelegramBotService {
     // Handle /check command for medicine availability
     this.bot.onText(/\/check (.+)/, async (msg, match) => {
       const chatId = msg.chat.id;
-      const medicineName = match[1]?.toLowerCase().trim();
+      const medicineName = match ? match[1]?.toLowerCase().trim() : '';
 
       if (!medicineName) {
         this.bot?.sendMessage(chatId, 'Please provide a medicine name to check. Example: /check paracetamol');
@@ -234,8 +230,9 @@ class TelegramBotService {
       this.bot?.sendMessage(chatId, '📥 Image received. Processing prescription...')
         .then(() => {
           // Get the highest resolution photo
+          if (!msg.photo || msg.photo.length === 0) return;
           const photo = msg.photo.reduce((prev, current) =>
-            (prev.file_size > current.file_size) ? prev : current
+            ((prev.file_size || 0) > (current.file_size || 0)) ? prev : current
           );
 
           // Download and process the photo
@@ -248,16 +245,25 @@ class TelegramBotService {
                   throw new Error(`Failed to download image: ${response.status}`);
                 }
                 const imageBuffer = await response.arrayBuffer();
+                const buffer = Buffer.from(imageBuffer);
+
+                // Save to temp folder for archiving/cleanup
+                const tempFileName = `telegram_${Date.now()}_${msg.from?.id}.jpg`;
+                const tempFilePath = path.join(__dirname, '..', 'uploads', 'temp', tempFileName);
+                fs.writeFileSync(tempFilePath, buffer);
+
+                // Route through AI archiving service
+                await imageArchiveService.processAndRouteImage(tempFilePath);
 
                 // Process with AI camera service
-                const result = await aiCameraService.processImage(Buffer.from(imageBuffer));
+                const result = await aiCameraService.processImage(buffer);
 
                 // Handle the result through prescription service
                 await telegramPrescriptionService.handlePrescriptionResult(
                   chatId,
                   result,
                   msg.caption || '', // Optional caption for additional context
-                  this.bot // Pass bot instance for sending messages
+                  this.bot! // Pass bot instance for sending messages
                 );
 
                 // Send feedback messages based on result
