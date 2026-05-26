@@ -46,8 +46,12 @@ router.post('/barcode', async (req, res) => {
   }
 
   try {
+    const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
     const doc = new PDFDocument();
-    const pdfPath = path.resolve(__dirname, '..', '..', 'catalog', `barcodes_${Date.now()}.pdf`);
+    const pdfPath = path.join(uploadsDir, `barcodes_${Date.now()}.pdf`);
     const stream = fs.createWriteStream(pdfPath);
     
     doc.pipe(stream);
@@ -64,7 +68,7 @@ router.post('/barcode', async (req, res) => {
     doc.end();
     
     stream.on('finish', () => {
-      res.json({ success: true, pdfUrl: `/catalog/${path.basename(pdfPath)}` });
+      res.json({ success: true, pdfUrl: `/uploads/${path.basename(pdfPath)}` });
     });
   } catch (error) {
     console.error('Barcode generation failed:', error);
@@ -76,14 +80,18 @@ router.post('/barcode', async (req, res) => {
 router.get('/barcode/:code', async (req, res) => {
   const { code } = req.params;
   try {
+    const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
     const doc = new PDFDocument();
-    const pdfPath = path.resolve(__dirname, '..', '..', 'catalog', `barcode_${code}_${Date.now()}.pdf`);
+    const pdfPath = path.join(uploadsDir, `barcode_${code}_${Date.now()}.pdf`);
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
     doc.fontSize(20).text(`Barcode: ${code}`, { align: 'center' });
     doc.end();
     stream.on('finish', () => {
-      res.json({ success: true, pdfUrl: `/catalog/${path.basename(pdfPath)}` });
+      res.json({ success: true, pdfUrl: `/uploads/${path.basename(pdfPath)}` });
     });
   } catch (error) {
     console.error('Barcode generation failed:', error);
@@ -163,47 +171,7 @@ router.post('/encrypt/rotate', async (req, res) => {
   }
 });
 
-// Test connection placeholder
-// Gmail test‑connection (placeholder – logs and returns success)
-router.get('/test-connection/gmail', async (req, res) => {
-  try {
-    // In a real implementation, you'd use imap-simple to open a test IMAP connection.
-    console.log('TEST_CONNECTION_GMAIL');
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['TEST_CONNECTION_GMAIL', 'Gmail test connection invoked']);
-    await db.close();
-    res.json({ success: true, message: 'Gmail connection OK' });
-  } catch (e) {
-    console.error('Gmail test connection error:', e);
-    res.status(500).json({ error: 'Gmail test connection failed' });
-  }
-});
-// WhatsApp test‑connection (placeholder – logs QR readiness and returns success)
-router.get('/test-connection/whatsapp', async (req, res) => {
-  try {
-    console.log('TEST_CONNECTION_WHATSAPP');
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['TEST_CONNECTION_WHATSAPP', 'WhatsApp test connection invoked']);
-    await db.close();
-    res.json({ success: true, message: 'WhatsApp connection OK' });
-  } catch (e) {
-    console.error('WhatsApp test connection error:', e);
-    res.status(500).json({ error: 'WhatsApp test connection failed' });
-  }
-});
-// WhatsApp send‑test‑message (mock implementation)
-router.post('/whatsapp/send-test', async (req, res) => {
-  try {
-    // payload could contain chatId/message but we just mock success
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['WHATSAPP_SEND', 'Mock WhatsApp test message sent']);
-    await db.close();
-    res.json({ success: true, message: 'WhatsApp test message sent (mock)' });
-  } catch (e) {
-    console.error('WhatsApp send‑test error:', e);
-    res.status(500).json({ error: 'Failed to send WhatsApp test message' });
-  }
-});
+
 
 // Gmail test‑connection endpoint as requested
 router.get('/gmail/test', async (req, res) => {
@@ -265,19 +233,5 @@ router.get('/test-connection', async (req, res) => {
     res.status(500).json({ error: 'Connection test failed' });
   }
 });
-
-// Email parser polling placeholder (simulated)
-if (process.env.EMAIL_PARSER_ENABLED === 'true') {
-  setInterval(async () => {
-    console.log('Simulated email parser polling for invoices');
-    try {
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-      await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['EMAIL_PARSER_POLL', 'Polled inbox for invoices']);
-      await db.close();
-    } catch (e) {
-      console.error('Email poll error:', e);
-    }
-  }, 60000);
-}
 
 export default router;

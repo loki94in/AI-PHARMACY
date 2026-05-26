@@ -41,26 +41,26 @@ describe('Utilities routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.pdfUrl).toMatch(new RegExp(`barcode_${code}_.*\\.pdf$`));
-    const pdfPath = path.resolve(process.cwd(), 'catalog', path.basename(res.body.pdfUrl));
+    const pdfPath = path.resolve(process.cwd(), 'uploads', path.basename(res.body.pdfUrl));
     expect(fs.existsSync(pdfPath)).toBe(true);
   });
 
-  test('GET /utils/test-connection/gmail returns success', async () => {
-    const res = await request(app).get('/utils/test-connection/gmail');
+  test('GET /utils/gmail/test returns success', async () => {
+    const res = await request(app).get('/utils/gmail/test');
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.message).toBe('Gmail connection OK');
   });
 
-  test('GET /utils/test-connection/whatsapp returns success', async () => {
-    const res = await request(app).get('/utils/test-connection/whatsapp');
+  test('GET /utils/whatsapp/test returns success', async () => {
+    const res = await request(app).get('/utils/whatsapp/test');
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.message).toBe('WhatsApp connection OK');
   });
 
-  test('POST /utils/whatsapp/send-test returns mock success', async () => {
-    const res = await request(app).post('/utils/whatsapp/send-test').send({});
+  test('POST /utils/whatsapp/send returns mock success', async () => {
+    const res = await request(app).post('/utils/whatsapp/send').send({});
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.message).toBe('WhatsApp test message sent (mock)');

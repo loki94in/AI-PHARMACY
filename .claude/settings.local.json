@@ -17,7 +17,8 @@
       "Bash(npx @anthropic-ai/mcpb pack)",
       "Bash(bash *)",
       "Bash(gzip *)",
-      "Bash(ren *)"
+      "Bash(ren *)",
+      "Bash(npm audit *)"
     ]
   },
   "hooks": {

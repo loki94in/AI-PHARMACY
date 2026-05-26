@@ -40,11 +40,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', 'data', 'app.db');
-const UPLOAD_DIR = path.resolve(__dirname, '..', 'catalog');
+const UPLOAD_DIR = path.resolve(__dirname, '..', 'uploads');
+const TEMP_DIR = path.join(UPLOAD_DIR, 'temp');
 
-// Ensure upload directory exists
+// Ensure uploads and temp directories exist
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
 // Multer storage config
@@ -71,6 +75,7 @@ app.use(express.json());
 
 // Serve UI static files
 app.use('/ui', express.static(path.join(__dirname, 'ui')));
+app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads')));
 
 // API to upload file and enqueue it directly
 app.post('/api/upload', upload.single('file'), async (req, res) => {

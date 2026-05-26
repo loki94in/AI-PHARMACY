@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Directory containing catalog files (relative to project root)
-const CATALOG_DIR = process.env.CATALOG_DIR || path.resolve(__dirname, '..', '..', 'catalog');
+const CATALOG_DIR = process.env.CATALOG_DIR || path.resolve(__dirname, '..', '..', 'uploads');
 // SQLite database path (store under data folder)
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 

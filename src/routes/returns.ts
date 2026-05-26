@@ -72,7 +72,7 @@ router.post('/financial-note', async (req, res) => {
 
     pdfDoc = new PDFDocument();
     const filename = `financial-note-${Date.now()}.pdf`;
-    const outPath = path.resolve(__dirname, '..', '..', 'catalog', filename);
+    const outPath = path.resolve(__dirname, '..', '..', 'uploads', filename);
     stream = fs.createWriteStream(outPath);
     pdfDoc.pipe(stream);
     pdfDoc.fontSize(20).text(`${type.charAt(0).toUpperCase() + type.slice(1)} Note`, { align: 'center' });
@@ -88,7 +88,7 @@ router.post('/financial-note', async (req, res) => {
       stream.on('finish', resolve);
       stream.on('error', reject);
     });
-    const url = `/catalog/${filename}`;
+    const url = `/uploads/${filename}`;
     res.json({ url, message: `${type} note generated` });
   } catch (err: any) {
     if (stream) {

@@ -18,11 +18,11 @@
     "cors": "^2.8.6",
     "csv-parse": "^5.5.2",
     "express": "^5.2.1",
-    "imap-simple": "^5.1.0",
+    "imap-simple": "^1.6.3",
     "mailparser": "^3.9.8",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
-    "node-telegram-bot-api": "^0.67.0",
+    "node-telegram-bot-api": "^0.66.0",
     "nodemailer": "^8.0.8",
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.13.0",
@@ -50,6 +50,7 @@
     "@types/pdf-parse": "^1.1.5",
     "@types/qrcode": "^1.5.6",
     "@types/sqlite3": "^3.1.11",
+    "@types/supertest": "^7.2.0",
     "@types/unzipper": "^0.10.11",
     "jest": "^29.6.0",
     "pkg": "^5.8.1",
@@ -63,5 +64,15 @@
       "backup/**",
       "src/ui/**"
     ]
+  },
+  "overrides": {
+    "qs": "^6.15.2",
+    "request": {
+      "form-data": "^2.5.4",
+      "tough-cookie": "^4.1.3"
+    },
+    "utf7": {
+      "semver": "^5.7.2"
+    }
   }
 }

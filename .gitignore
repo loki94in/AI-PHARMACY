@@ -3,5 +3,5 @@ node_modules/
 .env
 data/*.db
 backup/
-catalog/*.pdf
+uploads/temp/
 .wwebjs_cache/
