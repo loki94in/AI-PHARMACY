@@ -2,48 +2,46 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 
 // Helper function to calculate similarity using Levenshtein distance
-function similarity(s1: string, s2: string): number {
-  const longer = s1.length > s2.length ? s1 : s2;
-  const shorter = s1.length > s2.length ? s2 : s1;
-  if (longer.length === 0) return 1.0;
+function similarity(s1: string, s2: string, threshold: number = 0.8): number {
+  const maxLen = Math.max(s1.length, s2.length);
+  const minLen = Math.min(s1.length, s2.length);
+  
+  if (maxLen === 0) return 1.0;
+
+  // Shortcut: if the length difference is greater than the allowed error, it cannot match
+  if ((maxLen - minLen) / maxLen > (1 - threshold)) {
+    return 0.0;
+  }
 
   // Simple Levenshtein distance implementation
   const editDistance = (a: string, b: string): number => {
     if (a.length === 0) return b.length;
     if (b.length === 0) return a.length;
 
-    const matrix: number[][] = [];
+    let prevRow = Array.from({ length: b.length + 1 }, (_, i) => i);
+    let currRow = new Array(b.length + 1);
 
-    // Initialize first row and column
-    for (let i = 0; i <= b.length; i++) {
-      matrix[i] = [i];
-    }
-    for (let j = 0; j <= a.length; j++) {
-      matrix[0][j] = j;
-    }
-
-    // Fill the rest of the matrix
-    for (let i = 1; i <= b.length; i++) {
-      matrix[i] = [];
-      for (let j = 1; j <= a.length; j++) {
+    for (let j = 1; j <= a.length; j++) {
+      currRow[0] = j;
+      for (let i = 1; i <= b.length; i++) {
         if (b.charAt(i - 1) === a.charAt(j - 1)) {
-          matrix[i][j] = matrix[i - 1][j - 1];
+          currRow[i] = prevRow[i - 1];
         } else {
-          matrix[i][j] = Math.min(
-            matrix[i - 1][j - 1] + 1, // substitution
-            matrix[i][j - 1] + 1,     // insertion
-            matrix[i - 1][j] + 1      // deletion
+          currRow[i] = Math.min(
+            prevRow[i - 1] + 1, // substitution
+            currRow[i - 1] + 1, // insertion
+            prevRow[i] + 1      // deletion
           );
         }
       }
+      prevRow = [...currRow];
     }
 
-    return matrix[b.length][a.length];
+    return prevRow[b.length];
   };
 
   const distance = editDistance(s1.toLowerCase(), s2.toLowerCase());
-  const maxLen = Math.max(s1.length, s2.length);
-  return maxLen === 0 ? 1.0 : 1.0 - distance / maxLen;
+  return 1.0 - distance / maxLen;
 }
 
 export interface FilterOptions {
@@ -116,48 +114,43 @@ export class ProductNameFilterService {
     }
 
     const normalizedOcr = ocrText.toLowerCase().trim();
-    const localMatches: string[] = [];
+    const scoredMatches: Array<{ name: string; score: number }> = [];
 
-    // Local fuzzy matching
+    // Local fuzzy matching with score caching
     for (const medicineName of this.medicineNames) {
-      const similarityScore = similarity(normalizedOcr, medicineName.toLowerCase());
+      const similarityScore = similarity(normalizedOcr, medicineName.toLowerCase(), minConfidenceThreshold);
       if (similarityScore >= minConfidenceThreshold) {
-        localMatches.push(medicineName);
+        scoredMatches.push({ name: medicineName, score: similarityScore });
       }
     }
 
-    // Sort local matches by similarity score (descending)
-    localMatches.sort((a, b) => {
-      const scoreA = similarity(normalizedOcr, a.toLowerCase());
-      const scoreB = similarity(normalizedOcr, b.toLowerCase());
-      return scoreB - scoreA;
-    });
+    // Sort using the cached score to avoid redundant Levenshtein matrix calculations
+    scoredMatches.sort((a, b) => b.score - a.score);
+    const localMatches = scoredMatches.map(item => item.name);
 
     // Determine if we need to use internet fallback
     const hasLocalMatches = localMatches.length > 0;
     const localConfidence = hasLocalMatches ?
-      localMatches.reduce((sum, name) => sum + similarity(normalizedOcr, name.toLowerCase()), 0) / localMatches.length : 0;
+      scoredMatches.reduce((sum, item) => sum + item.score, 0) / scoredMatches.length : 0;
     const shouldUseFallback = enableInternetFallback &&
-      (!hasLocalMatches || localConfidence < minConfidenceThreshold) &&
-      !!internetApiEndpoint;
+      (!hasLocalMatches || localConfidence < minConfidenceThreshold);
 
     let internetMatches: string[] = [];
     let fallbackUsed = false;
 
     // Internet fallback (if enabled and needed)
-    if (shouldUseFallback && internetApiEndpoint) {
+    if (shouldUseFallback) {
       try {
         fallbackUsed = true;
         internetMatches = await this.queryInternetApi(
           normalizedOcr,
-          internetApiEndpoint,
-          internetApiKey,
+          internetApiEndpoint || 'https://api.fda.gov/drug/ndc.json',
+          internetApiKey || process.env.OPENFDA_API_KEY,
           fallbackTimeoutMs,
           minConfidenceThreshold
         );
       } catch (error) {
         console.warn('Internet API query failed, falling back to local results only:', error);
-        // Continue with local results only
       }
     }
 
@@ -173,8 +166,6 @@ export class ProductNameFilterService {
     const totalMatches = allMatches.length;
     let averageConfidence = 0;
     if (totalMatches > 0) {
-      // For simplicity, we'll use the threshold as base confidence
-      // In a more sophisticated implementation, we'd calculate actual similarity scores
       averageConfidence = minConfidenceThreshold * 100;
     }
 
@@ -197,56 +188,71 @@ export class ProductNameFilterService {
     timeoutMs: number,
     minConfidenceThreshold: number
   ): Promise<string[]> {
-    // Abort controller for timeout
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
 
-    try {
-      // Build request URL with query parameter
-      const url = new URL(endpoint);
-      url.searchParams.set('q', query);
+    const matches: string[] = [];
 
-      const headers: HeadersInit = {};
-      if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
+    try {
+      // 1. Query openFDA API if matching openFDA URL
+      if (endpoint.includes('fda.gov')) {
+        let fdaUrl = `https://api.fda.gov/drug/ndc.json?search=(brand_name:"${encodeURIComponent(query)}"+generic_name:"${encodeURIComponent(query)}")&limit=5`;
+        if (apiKey) {
+          fdaUrl += `&api_key=${apiKey}`;
+        }
+
+        const response = await fetch(fdaUrl, {
+          signal: abortController.signal,
+          method: 'GET'
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data && Array.isArray(data.results)) {
+            data.results.forEach((item: any) => {
+              if (item.brand_name && typeof item.brand_name === 'string') {
+                matches.push(item.brand_name);
+              }
+              if (item.generic_name && typeof item.generic_name === 'string') {
+                matches.push(item.generic_name);
+              }
+            });
+          }
+        }
       }
 
-      const response = await fetch(url.toString(), {
+      // 2. Query RxNav RxNorm API (NLM)
+      const rxNavUrl = `https://rxnav.nlm.nih.gov/REST/drugs.json?name=${encodeURIComponent(query)}`;
+      const responseRx = await fetch(rxNavUrl, {
         signal: abortController.signal,
-        headers,
-        method: 'GET'
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
       });
+
+      if (responseRx.ok) {
+        const data = await responseRx.json();
+        if (data && data.drugGroup && Array.isArray(data.drugGroup.conceptGroup)) {
+          data.drugGroup.conceptGroup.forEach((group: any) => {
+            if (group.conceptProperties && Array.isArray(group.conceptProperties)) {
+              group.conceptProperties.forEach((prop: any) => {
+                if (prop.name && typeof prop.name === 'string') {
+                  matches.push(prop.name);
+                }
+              });
+            }
+          });
+        }
+      }
 
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
+      // Filter and return unique matches with high similarity
+      const uniqueMatches = Array.from(new Set(matches));
+      return uniqueMatches.filter(matchName => 
+        similarity(query, matchName.toLowerCase(), minConfidenceThreshold) >= minConfidenceThreshold
+      );
 
-      const data = await response.json();
-
-      // Extract product names from API response (adjust based on actual API structure)
-      // This assumes API returns an array of objects with a 'name' field
-      if (Array.isArray(data)) {
-        return data
-          .filter((item: any) =>
-            item.name &&
-            typeof item.name === 'string' &&
-            similarity(query, item.name.toLowerCase()) >= minConfidenceThreshold
-          )
-          .map((item: any) => item.name);
-      } else if (data && Array.isArray(data.results)) {
-        return data.results
-          .filter((item: any) =>
-            item.name &&
-            typeof item.name === 'string' &&
-            similarity(query, item.name.toLowerCase()) >= minConfidenceThreshold
-          )
-          .map((item: any) => item.name);
-      }
-
-      return [];
-    } catch (error) {
+    } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
         throw new Error(`Internet API request timed out after ${timeoutMs}ms`);

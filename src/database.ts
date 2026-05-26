@@ -111,6 +111,8 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE medicines ADD COLUMN schedule_type TEXT DEFAULT 'None'`,
     `ALTER TABLE medicines ADD COLUMN manufacturer TEXT`,
     `ALTER TABLE medicines ADD COLUMN category TEXT`,
+    `ALTER TABLE medicines ADD COLUMN marketed_by TEXT`,
+    `ALTER TABLE medicines ADD COLUMN manufactured_by TEXT`,
   ];
   for (const stmt of alterStatements) {
     try {

@@ -31,13 +31,16 @@ class AICameraService {
     if (this.initialized) return;
 
     try {
-      this.worker = await createWorker('eng');
+      this.worker = await createWorker('eng', 1, {
+        langPath: process.cwd(), // Load local eng.traineddata from root folder
+        gzip: false             // Use uncompressed local traineddata file
+      });
       await this.worker.setParameters({
         tessedit_pageseg_mode: 6, // Assume a single uniform block of text
         preserve_interword_spaces: '1',
       });
       this.initialized = true;
-      console.log('AI Camera Service initialized with Tesseract.js');
+      console.log('AI Camera Service initialized with local Tesseract.js config');
     } catch (error) {
       console.error('Failed to initialize AI Camera Service:', error);
       throw error;

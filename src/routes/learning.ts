@@ -4,7 +4,6 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Anthropic from '@anthropic-ai/sdk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,53 +29,112 @@ router.post('/', async (req, res) => {
   }
 });
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || ''
-});
-
-// Analyze legacy data structure using Claude
+// Analyze legacy data structure using rule-based approach (zero-budget alternative to Claude AI)
 router.post('/analyze', async (req, res) => {
   const { sampleData } = req.body;
   if (!sampleData) return res.status(400).json({ error: 'sampleData is required' });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ 
-      error: 'ANTHROPIC_API_KEY is not set in .env. Please add your key to use the AI Engine.' 
-    });
-  }
-
   try {
-    const prompt = `You are a Pharmacy Database Migration Expert. 
-I am migrating an old legacy database to my new SQLite schema. 
-My new schema requires these core fields: item_name, quantity, price, expiry_date, batch_number.
+    // Simple rule-based mapping for common pharmacy legacy data formats
+    // This provides a basic mapping without requiring external AI APIs
 
-Here is a sample of the raw data from the legacy system (it might be CSV, SQL, or JSON):
----
-${sampleData}
----
+    // Try to parse as JSON first
+    let parsedData;
+    let headers = [];
+    let sampleRows = [];
 
-Please analyze the structure of this data and generate a JSON mapping. 
-Return ONLY a valid JSON object where the keys are my new schema fields (item_name, quantity, price, expiry_date, batch_number) and the values are the corresponding exact column/field names from the legacy data. If a field doesn't exist, map it to null.`;
+    try {
+      parsedData = JSON.parse(sampleData);
+      if (Array.isArray(parsedData) && parsedData.length > 0) {
+        // Assume it's an array of objects
+        const firstItem = parsedData[0];
+        if (typeof firstItem === 'object' && firstItem !== null) {
+          headers = Object.keys(firstItem);
+          sampleRows = parsedData.slice(0, 3); // Take first 3 rows as sample
+        }
+      } else if (typeof parsedData === 'object' && parsedData !== null) {
+        // Single object
+        headers = Object.keys(parsedData);
+        sampleRows = [parsedData];
+      }
+    } catch (e) {
+      // Not JSON, try to parse as CSV-like format
+      const lines = sampleData.split('\n').filter(line => line.trim() !== '');
+      if (lines.length > 0) {
+        // Assume first line is header
+        headers = lines[0].split(',').map(h => h.trim());
+        sampleRows = lines.slice(1, 4).map(line => {
+          const values = line.split(',').map(v => v.trim());
+          const rowObj = {};
+          headers.forEach((header, index) => {
+            rowObj[header] = values[index] || '';
+          });
+          return rowObj;
+        });
+      }
+    }
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }]
+    // Generate mapping based on common field name patterns
+    const mapping: any = {
+      item_name: null,
+      quantity: null,
+      price: null,
+      expiry_date: null,
+      batch_number: null
+    };
+
+    // Common patterns for each field
+    const patterns: Record<string, string[]> = {
+      item_name: ['item_name', 'product_name', 'medicine_name', 'name', 'description', 'item', 'product'],
+      quantity: ['quantity', 'qty', 'amount', 'count', 'units'],
+      price: ['price', 'cost', 'rate', 'amount', 'mrp', 'sale_price'],
+      expiry_date: ['expiry_date', 'expiry', 'exp_date', 'expires', 'expiration_date'],
+      batch_number: ['batch_number', 'batch', 'lot_number', 'lot', 'batch_no']
+    };
+
+    // Find best matches for each field
+    Object.keys(patterns).forEach(field => {
+      const possibleMatches = patterns[field];
+      const match = headers.find(header =>
+        possibleMatches.some(pattern =>
+          header.toLowerCase().includes(pattern.toLowerCase())
+        )
+      );
+      if (match) {
+        mapping[field] = match;
+      }
     });
 
-    const aiResponse = message.content[0].type === 'text' ? message.content[0].text : '';
-    
-    // Extract JSON from response
-    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const mapping = JSON.parse(jsonMatch[0]);
-      res.json({ success: true, mapping, raw: aiResponse });
+    // If we couldn't find good matches, provide a fallback based on position
+    if (headers.length >= 5) {
+      // Assume standard order: name, quantity, price, expiry, batch
+      if (!mapping.item_name) mapping.item_name = headers[0];
+      if (!mapping.quantity) mapping.quantity = headers[1];
+      if (!mapping.price) mapping.price = headers[2];
+      if (!mapping.expiry_date) mapping.expiry_date = headers[3];
+      if (!mapping.batch_number) mapping.batch_number = headers[4];
+    }
+
+    const hasValidMapping = Object.values(mapping).some(value => value !== null);
+
+    if (hasValidMapping) {
+      res.json({
+        success: true,
+        mapping,
+        raw: `Rule-based analysis complete. Detected headers: ${headers.join(', ')}`,
+        note: 'Using zero-budget rule-based analyzer. For more accurate results, consider configuring API keys for AI-powered analysis.'
+      });
     } else {
-      res.json({ success: false, error: 'Could not parse JSON from AI', raw: aiResponse });
+      res.json({
+        success: false,
+        error: 'Could not automatically map legacy data format. Please provide sample data with recognizable column names.',
+        raw: `Sample data preview: ${sampleData.substring(0, 200)}...`,
+        headersDetected: headers
+      });
     }
   } catch (error: any) {
-    console.error('AI Analysis error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Analysis error:', error);
+    res.status(500).json({ error: 'Failed to analyze legacy data structure' });
   }
 });
 

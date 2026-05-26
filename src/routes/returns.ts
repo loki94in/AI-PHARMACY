@@ -117,7 +117,7 @@ router.post('/ai-camera/process', async (req, res) => {
 
     const imageData = req.body.image;
 
-    // Process the image with Tesseract OCR (with Claude Vision fallback if offline confidence is low)
+    // Process the image with Tesseract OCR (offline capable)
     const result = await aiCameraService.processImage(imageData);
 
     // Extract potential medicine information (prioritize service structured results)
