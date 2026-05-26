@@ -82,7 +82,7 @@ router.get('/barcode/:code', async (req, res) => {
 // Cloud storage with AWS S3
 router.post('/cloud/push', async (req, res) => {
     try {
-        const AWS = require('aws-sdk');
+        const { default: AWS } = await import('aws-sdk');
         const s3 = new AWS.S3();
         // Upload database file to S3
         const bucketName = process.env.S3_BUCKET_NAME || 'ai-pharmacy-backups';

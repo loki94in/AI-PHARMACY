@@ -1,74 +1,29 @@
+import { parseValues, cleanValue } from '../../utils/migrationUtils.js';
 /**
- * Helper function to parse CSV-like values string respecting quotes
- * Similar to the one in inventoryParser.ts
+ * Cache for database lookups to avoid repeated queries
  */
-function parseValues(valuesStr) {
-    const values = [];
-    let current = '';
-    let inQuotes = false;
-    let quoteChar = null;
-    for (let i = 0; i < valuesStr.length; i++) {
-        const char = valuesStr[i];
-        if (char === '"' || char === "'") {
-            if (!inQuotes) {
-                inQuotes = true;
-                quoteChar = char;
-            }
-            else if (quoteChar === char) {
-                inQuotes = false;
-                quoteChar = null;
-            }
-            else {
-                // Inside quotes but different quote char - treat as literal
-                current += char;
-            }
-        }
-        else if (char === ',' && !inQuotes) {
-            values.push(current);
-            current = '';
-        }
-        else {
-            current += char;
-        }
-    }
-    // Push the last value
-    values.push(current);
-    // Trim each value and remove surrounding quotes if they exist
-    return values.map(val => {
-        let trimmed = val.trim();
-        if ((trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-            (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
-            trimmed = trimmed.slice(1, -1);
-        }
-        return trimmed;
-    });
-}
-/**
- * Helper function to clean a value (remove surrounding quotes)
- */
-function cleanValue(val) {
-    let cleaned = val.trim();
-    // Remove surrounding single quotes
-    if (cleaned.startsWith("'") && cleaned.endsWith("'") && cleaned.length > 1) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-    // Remove surrounding double quotes
-    if (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 1) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
-    }
-    return cleaned;
-}
+const invoiceCache = new Map();
+const inventoryCache = new Map();
+let linesProcessed = 0;
+const CACHE_RESET_THRESHOLD = 10000;
 /**
  * Processes a single line of legacy SQL INSERT statement for sales data.
  * Handles both legacy_sales (invoice headers) and legacy_saleItems (invoice line items).
  * @param sqlLine - The SQL INSERT line to process
- * @param db - An open sqlite3.Database instance
+ * @param db - An open Database instance
  * @returns Promise resolving to true if the line was handled, false otherwise
  */
 export async function processSalesLine(sqlLine, db) {
     const line = sqlLine.trim();
     if (!line)
         return false;
+    // Cache reset logic to prevent memory buildup during large migrations
+    linesProcessed++;
+    if (linesProcessed >= CACHE_RESET_THRESHOLD) {
+        invoiceCache.clear();
+        inventoryCache.clear();
+        linesProcessed = 0;
+    }
     const uppercaseLine = line.toUpperCase();
     // Handle legacy_sales (invoice headers)
     if (uppercaseLine.startsWith('INSERT INTO LEGACY_SALES')) {
@@ -119,22 +74,18 @@ export async function processSalesLine(sqlLine, db) {
             // For now, we'll use the legacy invoice_id/bill_no as invoice_no
             // In a real system, you might want to generate new sequential numbers
             const invoice_no = invoiceIdOrBillNo || `LEGACY-${Date.now()}`;
+            // Check if invoice already exists to avoid duplication
+            const existingInvoice = await db.get('SELECT id FROM sales_invoices WHERE invoice_no = ?', [invoice_no]);
+            if (existingInvoice) {
+                return true;
+            }
             // Insert into sales_invoices
             const insertInvoiceQuery = `
                 INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount)
                 VALUES (?, ?, ?, ?, ?)
             `;
-            return new Promise((resolve) => {
-                db.run(insertInvoiceQuery, [invoice_no, customerId, dateStr, totalAmount, taxAmount], (err) => {
-                    if (err) {
-                        console.error(`Failed to insert sales invoice: ${err.message}`);
-                        resolve(false);
-                    }
-                    else {
-                        resolve(true);
-                    }
-                });
-            });
+            await db.run(insertInvoiceQuery, [invoice_no, customerId, dateStr, totalAmount, taxAmount]);
+            return true;
         }
         catch (error) {
             console.error(`Error processing legacy_sales line: ${error}`);
@@ -186,43 +137,72 @@ export async function processSalesLine(sqlLine, db) {
                 return false;
             }
             // Foreign key resolution: Find the new sales_invoices.id that corresponds to legacy invoice_id/bill_no
-            // We need to look up the sales_invoices record by invoice_no
-            const invoiceLookup = await db.get('SELECT id FROM sales_invoices WHERE invoice_no = ?', [invoiceIdOrBillNo]);
-            if (!invoiceLookup) {
-                console.warn(`Could not find sales invoice with legacy reference '${invoiceIdOrBillNo}' for sale item`);
-                // We could still proceed but it would create orphaned items
-                // For now, let's skip this line to maintain data integrity
-                return false;
-            }
-            const invoiceId = invoiceLookup.id;
-            // Foreign key resolution: Find the new inventory_master.id that corresponds to legacy medicine_id
-            const inventoryLookup = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ?', [medicineId]);
-            let inventoryId = null;
-            if (inventoryLookup) {
-                inventoryId = inventoryLookup.id;
+            // Use cache to avoid repeated database queries
+            let invoiceId = null;
+            const cachedInvoiceId = invoiceCache.get(invoiceIdOrBillNo);
+            if (cachedInvoiceId !== undefined) {
+                invoiceId = cachedInvoiceId;
             }
             else {
-                // Legacy medicine_id not found in inventory_master - flag as unmapped
-                console.warn(`Legacy medicine_id ${medicineId} not found in inventory_master - marking as unmapped`);
-                // We could insert a placeholder or skip - let's skip for now to maintain referential integrity
-                return false;
+                const invoiceLookup = await db.get('SELECT id FROM sales_invoices WHERE invoice_no = ?', [invoiceIdOrBillNo]);
+                if (invoiceLookup) {
+                    invoiceId = invoiceLookup.id;
+                    invoiceCache.set(invoiceIdOrBillNo, invoiceLookup.id);
+                }
+                else {
+                    console.warn(`Could not find sales invoice with legacy reference '${invoiceIdOrBillNo}' for sale item`);
+                    // We could still proceed but it would create orphaned items
+                    // For now, let's skip this line to maintain data integrity
+                    return false;
+                }
+            }
+            // Foreign key resolution: Find the new inventory_master.id that corresponds to legacy medicine_id
+            // Use cache to avoid repeated database queries
+            let inventoryId = null;
+            const cachedInventoryId = inventoryCache.get(medicineId);
+            if (cachedInventoryId !== undefined) {
+                inventoryId = cachedInventoryId;
+            }
+            else {
+                const inventoryLookup = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ?', [medicineId]);
+                let inventory_id_result = null;
+                if (inventoryLookup) {
+                    inventory_id_result = inventoryLookup.id;
+                    inventoryCache.set(medicineId, inventoryLookup.id);
+                }
+                else {
+                    // Legacy medicine_id not found in inventory_master - CREATE IT instead of skipping
+                    console.warn(`Legacy medicine_id ${medicineId} not found in inventory_master - auto-creating medicine record`);
+                    // First, check if the medicine exists in medicines table
+                    const medicineLookup = await db.get('SELECT id FROM medicines WHERE id = ?', [medicineId]);
+                    let medicine_record_id;
+                    if (medicineLookup) {
+                        medicine_record_id = medicineLookup.id;
+                    }
+                    else {
+                        // Create the medicine record
+                        const medicineInsertResult = await db.run('INSERT INTO medicines (id, name) VALUES (?, ?)', [medicineId, `LEGACY_MEDICINE_${medicineId}`]);
+                        medicine_record_id = medicineInsertResult.lastID;
+                    }
+                    // Create the inventory_master record
+                    const inventoryInsertResult = await db.run('INSERT INTO inventory_master (medicine_id, quantity, rack_location, batch_no, expiry_date) VALUES (?, ?, ?, ?, ?)', [medicine_record_id, 0, 'UNKNOWN', 'LEGACY', null]);
+                    inventory_id_result = inventoryInsertResult.lastID;
+                    inventoryCache.set(medicineId, inventory_id_result);
+                }
+                inventoryId = inventory_id_result;
+            }
+            // Check if sale item already exists to avoid duplication
+            const existingItem = await db.get('SELECT id FROM sale_items WHERE invoice_id = ? AND inventory_id = ? AND quantity = ? AND unit_price = ?', [invoiceId, inventoryId, quantity, unitPrice]);
+            if (existingItem) {
+                return true;
             }
             // Insert into sale_items
             const insertItemQuery = `
                 INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price)
                 VALUES (?, ?, ?, ?)
             `;
-            return new Promise((resolve) => {
-                db.run(insertItemQuery, [invoiceId, inventoryId, quantity, unitPrice], (err) => {
-                    if (err) {
-                        console.error(`Failed to insert sale item: ${err.message}`);
-                        resolve(false);
-                    }
-                    else {
-                        resolve(true);
-                    }
-                });
-            });
+            await db.run(insertItemQuery, [invoiceId, inventoryId, quantity, unitPrice]);
+            return true;
         }
         catch (error) {
             console.error(`Error processing legacy_saleItems line: ${error}`);

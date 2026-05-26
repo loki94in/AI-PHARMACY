@@ -50,4 +50,6 @@ for (let i = 1; i < pageSections.length; i += 2) {
 }
 
 fs.writeFileSync(outputHtmlPath, newHtmlContent);
-console.log('Successfully rebuilt ui-demo.html with all the latest updates!');
+const srcUiDemoPath = path.join(__dirname, 'src', 'ui', 'ui-demo.html');
+fs.writeFileSync(srcUiDemoPath, newHtmlContent);
+console.log('Successfully rebuilt ui-demo.html and src/ui/ui-demo.html with all the latest updates!');

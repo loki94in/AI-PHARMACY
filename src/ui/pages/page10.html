@@ -2,7 +2,7 @@
     <div class="topbar">
       <div>
         <div class="page-title">📧 Email Parser — Gmail Integration</div>
-        <div class="page-subtitle">Page 10 · Credentials, polling, logs</div>
+        <div class="page-subtitle">Page 10 · Credentials, polling, logs, manual import</div>
       </div>
       <span class="flag-pill orange">email_parser</span>
     </div>
@@ -12,47 +12,162 @@
         <span class="flag-pill orange">email_parser ON → Background email watcher running</span>
       </div>
       <div class="notice success">✅ Email watcher is active. Polling every 15 minutes. Last check: 2 min ago.</div>
-      <div class="card">
-        <div class="card-title"><span class="icon">📧</span> Send Test Email</div>
-              <div class="form-row">
-                <div class="field"><label>From</label><input type="email" id="emailFrom" placeholder="sender@example.com" /></div>
-                <div class="field"><label>Subject</label><input type="text" id="emailSubject" placeholder="Subject" /></div>
-              </div>
-              <div class="form-row">
-                <div class="field"><label>Body</label><textarea id="emailBody" rows="4" placeholder="Email content..."></textarea></div>
-              </div>
-              <button class="btn" id="sendEmailBtn">Send Email</button>
-              <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="telegram" onclick="
-          const message = 'Daily Pharmacy Summary: Total Sales and Purchases have been recorded successfully.';
-          fetch('/api/utilities/telegram/send', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ message })
-          }).then(res => res.json()).then(data => alert(data.message)).catch(err => alert('Telegram Error'));
-        ">☁️ Upload to Telegram</button>
-              <div id="emailResult" class="notice mt8"></div>
-            <script>
-              document.getElementById('sendEmailBtn').addEventListener('click', async () => {
-                const payload = {
-                  from: document.getElementById('emailFrom').value,
-                  subject: document.getElementById('emailSubject').value,
-                  body: document.getElementById('emailBody').value,
-                  attachments: []
-                };
-                try {
-                  const resp = await fetch('/api/email', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                  });
-                  if (!resp.ok) throw new Error('Network error');
-                  const data = await resp.json();
-                  document.getElementById('emailResult').textContent = data.message || 'Email sent';
-                } catch (e) {
-                  console.error('Email send failed:', e);
-                  document.getElementById('emailResult').textContent = 'Error sending email';
-                }
-              });
-            </script>
+      
+      <div class="grid2">
+        <!-- Send Test Email -->
+        <div class="card">
+          <div class="card-title"><span class="icon">📧</span> Send Test Email</div>
+          <div class="form-row">
+            <div class="field"><label>From</label><input type="email" id="emailFrom" placeholder="sender@example.com" /></div>
+            <div class="field"><label>Subject</label><input type="text" id="emailSubject" placeholder="Subject" /></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>Body</label><textarea id="emailBody" rows="4" placeholder="Email content..."></textarea></div>
+          </div>
+          <div class="btn-row mt8">
+            <button class="btn btn-primary" id="sendEmailBtn">Send Email</button>
+            <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="telegram" onclick="
+              const message = 'Daily Pharmacy Summary: Total Sales and Purchases have been recorded successfully.';
+              fetch('/api/utilities/telegram/send', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ message })
+              }).then(res => res.json()).then(data => alert(data.message)).catch(err => alert('Telegram Error'));
+            ">☁️ Upload to Telegram</button>
+          </div>
+          <div id="emailResult" class="notice mt8" style="display:none;"></div>
         </div>
+
+        <!-- Distributor Inbox -->
+        <div class="card">
+          <div class="card-title"><span class="icon">📥</span> Distributor Emails Inbox</div>
+          <p class="text-muted" style="font-size:12px;margin-bottom:12px;">Fetch recent distributor emails and manually select invoice documents to import them.</p>
+          <div class="btn-row mb8">
+            <button class="btn btn-ghost" onclick="fetchInboxEmails()">🔄 Refresh Inbox</button>
+          </div>
+          <div class="tbl-wrap" style="max-height: 280px; overflow-y: auto;">
+            <table>
+              <thead><tr><th>Date</th><th>From</th><th>Subject</th><th>Distributor</th><th>Action</th></tr></thead>
+              <tbody id="inbox-emails-list">
+                <tr><td colspan="5" class="text-muted text-center">Click Refresh to load emails...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <script>
+      // Test email send
+      document.getElementById('sendEmailBtn').addEventListener('click', async () => {
+        const resultEl = document.getElementById('emailResult');
+        resultEl.style.display = 'block';
+        resultEl.className = 'notice info mt8';
+        resultEl.textContent = 'Processing...';
+
+        const payload = {
+          from: document.getElementById('emailFrom').value,
+          subject: document.getElementById('emailSubject').value,
+          body: document.getElementById('emailBody').value,
+          attachments: []
+        };
+        try {
+          const resp = await fetch('/api/email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!resp.ok) throw new Error('Network error');
+          const data = await resp.json();
+          resultEl.className = 'notice success mt8';
+          resultEl.textContent = data.message || 'Email processed';
+          // Reload inbox list if test email sent
+          setTimeout(fetchInboxEmails, 2000);
+        } catch (e) {
+          console.error('Email send failed:', e);
+          resultEl.className = 'notice error mt8';
+          resultEl.textContent = 'Error sending email';
+        }
+      });
+
+      // Fetch emails from IMAP server
+      async function fetchInboxEmails() {
+        const list = document.getElementById('inbox-emails-list');
+        list.innerHTML = '<tr><td colspan="5" class="text-muted text-center">Connecting to IMAP inbox...</td></tr>';
+        
+        try {
+          const resp = await fetch('/api/email/inbox?limit=15');
+          if (!resp.ok) throw new Error('Failed to fetch');
+          const data = await resp.json();
+          
+          list.innerHTML = '';
+          if (data && data.length > 0) {
+            data.forEach(mail => {
+              const tr = document.createElement('tr');
+              const formattedDate = new Date(mail.date).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+              
+              // Emojis/styles for order detection
+              const orderBadge = mail.isOrder 
+                ? `<span class="badge badge-green" style="margin-left:4px;">Invoice</span>` 
+                : '';
+              
+              const importBtn = `
+                <button class="btn btn-primary" style="padding:4px 8px;font-size:11px;" 
+                        onclick="importManualEmail('${escapeHtml(mail.from)}', '${escapeHtml(mail.subject)}', '${escapeHtml(mail.body)}')">
+                  Import
+                </button>
+              `;
+
+              tr.innerHTML = `
+                <td class="mono text-muted" style="font-size:11px;">${formattedDate}</td>
+                <td class="text-white fw700" style="font-size:12px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${mail.from}">${mail.from}</td>
+                <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${mail.subject}">${mail.subject} ${orderBadge}</td>
+                <td class="text-sky fw700" style="font-size:12px;">${mail.distributorName}</td>
+                <td>${importBtn}</td>
+              `;
+              list.appendChild(tr);
+            });
+          } else {
+            list.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No emails found in INBOX.</td></tr>';
+          }
+        } catch (e) {
+          console.error(e);
+          list.innerHTML = '<tr><td colspan="5" class="text-danger text-center">Failed to fetch emails. Check Gmail App Password settings.</td></tr>';
+        }
+      }
+
+      // Manual email import trigger
+      async function importManualEmail(from, subject, body) {
+        if (!confirm(`Import invoice from "${from}"? This will alert active delivery boys.`)) return;
+        
+        try {
+          const resp = await fetch('/api/email/import-manual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from, subject, body })
+          });
+          if (!resp.ok) throw new Error('Import failed');
+          const data = await resp.json();
+          alert(data.message || 'Import successful!');
+        } catch (e) {
+          console.error(e);
+          alert('Error manually importing email invoice.');
+        }
+      }
+
+      // Simple HTML escape helper
+      function escapeHtml(str) {
+        if (!str) return '';
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;")
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r");
+      }
+
+      // Auto-load inbox on page open
+      setTimeout(fetchInboxEmails, 1000);
+    </script>
   </div>

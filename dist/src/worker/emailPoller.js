@@ -1,4 +1,4 @@
-import { emailService } from '../services/emailService';
+import { emailService } from '../services/emailService.js';
 /**
  * Email Poller Worker
  * Uses the EmailService to poll IMAP inbox for new emails

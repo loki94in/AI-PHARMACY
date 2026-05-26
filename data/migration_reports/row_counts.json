@@ -1,0 +1,14 @@
+{
+  "medicines": 718139,
+  "distributors": 161,
+  "customers": 8743,
+  "doctors": 248,
+  "inventory_master": 62711,
+  "purchases": 14713,
+  "purchase_items": 55824,
+  "sales_invoices": 34903,
+  "sale_items": 34376,
+  "returns": 2507,
+  "return_items": 0,
+  "stock_ledger": 261668
+}

@@ -32,10 +32,11 @@ router.get('/next-invoice', async (req, res) => {
     catch (error) {
         if (db)
             await db.close();
+        const err = error;
         console.error(JSON.stringify({
             message: 'Failed to get next invoice',
-            error: error.message,
-            stack: error.stack,
+            error: err.message,
+            stack: err.stack,
             timestamp: new Date().toISOString()
         }));
         res.status(500).json({ error: 'Internal server error' });
@@ -79,10 +80,11 @@ router.post('/', async (req, res) => {
     catch (error) {
         if (db)
             await db.close();
+        const err = error;
         console.error(JSON.stringify({
             message: 'Failed to create sale',
-            error: error.message,
-            stack: error.stack,
+            error: err.message,
+            stack: err.stack,
             timestamp: new Date().toISOString()
         }));
         res.status(500).json({ error: 'Internal server error' });
@@ -96,7 +98,6 @@ router.post('/hold', async (req, res) => {
             return res.status(400).json({ error: 'Request body required' });
         }
         dbHold = await open({ filename: DB_PATH, driver: sqlite3.Database });
-        await dbHold.exec(`CREATE TABLE IF NOT EXISTS held_bills (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT, data TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
         const holdData = JSON.stringify(req.body);
         const holdInvoiceNo = await generateInvoiceNo(dbHold);
         await dbHold.run('INSERT INTO held_bills (invoice_no, data) VALUES (?, ?)', [holdInvoiceNo, holdData]);
@@ -106,10 +107,11 @@ router.post('/hold', async (req, res) => {
     catch (error) {
         if (dbHold)
             await dbHold.close();
+        const err = error;
         console.error(JSON.stringify({
             message: 'Failed to hold bill',
-            error: error.message,
-            stack: error.stack,
+            error: err.message,
+            stack: err.stack,
             timestamp: new Date().toISOString()
         }));
         res.status(500).json({ error: 'Internal server error' });

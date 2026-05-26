@@ -7,6 +7,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { ensureSchema } from '../database.js';
+import { sendMessage } from '../whatsappClient.js';
+import { telegramBotService } from '../telegramBot.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,7 +109,7 @@ export class EmailService {
 
       for (const item of results) {
         try {
-          const all = item.parts.find((p) => p.which === '' ).body;
+          const all = item.parts.find((p: any) => p.which === '' ).body;
           const parsed = await simpleParser(all);
           const processedEmail: ProcessedEmail = {
             from: parsed.from?.text || '',
@@ -238,36 +240,176 @@ export class EmailService {
   /**
    * Processes email content to determine required actions
    */
-  private async processEmail(email: ProcessedEmail): Promise<void> {
-    try {
-      // Example: Check if email contains medicine order keywords
-      const lowerSubject = email.subject.toLowerCase();
-      const lowerBody = email.body.toLowerCase();
+  /**
+   * Detects if email is order-related
+   */
+  private isOrderRelatedEmail(email: ProcessedEmail): boolean {
+    const orderKeywords = ['order', 'purchase', 'invoice', 'delivery', 'consignment', 'bill', 'receipt'];
+    const distributorKeywords = ['distributor', 'supplier', 'wholesale', 'pharma', 'agency', 'medical'];
+    
+    const content = (email.subject + ' ' + email.body).toLowerCase();
+    return orderKeywords.some(k => content.includes(k)) && 
+           distributorKeywords.some(k => content.includes(k));
+  }
 
-      // Check for order-related keywords
-      const orderKeywords = ['order', 'purchase', 'buy', 'medicine', 'drug', 'prescription'];
-      const isOrderRelated = orderKeywords.some(keyword =>
-        lowerSubject.includes(keyword) || lowerBody.includes(keyword)
-      );
+  /**
+   * Extracts order info from email
+   */
+  private extractOrderInfo(email: ProcessedEmail) {
+    const subject = email.subject;
+    const body = email.body;
+
+    // Detect distributor name
+    let distributorName = 'Unknown Distributor';
+    const mfgMatch = body.match(/(Nitin Agency|Nitin Agencies|Cipla|Alkem|Abbott|Cadila|Zydus|Intas|Lupin)/i);
+    if (mfgMatch) {
+      distributorName = mfgMatch[1].toUpperCase();
+    } else {
+      const fromMatch = email.from.match(/([^<]+)/);
+      if (fromMatch && fromMatch[1].trim()) {
+        distributorName = fromMatch[1].trim().replace(/['"]/g, '');
+      }
+    }
+
+    // Clean up distributorName based on typical distributors in the inbox
+    const lowerFrom = email.from.toLowerCase();
+    if (lowerFrom.includes('senior')) {
+      distributorName = 'Senior Agency';
+    } else if (lowerFrom.includes('mahalaxmi')) {
+      distributorName = 'New Mahalaxmi Cosmetics';
+    } else if (lowerFrom.includes('bajaj')) {
+      distributorName = 'Bajaj Pharma';
+    } else if (lowerFrom.includes('tapadiya')) {
+      distributorName = 'Tapadiya Distributors';
+    } else if (lowerFrom.includes('nitin')) {
+      distributorName = 'Nitin Agency';
+    } else if (lowerFrom.includes('prime')) {
+      distributorName = 'Prime Distributors';
+    } else if (lowerFrom.includes('success')) {
+      distributorName = 'Pro Success Pharma';
+    }
+
+    // Detect invoice number (bill number)
+    let invoiceNumber = 'N/A';
+    const invMatch = (subject + ' ' + body).match(/(?:invoice\s*no\.?|vou\.?\s*no\.?|bill\s*no\.?|inv\s*no\.?|invoice|vou\.?no\.?|bill|vou\.?no)\s*[:\-\s]*\s*([a-zA-Z0-9_\-\/]+)/i);
+    if (invMatch) {
+      invoiceNumber = invMatch[1];
+    } else {
+      const codeMatch = subject.match(/\b([A-Z0-9_\-\/]{4,15})\b/);
+      if (codeMatch) {
+        invoiceNumber = codeMatch[1];
+      }
+    }
+
+    // Format current time as HH:MM
+    const date = new Date();
+    const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    // Try to extract medicines and quantities
+    const medicines: Array<{ name: string; quantity: string }> = [];
+    const lines = body.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const qtyMatch = trimmed.match(/(?:(?:qty|quantity|x|count)\s*[:\-\s]*\s*(\d+))|(\d+)\s*(?:x|units|pcs)/i);
+      if (qtyMatch) {
+        const qty = qtyMatch[1] || qtyMatch[2];
+        let name = trimmed.replace(qtyMatch[0], '').replace(/[:\-\t\r\n]/g, ' ').trim();
+        if (name && name.length > 3 && isNaN(Number(name))) {
+          medicines.push({ name, quantity: qty });
+        }
+      }
+    }
+
+    const displayMeds = medicines.slice(0, 15);
+
+    return {
+      distributorName,
+      invoiceNumber,
+      timeStr,
+      medicines: displayMeds,
+      totalItems: medicines.reduce((sum, m) => sum + parseInt(m.quantity || '0'), 0) || displayMeds.length,
+      urgencyLevel: (body.toLowerCase().includes('urgent') || subject.toLowerCase().includes('urgent')) ? 'high' : 'normal'
+    };
+  }
+
+  /**
+   * Notifies active delivery boys via WhatsApp and Telegram
+   */
+  private async notifyDeliveryBoys(orderInfo: any): Promise<void> {
+    let db = null;
+    try {
+      db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const activeBoys = await db.all('SELECT * FROM delivery_boys WHERE is_active = 1');
+      await db.close();
+
+      if (activeBoys.length === 0) {
+        console.log('No active delivery boys found to notify.');
+        return;
+      }
+
+      // Format notification to the requested simple format
+      const message = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} (invoice number) ${orderInfo.timeStr}`;
+
+      for (const boy of activeBoys) {
+        // Send WhatsApp
+        if (boy.whatsapp_number) {
+          try {
+            // Remove non-digit characters to format number correctly
+            const cleanPhone = boy.whatsapp_number.replace(/\D/g, '');
+            // Append country code if not present, e.g. +91 for India if length is 10 digits
+            const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+            await sendMessage(formattedPhone, undefined, message);
+            console.log(`WhatsApp notification sent to delivery boy: ${boy.name}`);
+          } catch (wsError) {
+            console.error(`Failed to send WhatsApp to ${boy.name}:`, wsError);
+          }
+        }
+
+        // Send Telegram
+        if (boy.telegram_chat_id) {
+          try {
+            await telegramBotService.sendNotification(boy.telegram_chat_id, message);
+            console.log(`Telegram notification sent to delivery boy: ${boy.name}`);
+          } catch (tgError) {
+            console.error(`Failed to send Telegram to ${boy.name}:`, tgError);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error sending delivery boy notifications:', err);
+    }
+  }
+
+  public async processEmail(email: ProcessedEmail): Promise<void> {
+    try {
+      const isOrderRelated = this.isOrderRelatedEmail(email);
 
       if (isOrderRelated) {
+        // Extract order info
+        const orderInfo = this.extractOrderInfo(email);
+        const logMsg = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} (invoice number) ${orderInfo.timeStr}`;
+
         // Log as potential order for follow-up
         const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-          ['EMAIL_ORDER_DETECTED', `Potential order detected: ${email.subject}`]
+          ['EMAIL_ORDER_DETECTED', logMsg]
         );
         await db.close();
+        
+        // Notify delivery boys
+        await this.notifyDeliveryBoys(orderInfo);
 
         // Implement actual order processing logic here
         await this.processMedicineOrder(email);
-        console.log('Potential medicine order detected and processed:', email.subject);
+        console.log('Potential medicine order detected, delivery boys notified:', logMsg);
       }
 
       // Check for inquiry keywords
       const inquiryKeywords = ['inquiry', 'question', 'info', 'available', 'stock', 'price'];
       const isInquiryRelated = inquiryKeywords.some(keyword =>
-        lowerSubject.includes(keyword) || lowerBody.includes(keyword)
+        email.subject.toLowerCase().includes(keyword) || email.body.toLowerCase().includes(keyword)
       );
 
       if (isInquiryRelated) {
@@ -291,7 +433,7 @@ export class EmailService {
   /**
    * Processes email attachments
    */
-  private async processAttachments(attachments: Array<{
+  public async processAttachments(attachments: Array<{
     filename: string;
     content: Buffer;
     contentType: string;
@@ -363,7 +505,7 @@ export class EmailService {
         const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-          ['EMAIL_ORDER_ERROR', `Error processing medicine order: ${email.subject} - ${error.message}`]
+          ['EMAIL_ORDER_ERROR', `Error processing medicine order: ${email.subject} - ${(error as any).message}`]
         );
         await db.close();
       } catch (logError) {
@@ -424,7 +566,7 @@ export class EmailService {
         const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-          ['EMAIL_AUTO_RESPONSE_ERROR', `Error sending auto-response to: ${email.from} - ${error.message}`]
+          ['EMAIL_AUTO_RESPONSE_ERROR', `Error sending auto-response to: ${email.from} - ${(error as any).message}`]
         );
         await db.close();
       } catch (logError) {
@@ -474,13 +616,84 @@ export class EmailService {
         const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-          ['EMAIL_ATTACHMENT_ERROR', `Error processing medicine list attachment: ${attachment.filename} - ${error.message}`]
+          ['EMAIL_ATTACHMENT_ERROR', `Error processing medicine list attachment: ${attachment.filename} - ${(error as any).message}`]
         );
         await db.close();
       } catch (logError) {
         console.error('Failed to log attachment processing error:', logError);
       }
     }
+  }
+
+  /**
+   * Fetches recent emails (both seen and unseen) from Gmail IMAP
+   */
+  public async fetchInbox(limit: number = 20): Promise<Array<any>> {
+    if (!this.imapConfig.user || !this.imapConfig.password || !this.imapConfig.host) {
+      throw new Error('IMAP configuration incomplete');
+    }
+
+    let connection = null;
+    const emails: Array<any> = [];
+
+    try {
+      const config = { imap: this.imapConfig, authTimeout: 5000 };
+      connection = await imap.connect(config);
+      await connection.openBox('INBOX');
+
+      const searchCriteria = ['ALL'];
+      const fetchOptions = { bodies: [''], struct: true };
+      const results = await connection.search(searchCriteria, fetchOptions);
+
+      // Sort by UID descending (newest first)
+      results.sort((a: any, b: any) => b.attributes.uid - a.attributes.uid);
+      
+      const limitedResults = results.slice(0, limit);
+
+      for (const item of limitedResults) {
+        try {
+          const all = item.parts.find((p: any) => p.which === '').body;
+          const parsed = await simpleParser(all);
+          const isSeen = item.attributes.flags.includes('\\Seen');
+          
+          const processedEmail: ProcessedEmail = {
+            from: parsed.from?.text || '',
+            subject: parsed.subject || '',
+            body: parsed.text || '',
+            attachments: parsed.attachments || []
+          };
+
+          const orderInfo = this.extractOrderInfo(processedEmail);
+
+          emails.push({
+            uid: item.attributes.uid,
+            from: processedEmail.from,
+            subject: processedEmail.subject,
+            body: processedEmail.body,
+            bodySnippet: processedEmail.body.substring(0, 100) + '...',
+            date: parsed.date || item.attributes.date || new Date(),
+            isSeen,
+            isOrder: this.isOrderRelatedEmail(processedEmail),
+            distributorName: orderInfo.distributorName,
+            totalItems: orderInfo.totalItems,
+            hasAttachments: processedEmail.attachments.length > 0
+          });
+        } catch (emailError) {
+          console.error('Error parsing email for inbox view:', emailError);
+        }
+      }
+    } catch (err) {
+      console.error('fetchInbox error:', err);
+      throw err;
+    } finally {
+      if (connection) {
+        try {
+          await connection.end();
+        } catch (e) {}
+      }
+    }
+
+    return emails;
   }
 }
 

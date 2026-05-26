@@ -69,10 +69,15 @@ export async function sendMessage(to, mediaPath, caption) {
     if (!clientInstance) {
         throw new Error('Client not initialized. Call initClient() first.');
     }
-    const options = {};
-    if (mediaPath)
-        options.media = mediaPath;
-    if (caption)
-        options.caption = caption;
-    await clientInstance.sendMessage(to, options);
+    // whatsapp-web.js v1.22: sendMessage(chatId, content, options?)
+    // For text-only: pass the string directly as content
+    // For media: create MessageMedia and pass as content
+    if (mediaPath) {
+        const { MessageMedia } = await import('whatsapp-web.js');
+        const media = MessageMedia.fromFilePath(mediaPath);
+        await clientInstance.sendMessage(to, media, { caption: caption ?? '' });
+    }
+    else {
+        await clientInstance.sendMessage(to, caption ?? '');
+    }
 }

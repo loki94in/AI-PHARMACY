@@ -7,6 +7,8 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import multer from 'multer';
 import { initClient, sendMessage } from './whatsappClient.js';
+import { ensureSchema } from './database.js';
+import { startEmailPoller } from './worker/emailPoller.js';
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
 import utilitiesRouter from './routes/utilities.js';
@@ -28,6 +30,8 @@ import dispatchRouter from './routes/dispatch.js';
 import archiveRouter from './routes/archive.js';
 import learningRouter from './routes/learning.js';
 import messagingRouter from './routes/messaging.js';
+import aiCameraRouter from './routes/aiCamera.js';
+import telegramPrescriptionRouter from './routes/telegramPrescription.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', 'data', 'app.db');
@@ -48,7 +52,6 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 const app = express();
 // Ensure DB schema is up to date
-import { ensureSchema } from './database.js';
 ensureSchema(DB_PATH).catch(err => console.error('Schema init error:', err));
 app.use(cors());
 app.use(express.json());
@@ -141,6 +144,8 @@ app.use('/api/dispatch', dispatchRouter);
 app.use('/api/archive', archiveRouter);
 app.use('/api/learning', learningRouter);
 app.use('/api/messaging', messagingRouter);
+app.use('/api/aicamera', aiCameraRouter);
+app.use('/api/telegram-prescription', telegramPrescriptionRouter);
 // Core API routes
 app.use('/api/sales', salesRouter);
 app.use('/api/inventory', inventoryRouter);
@@ -169,7 +174,6 @@ app.post('/api/patients/send-refill', async (req, res) => {
     }
 });
 initClient().catch(err => console.error('WhatsApp init error:', err));
-import { startEmailPoller } from './worker/emailPoller.js';
 startEmailPoller();
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);

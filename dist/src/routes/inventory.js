@@ -70,9 +70,10 @@ router.get('/peek/:medicine_id', async (req, res) => {
         }
         db = await open({ filename: DB_PATH, driver: sqlite3.Database });
         // Simplified: return last purchase price from purchases table joined via inventory_master
-        const rows = await db.all(`SELECT p.invoice_no, p.total_amount, im.quantity, im.unit_price FROM purchases p
-       JOIN inventory_master im ON im.id = p.id
-       WHERE im.medicine_id = ? ORDER BY p.date DESC LIMIT 5`, [medicine_id]);
+        const rows = await db.all(`SELECT im.batch_no, im.expiry_date, im.quantity, im.unit_price, im.cost_price
+       FROM inventory_master im
+       WHERE im.medicine_id = ?
+       ORDER BY im.expiry_date ASC LIMIT 5`, [medicine_id]);
         await db.close();
         res.json(rows);
     }
@@ -124,8 +125,8 @@ router.post('/bulk-action', async (req, res) => {
             return res.status(400).json({ error: 'ids must be a non-empty array' });
         }
         db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-        // Log the bulk action to action_logs
-        await db.run('INSERT INTO action_logs (date, product, patient_id, doctor_id, license_no, qty, bill_no) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().toISOString().split('T')[0], `Bulk ${action}`, '', '', '', ids.length, `Bulk action: ${action}`]);
+        // Log the bulk action to action_logs using the correct schema
+        await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', [`BULK_${action.toUpperCase()}`, `Bulk ${action} on ${ids.length} inventory items: [${ids.join(',')}]`]);
         await db.close();
         res.json({ success: true, message: `Bulk ${action} completed and logged` });
     }

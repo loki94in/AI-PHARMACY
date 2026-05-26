@@ -112,10 +112,10 @@ router.post('/ai-camera/process', async (req, res) => {
             return res.status(400).json({ error: 'Image data is required' });
         }
         const imageData = req.body.image;
-        // Process the image with Tesseract OCR
+        // Process the image with Tesseract OCR (offline capable)
         const result = await aiCameraService.processImage(imageData);
-        // Extract potential medicine information from OCR text
-        const medicineInfo = extractMedicineInfo(result.text);
+        // Extract potential medicine information (prioritize service structured results)
+        const medicineInfo = result.medicineInfo || extractMedicineInfo(result.text);
         res.json({
             success: true,
             ocrResult: result,

@@ -99,6 +99,13 @@ export async function ensureSchema(dbPath: string) {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS delivery_boys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      whatsapp_number TEXT,
+      telegram_chat_id TEXT,
+      is_active INTEGER DEFAULT 1
+    );
   `);
 
   // Safely add new columns to existing tables (SQLite throws if column exists — we catch and ignore)
@@ -106,6 +113,8 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE inventory_master ADD COLUMN unit_price REAL DEFAULT 0`,
     `ALTER TABLE inventory_master ADD COLUMN cost_price REAL DEFAULT 0`,
     `ALTER TABLE inventory_master ADD COLUMN reorder_level INTEGER DEFAULT 10`,
+    `ALTER TABLE inventory_master ADD COLUMN mrp REAL DEFAULT 0`,
+    `ALTER TABLE inventory_master ADD COLUMN legacy_batch_id TEXT`,
     `ALTER TABLE medicines ADD COLUMN mrp REAL DEFAULT 0`,
     `ALTER TABLE medicines ADD COLUMN hsn_code TEXT`,
     `ALTER TABLE medicines ADD COLUMN schedule_type TEXT DEFAULT 'None'`,
@@ -113,6 +122,54 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE medicines ADD COLUMN category TEXT`,
     `ALTER TABLE medicines ADD COLUMN marketed_by TEXT`,
     `ALTER TABLE medicines ADD COLUMN manufactured_by TEXT`,
+    `ALTER TABLE medicines ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE medicines ADD COLUMN packaging TEXT`,
+    `ALTER TABLE medicines ADD COLUMN item_type TEXT`,
+    `ALTER TABLE medicines ADD COLUMN cgst REAL DEFAULT 0`,
+    `ALTER TABLE medicines ADD COLUMN sgst REAL DEFAULT 0`,
+    `ALTER TABLE medicines ADD COLUMN igst REAL DEFAULT 0`,
+    `ALTER TABLE medicines ADD COLUMN rack TEXT`,
+    // Purchases extra columns
+    `ALTER TABLE purchases ADD COLUMN cgst_value REAL DEFAULT 0`,
+    `ALTER TABLE purchases ADD COLUMN sgst_value REAL DEFAULT 0`,
+    `ALTER TABLE purchases ADD COLUMN igst_value REAL DEFAULT 0`,
+    `ALTER TABLE purchases ADD COLUMN roff REAL DEFAULT 0`,
+    `ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'PUBLISHED'`,
+    `ALTER TABLE purchases ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE purchases ADD COLUMN business_date DATETIME`,
+    // Sales invoices extra columns
+    `ALTER TABLE sales_invoices ADD COLUMN doctor_id INTEGER`,
+    `ALTER TABLE sales_invoices ADD COLUMN payment_medium TEXT`,
+    `ALTER TABLE sales_invoices ADD COLUMN roff REAL DEFAULT 0`,
+    `ALTER TABLE sales_invoices ADD COLUMN cgst_value REAL DEFAULT 0`,
+    `ALTER TABLE sales_invoices ADD COLUMN sgst_value REAL DEFAULT 0`,
+    `ALTER TABLE sales_invoices ADD COLUMN igst_value REAL DEFAULT 0`,
+    `ALTER TABLE sales_invoices ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE sales_invoices ADD COLUMN business_date DATETIME`,
+    // Sale items extra columns
+    `ALTER TABLE sale_items ADD COLUMN mrp REAL`,
+    `ALTER TABLE sale_items ADD COLUMN batch_no TEXT`,
+    `ALTER TABLE sale_items ADD COLUMN cgst_value REAL DEFAULT 0`,
+    `ALTER TABLE sale_items ADD COLUMN sgst_value REAL DEFAULT 0`,
+    `ALTER TABLE sale_items ADD COLUMN discount_per REAL DEFAULT 0`,
+    `ALTER TABLE sale_items ADD COLUMN legacy_id TEXT`,
+    // Returns extra columns
+    `ALTER TABLE returns ADD COLUMN cgst_value REAL DEFAULT 0`,
+    `ALTER TABLE returns ADD COLUMN sgst_value REAL DEFAULT 0`,
+    `ALTER TABLE returns ADD COLUMN igst_value REAL DEFAULT 0`,
+    `ALTER TABLE returns ADD COLUMN distributor_id INTEGER`,
+    `ALTER TABLE returns ADD COLUMN legacy_id TEXT`,
+    // Distributors extra columns
+    `ALTER TABLE distributors ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE distributors ADD COLUMN gstin TEXT`,
+    `ALTER TABLE distributors ADD COLUMN address TEXT`,
+    `ALTER TABLE distributors ADD COLUMN city TEXT`,
+    `ALTER TABLE distributors ADD COLUMN email TEXT`,
+    `ALTER TABLE distributors ADD COLUMN dl_no TEXT`,
+    // Customers extra columns
+    `ALTER TABLE customers ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE customers ADD COLUMN age TEXT`,
+    `ALTER TABLE customers ADD COLUMN gender TEXT`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -132,7 +189,9 @@ export async function ensureSchema(dbPath: string) {
       hospital TEXT,
       phone TEXT,
       address TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      legacy_id TEXT,
+      speciality TEXT
     );
 
     CREATE TABLE IF NOT EXISTS held_bills (
@@ -154,7 +213,73 @@ export async function ensureSchema(dbPath: string) {
       schedule_type TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Migration: Purchase line items
+    CREATE TABLE IF NOT EXISTS purchase_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_id INTEGER,
+      medicine_id INTEGER,
+      batch_no TEXT,
+      expiry_date DATETIME,
+      quantity INTEGER,
+      free_qty INTEGER DEFAULT 0,
+      cost_price REAL,
+      mrp REAL,
+      hsn_code TEXT,
+      cgst_per REAL DEFAULT 0,
+      cgst_value REAL DEFAULT 0,
+      sgst_per REAL DEFAULT 0,
+      sgst_value REAL DEFAULT 0,
+      igst_per REAL DEFAULT 0,
+      igst_value REAL DEFAULT 0,
+      scheme_per REAL DEFAULT 0,
+      scheme_value REAL DEFAULT 0,
+      cd_value REAL DEFAULT 0,
+      legacy_id TEXT,
+      FOREIGN KEY(purchase_id) REFERENCES purchases(id),
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+
+    -- Migration: Return line items
+    CREATE TABLE IF NOT EXISTS return_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER,
+      medicine_id INTEGER,
+      batch_no TEXT,
+      quantity INTEGER,
+      cost_price REAL,
+      mrp REAL,
+      total_price REAL,
+      cgst_value REAL DEFAULT 0,
+      sgst_value REAL DEFAULT 0,
+      igst_value REAL DEFAULT 0,
+      legacy_id TEXT,
+      FOREIGN KEY(return_id) REFERENCES returns(id),
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+
+    -- Migration: Stock movement audit trail
+    CREATE TABLE IF NOT EXISTS stock_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      medicine_id INTEGER,
+      batch_no TEXT,
+      quantity INTEGER,
+      transaction_type TEXT,
+      transaction_id TEXT,
+      business_date DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
   `);
+
+  // Safely add legacy_id/speciality to doctors if the table already existed without them
+  const doctorAlters = [
+    `ALTER TABLE doctors ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE doctors ADD COLUMN speciality TEXT`,
+  ];
+  for (const stmt of doctorAlters) {
+    try { await db.run(stmt); } catch (_e) { /* already exists */ }
+  }
 
   await db.close();
 

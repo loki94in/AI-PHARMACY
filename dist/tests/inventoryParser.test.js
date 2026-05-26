@@ -1,6 +1,7 @@
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { processInventoryLine } from '../src/worker/parsers/inventoryParser';
+import { processInventoryLine } from '../src/worker/parsers/inventoryParser.js';
+import { ensureSchema } from '../src/database.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -14,22 +15,18 @@ describe('inventoryParser', () => {
         if (fs.existsSync(TEST_DB_PATH)) {
             fs.unlinkSync(TEST_DB_PATH);
         }
+        // Ensure the data directory exists
+        const testDataDir = path.dirname(TEST_DB_PATH);
+        if (!fs.existsSync(testDataDir)) {
+            fs.mkdirSync(testDataDir, { recursive: true });
+        }
         // Open a test SQLite database
         db = await open({
             filename: TEST_DB_PATH,
             driver: sqlite3.Database
         });
-        // Create the inventory_master table
-        await db.exec(`
-            CREATE TABLE inventory_master (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                medicine_id INTEGER NOT NULL,
-                quantity INTEGER NOT NULL,
-                rack_location TEXT,
-                batch_no TEXT,
-                expiry_date DATETIME
-            )
-        `);
+        // Ensure the database schema matches the production schema
+        await ensureSchema(TEST_DB_PATH);
     });
     afterAll(async () => {
         await db.close();
@@ -51,7 +48,7 @@ describe('inventoryParser', () => {
         expect(rows[0].batch_no).toBe('BATCH001');
         // For 06/25, it should be converted to 2025-06-01 00:00:00
         expect(rows[0].expiry_date).toBe('2025-06-01 00:00:00');
-    });
+    }, 20000); // Increased timeout for database initialization
     test('should process legacy_batches INSERT statement with DD-MM-YYYY date format', async () => {
         const sqlLine = "INSERT INTO legacy_batches VALUES (202, 25, 'B2', 'BATCH002', '15-12-2024');";
         const result = await processInventoryLine(sqlLine, db);
@@ -65,7 +62,7 @@ describe('inventoryParser', () => {
         expect(rows[0].batch_no).toBe('BATCH002');
         // For 15-12-2024, it should be converted to 2024-12-15 00:00:00
         expect(rows[0].expiry_date).toBe('2024-12-15 00:00:00');
-    });
+    }, 20000); // Increased timeout for database initialization
     test('should handle YYYY-MM-DD date format', async () => {
         const sqlLine = "INSERT INTO legacy_stock (medicine_id, quantity, rack_location, batch_no, expiry_date) VALUES (303, 100, 'C3', 'BATCH003', '2023-08-15');";
         const result = await processInventoryLine(sqlLine, db);

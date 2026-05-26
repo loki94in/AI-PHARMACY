@@ -61,4 +61,39 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/email/inbox
+router.get('/inbox', async (req, res) => {
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+  try {
+    const inbox = await emailService.fetchInbox(limit);
+    res.json(inbox);
+  } catch (error) {
+    console.error('Fetch inbox error:', error);
+    res.status(500).json({ error: 'Failed to fetch email inbox' });
+  }
+});
+
+// POST /api/email/import-manual
+router.post('/import-manual', async (req, res) => {
+  const { subject, from, body, attachments } = req.body;
+  if (!subject || !from) {
+    return res.status(400).json({ error: 'subject and from are required' });
+  }
+  try {
+    const emailData = {
+      from,
+      subject,
+      body: body || '',
+      attachments: attachments || []
+    };
+
+    await emailService.processEmail(emailData);
+
+    res.json({ success: true, message: 'Invoice manually imported and delivery boy alerted' });
+  } catch (error) {
+    console.error('Manual import error:', error);
+    res.status(500).json({ error: 'Failed to manually import email invoice' });
+  }
+});
+
 export default router;

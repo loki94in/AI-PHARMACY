@@ -39,7 +39,11 @@ router.get('/files', (req, res) => {
     try {
         if (!fs.existsSync(MIGRATION_DIR))
             fs.mkdirSync(MIGRATION_DIR, { recursive: true });
-        const files = fs.readdirSync(MIGRATION_DIR).filter(f => f.endsWith('.zip'));
+        const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz'];
+        const files = fs.readdirSync(MIGRATION_DIR).filter(f => {
+            const lower = f.toLowerCase();
+            return allowedExtensions.some(ext => lower.endsWith(ext));
+        });
         res.json({ files });
     }
     catch (err) {
@@ -56,9 +60,9 @@ router.post('/run', async (req, res) => {
         const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
         await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['MIGRATION', `Requested manual migration for: ${fileName}`]);
         await db.close();
-        // Call the worker
+        // Call the worker and wait for completion
         await runManualMigration(fileName);
-        res.json({ success: true, message: `Migration for ${fileName} started` });
+        res.json({ success: true, message: `Migration for ${fileName} completed successfully` });
     }
     catch (error) {
         console.error('Migration error:', error);
