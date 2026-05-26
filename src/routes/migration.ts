@@ -44,7 +44,11 @@ router.get('/status', (req, res) => {
 router.get('/files', (req, res) => {
   try {
     if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
-    const files = fs.readdirSync(MIGRATION_DIR).filter(f => f.endsWith('.zip'));
+    const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz'];
+    const files = fs.readdirSync(MIGRATION_DIR).filter(f => {
+      const lower = f.toLowerCase();
+      return allowedExtensions.some(ext => lower.endsWith(ext));
+    });
     res.json({ files });
   } catch (err) {
     res.status(500).json({ error: 'Failed to list files' });

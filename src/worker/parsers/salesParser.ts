@@ -1,6 +1,6 @@
 import sqlite3 from 'sqlite3';
-import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils';
-const Database = sqlite3.Database;
+import { Database } from 'sqlite';
+import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils.js';
 
 /**
  * Cache for database lookups to avoid repeated queries
@@ -14,7 +14,7 @@ const CACHE_RESET_THRESHOLD = 10000;
  * Processes a single line of legacy SQL INSERT statement for sales data.
  * Handles both legacy_sales (invoice headers) and legacy_saleItems (invoice line items).
  * @param sqlLine - The SQL INSERT line to process
- * @param db - An open sqlite3.Database instance
+ * @param db - An open Database instance
  * @returns Promise resolving to true if the line was handled, false otherwise
  */
 export async function processSalesLine(sqlLine: string, db: Database): Promise<boolean> {
@@ -95,16 +95,8 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
                 VALUES (?, ?, ?, ?, ?)
             `;
 
-            return new Promise<boolean>((resolve) => {
-                db.run(insertInvoiceQuery, [invoice_no, customerId, dateStr, totalAmount, taxAmount], (err) => {
-                    if (err) {
-                        console.error(`Failed to insert sales invoice: ${err.message}`);
-                        resolve(false);
-                    } else {
-                        resolve(true);
-                    }
-                });
-            });
+            await db.run(insertInvoiceQuery, [invoice_no, customerId, dateStr, totalAmount, taxAmount]);
+            return true;
         } catch (error) {
             console.error(`Error processing legacy_sales line: ${error}`);
             return false;
@@ -166,8 +158,9 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
             // Foreign key resolution: Find the new sales_invoices.id that corresponds to legacy invoice_id/bill_no
             // Use cache to avoid repeated database queries
             let invoiceId: number | null = null;
-            if (invoiceCache.has(invoiceIdOrBillNo)) {
-                invoiceId = invoiceCache.get(invoiceIdOrBillNo);
+            const cachedInvoiceId = invoiceCache.get(invoiceIdOrBillNo);
+            if (cachedInvoiceId !== undefined) {
+                invoiceId = cachedInvoiceId;
             } else {
                 const invoiceLookup = await db.get(
                     'SELECT id FROM sales_invoices WHERE invoice_no = ?',
@@ -176,7 +169,7 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
 
                 if (invoiceLookup) {
                     invoiceId = invoiceLookup.id;
-                    invoiceCache.set(invoiceIdOrBillNo, invoiceId);
+                    invoiceCache.set(invoiceIdOrBillNo, invoiceLookup.id);
                 } else {
                     console.warn(`Could not find sales invoice with legacy reference '${invoiceIdOrBillNo}' for sale item`);
                     // We could still proceed but it would create orphaned items
@@ -188,8 +181,9 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
             // Foreign key resolution: Find the new inventory_master.id that corresponds to legacy medicine_id
             // Use cache to avoid repeated database queries
             let inventoryId: number | null = null;
-            if (inventoryCache.has(medicineId)) {
-                inventoryId = inventoryCache.get(medicineId);
+            const cachedInventoryId = inventoryCache.get(medicineId);
+            if (cachedInventoryId !== undefined) {
+                inventoryId = cachedInventoryId;
             } else {
                 const inventoryLookup = await db.get(
                     'SELECT id FROM inventory_master WHERE medicine_id = ?',
@@ -199,7 +193,7 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
                 let inventory_id_result: number | null = null;
                 if (inventoryLookup) {
                     inventory_id_result = inventoryLookup.id;
-                    inventoryCache.set(medicineId, inventory_id_result);
+                    inventoryCache.set(medicineId, inventoryLookup.id);
                 } else {
                     // Legacy medicine_id not found in inventory_master - CREATE IT instead of skipping
                     console.warn(`Legacy medicine_id ${medicineId} not found in inventory_master - auto-creating medicine record`);
@@ -215,37 +209,19 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
                         medicine_record_id = medicineLookup.id;
                     } else {
                         // Create the medicine record
-                        const medicineInsertResult = await new Promise<{ lastID: number }>((resolve, reject) => {
-                            db.run(
-                                'INSERT INTO medicines (id, name) VALUES (?, ?)',
-                                [medicineId, `LEGACY_MEDICINE_${medicineId}`],
-                                function(err) {
-                                    if (err) {
-                                        reject(err);
-                                    } else {
-                                        resolve({ lastID: this.lastID });
-                                    }
-                                }
-                            );
-                        });
-                        medicine_record_id = medicineInsertResult.lastID;
+                        const medicineInsertResult = await db.run(
+                            'INSERT INTO medicines (id, name) VALUES (?, ?)',
+                            [medicineId, `LEGACY_MEDICINE_${medicineId}`]
+                        );
+                        medicine_record_id = medicineInsertResult.lastID!;
                     }
 
                     // Create the inventory_master record
-                    const inventoryInsertResult = await new Promise<{ lastID: number }>((resolve, reject) => {
-                        db.run(
-                            'INSERT INTO inventory_master (id, medicine_id, quantity, rack_location, batch_no, expiry_date) VALUES (?, ?, ?, ?, ?, ?)',
-                            [0, medicine_record_id, 0, 'UNKNOWN', 'LEGACY', null],
-                            function(err) {
-                                if (err) {
-                                    reject(err);
-                                } else {
-                                    resolve({ lastID: this.lastID });
-                                }
-                            }
-                        );
-                    });
-                    inventory_id_result = inventoryInsertResult.lastID;
+                    const inventoryInsertResult = await db.run(
+                        'INSERT INTO inventory_master (medicine_id, quantity, rack_location, batch_no, expiry_date) VALUES (?, ?, ?, ?, ?)',
+                        [medicine_record_id, 0, 'UNKNOWN', 'LEGACY', null]
+                    );
+                    inventory_id_result = inventoryInsertResult.lastID!;
                     inventoryCache.set(medicineId, inventory_id_result);
                 }
 
@@ -258,16 +234,8 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
                 VALUES (?, ?, ?, ?)
             `;
 
-            return new Promise<boolean>((resolve) => {
-                db.run(insertItemQuery, [invoiceId, inventoryId, quantity, unitPrice], (err) => {
-                    if (err) {
-                        console.error(`Failed to insert sale item: ${err.message}`);
-                        resolve(false);
-                    } else {
-                        resolve(true);
-                    }
-                });
-            });
+            await db.run(insertItemQuery, [invoiceId, inventoryId, quantity, unitPrice]);
+            return true;
         } catch (error) {
             console.error(`Error processing legacy_saleItems line: ${error}`);
             return false;

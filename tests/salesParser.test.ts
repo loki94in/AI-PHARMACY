@@ -1,7 +1,7 @@
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { processSalesLine } from '../src/worker/parsers/salesParser';
-import { ensureSchema } from '../src/database';
+import { processSalesLine } from '../src/worker/parsers/salesParser.js';
+import { ensureSchema } from '../src/database.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 const TEST_DB_PATH = path.resolve(__dirname, '..', 'data', 'test-sales-parser.db');
 
 describe('salesParser', () => {
-  let db: sqlite3.Database;
+  let db: any;
 
   beforeAll(async () => {
     // Clean up any existing test database
@@ -20,11 +20,10 @@ describe('salesParser', () => {
     }
 
     // Open a test SQLite database
-    const sqliteDb = await open({
+    db = await open({
       filename: TEST_DB_PATH,
       driver: sqlite3.Database
     });
-    db = sqliteDb.driver as sqlite3.Database;
 
     // Ensure the database schema matches the production schema
     await ensureSchema(TEST_DB_PATH);
@@ -101,8 +100,12 @@ describe('salesParser', () => {
         const result = await processSalesLine(sqlLine, db);
         expect(result).toBe(true); // Should succeed by auto-creating the missing medicine/inventory
 
-        // Verify a record was inserted
-        const count = await db.get("SELECT COUNT(*) as count FROM sale_items");
+        // Verify a record was inserted for this invoice
+        const count = await db.get(`
+            SELECT COUNT(*) as count FROM sale_items sii
+            JOIN sales_invoices si ON sii.invoice_id = si.id
+            WHERE si.invoice_no = 'INV002'
+        `);
         expect(count.count).toBe(1);
 
         // Verify the inserted record has correct values

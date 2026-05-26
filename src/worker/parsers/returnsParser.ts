@@ -1,5 +1,6 @@
 import sqlite3 from 'sqlite3';
-import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils';
+import { Database } from 'sqlite';
+import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils.js';
 
 // Cache for database lookups to avoid repeated queries
 const invoiceCache = new Map<string, number>();
@@ -12,7 +13,7 @@ const CACHE_RESET_THRESHOLD = 10000;
  * @param db - An open SQLite database connection
  * @returns True if the line was processed as a legacy returns statement, false otherwise
  */
-export async function processReturnsLine(sqlLine: string, db: sqlite3.Database): Promise<boolean> {
+export async function processReturnsLine(sqlLine: string, db: Database): Promise<boolean> {
   // Trim whitespace and ignore empty lines
   const line = sqlLine.trim();
   if (!line) return false;

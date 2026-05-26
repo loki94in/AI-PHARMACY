@@ -1,7 +1,7 @@
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { processInventoryLine } from '../src/worker/parsers/inventoryParser';
-import { ensureSchema } from '../src/database';
+import { processInventoryLine } from '../src/worker/parsers/inventoryParser.js';
+import { ensureSchema } from '../src/database.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 const TEST_DB_PATH = path.resolve(__dirname, '..', 'data', 'test-inventory-parser.db');
 
 describe('inventoryParser', () => {
-    let db: sqlite3.Database;
+    let db: any;
 
     beforeAll(async () => {
         // Clean up any existing test database
@@ -26,11 +26,10 @@ describe('inventoryParser', () => {
         }
 
         // Open a test SQLite database
-        const sqliteDb = await open({
+        db = await open({
             filename: TEST_DB_PATH,
             driver: sqlite3.Database
         });
-        db = sqliteDb.driver as sqlite3.Database;
 
         // Ensure the database schema matches the production schema
         await ensureSchema(TEST_DB_PATH);

@@ -1,5 +1,6 @@
 import sqlite3 from 'sqlite3';
-import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils';
+import { Database } from 'sqlite';
+import { parseValues, cleanValue, normalizeDate } from '../../utils/migrationUtils.js';
 
 /**
  * Cache for database lookups to avoid repeated queries
@@ -14,7 +15,7 @@ const CACHE_RESET_THRESHOLD = 10000;
  * @param db - An open SQLite database connection
  * @returns True if the line was processed as a legacy inventory statement, false otherwise
  */
-export async function processInventoryLine(sqlLine: string, db: sqlite3.Database): Promise<boolean> {
+export async function processInventoryLine(sqlLine: string, db: Database): Promise<boolean> {
   // Trim whitespace and ignore empty lines
   const line = sqlLine.trim();
   if (!line) return false;
@@ -94,8 +95,9 @@ export async function processInventoryLine(sqlLine: string, db: sqlite3.Database
     // Foreign key resolution: Resolve medicine_id to existing medicine record or create new one
     // Use cache to avoid repeated database queries
     let medicineRecordId: number;
-    if (medicineCache.has(medicineId)) {
-        medicineRecordId = medicineCache.get(medicineId);
+    const cachedRecordId = medicineCache.get(medicineId);
+    if (cachedRecordId !== undefined) {
+        medicineRecordId = cachedRecordId;
     } else {
         // Look up if medicine already exists in medicines table
         const medicineLookup = await db.get(
@@ -107,20 +109,11 @@ export async function processInventoryLine(sqlLine: string, db: sqlite3.Database
             medicineRecordId = medicineLookup.id;
         } else {
             // Create the medicine record for legacy medicine_id
-            const medicineInsertResult = await new Promise<{ lastID: number }>((resolve, reject) => {
-                db.run(
-                    'INSERT INTO medicines (id, name) VALUES (?, ?)',
-                    [medicineId, `LEGACY_MEDICINE_${medicineId}`],
-                    function(err) {
-                        if (err) {
-                            reject(err);
-                        } else {
-                            resolve({ lastID: this.lastID });
-                        }
-                    }
-                );
-            });
-            medicineRecordId = medicineInsertResult.lastID;
+            const medicineInsertResult = await db.run(
+                'INSERT INTO medicines (id, name) VALUES (?, ?)',
+                [medicineId, `LEGACY_MEDICINE_${medicineId}`]
+            );
+            medicineRecordId = medicineInsertResult.lastID!;
         }
         medicineCache.set(medicineId, medicineRecordId);
     }

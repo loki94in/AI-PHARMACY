@@ -1,14 +1,15 @@
-import { ProductNameFilterService } from '../../src/services/productNameFilterService';
+import { ProductNameFilterService } from '../../src/services/productNameFilterService.js';
+import { open } from 'sqlite';
+import sqlite3 from 'sqlite3';
+import fs from 'fs';
 
 describe('ProductNameFilterService', () => {
   let service: ProductNameFilterService;
-  const TEST_DB_PATH = './test-data/test-app.db';
+  const TEST_DB_PATH = './data/test-app.db';
 
   beforeEach(async () => {
     service = new ProductNameFilterService(TEST_DB_PATH);
     // Setup test database with sample medicines
-    const { open } = await import('sqlite');
-    const sqlite3 = await import('sqlite3');
     const db = await open({ filename: TEST_DB_PATH, driver: sqlite3.Database });
     await db.exec(`
       CREATE TABLE IF NOT EXISTS medicines (
@@ -27,9 +28,10 @@ describe('ProductNameFilterService', () => {
 
   afterEach(async () => {
     // Cleanup test database
-    const { unlink } = await import('fs');
     try {
-      await unlink(TEST_DB_PATH);
+      if (fs.existsSync(TEST_DB_PATH)) {
+        fs.unlinkSync(TEST_DB_PATH);
+      }
     } catch {}
   });
 
@@ -47,19 +49,19 @@ describe('ProductNameFilterService', () => {
   test('should return exact matches', async () => {
     await service.initialize();
     const result = await service.filterProductNames('Paracetamol 500mg');
-    expect(result).toContain('Paracetamol 500mg');
+    expect(result.matches).toContain('Paracetamol 500mg');
   });
 
   test('should handle case insensitive matching', async () => {
     await service.initialize();
     const result = await service.filterProductNames('PARACETAMOL 500MG');
-    expect(result).toContain('Paracetamol 500mg');
+    expect(result.matches).toContain('Paracetamol 500mg');
   });
 
   test('should return empty array for no matches', async () => {
     await service.initialize();
     const result = await service.filterProductNames('Nonexistent Drug 500mg');
-    expect(result).toEqual([]);
+    expect(result.matches).toEqual([]);
   });
 
   test('should respect confidence threshold', async () => {
@@ -67,14 +69,12 @@ describe('ProductNameFilterService', () => {
     // Similar to "Paracetamol" but different enough to be below 0.8 threshold
     const result = await service.filterProductNames('Paracetamol 500mg Extra Strength', { minConfidenceThreshold: 0.9 });
     // With high threshold, might not match
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(result.matches)).toBe(true);
   });
 
   test('should work with empty medicine list', async () => {
     // Create service with empty DB
     const emptyService = new ProductNameFilterService(TEST_DB_PATH);
-    const { open } = await import('sqlite');
-    const sqlite3 = await import('sqlite3');
     const db = await open({ filename: TEST_DB_PATH, driver: sqlite3.Database });
     await db.exec(`
       CREATE TABLE IF NOT EXISTS medicines (
@@ -87,6 +87,6 @@ describe('ProductNameFilterService', () => {
 
     await emptyService.initialize();
     const result = await emptyService.filterProductNames('Anything');
-    expect(result).toEqual([]);
+    expect(result.matches).toEqual([]);
   });
 });
