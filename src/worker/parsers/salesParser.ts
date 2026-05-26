@@ -89,6 +89,12 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
             // In a real system, you might want to generate new sequential numbers
             const invoice_no = invoiceIdOrBillNo || `LEGACY-${Date.now()}`;
 
+            // Check if invoice already exists to avoid duplication
+            const existingInvoice = await db.get('SELECT id FROM sales_invoices WHERE invoice_no = ?', [invoice_no]);
+            if (existingInvoice) {
+                return true;
+            }
+
             // Insert into sales_invoices
             const insertInvoiceQuery = `
                 INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount)
@@ -226,6 +232,15 @@ export async function processSalesLine(sqlLine: string, db: Database): Promise<b
                 }
 
                 inventoryId = inventory_id_result;
+            }
+
+            // Check if sale item already exists to avoid duplication
+            const existingItem = await db.get(
+                'SELECT id FROM sale_items WHERE invoice_id = ? AND inventory_id = ? AND quantity = ? AND unit_price = ?',
+                [invoiceId, inventoryId, quantity, unitPrice]
+            );
+            if (existingItem) {
+                return true;
             }
 
             // Insert into sale_items

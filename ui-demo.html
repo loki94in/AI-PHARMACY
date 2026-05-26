@@ -798,6 +798,7 @@
   }
   input[type=number] {
     -moz-appearance: textfield;
+    appearance: textfield;
   }
 
   /* Modals */
@@ -1144,7 +1145,8 @@
 <script>
 (async () => {
   try {
-    const res = await fetch('/api/next-invoice');
+    const res = await fetch('/api/sales/next-invoice');
+
     if (!res.ok) throw new Error('Network response was not ok');
     const data = await res.json();
     const invInput = document.querySelector('input[value^="INV-"]');
@@ -1153,6 +1155,118 @@
     console.error('Failed to fetch next invoice:', e);
   }
 })();
+</script>
+
+<script>
+// AI Camera OCR functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const scanArea = document.querySelector('.scan-area[data-requires="ai_camera"]');
+  if (!scanArea) return;
+
+  scanArea.addEventListener('click', async function() {
+    // Check if ai_camera flag is enabled (this would typically come from a global state or API)
+    // For now, we'll proceed and let the backend handle flag validation
+
+    try {
+      // Request camera permission
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      // Create video element to display camera feed
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.play();
+
+      // Create overlay for capture button
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.background = 'rgba(0,0,0,0.5)';
+      overlay.style.color = 'white';
+      overlay.style.display = 'flex';
+      overlay.style.flexDirection = 'column';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.zIndex = '1000';
+
+      const captureButton = document.createElement('button');
+      captureButton.textContent = 'Capture';
+      captureButton.style.padding = '12px 24px';
+      captureButton.style.fontSize = '16px';
+      captureButton.style.background = 'var(--sky)';
+      captureButton.style.border = 'none';
+      captureButton.style.borderRadius = '8px';
+      captureButton.style.cursor = 'pointer';
+
+      const statusText = document.createElement('div');
+      statusText.style.marginTop = '20px';
+      statusText.style.fontSize = '18px';
+
+      overlay.appendChild(video);
+      overlay.appendChild(captureButton);
+      overlay.appendChild(statusText);
+      document.body.appendChild(overlay);
+
+      // Handle capture
+      captureButton.addEventListener('click', async () => {
+        statusText.textContent = 'Processing...';
+
+        // Create canvas to capture frame
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Stop video stream
+        stream.getTracks().forEach(track => track.stop());
+        document.body.removeChild(overlay);
+
+        // Convert canvas to base64
+        const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+        // Send to backend for OCR processing
+        try {
+          const response = await fetch('/api/returns/ai-camera/process', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: imageBase64 })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          if (result.success && result.medicineInfo) {
+            // Fill in the medicine details in the POS form
+            const medicineInput = document.getElementById('inline-search-input');
+            if (medicineInput && result.medicineInfo.potentialName) {
+              medicineInput.value = result.medicineInfo.potentialName;
+            }
+
+            // Show success message
+            alert(`Medicine identified: ${result.medicineInfo.potentialName || 'Unknown'}`);
+          } else {
+            alert('Could not identify medicine from image. Please try again.');
+          }
+        } catch (error) {
+          console.error('AI Camera processing error:', error);
+          alert('Error processing image. Please check connection and try again.');
+        }
+      });
+
+    } catch (err) {
+      console.error('Camera access error:', err);
+      alert('Could not access camera. Please ensure camera permissions are granted.');
+    }
+  });
+});
 </script>
         </div>
       </div>
@@ -1265,6 +1379,41 @@
 })();
 </script>
 <script>
+// Bulk inventory actions handlers
+document.addEventListener('DOMContentLoaded', () => {
+  const discardBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Discard All');
+  const commitBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Commit Selected to Stock');
+  if (discardBtn) {
+    discardBtn.addEventListener('click', async () => {
+      try {
+        await fetch('/api/inventory/bulk-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'discard' })
+        });
+        alert('All pending imports discarded');
+        location.reload();
+      } catch (e) { console.error(e); alert('Discard failed'); }
+    });
+  }
+  if (commitBtn) {
+    commitBtn.addEventListener('click', async () => {
+      try {
+        const ids = Array.from(document.querySelectorAll('#pending-imports-body input[type=checkbox]:checked'))
+          .map(cb => cb.closest('tr').dataset.id).filter(Boolean);
+        await fetch('/api/inventory/bulk-action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'commit', ids })
+        });
+        alert('Selected items committed to stock');
+        location.reload();
+      } catch (e) { console.error(e); alert('Commit failed'); }
+    });
+  }
+});
+</script>
+<script>
 let editItemId = null;
 function openEditModal(button) {
   const row = button.closest('tr');
@@ -1337,8 +1486,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Source: <strong style="color: var(--white);">database (SQLite)</strong> • <span id="pending-imports-count">0 items extracted</span></div>
           </div>
           <div style="display: flex; gap: 8px;">
-            <button class="btn btn-ghost" style="color: var(--danger); font-size: 12px; padding: 6px 12px;">Discard All</button>
-            <button class="btn btn-primary" style="font-size: 12px; padding: 6px 12px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
+            <button class="btn btn-ghost" id="discard-all-btn" style="color: var(--danger); font-size: 12px; padding: 6px 12px;">Discard All</button>
+            <button class="btn btn-primary" id="commit-selected-btn" style="font-size: 12px; padding: 6px 12px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
           </div>
         </div>
         
@@ -1448,6 +1597,57 @@ document.addEventListener('DOMContentLoaded', () => {
         </table>
       </div>
     </div>
+
+    <script>
+      // Bulk inventory actions for Pending Imports section
+      document.addEventListener('DOMContentLoaded', () => {
+        const discardBtn = document.getElementById('discard-all-btn');
+        const commitBtn = document.getElementById('commit-selected-btn');
+
+        if (discardBtn) {
+          discardBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#pending-imports-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/inventory/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'discard', ids })
+              });
+              alert('All selected items discarded and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Discard failed');
+            }
+          });
+        }
+
+        if (commitBtn) {
+          commitBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#pending-imports-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/inventory/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'commit', ids })
+              });
+              alert('Selected items committed to stock and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Commit failed');
+            }
+          });
+        }
+      });
+    </script>
+  </div>
   </div>
 <!-- ── PAGE 4: Purchases ── -->
 <div class="page" id="page4">
@@ -1556,6 +1756,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="margin-left: auto;">
           <button class="btn btn-primary" id="btn-submit-purchase" onclick="submitPurchase()" style="padding: 4px 12px; font-size: 11px; background: #374151; color: white;">⬆ Upload [F2]</button>
           <button class="btn btn-primary" onclick="openAddPurchaseModal()">+ Add Purchase</button>
+          <button class="btn btn-ghost" id="discard-all-purchases" style="margin-left: 8px; color: var(--danger); font-size: 11px; padding: 4px 10px;">Discard All</button>
+          <button class="btn btn-primary" id="commit-selected-purchases" style="margin-left: 8px; font-size: 11px; padding: 4px 10px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
         </div>
       </div>
 
@@ -1707,65 +1909,270 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
     </div>
+
+    <script>
+      // Bulk purchase actions
+      document.addEventListener('DOMContentLoaded', () => {
+        const discardBtn = document.getElementById('discard-all-purchases');
+        const commitBtn = document.getElementById('commit-selected-purchases');
+
+        if (discardBtn) {
+          discardBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#purchases-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/purchases/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'discard', ids })
+              });
+              alert('All selected purchases discarded and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Discard failed');
+            }
+          });
+        }
+
+        if (commitBtn) {
+          commitBtn.addEventListener('click', async () => {
+            try {
+              const ids = Array.from(document.querySelectorAll('#purchases-body input[type=checkbox]:checked'))
+                .map(cb => cb.closest('tr').dataset.id)
+                .filter(Boolean);
+
+              await fetch('/api/purchases/bulk-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'commit', ids })
+              });
+              alert('Selected purchases committed and logged');
+              location.reload();
+            } catch (e) {
+              console.error(e);
+              alert('Commit failed');
+            }
+          });
+        }
+      });
+    </script>
+  </div>
   </div>
 <!-- ── PAGE 5: Returns & Expiry ── -->
 <div class="page" id="page5">
-<script>
-(async () => {
-  try {
-    const res = await fetch('/api/returns');
-    if (!res.ok) throw new Error('Network response was not ok');
-    const data = await res.json();
-    const tbody = document.getElementById('returns-body');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    data.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${r.return_no || ''}</td>
-        <td>${r.original_invoice_id || ''}</td>
-        <td>${r.type || ''}</td>
-        <td>${r.total_amount != null ? `₹${r.total_amount}` : ''}</td>
-        <td>${r.date || ''}</td>
-      `;
-      tbody.appendChild(tr);
+  <script>
+    (async () => {
+      try {
+        const res = await fetch('/api/returns');
+        if (!res.ok) throw new Error('Network response was not ok');
+        const data = await res.json();
+        const tbody = document.getElementById('returns-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        data.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${r.return_no || ''}</td>
+            <td>${r.original_invoice_id || ''}</td>
+            <td>${r.type || ''}</td>
+            <td>${r.total_amount != null ? '₹' + r.total_amount : ''}</td>
+            <td>${r.date || ''}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        console.error('Returns fetch error:', e);
+      }
+    })();
+  </script>
+  <script>
+    // Financial note handlers (Credit/Debit)
+    document.querySelectorAll('button.btn-ghost').forEach(btn => {
+      const txt = btn.textContent.trim();
+      if (txt.includes('Credit Note')) {
+        btn.addEventListener('click', async () => {
+          try {
+            const resp = await fetch('/api/returns/financial-note', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'credit', amount: 0, details: 'Generated from Returns page' })
+            });
+            if (!resp.ok) throw new Error('Network error');
+            const data = await resp.json();
+            if (data.url) {
+              window.open(data.url, '_blank');
+            }
+            alert(data.message || 'Credit note generated');
+          } catch (e) {
+            console.error(e);
+            alert('Failed to generate credit note');
+          }
+        });
+      }
+      if (txt.includes('Debit Note')) {
+        btn.addEventListener('click', async () => {
+          try {
+            const resp = await fetch('/api/returns/financial-note', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'debit', amount: 0, details: 'Generated from Returns page' })
+            });
+            if (!resp.ok) throw new Error('Network error');
+            const data = await resp.json();
+            if (data.url) {
+              window.open(data.url, '_blank');
+            }
+            alert(data.message || 'Debit note generated');
+          } catch (e) {
+            console.error(e);
+            alert('Failed to generate debit note');
+          }
+        });
+      }
     });
-    // TODO: populate UI with return entries
-  } catch (e) {
-    console.error('Returns fetch error:', e);
-  }
-})();
-</script>
-<script>
-function handleCustomerReturn() {
-  // Example POST for customer return
-  fetch('/api/returns', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ return_no: 'R-' + Date.now(), type: 'customer', original_invoice_id: '', total_amount: 0 })
-  })
-    .then(r => r.json())
-    .then(d => { console.log('Customer return recorded', d); })
-    .catch(e => console.error(e));
-}
-function handleDistributorReturn() {
-  fetch('/api/returns', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ return_no: 'D-' + Date.now(), type: 'distributor', original_invoice_id: '', total_amount: 0 })
-  })
-    .then(r => r.json())
-    .then(d => { console.log('Distributor return recorded', d); })
-    .catch(e => console.error(e));
-}
-function processReturn() {
-  console.log('Process Return clicked');
-  // Implement processing logic as needed
-}
+  </script>
+  <script>
+    function handleCustomerReturn() {
+      // Example POST for customer return
+      fetch('/api/returns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_no: 'R-' + Date.now(), type: 'customer', original_invoice_id: '', total_amount: 0 })
+      })
+        .then(r => r.json())
+        .then(d => { console.log('Customer return recorded', d); })
+        .catch(e => console.error(e));
+    }
+
+    function handleDistributorReturn() {
+      fetch('/api/returns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ return_no: 'D-' + Date.now(), type: 'distributor', original_invoice_id: '', total_amount: 0 })
+      })
+        .then(r => r.json())
+        .then(d => { console.log('Distributor return recorded', d); })
+        .catch(e => console.error(e));
+    }
+
+    function processReturn() {
+      console.log('Process Return clicked');
+      // Implement processing logic as needed
+    }
+  </script>
+
+  <script>
+  // AI Camera Batch Scan functionality for Returns & Expiry page
+  document.addEventListener('DOMContentLoaded', function() {
+    const scanArea = document.querySelector('.scan-area[data-requires="ai_camera"]');
+    if (!scanArea) return;
+
+    scanArea.addEventListener('click', async function() {
+      try {
+        // Request camera permission
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+        // Create video element to display camera feed
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.play();
+
+        // Create overlay for capture button
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.background = 'rgba(0,0,0,0.5)';
+        overlay.style.color = 'white';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = '1000';
+
+        const captureButton = document.createElement('button');
+        captureButton.textContent = 'Capture Batch';
+        captureButton.style.padding = '12px 24px';
+        captureButton.style.fontSize = '16px';
+        captureButton.style.background = 'var(--sky)';
+        captureButton.style.border = 'none';
+        captureButton.style.borderRadius = '8px';
+        captureButton.style.cursor = 'pointer';
+
+        const statusText = document.createElement('div');
+        statusText.style.marginTop = '20px';
+        statusText.style.fontSize = '18px';
+
+        overlay.appendChild(video);
+        overlay.appendChild(captureButton);
+        overlay.appendChild(statusText);
+        document.body.appendChild(overlay);
+
+        // Handle capture
+        captureButton.addEventListener('click', async () => {
+          statusText.textContent = 'Processing batch...';
+
+          // Create canvas to capture frame
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // Stop video stream
+          stream.getTracks().forEach(track => track.stop());
+          document.body.removeChild(overlay);
+
+          // Convert canvas to base64
+          const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+          // Send to backend for OCR processing
+          try {
+            const response = await fetch('/api/returns/ai-camera/process', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ image: imageBase64 })
+            });
+
+            if (!response.ok) {
+              throw new Error(`Server error: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.success && result.medicineInfo) {
+              // For batch scan, we could auto-fill a return entry or show results in a modal
+              const medicineName = result.medicineInfo.potentialName || 'Unknown Medicine';
+              const batchNumber = result.medicineInfo.batchNumber || 'Not detected';
+              const expiryDate = result.medicineInfo.expiryDate || 'Not detected';
+
+              alert(`Batch Scan Results:\nMedicine: ${medicineName}\nBatch: ${batchNumber}\nExpiry: ${expiryDate}\n\nUse this information to create a return entry.`);
+            } else {
+              alert('Could not process batch scan. Please ensure the image shows clear medicine labels and try again.');
+            }
+          } catch (error) {
+            console.error('AI Camera batch processing error:', error);
+            alert('Error processing batch image. Please check connection and try again.');
+          }
+        });
+
+      } catch (err) {
+        console.error('Camera access error:', err);
+        alert('Could not access camera. Please ensure camera permissions are granted and try again.');
+      }
+    });
+  });
 </script>
     <div class="topbar">
       <div>
-        <div class="page-title">↩️ Returns & Expiry — Correction Page</div>
+        <div class="page-title">↩️ Returns &amp; Expiry — Correction Page</div>
         <div class="page-subtitle">Page 5 · Customer returns, distributor returns, credit/debit notes</div>
       </div>
       <span class="flag-pill sky" data-requires="ai_camera">ai_camera</span>
@@ -1830,7 +2237,6 @@ function processReturn() {
       `;
       tbody.appendChild(tr);
     });
-    // TODO: render orders list
   } catch (e) {
     console.error('Orders fetch error:', e);
   }
@@ -2180,9 +2586,15 @@ function processReturn() {
       <div class="card">
         <div class="card-title"><span class="icon">📥</span> Manual Database Migration</div>
         <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">
-          Select a `.zip` SQL database backup from the <code>MIGRATION SAMPEL</code> folder and click "Run Migration" to start the import.
+          Upload a `.zip` SQL database backup from your computer, or select an existing one, and click "Run Migration" to start the import.
         </p>
         
+        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center;">
+          <input type="file" id="migration-file-upload" accept=".zip" style="display: none;" />
+          <button id="upload-migration-btn" class="btn btn-secondary" style="background: var(--surface2); border: 1px solid var(--border); color: var(--white); padding: 8px 16px; border-radius: 4px; cursor: pointer;">Select & Upload Zip</button>
+          <span id="upload-status" class="text-muted" style="font-size: 13px; flex: 1;"></span>
+        </div>
+
         <div style="display: flex; gap: 12px; margin-bottom: 20px;">
           <select id="migration-file-select" style="flex: 1; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: var(--white); border-radius: 4px;">
             <option value="">Loading files...</option>
@@ -2224,6 +2636,42 @@ function processReturn() {
           }
         }
         loadFiles();
+
+        document.getElementById('upload-migration-btn').addEventListener('click', () => {
+          document.getElementById('migration-file-upload').click();
+        });
+
+        document.getElementById('migration-file-upload').addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          const statusEl = document.getElementById('upload-status');
+          statusEl.textContent = 'Uploading...';
+          
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          try {
+            const resp = await fetch('/api/migration/upload', {
+              method: 'POST',
+              body: formData
+            });
+            const data = await resp.json();
+            if (data.success) {
+              statusEl.textContent = 'Uploaded successfully!';
+              await loadFiles();
+              document.getElementById('migration-file-select').value = data.file;
+              setTimeout(() => { statusEl.textContent = ''; }, 3000);
+            } else {
+              statusEl.textContent = 'Upload failed: ' + (data.error || 'Unknown error');
+            }
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = 'Upload error';
+          }
+          // Clear input so same file can be selected again if needed
+          e.target.value = '';
+        });
 
         document.getElementById('run-migration-btn').addEventListener('click', async () => {
           const select = document.getElementById('migration-file-select');
@@ -2374,7 +2822,7 @@ function processReturn() {
           <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1400.db</strong><br><span class="fs11 text-muted">2.4 MB · Telegram ✓</span></div><div class="log-time">14:00</div></div>
           <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1300.db</strong><br><span class="fs11 text-muted">2.3 MB · Telegram ✓</span></div><div class="log-time">13:00</div></div>
           <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1200.db</strong><br><span class="fs11 text-muted">2.3 MB · Local only</span></div><div class="log-time">12:00</div></div>
-          <button class="btn btn-ghost mt8">🔄 Restore from Backup…</button>
+          <button class="btn btn-ghost mt8" id="restoreBackupBtn">🔄 Restore from Backup…</button>
         </div>
       </div>
     </div>
@@ -2391,6 +2839,19 @@ function processReturn() {
       alert('Backup failed');
     }
   });
+</script>
+<script>
+document.getElementById('restoreBackupBtn').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/utilities/backup/restore', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Restore completed');
+  } catch (e) {
+    console.error('Restore error:', e);
+    alert('Restore failed');
+  }
+});
 </script>
 <!-- ── PAGE 14: Settings ── -->
 <div class="page" id="page14">
@@ -2506,6 +2967,7 @@ function processReturn() {
           </div>
           <div class="btn-row mt14">
             <button class="btn btn-ghost test-conn-btn">🔗 Test Connection</button>
+            <button class="btn btn-primary" onclick="sendWhatsAppTestMessage()">📤 Send Test Message</button>
             <button class="btn btn-primary ml-auto">💾 Save</button>
           </div>
         </div>
@@ -2541,7 +3003,7 @@ function processReturn() {
       if (el.id) payload[el.id] = el.value;
     });
     try {
-      const resp = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const resp = await fetch('/api/settings/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!resp.ok) throw new Error('Network error');
       const data = await resp.json();
       alert(data.message || 'Settings saved');
@@ -2560,6 +3022,58 @@ function processReturn() {
       }
     });
   });
+</script>
+<script>
+document.getElementById('rotateKeyBtn').addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/security/rotate-key', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Encryption key rotated');
+  } catch (e) {
+    console.error('Rotate key error:', e);
+    alert('Failed to rotate key');
+  }
+});
+</script>
+<script>
+async function sendWhatsAppTestMessage() {
+  try {
+    const resp = await fetch('/api/utilities/whatsapp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'WhatsApp test message sent');
+  } catch (e) {
+    console.error('Send WhatsApp test message error:', e);
+    alert('Failed to send WhatsApp test message');
+  }
+}
+</script>
+<script>
+document.querySelectorAll('.page#page14 .test-conn-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const card = btn.closest('.card');
+    let endpoint = '';
+    if (card) {
+      const titleEl = card.querySelector('.card-title');
+      if (titleEl) {
+        const txt = titleEl.textContent.toLowerCase();
+        if (txt.includes('gmail')) endpoint = '/api/utilities/gmail/test';
+        else if (txt.includes('whatsapp')) endpoint = '/api/utilities/whatsapp/test';
+        else if (txt.includes('telegram')) endpoint = '/api/utilities/test-connection?service=telegram';
+      }
+    }
+    try {
+      const resp = await fetch(endpoint);
+      if (!resp.ok) throw new Error('Network error');
+      const data = await resp.json();
+      alert(data.message || 'Connection successful');
+    } catch (e) {
+      console.error('Test connection error:', e);
+      alert('Failed to test connection');
+    }
+  });
+});
 </script>
 <!-- ── PAGE 15: Support & Dispatch ── -->
 <div class="page" id="page15">
@@ -2682,11 +3196,39 @@ function runArchive(){
       `;
       tbody.appendChild(tr);
     });
-    // TODO: render compliance info in the audit grid
   } catch (e) {
     console.error('Compliance fetch error:', e);
   }
 })();
+</script>
+<script>
+// Compliance add entry handler
+function openAddEntryModal() { document.getElementById('add-entry-modal').style.display = 'flex'; }
+function closeAddEntryModal() { document.getElementById('add-entry-modal').style.display = 'none'; }
+function closeScheduleH1Modal() { document.getElementById('schedule-h1-modal').style.display = 'none'; }
+async function saveComplianceEntry() {
+  const payload = {
+    date: document.getElementById('entry-date').value,
+    product: document.getElementById('entry-product').value,
+    patient_id: document.getElementById('entry-patient').value,
+    doctor_id: document.getElementById('entry-doctor').value,
+    license_no: document.getElementById('entry-license').value,
+    qty: document.getElementById('entry-qty').value,
+    bill_no: document.getElementById('entry-bill').value
+  };
+  try {
+    const resp = await fetch('/api/compliance/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Entry added');
+    closeAddEntryModal();
+    location.reload();
+  } catch (e) { console.error(e); alert('Failed to add entry'); }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const addBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Add Entry');
+  if (addBtn) addBtn.addEventListener('click', openAddEntryModal);
+});
 </script>
     <div class="topbar">
       <div>
@@ -2732,7 +3274,21 @@ function runArchive(){
           <button class="btn btn-primary">➕ Add Entry</button>
           <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=compliance', '_blank')">📄 Export Register PDF</button>
         </div>
-      </div>
+      <div id="add-entry-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div style="background:#222;padding:20px;max-width:400px;">
+    <h3>Add Compliance Entry</h3>
+    <input id="entry-date" type="date" placeholder="Date"/><br/>
+    <input id="entry-product" placeholder="Product"/><br/>
+    <input id="entry-patient" placeholder="Patient ID"/><br/>
+    <input id="entry-doctor" placeholder="Doctor ID"/><br/>
+    <input id="entry-license" placeholder="License No"/><br/>
+    <input id="entry-qty" type="number" placeholder="Qty"/><br/>
+    <input id="entry-bill" placeholder="Bill No"/><br/>
+    <button onclick="saveComplianceEntry()">Save</button>
+    <button onclick="closeAddEntryModal()">Cancel</button>
+  </div>
+</div>
+</div>
     </div>
   </div>
 <!-- ── PAGE 18: Learning Engine ── -->
@@ -2762,7 +3318,7 @@ function runArchive(){
             <select><option>3</option><option>4</option><option selected>5</option><option>8</option></select>
           </div>
           <div class="btn-row mt14">
-            <button class="btn btn-ghost" style="color:var(--accent-purple);border-color:rgba(167,139,250,0.3);">🔄 Refresh Model</button>
+            <button class="btn btn-ghost" id="refreshModelBtn" style="color:var(--accent-purple);border-color:rgba(167,139,250,0.3);">🔄 Refresh Model</button>
           </div>
         </div>
         <div class="card">
@@ -2779,8 +3335,88 @@ function runArchive(){
           </div>
         </div>
       </div>
+
+      <!-- AI Learning Engine Data Processing Section -->
+      <div class="card" style="grid-column: 1 / -1; margin-top: 24px;">
+        <div class="card-title"><span class="icon">🔧</span> Data Processing</div>
+        <div class="field mb6">
+          <label for="raw-data">Legacy Data</label>
+          <textarea id="raw-data" placeholder="Paste messy legacy CSV or SQL data here..." rows="8" style="width:100%;"></textarea>
+        </div>
+        <div class="btn-row mb6">
+          <button class="btn btn-primary" id="analyzeStructureBtn">Analyze Structure</button>
+        </div>
+        <div class="field mb6">
+          <label>Mapping Result</label>
+          <pre id="mapping-result" style="background:#111;color:#0f0;padding:8px;max-height:200px;overflow:auto;border-radius:4px;"></pre>
+        </div>
+        <div class="btn-row mt14">
+          <button class="btn btn-success" id="processDataBtn">Process Data</button>
+        </div>
+      </div>
     </div>
-  </div>
+<script>
+// JS as before
+
+// UI for AI Learning Engine - Data Processing
+document.getElementById('analyzeStructureBtn')?.addEventListener('click', async () => {
+  const textarea = document.getElementById('raw-data');
+  const raw = textarea ? textarea.value : '';
+  if (!raw) return alert('Enter legacy data');
+  try {
+    const resp = await fetch('/api/learning/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sampleData: raw })
+    });
+    const result = await resp.json();
+    if (result.success) {
+      document.getElementById('mapping-result')!.textContent = JSON.stringify(result.mapping, null, 2);
+    } else {
+      alert('Analysis failed: ' + (result.error || result.raw));
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Error calling analyze');
+  }
+});
+
+document.getElementById('processDataBtn')?.addEventListener('click', async () => {
+  const textarea = document.getElementById('raw-data');
+  const raw = textarea ? textarea.value : '';
+  const mappingPre = document.getElementById('mapping-result');
+  const mappingText = mappingPre ? mappingPre.textContent : '';
+  if (!raw || !mappingText) return alert('Provide data and mapping');
+  let mapping;
+  try { mapping = JSON.parse(mappingText); } catch { return alert('Invalid mapping JSON'); }
+  try {
+    const resp = await fetch('/api/learning/apply-model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawData: raw, mapping })
+    });
+    const result = await resp.json();
+    alert(result.message || 'Processed');
+  } catch (e) {
+    console.error(e);
+    alert('Error applying model');
+  }
+});
+
+// Keep existing refresh model button functionality if needed
+document.getElementById('refreshModelBtn')?.addEventListener('click', async () => {
+  try {
+    const resp = await fetch('/api/learning/refresh-model', { method: 'POST' });
+    if (!resp.ok) throw new Error('Network error');
+    const data = await resp.json();
+    alert(data.message || 'Model refreshed');
+  } catch (e) {
+    console.error('Refresh model error:', e);
+    alert('Failed to refresh model');
+  }
+});
+</script>
+</div>
 <!-- ── PAGE 19: Messaging Hub ── -->
 <div class="page" id="page19" data-requires="whatsapp">
     <div class="topbar">
@@ -2824,7 +3460,6 @@ function runArchive(){
       </div>
     </div>
   </div>
-
 </main>
 
 <script>
@@ -3381,516 +4016,7 @@ document.getElementById('sendTestMsgBtn')?.addEventListener('click', async () =>
     </div>
   </div>
 </div>
-</main>
 
-<script>
-  const pages = 19;
-
-  function show(n) {
-    for (let i = 1; i <= pages; i++) {
-      const pg = document.getElementById('page' + i);
-      const nav = document.getElementById('nav' + i);
-      if (pg) pg.classList.toggle('active', i === n);
-      if (nav) nav.classList.toggle('active', i === n);
-    }
-    document.querySelector('main').scrollTop = 0;
-  }
-
-  // Animate progress bars on load
-  document.querySelectorAll('.progress-fill').forEach(el => {
-    const w = el.style.width;
-    el.style.width = '0%';
-    setTimeout(() => el.style.width = w, 200);
-  });
-
-  function updateFlags() {
-    const flags = {
-      ai_camera: document.getElementById('flag-ai_camera')?.checked,
-      email_parser: document.getElementById('flag-email_parser')?.checked,
-      whatsapp: document.getElementById('flag-whatsapp')?.checked,
-      cloud_backup: document.getElementById('flag-cloud_backup')?.checked,
-      learning_engine: document.getElementById('flag-learning_engine')?.checked,
-      legal_register: document.getElementById('flag-legal_register')?.checked,
-      custom_labels: document.getElementById('flag-custom_labels')?.checked,
-      cloud_export: document.getElementById('flag-cloud_export')?.checked
-    };
-
-    document.querySelectorAll('[data-requires]').forEach(el => {
-      const req = el.getAttribute('data-requires');
-      if (flags[req]) {
-        el.classList.remove('flag-hidden');
-      } else {
-        el.classList.add('flag-hidden');
-      }
-    });
-
-    const h1Toggle = document.getElementById('preserve-h1-toggle');
-    if (h1Toggle) {
-      h1Toggle.checked = !!flags.legal_register;
-    }
-  }
-
-  document.querySelectorAll('input[id^="flag-"]').forEach(el => {
-    el.addEventListener('change', updateFlags);
-  });
-  updateFlags();
-
-  // POS BILLING LOGIC
-  const productInput = document.querySelector('#inline-search-input');
-  const billTableBody = document.querySelector('#page1 .tbl-wrap tbody');
-
-  function addBillItem(name, batch, mrp, disc, total, margin) {
-    if (!billTableBody) return;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="padding: 8px 12px; color: var(--muted);">*</td>
-      <td style="padding: 8px 12px;" class="text-white fw700">${name}</td>
-      <td style="padding: 8px 12px;" class="mono">${batch}</td>
-      <td style="padding: 8px 12px;" class="mono">12/26</td>
-      <td style="padding: 8px 12px; text-align: right;" class="text-green"><span class="margin-value">${margin.replace('%','')}</span>%</td>
-      <td style="padding: 8px 12px; text-align: right;"><input type="number" class="disc-input" value="${disc.replace('%','')}" min="0" style="width: 40px; text-align: right; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--white);" oninput="validateMargins()" />%</td>
-      <td style="padding: 8px 12px; text-align: right;"><input type="number" value="1" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-      <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-      <td style="padding: 8px 12px; text-align: right;">${mrp}</td>
-      <td style="padding: 8px 12px; text-align: right;">₹2.50</td>
-      <td style="padding: 8px 12px; text-align: right;" class="text-white fw700">${total}</td>
-      <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="this.closest('tr').remove()">❌</button></td>
-    `;
-    // Insert after the inline search row (which is the first child)
-    if (billTableBody.children.length > 0) {
-      billTableBody.insertBefore(tr, billTableBody.children[1]);
-    } else {
-      billTableBody.appendChild(tr);
-    }
-    validateMargins();
-  }
-
-  if (productInput) {
-    productInput.addEventListener('keypress', function(e) {
-      if (e.key === 'Enter' && this.value.trim() !== '') {
-        const productName = this.value.trim();
-        addBillItem(productName, 'B-NEW-01', '₹15.00', '0%', '₹15.00', '10%');
-        this.value = '';
-      }
-    });
-  }
-
-  const suggestions = document.querySelectorAll('#page1 .suggestion-card');
-  suggestions.forEach(card => {
-    card.addEventListener('click', function() {
-      const productName = this.querySelector('.suggestion-name').innerText;
-      addBillItem(productName, 'B-SUG-99', '₹45.00', '5%', '₹42.75', '12%');
-    });
-  });
-
-  function openModal(id) { document.getElementById(id).classList.add('active'); }
-  function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-
-  let currentPatientNoWhatsApp = false;
-
-  function savePatient() {
-    const name = document.getElementById('new-patient-name').value;
-    if(name) document.getElementById('pos-patient-input').value = name;
-    
-    const noWhatsApp = document.getElementById('no-whatsapp');
-    if (noWhatsApp) {
-      currentPatientNoWhatsApp = noWhatsApp.checked;
-    }
-    
-    closeModal('patient-modal');
-  }
-
-  function processSale(print) {
-    if (document.getElementById('btn-save').disabled) return;
-    
-    let msg = print ? "Bill saved and printed!" : "Bill saved!";
-    if (!currentPatientNoWhatsApp) {
-      msg += "\n\n✅ WhatsApp message with Purchase PDF has been automatically sent to the patient.";
-    } else {
-      msg += "\n\n❌ WhatsApp message skipped (Patient preference).";
-    }
-    alert(msg);
-  }
-
-  function saveDoctor() {
-    const name = document.getElementById('new-doctor-name').value;
-    if(name) document.getElementById('pos-doctor-input').value = name;
-    closeModal('doctor-modal');
-  }
-
-  function applyGlobalDiscount() {
-    const globalInput = document.getElementById('global-discount-input');
-    if (!globalInput) return;
-    const val = parseFloat(globalInput.value) || 0;
-    const discInputs = document.querySelectorAll('.disc-input');
-    discInputs.forEach(input => {
-      input.value = val;
-    });
-    validateMargins();
-  }
-
-  function validateMargins() {
-    let hasError = false;
-    const rows = document.querySelectorAll('#page1 .tbl-wrap tbody tr:not(:first-child)');
-    rows.forEach(row => {
-      const marginSpan = row.querySelector('.margin-value');
-      const discInput = row.querySelector('.disc-input');
-      if (!marginSpan || !discInput) return;
-
-      const margin = parseFloat(marginSpan.innerText) || 0;
-      const disc = parseFloat(discInput.value) || 0;
-
-      if (disc > margin) {
-        row.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
-        hasError = true;
-      } else {
-        row.style.backgroundColor = '';
-      }
-    });
-
-    const btnSave = document.getElementById('btn-save');
-    const btnSavePrint = document.getElementById('btn-save-print');
-    
-    if (btnSave) {
-      btnSave.disabled = hasError;
-      btnSave.style.opacity = hasError ? '0.5' : '1';
-      btnSave.style.cursor = hasError ? 'not-allowed' : 'pointer';
-    }
-    if (btnSavePrint) {
-      btnSavePrint.disabled = hasError;
-      btnSavePrint.style.opacity = hasError ? '0.5' : '1';
-      btnSavePrint.style.cursor = hasError ? 'not-allowed' : 'pointer';
-    }
-  }
-
-  // Initial validation
-  validateMargins();
-
-  function toggleMargin(btn) {
-    const page = document.getElementById('page1');
-    page.classList.toggle('hide-margins');
-    if (page.classList.contains('hide-margins')) {
-      btn.innerHTML = '👁️‍🗨️ Margin';
-      btn.style.color = 'var(--muted)';
-    } else {
-      btn.innerHTML = '👁️ Margin';
-      btn.style.color = 'var(--sky)';
-    }
-  }
-
-</script>
-
-<!-- Modals -->
-<div class="modal-overlay" id="patient-modal">
-  <div class="modal" style="width: 550px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;">
-    <div class="modal-header" style="border-bottom: none; padding-bottom: 10px; flex-shrink: 0;">
-      <div class="modal-title">Add Patient</div>
-      <button class="modal-close" onclick="closeModal('patient-modal')">✖</button>
-    </div>
-    <div class="modal-body" style="padding: 10px 20px; overflow-y: auto; flex-grow: 1;">
-      
-      <!-- Name -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Name</div>
-        <input type="text" id="new-patient-name" placeholder="Add name" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Identifier -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Identifier</div>
-        <input type="text" placeholder="Add Identifier" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Family -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Family</div>
-        <input type="text" placeholder="Search Family" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Email -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Email</div>
-        <input type="email" placeholder="Add Email" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Phone -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Phone</div>
-        <input type="tel" placeholder="Add Phone" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Pincode -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Pincode</div>
-        <input type="text" placeholder="Add Pincode" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Address -->
-      <div style="display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="font-weight: 700; color: var(--white); font-size: 13px; margin-bottom: 8px;">Address</div>
-        <textarea placeholder="Add Address" rows="3" style="background: transparent; border: none; color: var(--white); font-size: 13px; outline: none; resize: none;"></textarea>
-      </div>
-
-      <!-- Age -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Age</div>
-        <input type="number" placeholder="Add Age" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Gender -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Gender</div>
-        <div style="flex: 1; display: flex; gap: 16px; padding: 12px 0;">
-          <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 6px;"><input type="radio" name="gender" value="Male" style="accent-color: var(--sky);" /> Male</label>
-          <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 6px;"><input type="radio" name="gender" value="Female" style="accent-color: var(--sky);" /> Female</label>
-          <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 6px;"><input type="radio" name="gender" value="Other" style="accent-color: var(--sky);" /> Other</label>
-        </div>
-      </div>
-
-      <!-- Discount % -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Discount %</div>
-        <input type="number" placeholder="Add Discount" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Credit Limit -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Credit Limit</div>
-        <input type="number" placeholder="Add Credit Limit" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- SMS/WhatsApp Toggle -->
-      <div style="display: flex; align-items: center; padding: 0 12px; margin-bottom: 12px;">
-        <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 8px; cursor: pointer;">
-          <input type="checkbox" id="no-whatsapp" style="accent-color: #25D366; width: 16px; height: 16px;" /> 
-          Dont send Order WhatsApp (PDF)
-        </label>
-      </div>
-
-      <!-- Payment -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Payment</div>
-        <select style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none; appearance: none;">
-          <option style="color: black;">CASH</option>
-          <option style="color: black;">CARD</option>
-          <option style="color: black;">UPI</option>
-        </select>
-      </div>
-
-    </div>
-    <div class="modal-footer" style="justify-content: space-between; border-top: none; padding-top: 10px; flex-shrink: 0;">
-      <button class="btn btn-primary" onclick="savePatient()">Add Patient <span style="font-size:10px; opacity:0.7; margin-left:4px;">[CTRL+S]</span></button>
-      <div style="display: flex; gap: 8px;">
-        <button class="btn btn-ghost" style="border: 1px solid var(--border);">TB Details</button>
-        <button class="btn btn-ghost" onclick="closeModal('patient-modal')" style="border: 1px solid var(--border);">Cancel <span style="font-size:10px; opacity:0.7; margin-left:4px;">[ESC]</span></button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="doctor-modal">
-  <div class="modal" style="width: 480px; max-width: 90vw;">
-    <div class="modal-header" style="border-bottom: none; padding-bottom: 10px;">
-      <div class="modal-title">Add Doctor</div>
-      <button class="modal-close" onclick="closeModal('doctor-modal')">✖</button>
-    </div>
-    <div class="modal-body" style="padding: 10px 20px;">
-      
-      <!-- Name -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Name</div>
-        <input type="text" id="new-doctor-name" placeholder="Add name" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Degree -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Degree</div>
-        <input type="text" placeholder="Add Degree" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Reg.No. -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Reg.No.</div>
-        <input type="text" placeholder="Add registration number" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Hospital -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Hospital</div>
-        <input type="text" placeholder="Add Hospital" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-      <!-- Address -->
-      <div style="display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="font-weight: 700; color: var(--white); font-size: 13px; margin-bottom: 8px;">Address</div>
-        <textarea placeholder="Add Address" rows="3" style="background: transparent; border: none; color: var(--white); font-size: 13px; outline: none; resize: none;"></textarea>
-      </div>
-
-      <!-- Phone -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 4px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Phone</div>
-        <input type="tel" placeholder="Add Phone" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
-      </div>
-
-    </div>
-    <div class="modal-footer" style="justify-content: space-between; border-top: none; padding-top: 10px;">
-      <button class="btn btn-primary" onclick="saveDoctor()">Add Doctor <span style="font-size:10px; opacity:0.7; margin-left:4px;">[CTRL+S]</span></button>
-      <button class="btn btn-ghost" onclick="closeModal('doctor-modal')" style="border: 1px solid var(--border);">Cancel <span style="font-size:10px; opacity:0.7; margin-left:4px;">[ESC]</span></button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="add-medicine-modal">
-  <div class="modal" style="width: 700px; max-width: 95vw; background: var(--surface); color: var(--white); border-radius: 8px;">
-    <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-shrink: 0; background: var(--surface2);">
-      <div class="modal-title" style="color: var(--white); font-weight: bold; font-size: 18px;">Add Medicine - xyz strip of 15</div>
-      <button class="modal-close" onclick="closeModal('add-medicine-modal')" style="color: var(--muted); font-weight: bold;">✖</button>
-    </div>
-    <div class="modal-body" style="padding: 10px 20px; overflow-y: auto; max-height: 80vh;">
-      
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Name</div>
-            <input type="text" value="xyz strip of 15" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-          </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Category</div>
-            <select style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none; appearance: none;"><option style="color:black;">MEDICINE</option></select>
-          </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Therapeutic</div>
-            <input type="text" placeholder="Therapeutic" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-          </div>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Item Type</div>
-            <input type="text" placeholder="Item Type" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-          </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Packaging</div>
-            <input type="text" placeholder="Packaging" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-          </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Sub Therapeutic</div>
-            <input type="text" placeholder="Sub Therapeut" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-          </div>
-        </div>
-      </div>
-      
-      <div style="display: flex; align-items: center; gap: 20px; margin-top: 16px;">
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;"><input type="checkbox" /> Is Loose</label>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 300px;">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Qty Per Unit</div>
-          <input type="text" placeholder="Qty per unit" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Medicine Barcode</div>
-          <input type="text" placeholder="Medicine Barcode" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 140px; font-weight: bold; font-size: 13px;">Medicine Short Code</div>
-          <input type="text" placeholder="Medicine Sh" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">UCode</div>
-        <input type="text" placeholder="UCode" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Manufacturer</div>
-        <input type="text" placeholder="Manufacturer Name" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Marketed By</div>
-        <input type="text" placeholder="Marketed By" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; gap: 16px; margin-top: 12px;">
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 140px;">
-          <div style="font-weight: bold; font-size: 13px; width: 50px;">CGST</div>
-          <input type="text" value="0" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 140px;">
-          <div style="font-weight: bold; font-size: 13px; width: 50px;">SGST</div>
-          <input type="text" value="0" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 140px;">
-          <div style="font-weight: bold; font-size: 13px; width: 50px;">IGST</div>
-          <input type="text" value="0" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Min Stock</div>
-          <input type="text" placeholder="Min Stock" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Max Stock</div>
-          <input type="text" placeholder="Max Stock" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 160px; font-weight: bold; font-size: 13px;">Salts(Compounds)</div>
-        <input type="text" placeholder="" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; border: 1px solid var(--border); border-radius: 4px; padding: 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 140px; font-weight: bold; font-size: 13px;">Schedule Type</div>
-        <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <label style="font-size: 13px;"><input type="checkbox" checked /> None</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled H</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled H1</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Narcotics</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled X</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled G</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled C</label>
-        </div>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">HSN Code</div>
-            <input type="text" placeholder="HSN Code" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-          </div>
-          <a href="#" style="font-size: 11px; color: var(--sky);">Lookup HSN with their GST Rates</a>
-        </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); height: 35px;">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Rack</div>
-          <input type="text" placeholder="Rack" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Substitute</div>
-        <input type="text" placeholder="Add Substitute" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px; width: 50%;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Substitute Type</div>
-        <input type="text" placeholder="Select Type" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; align-items: center; gap: 40px; margin-top: 16px; margin-bottom: 20px;">
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: bold;"><input type="checkbox" /> Disable Auto Barcode Printing</label>
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: bold;"><input type="checkbox" /> TB Medicine</label>
-      </div>
-
-      <button class="btn btn-primary" onclick="closeModal('add-medicine-modal')" style="background: var(--accent-blue); color: white; border: none; padding: 8px 16px; margin-bottom: 12px;">Add Medicine</button>
-    </div>
-  </div>
-</div>
 
 <script src="script.js"></script>
 <script>

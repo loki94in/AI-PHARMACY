@@ -1,6 +1,5 @@
-// Test AI Camera OCR functionality with user images
-import { aiCameraService } from './dist/src/services/aiCameraService.js';
-import { productNameFilterService } from './dist/src/services/productNameFilterService.js';
+import { aiCameraService } from './src/services/aiCameraService.js';
+import { productNameFilterService } from './src/services/productNameFilterService.js';
 import fs from 'fs';
 import path from 'path';
 

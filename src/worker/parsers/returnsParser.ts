@@ -126,6 +126,12 @@ export async function processReturnsLine(sqlLine: string, db: Database): Promise
       // We'll still insert the return with original_invoice_id as NULL
     }
 
+    // Check if return already exists to prevent duplicate runs
+    const existingReturn = await db.get('SELECT id FROM returns WHERE return_no = ?', [returnNo]);
+    if (existingReturn) {
+      return true;
+    }
+
     // Insert into returns table with normalized date
     const normalizedDate = normalizeDate(dateStr);
     await db.run(

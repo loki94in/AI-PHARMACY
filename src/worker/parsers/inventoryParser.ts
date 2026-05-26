@@ -118,6 +118,15 @@ export async function processInventoryLine(sqlLine: string, db: Database): Promi
         medicineCache.set(medicineId, medicineRecordId);
     }
 
+    // Prevent duplicate inserts of the same medicine batch
+    const existingInventory = await db.get(
+      'SELECT id FROM inventory_master WHERE medicine_id = ? AND batch_no = ?',
+      [medicineRecordId, batchNo]
+    );
+    if (existingInventory) {
+      return true;
+    }
+
     // Insert into inventory_master table
     await db.run(
       'INSERT INTO inventory_master (medicine_id, quantity, rack_location, batch_no, expiry_date) VALUES (?, ?, ?, ?, ?)',
