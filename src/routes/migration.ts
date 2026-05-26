@@ -15,15 +15,29 @@ const MIGRATION_DIR = path.resolve(__dirname, '..', '..', 'MIGRATION SAMPEL');
 
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
 
+const ALLOWED_MIGRATION_EXTENSIONS = /\.(zip|sql|gz|tgz)$/i;
+const MAX_MIGRATION_SIZE = 100 * 1024 * 1024; // 100MB
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, MIGRATION_DIR);
   },
   filename: (_req, file, cb) => {
-    cb(null, file.originalname);
+    const sanitized = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${Date.now()}-${sanitized}`);
   }
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_MIGRATION_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIGRATION_EXTENSIONS.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .zip, .sql, .gz, .tgz files are allowed'));
+    }
+  }
+});
 
 const router = express.Router();
 

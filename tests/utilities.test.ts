@@ -31,7 +31,8 @@ describe('Utilities routes', () => {
     const res = await request(app).post('/utils/backup');
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    const backupPath = res.body.backupPath as string;
+    const backupFilename = res.body.backupFilename as string;
+    const backupPath = path.resolve(process.cwd(), 'backup', backupFilename);
     expect(fs.existsSync(backupPath)).toBe(true);
   });
 

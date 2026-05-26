@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
@@ -52,22 +54,49 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 
 // Multer storage config
+const ALLOWED_UPLOAD_EXTENSIONS = /\.(csv|xlsx?|pdf|zip|jpg|jpeg|png|gif|bmp|tiff?)$/i;
+const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, UPLOAD_DIR);
   },
   filename: (_req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
+    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, Date.now() + '-' + sanitized);
   }
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_UPLOAD_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_UPLOAD_EXTENSIONS.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new Error('File type not allowed'));
+    }
+  }
+});
 
 const app = express();
 
 // Ensure DB schema is up to date
 ensureSchema(DB_PATH).catch(err => console.error('Schema init error:', err));
-app.use(cors());
-app.use(express.json());
+
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true
+}));
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // limit each IP to 300 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' }
+}));
+app.use(express.json({ limit: '1mb' }));
 
 // Initialize services
 // Telegram bot will initialize automatically via its constructor when imported

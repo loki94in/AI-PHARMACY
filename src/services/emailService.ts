@@ -465,7 +465,8 @@ export class EmailService {
         if (!fs.existsSync(uploadsDir)) {
           fs.mkdirSync(uploadsDir, { recursive: true });
         }
-        const filePath = path.join(uploadsDir, attachment.filename);
+        const sanitizedFilename = path.basename(attachment.filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filePath = path.join(uploadsDir, `${Date.now()}-${sanitizedFilename}`);
         fs.writeFileSync(filePath, attachment.content);
       }
     } catch (error) {

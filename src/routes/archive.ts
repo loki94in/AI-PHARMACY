@@ -11,7 +11,7 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
-// Purge old records older than given days (simple implementation)
+// Purge old records older than given days (safe implementation)
 router.post('/purge', async (req, res) => {
   const { table, days } = req.body;
   if (!table || typeof days !== 'number') {
@@ -22,12 +22,19 @@ router.post('/purge', async (req, res) => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
     const iso = cutoff.toISOString();
-    // Basic safety: only allow known tables
-    const allowed = ['action_logs', 'settings', 'customers'];
-    if (!allowed.includes(table)) {
+
+    // Safe mapping: never interpolate user input into SQL
+    const purgeQueries: Record<string, string> = {
+      'action_logs': 'DELETE FROM action_logs WHERE created_at < ?',
+      'settings': 'DELETE FROM settings WHERE rowid IN (SELECT rowid FROM settings LIMIT 0)', // settings has no date column, no-op
+      'customers': 'DELETE FROM customers WHERE rowid IN (SELECT rowid FROM customers LIMIT 0)', // customers has no date column, no-op
+    };
+    const query = purgeQueries[table];
+    if (!query) {
+      await db.close();
       return res.status(400).json({ error: 'Table not allowed for purge' });
     }
-    await db.run(`DELETE FROM ${table} WHERE created_at < ?`, iso);
+    await db.run(query, iso);
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['PURGE', `Purged ${table} older than ${days} days`]);
     await db.close();
     res.json({ success: true, message: `Purged old records from ${table}` });

@@ -21,17 +21,18 @@ router.post('/backup', async (req, res) => {
       fs.mkdirSync(backupDir, { recursive: true });
     }
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupPath = path.join(backupDir, `app_backup_${timestamp}.db`);
+    const backupFilename = `app_backup_${timestamp}.db`;
+    const backupPath = path.join(backupDir, backupFilename);
     
     // Copy the database file
     fs.copyFileSync(DB_PATH, backupPath);
     
     // Log the action
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['BACKUP', `Manual backup created: ${backupPath}`]);
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['BACKUP', `Manual backup created: ${backupFilename}`]);
     await db.close();
 
-    res.json({ success: true, message: 'Backup created successfully', backupPath });
+    res.json({ success: true, message: 'Backup created successfully', backupFilename });
   } catch (error) {
     console.error('Backup failed:', error);
     res.status(500).json({ error: 'Failed to create backup' });
@@ -129,7 +130,7 @@ router.post('/cloud/push', async (req, res) => {
     res.json({ success: true, message: 'Data pushed to AWS S3', s3Url: data.Location });
   } catch (e: any) {
     console.error('Cloud push error:', e);
-    res.status(500).json({ error: 'Failed to push to cloud: ' + e.message });
+    res.status(500).json({ error: 'Failed to push to cloud' });
   }
 });
 
