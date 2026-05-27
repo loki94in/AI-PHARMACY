@@ -79,3 +79,17 @@ Inside the Ubuntu terminal, run the following commands to install build essentia
    npm install
    ```
 4. Now, all shell commands, tests, and plugin hooks will execute natively in a pure Linux shell context.
+
+1. Open the Project in VS Code WSL
+In your Ubuntu terminal, run the following command to open the exact project folder in VS Code WSL:
+
+bash
+code "/mnt/e/CURRENT PROJECT ON WORKING/AI PHARMACY"
+(This will open a new VS Code window target pointing directly to the project folder on your Windows E: drive, but running in a WSL context).
+
+2. Install Project Dependencies
+Open the integrated terminal in your new VS Code WSL window (Ctrl + ~) and run:
+
+bash
+bun install
+Once this is done, your environment is fully configured and ready for development!
