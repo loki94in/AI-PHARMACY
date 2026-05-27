@@ -755,6 +755,89 @@ export class EmailService {
   }
 
   /**
+   * Parses an attachment file (CSV/txt) and imports its items into inventory/medicines.
+   */
+  public async parseAndImportAttachment(filePath: string): Promise<{ success: boolean; count: number; items: Array<{ name: string; quantity: number }> }> {
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const lines = content.split(/\r?\n/);
+      const items: Array<{ name: string; quantity: number }> = [];
+
+      // Determine if CSV
+      const isCsv = filePath.endsWith('.csv');
+
+      if (isCsv && lines.length > 0) {
+        // Simple CSV parser
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('medicine') || h.includes('item') || h.includes('product'));
+        const qtyIdx = headers.findIndex(h => h.includes('qty') || h.includes('quantity') || h.includes('units') || h.includes('count'));
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const cols = line.split(',').map(c => c.trim());
+          const name = nameIdx !== -1 ? cols[nameIdx] : cols[0];
+          const qtyStr = qtyIdx !== -1 ? cols[qtyIdx] : cols[1];
+          const qty = parseInt(qtyStr) || 10;
+          if (name && isNaN(Number(name))) {
+            items.push({ name, quantity: qty });
+          }
+        }
+      } else {
+        // Plain text parsing line by line
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const qtyMatch = trimmed.match(/(?:(?:qty|quantity|x|count)\s*[:\-\s]*\s*(\d+))|(\d+)\s*(?:x|units|pcs)/i);
+          if (qtyMatch) {
+            const qty = parseInt(qtyMatch[1] || qtyMatch[2]) || 10;
+            let name = trimmed.replace(qtyMatch[0], '').replace(/[:\-\t\r\n]/g, ' ').trim();
+            if (name && name.length > 3 && isNaN(Number(name))) {
+              items.push({ name, quantity: qty });
+            }
+          }
+        }
+      }
+
+      if (items.length === 0) {
+        return { success: false, count: 0, items: [] };
+      }
+
+      // Add/update to database inventory
+      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      for (const item of items) {
+        let med = await db.get('SELECT id FROM medicines WHERE name LIKE ? LIMIT 1', [`%${item.name}%`]);
+        if (!med) {
+          const medResult = await db.run('INSERT INTO medicines (name) VALUES (?)', [item.name]);
+          med = { id: medResult.lastID };
+        }
+        const existingInv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? LIMIT 1', [med.id]);
+        if (existingInv) {
+          await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [item.quantity, existingInv.id]);
+        } else {
+          await db.run(
+            'INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, unit_price, cost_price, reorder_level, mrp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [med.id, item.quantity, 'B-IMPORT-' + Date.now().toString().slice(-4), '2028-12-31', 10, 8, 10, 15]
+          );
+        }
+      }
+
+      // Log action
+      const filename = path.basename(filePath);
+      await db.run(
+        'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+        ['EMAIL_ATTACHMENT_PROCESSED', `Manually parsed attachment: ${filename}, imported ${items.length} items.`]
+      );
+      await db.close();
+
+      return { success: true, count: items.length, items };
+    } catch (error) {
+      console.error('Failed to parse and import attachment:', error);
+      return { success: false, count: 0, items: [] };
+    }
+  }
+
+  /**
    * Fetches recent emails (both seen and unseen) from Gmail IMAP
    */
   public async fetchInbox(limit: number = 20): Promise<Array<any>> {

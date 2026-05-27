@@ -116,6 +116,35 @@ class TelegramBotService {
       }
     });
 
+    // Handle /stockalerts command
+    this.bot.onText(/\/stockalerts/, async (msg) => {
+      const chatId = msg.chat.id;
+      try {
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        
+        // Check current status
+        const setting = await db.get("SELECT value FROM app_settings WHERE key = 'telegram_stock_alerts_enabled'");
+        let currentStatus = setting ? setting.value === 'true' : true; // default to true
+        let newStatus = !currentStatus;
+        
+        // Upsert setting
+        await db.run(
+          "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('telegram_stock_alerts_enabled', ?)",
+          [newStatus ? 'true' : 'false']
+        );
+        
+        await db.close();
+        
+        this.bot?.sendMessage(chatId,
+          `🔔 *Telegram Stock Alerts:* ${newStatus ? 'ENABLED ✅' : 'DISABLED ❌'}\n\nYou will ${newStatus ? 'now' : 'no longer'} receive automated low-stock warnings.`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error) {
+        console.error('Error toggling stock alerts:', error);
+        this.bot?.sendMessage(chatId, '❌ Error toggling stock alerts settings.');
+      }
+    });
+
     // Handle /viewcart command
     this.bot.onText(/\/viewcart/, async (msg) => {
       const chatId = msg.chat.id;
@@ -461,16 +490,18 @@ class TelegramBotService {
       await db.close();
 
       if (!medicine) {
-        this.bot?.sendMessage(chatId, `\u274C Medicine "${medicineName}" not found in our system.`);
+        this.bot?.sendMessage(chatId, `❌ Medicine "${medicineName}" not found in our system.`);
       } else if ((medicine.quantity ?? 0) > 0) {
         this.bot?.sendMessage(
           chatId,
-          `\u2705 *${medicine.name}*\n\u{1F4E6} Stock: ${medicine.quantity} units\n\nAvailable at the pharmacy.`
+          `✅ *${medicine.name}*\n📦 Stock: ${medicine.quantity} units\n\nAvailable at the pharmacy.`,
+          { parse_mode: 'Markdown' }
         );
       } else {
         this.bot?.sendMessage(
           chatId,
-          `\u26A0\uFE0F *${medicine.name}* is currently OUT OF STOCK.\n\nPlease check back later or ask our pharmacist.`
+          `⚠️ *${medicine.name}* is currently OUT OF STOCK.\n\nPlease check back later or ask our pharmacist.`,
+          { parse_mode: 'Markdown' }
         );
       }
     } catch (error) {

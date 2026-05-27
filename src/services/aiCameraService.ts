@@ -1,6 +1,7 @@
 // AI Camera Service for OCR processing using Tesseract.js (offline capable)
 import { createWorker } from 'tesseract.js';
 import { productNameFilterService } from './productNameFilterService.js';
+import { paddleOcrService } from './paddleOcrService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -48,33 +49,82 @@ class AICameraService {
   }
 
   async processImage(imageData: string | Buffer): Promise<any> {
-    if (!this.initialized) {
-      await this.initialize();
+    let localOcrResult: OCRResult = { text: '', confidence: 0, words: [] };
+    let fallbackUsed = false;
+
+    const isPaddleAvailable = await paddleOcrService.checkAvailability();
+    if (isPaddleAvailable) {
+      const tempDir = path.resolve(process.cwd(), 'data', 'temp_ocr');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      const tempFilePath = path.join(tempDir, `ocr_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`);
+      
+      try {
+        let buffer: Buffer;
+        if (typeof imageData === 'string') {
+          if (imageData.startsWith('data:')) {
+            const base64Data = imageData.split(',')[1];
+            buffer = Buffer.from(base64Data, 'base64');
+          } else {
+            buffer = Buffer.from(imageData, 'base64');
+          }
+        } else {
+          buffer = imageData;
+        }
+        await fs.promises.writeFile(tempFilePath, buffer);
+
+        const ocrResult = await paddleOcrService.scanImage(tempFilePath);
+        if (ocrResult && ocrResult.success) {
+          const confidence = ocrResult.words && ocrResult.words.length > 0
+            ? Math.round(ocrResult.words.reduce((sum: number, w: any) => sum + w.confidence, 0) / ocrResult.words.length)
+            : 0;
+          localOcrResult = {
+            text: ocrResult.text || '',
+            confidence,
+            words: ocrResult.words || []
+          };
+        } else {
+          console.warn('PaddleOCR failed, falling back to Tesseract:', ocrResult?.error);
+          fallbackUsed = true;
+        }
+      } catch (err) {
+        console.error('Error executing PaddleOCR, falling back to Tesseract:', err);
+        fallbackUsed = true;
+      } finally {
+        fs.promises.unlink(tempFilePath).catch(err => console.error('Failed to delete temp OCR file:', err));
+      }
+    } else {
+      fallbackUsed = true;
     }
 
-    let localOcrResult: OCRResult = { text: '', confidence: 0, words: [] };
+    if (fallbackUsed) {
+      if (!this.initialized) {
+        await this.initialize();
+      }
 
-    try {
-      // 1. Run local Tesseract OCR
-      const { data } = await this.worker.recognize(imageData);
-      const words = data.words ? data.words.map((word: any) => ({
-        text: word.text,
-        confidence: word.confidence,
-        bbox: {
-          x0: word.bbox.x0,
-          y0: word.bbox.y0,
-          x1: word.bbox.x1,
-          y1: word.bbox.y1,
-        }
-      })) : [];
+      try {
+        // 1. Run local Tesseract OCR
+        const { data } = await this.worker.recognize(imageData);
+        const words = data.words ? data.words.map((word: any) => ({
+          text: word.text,
+          confidence: word.confidence,
+          bbox: {
+            x0: word.bbox.x0,
+            y0: word.bbox.y0,
+            x1: word.bbox.x1,
+            y1: word.bbox.y1,
+          }
+        })) : [];
 
-      localOcrResult = {
-        text: data.text || '',
-        confidence: Math.round(data.confidence),
-        words: words
-      };
-    } catch (ocrError: any) {
-      console.error('Local Tesseract OCR failed:', ocrError);
+        localOcrResult = {
+          text: data.text || '',
+          confidence: Math.round(data.confidence),
+          words: words
+        };
+      } catch (ocrError: any) {
+        console.error('Local Tesseract OCR failed:', ocrError);
+      }
     }
 
     // Check matches in local database using fuzzy matching
@@ -130,7 +180,7 @@ class AICameraService {
       words: localOcrResult.words,
       medicineInfo: finalInfo,
       matches,
-      fallbackUsed: false,
+      fallbackUsed: fallbackUsed,
       auditLogged: matches.length === 0
     };
   }

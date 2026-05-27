@@ -7,6 +7,8 @@ import { fileURLToPath } from 'url';
 import { emailService } from '../services/emailService.js';
 
 
+import fs from 'fs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
@@ -94,6 +96,51 @@ router.post('/import-manual', async (req, res) => {
   } catch (error) {
     console.error('Manual import error:', error);
     res.status(500).json({ error: 'Failed to manually import email invoice' });
+  }
+});
+
+// GET /api/email/attachments
+router.get('/attachments', async (req, res) => {
+  try {
+    const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const files = fs.readdirSync(uploadsDir);
+    const attachments = files.map(filename => {
+      const filePath = path.join(uploadsDir, filename);
+      const stats = fs.statSync(filePath);
+      return {
+        filename,
+        size: stats.size,
+        createdAt: stats.birthtime || stats.mtime,
+      };
+    }).filter(file => file.filename.match(/\.(csv|txt|xlsx?|ods)$/i));
+
+    res.json(attachments);
+  } catch (error) {
+    console.error('Failed to read attachments:', error);
+    res.status(500).json({ error: 'Failed to retrieve attachments' });
+  }
+});
+
+// POST /api/email/attachments/parse
+router.post('/attachments/parse', async (req, res) => {
+  const { filename } = req.body;
+  if (!filename) {
+    return res.status(400).json({ error: 'filename is required' });
+  }
+  try {
+    const filePath = path.resolve(__dirname, '..', '..', 'uploads', filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Attachment file not found' });
+    }
+
+    const result = await emailService.parseAndImportAttachment(filePath);
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to parse attachment:', error);
+    res.status(500).json({ error: 'Failed to parse attachment' });
   }
 });
 
