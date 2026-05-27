@@ -76,14 +76,15 @@ export class ProductNameFilterService {
 
   async initialize(): Promise<void> {
     try {
-      const db = await open({ filename: this.dbPath, driver: sqlite3.Database });
+      const activeDbPath = process.env.DB_PATH || this.dbPath;
+      const db = await open({ filename: activeDbPath, driver: sqlite3.Database });
       const rows = await db.all('SELECT DISTINCT name FROM medicines WHERE name IS NOT NULL AND name <> ""');
       this.medicineNames = rows.map(row => row.name).filter(Boolean);
       await db.close();
       this.initialized = true;
     } catch (error) {
       console.error('Failed to initialize ProductNameFilterService:', error);
-      throw new Error(`Failed to load medicine names from database: ${error.message}`);
+      throw new Error(`Failed to load medicine names from database: ${(error as any).message}`);
     }
   }
 
@@ -184,7 +185,7 @@ export class ProductNameFilterService {
   private async queryInternetApi(
     query: string,
     endpoint: string,
-    apiKey?: string,
+    apiKey: string | undefined,
     timeoutMs: number,
     minConfidenceThreshold: number
   ): Promise<string[]> {
