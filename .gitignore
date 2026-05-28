@@ -1,7 +1,30 @@
+# dependencies
 node_modules/
-.wwebjs_auth/
+**/node_modules/
+
+# local env
 .env
+.env*.local
+
+# SQLite Database & Backups
 data/*.db
 backup/
+
+# Media Uploads & Temp files
+uploads/
+**/uploads/
 uploads/temp/
+
+# Build outputs & cache
+dist/
+**/dist/
+.expo/
+**/.expo/
+web-build/
+**/web-build/
+
+# WhatsApp Auth Cache
+.wwebjs_auth/
 .wwebjs_cache/
+**/.wwebjs_auth/
+**/.wwebjs_cache/
