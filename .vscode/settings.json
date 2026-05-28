@@ -1,3 +1,7 @@
 {
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    "htmlhint.options": {
+        "style-disabled": false,
+        "inline-style-disabled": false
+    }
 }
