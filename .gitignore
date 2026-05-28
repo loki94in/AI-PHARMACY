@@ -9,6 +9,7 @@ node_modules/
 # SQLite Database & Backups
 data/*.db
 backup/
+data/temp_migration/
 
 # Media Uploads & Temp files
 uploads/
