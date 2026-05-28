@@ -4,8 +4,8 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { aiCameraService } from '../services/aiCameraService';
-import { productNameFilterService } from '../services/productNameFilterService';
+import { aiCameraService } from '../services/aiCameraService.js';
+import { productNameFilterService } from '../services/productNameFilterService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

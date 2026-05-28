@@ -1,0 +1,132 @@
+<!-- POS Billing View Fragment -->
+
+<div class="flex gap-24 h-100">
+    <!-- Main Billing Area -->
+    <div class="flex-2 flex flex-col gap-16">
+        <!-- Search Bar -->
+        <div class="card p-16">
+            <div class="flex gap-12">
+                <div class="flex-1 relative">
+                    <i class="fa-solid fa-magnifying-glass search-icon-pos"></i>
+                    <input type="text" class="input-control search-input-pos" title="Search medicine" placeholder="Search medicines by name or scan barcode..." aria-label="Search medicines">
+                </div>
+                <button class="btn btn-accent" title="Scan Barcode" aria-label="Scan Barcode"><i class="fa-solid fa-barcode"></i> Scan</button>
+            </div>
+        </div>
+
+        <!-- Bill Table -->
+        <div class="card flex-1 flex flex-col p-0 overflow-hidden">
+            <div class="table-container border-none flex-1">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item Name</th>
+                            <th>Batch</th>
+                            <th>Expiry</th>
+                            <th class="text-right">Qty</th>
+                            <th class="text-right">Rate</th>
+                            <th class="text-right">Total</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Placeholder Rows -->
+                        <tr>
+                            <td>
+                                <div class="fw-600">Paracetamol 500mg</div>
+                                <div class="fs-11 text-muted">GSK Pharmaceuticals</div>
+                            </td>
+                            <td class="font-mono text-muted">B-2910</td>
+                            <td class="font-mono text-muted">12/2027</td>
+                            <td class="text-right">
+                                <label for="qty-1" class="hidden">Quantity</label>
+                                <input id="qty-1" type="number" class="input-control w-60 p-6 text-center" title="Quantity" placeholder="Qty" value="2" aria-label="Quantity">
+                            </td>
+                            <td class="text-right font-mono">₹15.00</td>
+                            <td class="text-right fw-600 font-mono">₹30.00</td>
+                            <td class="text-right">
+                                <button class="btn-icon text-danger" title="Remove Item" aria-label="Remove Item"><i class="fa-solid fa-trash"></i></button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="fw-600">Amoxicillin 250mg</div>
+                                <div class="fs-11 text-muted">Cipla Ltd</div>
+                            </td>
+                            <td class="font-mono text-muted">A-1102</td>
+                            <td class="font-mono text-muted">05/2026</td>
+                            <td class="text-right">
+                                <label for="qty-2" class="hidden">Quantity</label>
+                                <input id="qty-2" type="number" class="input-control w-60 p-6 text-center" title="Quantity" placeholder="Qty" value="1" aria-label="Quantity">
+                            </td>
+                            <td class="text-right font-mono">₹85.00</td>
+                            <td class="text-right fw-600 font-mono">₹85.00</td>
+                            <td class="text-right">
+                                <button class="btn-icon text-danger" title="Remove Item" aria-label="Remove Item"><i class="fa-solid fa-trash"></i></button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Totals Footer -->
+            <div class="bg-base border-t-dashed p-16 px-12 flex justify-end">
+                <div class="w-300">
+                    <div class="flex justify-between mb-8 text-muted">
+                        <span>Subtotal</span>
+                        <span class="font-mono">₹115.00</span>
+                    </div>
+                    <div class="flex justify-between mb-8 text-muted">
+                        <span>Discount (0%)</span>
+                        <span class="font-mono">₹0.00</span>
+                    </div>
+                    <div class="flex justify-between items-center mt-12 pt-12 border-t">
+                        <span class="fs-18 fw-600">Total</span>
+                        <span class="font-mono text-primary fs-24 fw-800">₹115.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Side Panel (Customer & Actions) -->
+    <div class="flex-1 flex flex-col gap-16">
+        <!-- Customer Info -->
+        <div class="card">
+            <h3 class="mb-16 fs-14 text-muted text-uppercase"><i class="fa-solid fa-user"></i> Patient Details</h3>
+            <div class="input-group">
+                <label for="whatsapp-number">Phone Number (WhatsApp)</label>
+                <div class="flex gap-8">
+                    <input id="whatsapp-number" type="text" class="input-control flex-1" title="WhatsApp Number" placeholder="Enter 10-digit number" aria-label="WhatsApp Number">
+                    <button class="btn btn-primary p-10" title="Search Patient" aria-label="Search Patient"><i class="fa-solid fa-search"></i></button>
+                </div>
+            </div>
+            <div class="input-group">
+                <label for="patient-name">Patient Name</label>
+                <input id="patient-name" type="text" class="input-control" title="Patient Name" placeholder="Enter name" aria-label="Patient Name">
+            </div>
+            <div class="info-box">
+                <div class="fs-12 text-muted"><i class="fa-solid fa-circle-info text-primary"></i> If phone number is provided, a digital receipt will be automatically sent via WhatsApp.</div>
+            </div>
+        </div>
+
+        <!-- Checkout Actions -->
+        <div class="card flex-1 flex flex-col">
+            <h3 class="mb-16 fs-14 text-muted text-uppercase"><i class="fa-solid fa-credit-card"></i> Checkout</h3>
+            
+            <div class="input-group">
+                <label for="payment-method">Payment Method</label>
+                <select id="payment-method" class="input-control" title="Payment Method" aria-label="Payment Method">
+                    <option>Cash</option>
+                    <option>UPI / QR Code</option>
+                    <option>Credit/Debit Card</option>
+                </select>
+            </div>
+
+            <div class="mt-auto flex flex-col gap-12">
+                <button class="btn btn-accent w-100 p-14 fs-16" title="Complete Sale" aria-label="Complete Sale"><i class="fa-solid fa-check-double"></i> Complete Sale</button>
+                <button class="btn btn-danger-outline w-100" title="Clear Bill" aria-label="Clear Bill"><i class="fa-solid fa-xmark"></i> Clear Bill</button>
+            </div>
+        </div>
+    </div>
+</div>

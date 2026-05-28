@@ -1,4 +1,4 @@
-import { initClient } from '../../src/whatsappClient';
+import { initClient } from '../../src/whatsappClient.js';
 
 test('initClient should be defined', async () => {
   expect(typeof initClient).toBe('function');

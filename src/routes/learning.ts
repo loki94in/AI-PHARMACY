@@ -40,7 +40,7 @@ router.post('/analyze', async (req, res) => {
 
     // Try to parse as JSON first
     let parsedData;
-    let headers = [];
+    let headers: string[] = [];
     let sampleRows = [];
 
     try {

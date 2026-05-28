@@ -1,5 +1,5 @@
 // Failing test for missing pdfGenerator module
-import { createPdf } from '../../src/utils/pdfGenerator';
+import { createPdf } from '../../src/utils/pdfGenerator.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

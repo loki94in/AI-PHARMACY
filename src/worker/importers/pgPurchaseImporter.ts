@@ -7,6 +7,7 @@
 
 import { Database } from 'sqlite';
 import { medicineMap, distributorMap } from './pgMasterImporter.js';
+import { formatInvoiceWithFY } from '../../utils/migrationValidation.js';
 
 // Maps for cross-referencing
 export const batchMap = new Map<string, number>();     // legacy batch_id → new inventory_master.id
@@ -82,10 +83,13 @@ export async function importInventory(row: Record<string, string | null>, db: Da
   const legacyDistId = row['distributor_id'];
   const distributorId = legacyDistId ? distributorMap.get(legacyDistId) : null;
 
+  const rawDate = row['created_time'] || null;
+  const rawInvoice = row['invoice'] || row['invoice_id'] || legacyId;
+
   purchaseBatch.push({
     distributor_id: distributorId || null,
-    invoice_no: row['invoice'] || row['invoice_id'] || legacyId,
-    date: row['created_time'] || null,
+    invoice_no: rawInvoice ? formatInvoiceWithFY(rawInvoice, rawDate || '') : rawInvoice,
+    date: rawDate,
     total_amount: parseFloat(row['amount'] || '0') || 0,
     cgst_value: parseFloat(row['cgst_value'] || '0') || 0,
     sgst_value: parseFloat(row['sgst_value'] || '0') || 0,

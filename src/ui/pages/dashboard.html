@@ -1,0 +1,106 @@
+<!-- Dashboard View Fragment -->
+
+<div class="grid-4 mb-24">
+    <!-- KPI 1 -->
+    <div class="card kpi-card">
+        <p class="fs-12 fw-600 text-muted text-uppercase">Today's Sales</p>
+        <div class="kpi-value text-primary font-mono">₹4,250</div>
+        <div class="fs-12 text-accent fw-500">
+            <i class="fa-solid fa-arrow-trend-up"></i> +12% from yesterday
+        </div>
+    </div>
+    
+    <!-- KPI 2 -->
+    <div class="card kpi-card">
+        <p class="fs-12 fw-600 text-muted text-uppercase">Low Stock Items</p>
+        <div class="kpi-value text-danger">14</div>
+        <div class="fs-12 text-muted">
+            Require immediate reorder
+        </div>
+    </div>
+    
+    <!-- KPI 3 -->
+    <div class="card kpi-card">
+        <p class="fs-12 fw-600 text-muted text-uppercase">Pending Refills</p>
+        <div class="kpi-value text-accent">8</div>
+        <div class="fs-12 text-muted">
+            Reminders auto-sent via WhatsApp
+        </div>
+    </div>
+    
+    <!-- KPI 4 -->
+    <div class="card kpi-card">
+        <p class="fs-12 fw-600 text-muted text-uppercase">Active Devices</p>
+        <div class="kpi-value">3</div>
+        <div class="fs-12 text-accent fw-500">
+            <i class="fa-solid fa-circle-check"></i> System Healthy
+        </div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <!-- Recent Activity -->
+    <div class="card h-400 flex flex-col">
+        <h3 class="mb-16 fs-16"><i class="fa-solid fa-bolt text-primary"></i> Live Pharmacy Feed</h3>
+        <div class="flex-1 overflow-y-auto">
+            <!-- Feed Item -->
+            <div class="py-12 border-b flex items-start gap-12">
+                <div class="icon-circle-32 bg-primary-glow text-primary">
+                    <i class="fa-solid fa-receipt"></i>
+                </div>
+                <div>
+                    <div class="fw-600 fs-14">Order #INV-8902 Completed</div>
+                    <div class="fs-12 text-muted">Invoice PDF sent to patient's WhatsApp</div>
+                </div>
+                <div class="ml-auto fs-11 text-muted font-mono">Just now</div>
+            </div>
+            
+            <!-- Feed Item -->
+            <div class="py-12 border-b flex items-start gap-12">
+                <div class="icon-circle-32 bg-accent-glow text-accent">
+                    <i class="fa-brands fa-whatsapp"></i>
+                </div>
+                <div>
+                    <div class="fw-600 fs-14">Refill Reminder Sent</div>
+                    <div class="fs-12 text-muted">Metformin 500mg reminder sent to Rahul Sharma</div>
+                </div>
+                <div class="ml-auto fs-11 text-muted font-mono">10m ago</div>
+            </div>
+            
+            <!-- Feed Item -->
+            <div class="py-12 border-b flex items-start gap-12">
+                <div class="icon-circle-32 bg-danger-glow text-danger">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                    <div class="fw-600 fs-14">Low Stock Alert</div>
+                    <div class="fs-12 text-muted">Amoxicillin dropped below minimum threshold (10 strips left)</div>
+                </div>
+                <div class="ml-auto fs-11 text-muted font-mono">1h ago</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card">
+        <h3 class="mb-16 fs-16"><i class="fa-solid fa-wand-magic-sparkles text-accent"></i> Quick Actions</h3>
+        <div class="grid-2 gap-12">
+            <button class="btn btn-primary btn-action-large" title="New Sale" aria-label="Start a new sale">
+                <i class="fa-solid fa-cash-register action-icon"></i>
+                New Sale
+            </button>
+            <button class="btn btn-accent btn-action-large" title="Scan Prescription" aria-label="Scan a new prescription">
+                <i class="fa-solid fa-camera action-icon"></i>
+                Scan Prescription
+            </button>
+            <button class="btn bg-surface-hover border-all btn-action-large" title="Add Stock" aria-label="Add stock to inventory">
+                <i class="fa-solid fa-box-open action-icon text-muted"></i>
+                Add Stock
+            </button>
+            <button class="btn bg-surface-hover border-all btn-action-large" title="View Reports" aria-label="View system reports">
+                <i class="fa-solid fa-file-invoice action-icon text-muted"></i>
+                Reports
+            </button>
+        </div>
+    </div>
+</div>

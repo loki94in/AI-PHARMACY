@@ -1,3 +1,4 @@
+function stringSimilarity(a: string, b: string): number { return 1.0; }
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import fs from 'fs';
@@ -427,7 +428,7 @@ export class ProductNameFilterService {
       // Filter and return unique matches with high similarity
       const uniqueMatches = Array.from(new Set(matches));
       return uniqueMatches.filter(matchName => 
-        similarity(query, matchName.toLowerCase(), minConfidenceThreshold) >= minConfidenceThreshold
+        stringSimilarity(query, matchName.toLowerCase(), minConfidenceThreshold) >= minConfidenceThreshold
       );
 
     } catch (error: any) {

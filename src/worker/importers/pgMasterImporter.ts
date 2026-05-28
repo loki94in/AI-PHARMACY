@@ -9,6 +9,7 @@
  */
 
 import { Database } from 'sqlite';
+import { normalizeDistributorName } from '../../utils/migrationValidation.js';
 
 // In-memory lookup maps (legacy_id → new SQLite id)
 export const categoryMap = new Map<string, string>();       // legacy_id → category_name
@@ -47,6 +48,7 @@ export function importManufacturer(row: Record<string, string | null>) {
 
 // ─── Distributor ────────────────────────────────────────────
 let distributorBatch: any[] = [];
+const normalizedDistributorMap = new Map<string, number>();
 
 export async function importDistributor(row: Record<string, string | null>, db: Database) {
   const legacyId = row['distributor_id'];
@@ -54,8 +56,15 @@ export async function importDistributor(row: Record<string, string | null>, db: 
   const deleted = row['deleted'];
   if (!legacyId || !name || deleted === 't') return;
 
+  const normName = normalizeDistributorName(name);
+  if (normalizedDistributorMap.has(normName)) {
+      distributorMap.set(legacyId, normalizedDistributorMap.get(normName)!);
+      return; // Skip duplicate
+  }
+
   distributorBatch.push({
     name: name,
+    normName: normName,
     contact: row['contact'] || row['distributor_sales_mobile'] || null,
     legacy_id: legacyId,
     gstin: row['distributor_gstin'] || null,
@@ -80,6 +89,7 @@ export async function flushDistributors(db: Database) {
       [d.name, d.contact, d.legacy_id, d.gstin, d.address, d.city, d.email, d.dl_no]
     );
     distributorMap.set(d.legacy_id, result.lastID!);
+    normalizedDistributorMap.set(d.normName, result.lastID!);
   }
   await db.run('COMMIT');
   distributorBatch = [];

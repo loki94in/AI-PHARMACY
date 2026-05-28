@@ -23,7 +23,7 @@ router.get('/', async (req, res) => {
     `);
     await db.close();
     res.json(rows);
-  } catch (error) {
+  } catch (error: any) {
     if (db) await db.close();
     console.error(JSON.stringify({
       message: 'Error fetching inventory',
@@ -57,7 +57,7 @@ router.post('/override', async (req, res) => {
 
     await db.close();
     res.json({ success: true, message: 'Stock updated' });
-  } catch (error) {
+  } catch (error: any) {
     if (db) await db.close();
     console.error(JSON.stringify({
       message: 'Error overriding stock',
@@ -89,7 +89,7 @@ router.get('/peek/:medicine_id', async (req, res) => {
 
     await db.close();
     res.json(rows);
-  } catch (error) {
+  } catch (error: any) {
     if (db) await db.close();
     console.error(JSON.stringify({
       message: 'Error fetching peek data',
@@ -122,7 +122,7 @@ router.put('/:id', async (req, res) => {
 
     await db.close();
     res.json({ success: true, message: 'Inventory updated' });
-  } catch (error) {
+  } catch (error: any) {
     if (db) await db.close();
     console.error(JSON.stringify({
       message: 'Inventory update error',
@@ -152,7 +152,7 @@ router.post('/bulk-action', async (req, res) => {
 
     await db.close();
     res.json({ success: true, message: `Bulk ${action} completed and logged` });
-  } catch (error) {
+  } catch (error: any) {
     if (db) await db.close();
     console.error(JSON.stringify({
       message: 'Bulk action error',

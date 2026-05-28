@@ -1,6 +1,8 @@
 import TelegramBot from 'node-telegram-bot-api';
 import path from 'path';
 import fs from 'fs';
+import axios from 'axios';
+import { normalizeDistributorName, formatInvoiceWithFY } from './utils/migrationValidation.js';
 import { fileURLToPath } from 'url';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
@@ -326,15 +328,23 @@ class TelegramBotService {
                     distributorName = distMatch[1].toUpperCase();
                   }
 
-                  await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distributorName]);
-                  const dist = await db.get('SELECT id FROM distributors WHERE name = ?', [distributorName]);
+                  const normName = normalizeDistributorName(distributorName);
+                  let dist = await db.get(`SELECT id FROM distributors WHERE REPLACE(UPPER(name), ' ', '') LIKE ? LIMIT 1`, [`%${normName}%`]);
                   
-                  const invoiceNo = 'TG-INV-' + Date.now().toString().slice(-4);
+                  if (!dist) {
+                    await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distributorName]);
+                    dist = await db.get('SELECT id FROM distributors WHERE name = ?', [distributorName]);
+                  }
+                  
+                  const rawInvoiceNo = 'TG-INV-' + Date.now().toString().slice(-4);
                   let billDate = new Date().toISOString();
                   const extractedDate = extractDateFromText(result.text || '');
                   if (extractedDate) {
                     billDate = extractedDate;
                   }
+                  
+                  const invoiceNo = formatInvoiceWithFY(rawInvoiceNo, billDate);
+                  
                   const purchaseResult = await db.run(
                     'INSERT INTO purchases (distributor_id, invoice_no, total_amount, date, business_date) VALUES (?, ?, ?, ?, ?)',
                     [dist.id, invoiceNo, 100 * medicines.length, billDate, billDate]

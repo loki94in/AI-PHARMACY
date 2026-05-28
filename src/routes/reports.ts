@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 // @ts-ignore — @types/pdfkit not installed; pdfkit works at runtime
 import PDFDocument from 'pdfkit';
-import { nonMovingReportService } from '../services/nonMovingReportService';
+import { nonMovingReportService } from '../services/nonMovingReportService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

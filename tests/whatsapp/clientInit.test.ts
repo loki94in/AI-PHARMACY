@@ -10,7 +10,7 @@ jest.mock('whatsapp-web.js', () => {
   return { Client: MockClient, LocalAuth };
 });
 
-import { initClient, sendMessage } from '../../src/whatsappClient';
+import { initClient, sendMessage } from '../../src/whatsappClient.js';
 
 test('initClient resolves and sendMessage works after init', async () => {
   const client = await initClient();

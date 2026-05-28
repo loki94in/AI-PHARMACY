@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { getTemplate } from '../database';
+import { getTemplate } from '../database.js';
 
 // Load the whole JSON once at module init
 const messagesPath = join(process.cwd(), 'src', 'i18n', 'messages.json');

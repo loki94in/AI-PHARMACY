@@ -1,6 +1,6 @@
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { processReturnsLine } from '../src/worker/parsers/returnsParser';
+import { processReturnsLine } from '../src/worker/parsers/returnsParser.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';

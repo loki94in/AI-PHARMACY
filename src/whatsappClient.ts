@@ -122,8 +122,13 @@ export async function sendMessage(to: string, mediaPath?: string, caption?: stri
     throw new Error('Client not initialized. Call initClient() first.');
   }
 
+  if (!to) {
+    console.warn('Attempted to send WhatsApp message to an empty or null number. Skipping.');
+    return;
+  }
+
   // Global Phone Number Sanitizer
-  let chatId = to;
+  let chatId = String(to);
   if (!chatId.includes('@')) {
     // Strip spaces, alphabets, plus signs, and any other special characters
     let cleanPhone = chatId.replace(/\D/g, '');

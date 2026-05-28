@@ -1,5 +1,6 @@
-import { Database } from 'sqlite';
-import { dbManager } from '../database/connection';
+
+import { dbManager } from '../database/connection.js';
+// @ts-ignore from '../database/connection.js';
 import { config } from '../config';
 
 export interface InvoiceItem {
