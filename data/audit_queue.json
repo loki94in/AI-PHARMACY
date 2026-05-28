@@ -268,5 +268,212 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-05-28T15:35:31.400Z"
+  },
+  {
+    "id": "audit_1779982717749",
+    "imagePath": "data\\audit_images\\audit_1779982717749.jpg",
+    "rawOcrText": "Racecadotril and\nSaccharomyces\nboulardii (Lyophilized)\nSachets\nRACIGYL-SB|RRFI-H aT\nFOR PAEDIATRIC USE\nMankindll\n12 x 1 g Sachet",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:38:37.751Z"
+  },
+  {
+    "id": "audit_1779982732308",
+    "imagePath": "data\\audit_images\\audit_1779982732308.jpg",
+    "rawOcrText": "Racecadotril and\nSaccharomyces\nboulardii (Lyophilized)\nSachets\nRACIGYL-SB|RRFI-H aT\nFOR PAEDIATRIC USE\nMankindll\n12 x 1 g Sachet",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:38:52.311Z"
+  },
+  {
+    "id": "audit_1779982737942",
+    "imagePath": "data\\audit_images\\audit_1779982737942.jpg",
+    "rawOcrText": "Pregabalin (Sustained-release), Nortript\nMethylcobalamin Tablets\nPregabanyl-NTM\nanfar-aa\n1 x 10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:38:57.944Z"
+  },
+  {
+    "id": "audit_1779982748348",
+    "imagePath": "data\\audit_images\\audit_1779982748348.jpg",
+    "rawOcrText": "Pregabalin (Sustained-release), Nortript\nMethylcobalamin Tablets\nPregabanyl-NTM\nanfar-aa\n1 x 10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:39:08.349Z"
+  },
+  {
+    "id": "audit_1779982752164",
+    "imagePath": "data\\audit_images\\audit_1779982752164.jpg",
+    "rawOcrText": "Rx\nAmoxycillin & Potassium\nbbott\nClavulanate Tablets I.P.\nAmoxydlav 625\n3H4\n500 mg+125mg\n3x10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:39:12.166Z"
+  },
+  {
+    "id": "audit_1779982762391",
+    "imagePath": "data\\audit_images\\audit_1779982762391.jpg",
+    "rawOcrText": "Rx\nAmoxycillin & Potassium\nbbott\nClavulanate Tablets I.P.\nAmoxydlav 625\n3H4\n500 mg+125mg\n3x10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:39:22.394Z"
+  },
+  {
+    "id": "audit_1779982771976",
+    "imagePath": "data\\audit_images\\audit_1779982771976.jpg",
+    "rawOcrText": "11510608/75\nmildness\npaediatrician tested\nJohnson's\nbaby\ncream\nhelps nourish baby's skin ior 24h\nwith chamomile extracs\nadded parabens,\n100 g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:39:31.978Z"
+  },
+  {
+    "id": "audit_1779982781866",
+    "imagePath": "data\\audit_images\\audit_1779982781866.jpg",
+    "rawOcrText": "11510608/75\nmildness\npaediatrician tested\nJohnson's\nbaby\ncream\nhelps nourish baby's skin ior 24h\nwith chamomile extracs\nadded parabens,\n100 g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:39:41.867Z"
+  },
+  {
+    "id": "audit_1779982787542",
+    "imagePath": "data\\audit_images\\audit_1779982787542.jpg",
+    "rawOcrText": "annic Acid. Choline Salicvlate. Benzalko\nSnilOgel.\nMouth Ulcer Gel 10g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:39:47.545Z"
+  },
+  {
+    "id": "audit_1779982794799",
+    "imagePath": "data\\audit_images\\audit_1779982794799.jpg",
+    "rawOcrText": "annic Acid. Choline Salicvlate. Benzalko\nSnilOgel.\nMouth Ulcer Gel 10g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:39:54.801Z"
+  },
+  {
+    "id": "audit_1779983561392",
+    "imagePath": "data\\audit_images\\audit_1779983561392.jpg",
+    "rawOcrText": "N  E.       E    NN\nlo       SS\nFJ Tr.   WO .\n% of  o-\nA Ae\n",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:52:41.394Z"
+  },
+  {
+    "id": "audit_1779983563826",
+    "imagePath": "data\\audit_images\\audit_1779983563826.jpg",
+    "rawOcrText": "7 A WS Pa\n\n Ne\n\n      -      Pregabalin Sustai\n\np- BH Methylcobalamin Tabs\n1-\n   .\n\ndl\n\nE BC 7 4\n\nA\n\nNT\n",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:52:43.837Z"
+  },
+  {
+    "id": "audit_1779983565783",
+    "imagePath": "data\\audit_images\\audit_1779983565783.jpg",
+    "rawOcrText": "dl\n2d A A\n Rx     .\n  Amoxycillin 8 Potassium\nClavulanate Tablets IP\nAmoxydav 625\n500 mg 125 mg 310 Tablets\n",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:52:45.788Z"
+  },
+  {
+    "id": "audit_1779983567379",
+    "imagePath": "data\\audit_images\\audit_1779983567379.jpg",
+    "rawOcrText": "if      .\n/\n                                      Ce\ni                                            -     NN\nSoM\nA              mildness\nw\nnovel\npaediatrician teste                       Fa\n4\n3\n                          bre\nbaby\n                    cream\n3              -   helps nourish babys sk\n3                   rs i With chamomile ex                             h\nwv              N            des\nr          va        NOGjess bon\nt                     9\n-\n.    j\n",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:52:47.381Z"
+  },
+  {
+    "id": "audit_1779983568706",
+    "imagePath": "data\\audit_images\\audit_1779983568706.jpg",
+    "rawOcrText": "5 alll   S   -     a\ng      .          .        2  -\nJ     a\nSnilegel\nv   EF     .\n\n                  S\nEL                                bey     %\nF  4     ro -\n\n4\nv\n",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:52:48.707Z"
+  },
+  {
+    "id": "audit_1779983640494",
+    "imagePath": "data\\audit_images\\audit_1779983640494.jpg",
+    "rawOcrText": "N  E.       E    NN\nlo       SS\nFJ Tr.   WO .\n% of  o-\nA Ae\n",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:54:00.511Z"
+  },
+  {
+    "id": "audit_1779983645382",
+    "imagePath": "data\\audit_images\\audit_1779983645382.jpg",
+    "rawOcrText": "Pregabalin (Sustained-release), Nortript\nMethylcobalamin Tablets\nPregabanyl-NTM\nanfar-aa\n1 x 10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:54:05.387Z"
+  },
+  {
+    "id": "audit_1779983648020",
+    "imagePath": "data\\audit_images\\audit_1779983648020.jpg",
+    "rawOcrText": "Rx\nAmoxycillin & Potassium\nbbott\nClavulanate Tablets I.P.\nAmoxydlav 625\n3H4\n500 mg+125mg\n3x10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:54:08.030Z"
+  },
+  {
+    "id": "audit_1779983703031",
+    "imagePath": "data\\audit_images\\audit_1779983703031.jpg",
+    "rawOcrText": "Racecadotril and\nSaccharomyces\nboulardii (Lyophilized)\nSachets\nRACIGYL-SB|RRFI-H aT\nFOR PAEDIATRIC USE\nMankindll\n12 x 1 g Sachet",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:55:03.039Z"
+  },
+  {
+    "id": "audit_1779983712460",
+    "imagePath": "data\\audit_images\\audit_1779983712460.jpg",
+    "rawOcrText": "Pregabalin (Sustained-release), Nortript\nMethylcobalamin Tablets\nPregabanyl-NTM\nanfar-aa\n1 x 10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:55:12.466Z"
+  },
+  {
+    "id": "audit_1779983717455",
+    "imagePath": "data\\audit_images\\audit_1779983717455.jpg",
+    "rawOcrText": "Rx\nAmoxycillin & Potassium\nbbott\nClavulanate Tablets I.P.\nAmoxydlav 625\n3H4\n500 mg+125mg\n3x10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:55:17.461Z"
+  },
+  {
+    "id": "audit_1779983721204",
+    "imagePath": "data\\audit_images\\audit_1779983721204.jpg",
+    "rawOcrText": "11510608/75\nmildness\npaediatrician tested\nJohnson's\nbaby\ncream\nhelps nourish baby's skin ior 24h\nwith chamomile extracs\nadded parabens,\n100 g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:55:21.207Z"
+  },
+  {
+    "id": "audit_1779983723763",
+    "imagePath": "data\\audit_images\\audit_1779983723763.jpg",
+    "rawOcrText": "annic Acid. Choline Salicvlate. Benzalko\nSnilOgel.\nMouth Ulcer Gel 10g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:55:23.769Z"
   }
 ]

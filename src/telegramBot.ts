@@ -457,6 +457,22 @@ class TelegramBotService {
     return false;
   }
 
+  // Method to send a photo to the default chat
+  public async sendPhotoToDefaultChat(photoBuffer: Buffer, caption: string): Promise<boolean> {
+    const defaultChatId = process.env.TELEGRAM_CHAT_ID;
+    if (defaultChatId && this.bot) {
+      try {
+        await this.bot.sendPhoto(defaultChatId, photoBuffer, { caption });
+        return true;
+      } catch (error) {
+        console.error('Failed to send Telegram photo:', error);
+      }
+    } else {
+      console.warn('TELEGRAM_CHAT_ID not configured or bot not initialized for photo notifications');
+    }
+    return false;
+  }
+
   // Method to broadcast message to multiple chats (if needed)
   public async broadcastMessage(chatIds: (string | number)[], message: string): Promise<number> {
     if (!this.bot) {

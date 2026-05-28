@@ -12,6 +12,8 @@ let initializing = false;
 export let currentQr: string | null = null;
 export let isReady: boolean = false;
 
+let qrTimeout: NodeJS.Timeout | null = null;
+
 /** Initialize the WhatsApp client and return it */
 export async function initClient(): Promise<WAClient> {
   if (clientInstance) return clientInstance;
@@ -48,24 +50,68 @@ export async function initClient(): Promise<WAClient> {
       authStrategy: new LocalAuth(),
       puppeteer: execPath ? { executablePath: execPath } : {}
     });
-    client.on('qr', (qr: string) => {
+
+    client.on('qr', async (qr: string) => {
       console.log('WhatsApp QR code received');
       currentQr = qr;
       isReady = false;
+
+      // Try sending QR via Telegram
+      try {
+        const qrcode = await import('qrcode');
+        const buffer = await qrcode.default.toBuffer(qr);
+        const { telegramBotService } = await import('./telegramBot.js');
+        await telegramBotService.sendPhotoToDefaultChat(
+          buffer, 
+          '🚨 WhatsApp Action Required!\nPlease scan this new QR code within 30 seconds to reconnect.'
+        );
+      } catch (err) {
+        console.error('Failed to send QR to telegram', err);
+      }
+
+      if (qrTimeout) clearTimeout(qrTimeout);
+      
+      // 30-second timeout to reload QR
+      qrTimeout = setTimeout(() => {
+        if (!isReady) {
+          console.log('QR Code expired (30s). Destroying and reinitializing client...');
+          client.destroy().then(() => {
+            initializing = false;
+            clientInstance = null;
+            initClient();
+          }).catch(console.error);
+        }
+      }, 30000);
     });
+
     client.on('ready', () => {
       console.log('WhatsApp Client is ready!');
+      if (qrTimeout) clearTimeout(qrTimeout);
       clientInstance = client;
       initializing = false;
       isReady = true;
       currentQr = null;
       resolve(client);
     });
+
+    client.on('disconnected', (reason) => {
+      console.log('WhatsApp client disconnected:', reason);
+      isReady = false;
+      clientInstance = null;
+      initializing = false;
+      if (qrTimeout) clearTimeout(qrTimeout);
+      client.destroy().then(() => {
+        console.log('Re-initializing WhatsApp client after disconnect...');
+        initClient();
+      }).catch(console.error);
+    });
+
     client.on('auth_failure', (msg: string) => {
       initializing = false;
       isReady = false;
       reject(new Error(msg));
     });
+    
     client.initialize();
   });
 }
@@ -75,15 +121,29 @@ export async function sendMessage(to: string, mediaPath?: string, caption?: stri
   if (!clientInstance) {
     throw new Error('Client not initialized. Call initClient() first.');
   }
+
+  // Global Phone Number Sanitizer
+  let chatId = to;
+  if (!chatId.includes('@')) {
+    // Strip spaces, alphabets, plus signs, and any other special characters
+    let cleanPhone = chatId.replace(/\D/g, '');
+    
+    // Automatically add India country code if it's exactly 10 digits
+    if (cleanPhone.length === 10) {
+      cleanPhone = `91${cleanPhone}`;
+    }
+    
+    // Ensure the required WhatsApp suffix is added
+    chatId = `${cleanPhone}@c.us`;
+  }
+
   // whatsapp-web.js v1.22: sendMessage(chatId, content, options?)
-  // For text-only: pass the string directly as content
-  // For media: create MessageMedia and pass as content
   if (mediaPath) {
     const { MessageMedia } = await import('whatsapp-web.js');
     const media = MessageMedia.fromFilePath(mediaPath);
-    await clientInstance.sendMessage(to, media, { caption: caption ?? '' });
+    await clientInstance.sendMessage(chatId, media, { caption: caption ?? '' });
   } else {
-    await clientInstance.sendMessage(to, caption ?? '');
+    await clientInstance.sendMessage(chatId, caption ?? '');
   }
 }
 

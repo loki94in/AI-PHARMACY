@@ -37,6 +37,8 @@ async function runTest() {
   await ensureSchema(dbPath);
   process.env.DB_PATH = dbPath;
 
+  let totalTime = 0;
+
   for (const file of imageFiles) {
     const filePath = path.join(sampleDir, file);
     console.log(`\n----------------------------------------------------`);
@@ -44,8 +46,15 @@ async function runTest() {
     
     try {
       const imageBuffer = fs.readFileSync(filePath);
-      const result = await aiCameraService.processImage(imageBuffer);
       
+      const startTime = performance.now();
+      const result = await aiCameraService.processImage(imageBuffer);
+      const endTime = performance.now();
+      
+      const timeTaken = endTime - startTime;
+      totalTime += timeTaken;
+      
+      console.log(`- Process Time:      ${timeTaken.toFixed(2)} ms`);
       console.log(`- Confidence:        ${result.confidence}%`);
       console.log(`- Engine Used:       ${result.fallbackUsed ? 'Tesseract (Fallback)' : 'PaddleOCR (AI)'}`);
       console.log(`- Detected Meds:     ${result.matches.join(', ') || 'None found in DB'}`);
@@ -65,6 +74,11 @@ async function runTest() {
       console.error(`[Error] Failed to process ${file}:`, e);
     }
   }
+
+  console.log(`\n====================================================`);
+  console.log(`Total Time for ${imageFiles.length} images: ${totalTime.toFixed(2)} ms`);
+  console.log(`Average Time per image: ${(totalTime / imageFiles.length).toFixed(2)} ms`);
+  console.log(`====================================================\n`);
 
   await aiCameraService.terminate();
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}

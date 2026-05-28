@@ -380,11 +380,7 @@ export class EmailService {
         // Send WhatsApp
         if (boy.whatsapp_number) {
           try {
-            // Remove non-digit characters to format number correctly
-            const cleanPhone = boy.whatsapp_number.replace(/\D/g, '');
-            // Append country code if not present, e.g. +91 for India if length is 10 digits
-            const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-            await sendMessage(formattedPhone, undefined, message);
+            await sendMessage(boy.whatsapp_number, undefined, message);
             console.log(`WhatsApp notification sent to delivery boy: ${boy.name}`);
             sentBoys.push(`${boy.name} (${boy.whatsapp_number})`);
           } catch (wsError) {
