@@ -1,0 +1,18 @@
+# Common medicine patterns for AI Pharmacy OCR
+\d+mg
+\d+g
+\d+ml
+\d+tablet
+\d+cap
+\d+injection
+\d+drop
+\d+puff
+\d+sachet
+\d+vial
+\d+ampoule
+\d+tab
+\d+caplet
+\d+mp
+\d+iu
+\d+mcg
+\d+µg

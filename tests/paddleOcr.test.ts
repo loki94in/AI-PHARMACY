@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { paddleOcrService } from '../src/services/paddleOcrService.js';
 import { aiCameraService } from '../src/services/aiCameraService.js';
 import fs from 'fs';
@@ -27,7 +30,7 @@ describe('PaddleOCR Service and AI Camera Service Integration', () => {
     const isAvailable = await paddleOcrService.checkAvailability();
     expect(typeof isAvailable).toBe('boolean');
     console.log(`[Test] PaddleOCR availability check result: ${isAvailable}`);
-  });
+  }, 30000);
 
   test('aiCameraService.processImage should process image and return results (PaddleOCR or Tesseract.js fallback)', async () => {
     // Process dummy image

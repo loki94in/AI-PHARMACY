@@ -4,6 +4,8 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { aiCameraService } from '../services/aiCameraService';
+import { productNameFilterService } from '../services/productNameFilterService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,7 +59,7 @@ router.post('/audit/resolve', async (req, res) => {
 
       // 2. Open DB and insert medicine
       const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-      
+
       // Check if medicine already exists
       let med = await db.get('SELECT id FROM medicines WHERE name = ?', [name.trim()]);
       let medicineId: number;
@@ -81,6 +83,28 @@ router.post('/audit/resolve', async (req, res) => {
       }
 
       await db.close();
+
+      // NEW: Learn from this correction for future OCR recognition
+      // We need to get the original OCR text from the audit entry to learn from it
+      try {
+        if (fs.existsSync(AUDIT_QUEUE_PATH)) {
+          const auditData = await fs.promises.readFile(AUDIT_QUEUE_PATH, 'utf8');
+          const auditQueue = JSON.parse(auditData || '[]');
+          const auditEntry = auditQueue.find((item: any) => item.id === id);
+
+          if (auditEntry && auditEntry.rawOcrText) {
+            // Learn from the correction: OCR text -> correct medicine name
+            productNameFilterService.learnFromCorrection(
+              auditEntry.rawOcrText,
+              name.trim()
+            );
+            console.log(`Learned from audit correction: ID ${id}`);
+          }
+        }
+      } catch (learnError) {
+        console.warn('Failed to learn from audit correction:', learnError);
+        // Don't fail the whole operation if learning fails
+      }
     }
 
     // 3. Mark queue entry as resolved/dismissed

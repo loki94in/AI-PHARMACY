@@ -1,263 +1,272 @@
 [
   {
-    "id": "audit_1779786457979",
-    "imagePath": "data\\audit_images\\audit_1779786457979.jpg",
-    "rawOcrText": "| »       wh     x. 1                     —\n                                     <\nPe\n0 3 ®         RR\nJ RACIGYL-SB\nAd re\nPAIL\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:07:37.982Z"
-  },
-  {
-    "id": "audit_1779786485768",
-    "imagePath": "data\\audit_images\\audit_1779786485768.jpg",
-    "rawOcrText": "A 85        ww. ‘¥\n-                            A                   <\n< ANT\nF Ny       -»  J\nEn ¥\n\"™   dl   Pregabalin (Susta\na    ad      Methylcobalamin Tab\n=       -  p\n| _ Pregabanyl-NTM\npe SR —\n-              &                     Fy a\n:            #\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:08:05.770Z"
-  },
-  {
-    "id": "audit_1779786517668",
-    "imagePath": "data\\audit_images\\audit_1779786517668.jpg",
-    "rawOcrText": "a   )\nBE\nce Rx    |       .\nAmoxycillin & Potassium\nClavulanate Tablets I.P.\nAmoxydav® 625\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:08:37.673Z"
-  },
-  {
-    "id": "audit_1779786555722",
-    "imagePath": "data\\audit_images\\audit_1779786555722.jpg",
-    "rawOcrText": "aff 4       i a—\n.                                i     | —\n|                           a     »    ha 22\"\n2,\nmildness\nnove\n:     ‘a         ®\nEF                    3\n=   !   baby       »\nEe <         cream            n\np-    13     i\nAle       Nosiceq man\n&\n                           ¥\n-          1                  |        »\nE.-            A\ni\nAre        j\nRh (§ ST            7\nES             §\nCN\n=\nel\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:09:15.756Z"
-  },
-  {
-    "id": "audit_1779786594453",
-    "imagePath": "data\\audit_images\\audit_1779786594453.jpg",
-    "rawOcrText": "yg el     he                -         -\n2 7. -\n2    > |\n\n| — -  A §    D    Fi\n   S E 22 gel\n\n~ 4\nv\n\nyp            x\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:09:54.457Z"
-  },
-  {
-    "id": "audit_1779786816745",
-    "imagePath": "data\\audit_images\\audit_1779786816745.jpg",
-    "rawOcrText": "| »       wh     x. 1                     —\n                                     <\nPe\n0 3 ®         RR\nJ RACIGYL-SB\nAd re\nPAIL\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:13:36.749Z"
-  },
-  {
-    "id": "audit_1779786847491",
-    "imagePath": "data\\audit_images\\audit_1779786847491.jpg",
-    "rawOcrText": "A 85        ww. ‘¥\n-                            A                   <\n< ANT\nF Ny       -»  J\nEn ¥\n\"™   dl   Pregabalin (Susta\na    ad      Methylcobalamin Tab\n=       -  p\n| _ Pregabanyl-NTM\npe SR —\n-              &                     Fy a\n:            #\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:14:07.494Z"
-  },
-  {
-    "id": "audit_1779786875922",
-    "imagePath": "data\\audit_images\\audit_1779786875922.jpg",
-    "rawOcrText": "a   )\nBE\nce Rx    |       .\nAmoxycillin & Potassium\nClavulanate Tablets I.P.\nAmoxydav® 625\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:14:35.924Z"
-  },
-  {
-    "id": "audit_1779786912642",
-    "imagePath": "data\\audit_images\\audit_1779786912642.jpg",
-    "rawOcrText": "aff 4       i a—\n.                                i     | —\n|                           a     »    ha 22\"\n2,\nmildness\nnove\n:     ‘a         ®\nEF                    3\n=   !   baby       »\nEe <         cream            n\np-    13     i\nAle       Nosiceq man\n&\n                           ¥\n-          1                  |        »\nE.-            A\ni\nAre        j\nRh (§ ST            7\nES             §\nCN\n=\nel\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:15:12.676Z"
-  },
-  {
-    "id": "audit_1779786949675",
-    "imagePath": "data\\audit_images\\audit_1779786949675.jpg",
-    "rawOcrText": "yg el     he                -         -\n2 7. -\n2    > |\n\n| — -  A §    D    Fi\n   S E 22 gel\n\n~ 4\nv\n\nyp            x\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:15:49.699Z"
-  },
-  {
-    "id": "audit_1779787224485",
-    "imagePath": "data\\audit_images\\audit_1779787224485.jpg",
-    "rawOcrText": "| »       wh     x. 1                     —\n                                     <\nPe\n0 3 ®         RR\nJ RACIGYL-SB\nAd re\nPAIL\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:20:24.505Z"
-  },
-  {
-    "id": "audit_1779787225681",
-    "imagePath": "data\\audit_images\\audit_1779787225681.jpg",
-    "rawOcrText": "A 85        ww. ‘¥\n-                            A                   <\n< ANT\nF Ny       -»  J\nEn ¥\n\"™   dl   Pregabalin (Susta\na    ad      Methylcobalamin Tab\n=       -  p\n| _ Pregabanyl-NTM\npe SR —\n-              &                     Fy a\n:            #\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:20:25.685Z"
-  },
-  {
-    "id": "audit_1779787226275",
-    "imagePath": "data\\audit_images\\audit_1779787226275.jpg",
-    "rawOcrText": "a   )\nBE\nce Rx    |       .\nAmoxycillin & Potassium\nClavulanate Tablets I.P.\nAmoxydav® 625\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:20:26.278Z"
-  },
-  {
-    "id": "audit_1779787227209",
-    "imagePath": "data\\audit_images\\audit_1779787227209.jpg",
-    "rawOcrText": "aff 4       i a—\n.                                i     | —\n|                           a     »    ha 22\"\n2,\nmildness\nnove\n:     ‘a         ®\nEF                    3\n=   !   baby       »\nEe <         cream            n\np-    13     i\nAle       Nosiceq man\n&\n                           ¥\n-          1                  |        »\nE.-            A\ni\nAre        j\nRh (§ ST            7\nES             §\nCN\n=\nel\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:20:27.232Z"
-  },
-  {
-    "id": "audit_1779787227910",
-    "imagePath": "data\\audit_images\\audit_1779787227910.jpg",
-    "rawOcrText": "yg el     he                -         -\n2 7. -\n2    > |\n\n| — -  A §    D    Fi\n   S E 22 gel\n\n~ 4\nv\n\nyp            x\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:20:27.912Z"
-  },
-  {
-    "id": "audit_1779787352837",
-    "imagePath": "data\\audit_images\\audit_1779787352837.jpg",
-    "rawOcrText": "| »       wh     x. 1                     —\n                                     <\nPe\n0 3 ®         RR\nJ RACIGYL-SB\nAd re\nPAIL\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:22:32.844Z"
-  },
-  {
-    "id": "audit_1779787353713",
-    "imagePath": "data\\audit_images\\audit_1779787353713.jpg",
-    "rawOcrText": "A 85        ww. ‘¥\n-                            A                   <\n< ANT\nF Ny       -»  J\nEn ¥\n\"™   dl   Pregabalin (Susta\na    ad      Methylcobalamin Tab\n=       -  p\n| _ Pregabanyl-NTM\npe SR —\n-              &                     Fy a\n:            #\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:22:33.715Z"
-  },
-  {
-    "id": "audit_1779787354181",
-    "imagePath": "data\\audit_images\\audit_1779787354181.jpg",
-    "rawOcrText": "a   )\nBE\nce Rx    |       .\nAmoxycillin & Potassium\nClavulanate Tablets I.P.\nAmoxydav® 625\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:22:34.185Z"
-  },
-  {
-    "id": "audit_1779787354960",
-    "imagePath": "data\\audit_images\\audit_1779787354960.jpg",
-    "rawOcrText": "aff 4       i a—\n.                                i     | —\n|                           a     »    ha 22\"\n2,\nmildness\nnove\n:     ‘a         ®\nEF                    3\n=   !   baby       »\nEe <         cream            n\np-    13     i\nAle       Nosiceq man\n&\n                           ¥\n-          1                  |        »\nE.-            A\ni\nAre        j\nRh (§ ST            7\nES             §\nCN\n=\nel\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:22:34.962Z"
-  },
-  {
-    "id": "audit_1779787355627",
-    "imagePath": "data\\audit_images\\audit_1779787355627.jpg",
-    "rawOcrText": "yg el     he                -         -\n2 7. -\n2    > |\n\n| — -  A §    D    Fi\n   S E 22 gel\n\n~ 4\nv\n\nyp            x\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:22:35.629Z"
-  },
-  {
-    "id": "audit_1779787792767",
-    "imagePath": "data\\audit_images\\audit_1779787792767.jpg",
-    "rawOcrText": "| »       wh     x. 1                     —\n                                     <\nPe\n0 3 ®         RR\nJ RACIGYL-SB\nAd re\nPAIL\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:29:52.773Z"
-  },
-  {
-    "id": "audit_1779787794264",
-    "imagePath": "data\\audit_images\\audit_1779787794264.jpg",
-    "rawOcrText": "A 85        ww. ‘¥\n-                            A                   <\n< ANT\nF Ny       -»  J\nEn ¥\n\"™   dl   Pregabalin (Susta\na    ad      Methylcobalamin Tab\n=       -  p\n| _ Pregabanyl-NTM\npe SR —\n-              &                     Fy a\n:            #\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:29:54.266Z"
-  },
-  {
-    "id": "audit_1779787794979",
-    "imagePath": "data\\audit_images\\audit_1779787794979.jpg",
-    "rawOcrText": "a   )\nBE\nce Rx    |       .\nAmoxycillin & Potassium\nClavulanate Tablets I.P.\nAmoxydav® 625\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:29:54.981Z"
-  },
-  {
-    "id": "audit_1779787795744",
-    "imagePath": "data\\audit_images\\audit_1779787795744.jpg",
-    "rawOcrText": "aff 4       i a—\n.                                i     | —\n|                           a     »    ha 22\"\n2,\nmildness\nnove\n:     ‘a         ®\nEF                    3\n=   !   baby       »\nEe <         cream            n\np-    13     i\nAle       Nosiceq man\n&\n                           ¥\n-          1                  |        »\nE.-            A\ni\nAre        j\nRh (§ ST            7\nES             §\nCN\n=\nel\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:29:55.746Z"
-  },
-  {
-    "id": "audit_1779787796576",
-    "imagePath": "data\\audit_images\\audit_1779787796576.jpg",
-    "rawOcrText": "yg el     he                -         -\n2 7. -\n2    > |\n\n| — -  A §    D    Fi\n   S E 22 gel\n\n~ 4\nv\n\nyp            x\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-05-26T09:29:56.578Z"
-  },
-  {
-    "id": "audit_1779858327865",
-    "imagePath": "data\\audit_images\\audit_1779858327865.jpg",
+    "id": "audit_1779925089456",
+    "imagePath": "data\\audit_images\\audit_1779925089456.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-05-27T05:05:27.872Z"
+    "createdAt": "2026-05-27T23:38:09.460Z"
   },
   {
-    "id": "audit_1779858346328",
-    "imagePath": "data\\audit_images\\audit_1779858346328.jpg",
+    "id": "audit_1779925129960",
+    "imagePath": "data\\audit_images\\audit_1779925129960.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-05-27T05:05:46.368Z"
+    "createdAt": "2026-05-27T23:38:49.966Z"
   },
   {
-    "id": "audit_1779873463493",
-    "imagePath": "data/audit_images/audit_1779873463493.jpg",
+    "id": "audit_1779925168644",
+    "imagePath": "data\\audit_images\\audit_1779925168644.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-05-27T09:17:43.512Z"
+    "createdAt": "2026-05-27T23:39:28.650Z"
   },
   {
-    "id": "audit_1779874127627",
-    "imagePath": "data/audit_images/audit_1779874127627.jpg",
+    "id": "audit_1779925203286",
+    "imagePath": "data\\audit_images\\audit_1779925203286.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-05-27T09:28:47.700Z"
+    "createdAt": "2026-05-27T23:40:03.322Z"
+  },
+  {
+    "id": "audit_1779941673805",
+    "imagePath": "data\\audit_images\\audit_1779941673805.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T04:14:33.830Z"
+  },
+  {
+    "id": "audit_1779941713502",
+    "imagePath": "data\\audit_images\\audit_1779941713502.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T04:15:13.584Z"
+  },
+  {
+    "id": "audit_1779942449373",
+    "imagePath": "data\\audit_images\\audit_1779942449373.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T04:27:29.377Z"
+  },
+  {
+    "id": "audit_1779943093466",
+    "imagePath": "data\\audit_images\\audit_1779943093466.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T04:38:13.468Z"
+  },
+  {
+    "id": "audit_1779943131948",
+    "imagePath": "data\\audit_images\\audit_1779943131948.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T04:38:51.950Z"
+  },
+  {
+    "id": "audit_1779973871210",
+    "imagePath": "data\\audit_images\\audit_1779973871210.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T13:11:11.236Z"
+  },
+  {
+    "id": "audit_1779977490746",
+    "imagePath": "data\\audit_images\\audit_1779977490746.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:11:30.751Z"
+  },
+  {
+    "id": "audit_1779977631061",
+    "imagePath": "data\\audit_images\\audit_1779977631061.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:13:51.066Z"
+  },
+  {
+    "id": "audit_1779977653624",
+    "imagePath": "data\\audit_images\\audit_1779977653624.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:14:13.628Z"
+  },
+  {
+    "id": "audit_1779977685696",
+    "imagePath": "data\\audit_images\\audit_1779977685696.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:14:45.698Z"
+  },
+  {
+    "id": "audit_1779978725989",
+    "imagePath": "data\\audit_images\\audit_1779978725989.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:32:05.992Z"
+  },
+  {
+    "id": "audit_1779978859505",
+    "imagePath": "data\\audit_images\\audit_1779978859505.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:34:19.507Z"
+  },
+  {
+    "id": "audit_1779978893884",
+    "imagePath": "data\\audit_images\\audit_1779978893884.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:34:53.886Z"
+  },
+  {
+    "id": "audit_1779979997733",
+    "imagePath": "data\\audit_images\\audit_1779979997733.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T14:53:17.737Z"
+  },
+  {
+    "id": "audit_1779980543496",
+    "imagePath": "data\\audit_images\\audit_1779980543496.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:02:23.500Z"
+  },
+  {
+    "id": "audit_1779981522602",
+    "imagePath": "data\\audit_images\\audit_1779981522602.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:18:42.608Z"
+  },
+  {
+    "id": "audit_1779981556988",
+    "imagePath": "data\\audit_images\\audit_1779981556988.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:19:17.027Z"
+  },
+  {
+    "id": "audit_1779981696668",
+    "imagePath": "data\\audit_images\\audit_1779981696668.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:21:36.675Z"
+  },
+  {
+    "id": "audit_1779981773835",
+    "imagePath": "data\\audit_images\\audit_1779981773835.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:22:53.838Z"
+  },
+  {
+    "id": "audit_1779981894272",
+    "imagePath": "data\\audit_images\\audit_1779981894272.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:24:54.274Z"
+  },
+  {
+    "id": "audit_1779982040446",
+    "imagePath": "data\\audit_images\\audit_1779982040446.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:27:20.449Z"
+  },
+  {
+    "id": "audit_1779982471034",
+    "imagePath": "data\\audit_images\\audit_1779982471034.jpg",
+    "rawOcrText": "Racecadotril and\nSaccharomyces\nboulardii (Lyophilized)\nSachets\nRACIGYL-SB|RRFI-H aT\nFOR PAEDIATRIC USE\nMankindll\n12 x 1 g Sachet",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:34:31.037Z"
+  },
+  {
+    "id": "audit_1779982484790",
+    "imagePath": "data\\audit_images\\audit_1779982484790.jpg",
+    "rawOcrText": "Pregabalin (Sustained-release), Nortript\nMethylcobalamin Tablets\nPregabanyl-NTM\nanfar-aa\n1 x 10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:34:44.793Z"
+  },
+  {
+    "id": "audit_1779982497644",
+    "imagePath": "data\\audit_images\\audit_1779982497644.jpg",
+    "rawOcrText": "Rx\nAmoxycillin & Potassium\nbbott\nClavulanate Tablets I.P.\nAmoxydlav 625\n3H4\n500 mg+125mg\n3x10 Tablets",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:34:57.646Z"
+  },
+  {
+    "id": "audit_1779982514368",
+    "imagePath": "data\\audit_images\\audit_1779982514368.jpg",
+    "rawOcrText": "11510608/75\nmildness\npaediatrician tested\nJohnson's\nbaby\ncream\nhelps nourish baby's skin ior 24h\nwith chamomile extracs\nadded parabens,\n100 g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:35:14.371Z"
+  },
+  {
+    "id": "audit_1779982531395",
+    "imagePath": "data\\audit_images\\audit_1779982531395.jpg",
+    "rawOcrText": "annic Acid. Choline Salicvlate. Benzalko\nSnilOgel.\nMouth Ulcer Gel 10g",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T15:35:31.400Z"
   }
 ]

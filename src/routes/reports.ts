@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 // @ts-ignore — @types/pdfkit not installed; pdfkit works at runtime
 import PDFDocument from 'pdfkit';
+import { nonMovingReportService } from '../services/nonMovingReportService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -104,6 +105,57 @@ router.get('/data', async (req, res) => {
   } catch (err) {
     console.error('Reports data error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Non-moving inventory report endpoint
+router.get('/non-moving', async (req, res) => {
+  try {
+    const { days } = req.query;
+    const periodDays = days ? parseInt(days as string) : 90; // Default to 90 days
+
+    // Generate the report
+    const report = await nonMovingReportService.generateNonMovingReport(periodDays);
+
+    // Save to file
+    await nonMovingReportService.saveReportToFile(report);
+
+    // Send notifications
+    await nonMovingReportService.sendReportNotification(report);
+
+    res.json({
+      success: true,
+      message: `Non-moving inventory report generated for last ${periodDays} days`,
+      report: {
+        generatedAt: report.generatedAt,
+        periodDays: report.periodDays,
+        totalNonMovingItems: report.totalNonMovingItems,
+        totalValue: report.totalValue
+      }
+    });
+  } catch (err: any) {
+    console.error('Non-moving report error:', err);
+    res.status(500).json({ error: 'Failed to generate non-moving report' });
+  }
+});
+
+// Get non-moving items data (JSON)
+router.get('/non-moving/data', async (req, res) => {
+  try {
+    const { days } = req.query;
+    const periodDays = days ? parseInt(days as string) : 90; // Default to 90 days
+
+    const items = await nonMovingReportService.getNonMovingItems(periodDays);
+
+    res.json({
+      success: true,
+      periodDays: periodDays,
+      count: items.length,
+      items: items
+    });
+  } catch (err: any) {
+    console.error('Non-moving data error:', err);
+    res.status(500).json({ error: 'Failed to get non-moving inventory data' });
   }
 });
 

@@ -6,6 +6,306 @@
 <title>Pharmacy Genius OS</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
 <style>
+  /* Generated Classes from Inline Styles */
+  .gen-style-1 { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 16px; }
+  .gen-style-2 { flex-shrink: 0; }
+  .gen-style-3 { display:grid; grid-template-columns: 1fr 280px; gap:16px; flex: 1; min-height: 0; }
+  .gen-style-4 { display: flex; flex-direction: column; height: 100%; }
+  .gen-style-5 { display: flex; gap: 12px; background: var(--surface2); border: 1px solid var(--border); padding: 8px 12px; border-radius: 8px; align-items: center; font-size: 12px; }
+  .gen-style-6 { display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px; }
+  .gen-style-7 { color:var(--danger) }
+  .gen-style-8 { background: transparent; border: none; color: var(--white); width: 90px; font-size: 12px; }
+  .gen-style-9 { padding: 2px 6px; }
+  .gen-style-10 { color:var(--sky) }
+  .gen-style-11 { background: transparent; border: none; color: var(--white); width: 140px; font-size: 12px; }
+  .gen-style-12 { background: transparent; border: none; color: var(--white); width: 100px; font-size: 12px; }
+  .gen-style-13 { background: transparent; border: none; color: var(--sky); width: 90px; font-size: 12px; font-family: 'DM Mono', monospace; }
+  .gen-style-14 { background: transparent; border: none; color: var(--white); width: 40px; font-size: 12px; text-align: right; }
+  .gen-style-15 { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .gen-style-16 { background: transparent; border: none; color: var(--white); width: 80px; font-size: 12px; text-align: right; }
+  .gen-style-17 { display: flex; flex-direction: column; flex-grow: 1; margin-bottom: 0; padding: 0; overflow: hidden; border: 1px solid var(--border); }
+  .gen-style-18 { flex-grow: 1; overflow-y: auto; border: none; border-radius: 0; }
+  .gen-style-19 { width: 100%; border-collapse: collapse; }
+  .gen-style-20 { position: sticky; top: 0; background: var(--surface2); z-index: 10; }
+  .gen-style-21 { padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
+  .gen-style-22 { padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
+  .gen-style-23 { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+  .gen-style-24 { padding: 2px 4px; font-size: 10px; border: 1px solid var(--border); color: var(--sky); border-radius: 4px; cursor: pointer; }
+  .gen-style-25 { padding: 8px 12px; text-align: right; color: var(--white); font-weight: 700; font-size: 11px; border-bottom: 1px solid var(--border); }
+  .gen-style-26 { padding: 8px 12px; text-align: center; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
+  .gen-style-27 { background: rgba(251,146,60,0.2); border-bottom: 1px solid var(--sky-dim); box-shadow: inset 0 0 10px rgba(251,146,60,0.15); }
+  .gen-style-28 { padding: 8px 12px; font-weight: 700; color: var(--sky); }
+  .gen-style-29 { padding: 8px 12px; }
+  .gen-style-30 { width: 100%; background: transparent; border: none; color: var(--white); outline: none; font-weight: 600; }
+  .gen-style-31 { padding: 8px 12px; display: flex; align-items: center; gap: 4px; }
+  .gen-style-32 { background: #F87171; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; font-weight: bold; }
+  .gen-style-33 { width: 140px; background: transparent; border: none; color: var(--white); outline: none; font-size: 11px; }
+  .gen-style-34 { width: 50px; background: transparent; border: none; color: var(--white); outline: none; }
+  .gen-style-35 { padding: 8px 12px; text-align: right; }
+  .gen-style-36 { width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none; }
+  .gen-style-37 { width: 60px; text-align: right; background: transparent; border: none; color: var(--white); outline: none; }
+  .gen-style-38 { padding: 8px 12px; text-align: right; font-weight: 700; color: var(--sky); }
+  .gen-style-39 { padding: 8px 12px; text-align: center; }
+  .gen-style-40 { padding: 2px 6px; font-size: 11px; background:#F87171; border:none; color:white; border-radius: 4px; cursor: pointer; }
+  .gen-style-41 { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+  .gen-style-42 { padding: 14px; display: flex; align-items: center; gap: 14px; text-align: left; min-height: auto; cursor: pointer; border: 1px solid var(--border); background: rgba(14, 165, 233, 0.03); margin: 0; border-radius: 8px; transition: all 0.3s ease; }
+  .gen-style-43 { font-size: 28px; margin: 0; background: var(--bg); padding: 8px; border-radius: 8px; box-shadow: 0 0 15px var(--sky-glow); transition: all 0.3s ease; }
+  .gen-style-44 { flex: 1; }
+  .gen-style-45 { font-size: 14px; font-weight: 700; color: var(--muted); transition: all 0.3s ease; }
+  .gen-style-46 { margin-top: 4px; font-size: 11px; opacity: 0.9; color: var(--muted); transition: all 0.3s ease; }
+  .gen-style-47 { display: none; width: 20px; height: 20px; border: 2px dashed var(--sky); border-radius: 50%; animation: scan-spin 1.5s linear infinite; }
+  .gen-style-48 { margin-bottom:0; flex-grow: 1; overflow-y: auto; }
+  .gen-style-49 { font-family:'DM Mono',monospace; }
+  .gen-style-50 { font-size:12px;text-align:center;padding:20px 0; }
+  .gen-style-51 { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); margin-top: 16px; }
+  .gen-style-52 { display: flex; gap: 12px; align-items: center; }
+  .gen-style-53 { background: var(--bg); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-family: 'DM Mono', monospace; color: var(--sky); }
+  .gen-style-54 { flex-grow: 1; background: transparent; border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; color: var(--white); font-size: 12px; }
+  .gen-style-55 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1.5fr; gap: 16px; font-size: 12px; }
+  .gen-style-56 { font-size: 10px; margin-bottom: 4px; }
+  .gen-style-57 { width: 100%; background: var(--bg); border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; color: var(--white); }
+  .gen-style-58 { width: 100%; background: var(--bg); border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; color: var(--sky); }
+  .gen-style-59 { display: flex; align-items: center; }
+  .gen-style-60 { margin-right:4px; }
+  .gen-style-61 { width: 100%; background: transparent; border: none; border-bottom: 1px dashed var(--border); color: var(--white); text-align: right; }
+  .gen-style-62 { text-align: right; color: var(--white); padding-top: 4px; font-family: 'DM Mono', monospace; }
+  .gen-style-63 { text-align: right; color: var(--danger); padding-top: 4px; font-family: 'DM Mono', monospace; }
+  .gen-style-64 { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; padding-left: 16px; border-left: 1px solid var(--border); }
+  .gen-style-65 { display: flex; width: 100%; justify-content: space-between; font-size: 16px; font-weight: 700; color: var(--white); align-items: flex-end; }
+  .gen-style-66 { font-size: 14px; padding-bottom: 2px; }
+  .gen-style-67 { font-size: 20px; color: var(--sky); }
+  .gen-style-68 { display: flex; gap: 8px; margin-top: 8px; }
+  .gen-style-69 { padding: 4px 12px; font-size: 11px; }
+  .gen-style-70 { padding: 4px 12px; font-size: 11px; box-shadow: 0 0 10px rgba(52,211,153,0.3); }
+  .gen-style-71 { padding: 4px 12px; font-size: 11px; box-shadow: 0 0 10px rgba(56,189,248,0.3); }
+  .gen-style-72 { display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; }
+  .gen-style-73 { width:78% }
+  .gen-style-74 { background:var(--danger) }
+  .gen-style-75 { background:var(--accent-orange) }
+  .gen-style-76 { background:var(--sky) }
+  .gen-style-77 { background:var(--muted) }
+  .gen-style-78 { background:var(--green) }
+  .gen-style-79 { padding:4px 10px;font-size:11px; }
+  .gen-style-80 { display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);justify-content:center;align-items:center;z-index:9999; }
+  .gen-style-81 { background:var(--surface);padding:24px;border-radius:12px;border:1px solid var(--border);max-width:400px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,0.1);display:flex;flex-direction:column;gap:12px; }
+  .gen-style-82 { font-family:'Syne',sans-serif;font-weight:700;color:var(--white);font-size:16px; }
+  .gen-style-83 { width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--white);padding:8px 12px;border-radius:6px;outline:none; }
+  .gen-style-84 { display:flex;gap:8px;justify-content:flex-end;margin-top:8px; }
+  .gen-style-85 { display: flex; gap: 8px; }
+  .gen-style-86 { display: none; }
+  .gen-style-87 { border: 1px solid var(--border); font-size: 13px; }
+  .gen-style-88 { border: 1px dashed var(--sky); background: rgba(56, 189, 248, 0.05); margin-bottom: 24px; padding: 16px; }
+  .gen-style-89 { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px; }
+  .gen-style-90 { font-weight: 700; color: var(--sky); font-size: 14px; }
+  .gen-style-91 { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .gen-style-92 { color: var(--white); }
+  .gen-style-93 { color: var(--danger); font-size: 12px; padding: 6px 12px; }
+  .gen-style-94 { font-size: 12px; padding: 6px 12px; background: var(--sky); color: #000; border: none; }
+  .gen-style-95 { border: none; background: transparent; margin: 0; box-shadow: none; }
+  .gen-style-96 { background: rgba(0,0,0,0.2); }
+  .gen-style-97 { padding: 8px 12px; width: 40px; }
+  .gen-style-98 { accent-color: var(--sky); }
+  .gen-style-99 { padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px; }
+  .gen-style-100 { padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; }
+  .gen-style-101 { padding: 8px 12px; text-align: center; color: var(--muted); font-size: 11px; }
+  .gen-style-102 { text-align: center; padding: 20px; color: var(--muted); }
+  .gen-style-103 { font-weight: 700; margin-bottom: 12px; color: var(--white); font-size: 15px; }
+  .gen-style-104 { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  .gen-style-105 { display: flex; gap: 12px; background: var(--surface2); border: 1px solid var(--border); padding: 8px 12px; align-items: center; font-size: 11px; }
+  .gen-style-106 { display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px; }
+  .gen-style-107 { background: transparent; border: none; color: var(--white); width: 140px; font-size: 11px; text-transform: uppercase; }
+  .gen-style-108 { background: transparent; border: none; color: var(--white); width: 120px; font-size: 11px; text-transform: uppercase; }
+  .gen-style-109 { background: transparent; border: none; color: var(--white); width: 80px; font-size: 11px; }
+  .gen-style-110 { background: transparent; border: none; color: var(--white); width: 60px; font-size: 11px; }
+  .gen-style-111 { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+  .gen-style-112 { display: flex; align-items: center; gap: 4px; }
+  .gen-style-113 { margin-left: auto; }
+  .gen-style-114 { padding: 4px 12px; font-size: 11px; background: #374151; color: white; }
+  .gen-style-115 { margin-left: 8px; color: var(--danger); font-size: 11px; padding: 4px 10px; }
+  .gen-style-116 { margin-left: 8px; font-size: 11px; padding: 4px 10px; background: var(--sky); color: #000; border: none; }
+  .gen-style-117 { flex: 1; overflow-y: auto; position: relative; }
+  .gen-style-118 { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+  .gen-style-119 { position: sticky; top: 0; background: #2f3640; z-index: 10; }
+  .gen-style-120 { border-bottom: 1px solid var(--border); }
+  .gen-style-121 { padding: 8px; width: 30px; }
+  .gen-style-122 { padding: 8px; width: 40px; }
+  .gen-style-123 { padding: 8px; }
+  .gen-style-124 { padding: 8px; text-align: right; width: 40px; }
+  .gen-style-125 { background:#374151; border:none; color:white; width: 20px; height: 20px; border-radius: 4px; cursor: pointer; }
+  .gen-style-126 { flex-shrink: 0; background: var(--bg); border-top: 1px solid var(--border); }
+  .gen-style-127 { padding: 4px 12px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+  .gen-style-128 { background: var(--surface2); color: var(--white); padding: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+  .gen-style-129 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 32px; }
+  .gen-style-130 { display: flex; justify-content: space-between; width: 120px; }
+  .gen-style-131 { font-weight: bold; }
+  .gen-style-132 { display: flex; flex-direction: column; gap: 4px; width: 200px; grid-row: span 2; }
+  .gen-style-133 { display: flex; align-items: center; gap: 8px; }
+  .gen-style-134 { width: 80px; color: var(--sky); }
+  .gen-style-135 { flex: 1; border: 1px solid var(--border); padding: 4px; font-size: 11px; background: rgba(0,0,0,0.2); color: var(--white); }
+  .gen-style-136 { display: flex; align-items: center; gap: 16px; border-left: 1px solid var(--border); padding-left: 16px; }
+  .gen-style-137 { text-align: right; }
+  .gen-style-138 { color: var(--muted); }
+  .gen-style-139 { font-size: 20px; font-weight: bold; color: var(--white); }
+  .gen-style-140 { background: #374151; color: white; border: none; font-size: 11px; padding: 8px 16px; }
+  .gen-style-141 { width:100%; border-collapse:collapse; }
+  .gen-style-142 { display:flex;gap:12px;margin-bottom:16px; }
+  .gen-style-143 { text-align: center; padding: 20px; color: var(--muted); font-size: 12px; }
+  .gen-style-144 { margin-bottom:16px; }
+  .gen-style-145 { color:var(--sky);border-color:var(--border-bright); }
+  .gen-style-146 { font-size:17px; }
+  .gen-style-147 { display:none; margin-top:16px; }
+  .gen-style-148 { display:none; }
+  .gen-style-149 { font-size:12px;margin-bottom:12px; }
+  .gen-style-150 { max-height: 280px; overflow-y: auto; }
+  .gen-style-151 { margin-left:4px; }
+  .gen-style-152 { padding:4px 8px;font-size:11px; }
+  .gen-style-153 { font-size:11px; }
+  .gen-style-154 { font-size:12px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .gen-style-155 { font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .gen-style-156 { font-size:12px; }
+  .gen-style-157 { font-size: 13px; margin-bottom: 16px; }
+  .gen-style-158 { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+  .gen-style-159 { background: var(--surface2); border: 1px solid var(--border); color: var(--white); padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+  .gen-style-160 { font-size: 13px; flex: 1; }
+  .gen-style-161 { display: flex; gap: 12px; margin-bottom: 20px; }
+  .gen-style-162 { flex: 1; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: var(--white); border-radius: 4px; }
+  .gen-style-163 { background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; border: 1px solid var(--border); }
+  .gen-style-164 { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .gen-style-165 { width: 100%; background: var(--surface2); height: 8px; border-radius: 4px; overflow: hidden; }
+  .gen-style-166 { width: 0%; height: 100%; background: var(--green); transition: width 0.3s; }
+  .gen-style-167 { font-size: 12px; }
+  .gen-style-168 { text-align:center; padding: 12px; color: var(--muted); }
+  .gen-style-169 { background:white;border-radius:8px;padding:14px;color:#111;font-family:'DM Mono',monospace;font-size:11px;line-height:1.6;border:2px dashed var(--border) }
+  .gen-style-170 { font-weight:700;font-size:13px;color:#0b0f1a; }
+  .gen-style-171 { margin:6px 0;font-size:20px;letter-spacing:0.3em; }
+  .gen-style-172 { width:22% }
+  .gen-style-173 { margin-left:6px; }
+  .gen-style-174 { grid-column: 1 / -1; }
+  .gen-style-175 { color: var(--white); margin-bottom: 10px; }
+  .gen-style-176 { max-height: 250px; overflow-y: auto; }
+  .gen-style-177 { text-align:center; }
+  .gen-style-178 { margin-top: 24px; color: var(--text); }
+  .gen-style-179 { margin-top: 16px; }
+  .gen-style-180 { font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px; }
+  .gen-style-181 { margin-top:16px;color:var(--text);margin-bottom:8px; }
+  .gen-style-182 { gap:8px; }
+  .gen-style-183 { gap:8px;margin-top:8px; }
+  .gen-style-184 { display:flex;align-items:center;margin-top:18px; }
+  .gen-style-185 { margin-right:8px; }
+  .gen-style-186 { padding:3px 8px;font-size:11px; }
+  .gen-style-187 { accent-color:var(--sky);width:100%;margin-top:6px; }
+  .gen-style-188 { font-family:'DM Mono',monospace;font-size:12px;color:var(--sky);margin-top:4px; }
+  .gen-style-189 { padding:10px 0; }
+  .gen-style-190 { width:0% }
+  .gen-style-191 { display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center; }
+  .gen-style-192 { background:#222;padding:20px;max-width:400px; }
+  .gen-style-193 { accent-color:var(--accent-purple);width:100%;margin-top:6px; }
+  .gen-style-194 { font-family:'DM Mono',monospace;font-size:12px;color:var(--accent-purple);margin-top:4px; }
+  .gen-style-195 { color:var(--accent-purple);border-color:rgba(167,139,250,0.3); }
+  .gen-style-196 { grid-column: 1 / -1; margin-top: 24px; }
+  .gen-style-197 { width:100%; }
+  .gen-style-198 { background:#111;color:#0f0;padding:8px;max-height:200px;overflow:auto;border-radius:4px; }
+  .gen-style-199 { display:none; max-width:200px; margin-top:8px; }
+  .gen-style-200 { padding: 8px 12px; color: var(--muted); }
+  .gen-style-201 { width: 40px; text-align: right; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--white); }
+  .gen-style-202 { width: 40px; text-align: right; background: transparent; border: none; color: var(--white); }
+  .gen-style-203 { padding: 8px 12px; text-align: left; }
+  .gen-style-204 { padding: 8px 12px; text-align: right; color: var(--white); font-weight: 700; }
+  .gen-style-205 { width: 550px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; }
+  .gen-style-206 { border-bottom: none; padding-bottom: 10px; flex-shrink: 0; }
+  .gen-style-207 { padding: 10px 20px; overflow-y: auto; flex-grow: 1; }
+  .gen-style-208 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); }
+  .gen-style-209 { width: 120px; font-weight: 700; color: var(--white); font-size: 13px; }
+  .gen-style-210 { flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none; }
+  .gen-style-211 { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); }
+  .gen-style-212 { font-weight: 700; color: var(--white); font-size: 13px; margin-bottom: 8px; }
+  .gen-style-213 { background: transparent; border: none; color: var(--white); font-size: 13px; outline: none; resize: none; }
+  .gen-style-214 { flex: 1; display: flex; gap: 16px; padding: 12px 0; }
+  .gen-style-215 { font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 6px; }
+  .gen-style-216 { display: flex; align-items: center; padding: 0 12px; margin-bottom: 12px; }
+  .gen-style-217 { font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .gen-style-218 { accent-color: #25D366; width: 16px; height: 16px; }
+  .gen-style-219 { flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none; appearance: none; }
+  .gen-style-220 { color: black; }
+  .gen-style-221 { justify-content: space-between; border-top: none; padding-top: 10px; flex-shrink: 0; }
+  .gen-style-222 { font-size:10px; opacity:0.7; margin-left:4px; }
+  .gen-style-223 { border: 1px solid var(--border); }
+  .gen-style-224 { width: 480px; max-width: 90vw; }
+  .gen-style-225 { border-bottom: none; padding-bottom: 10px; }
+  .gen-style-226 { padding: 10px 20px; }
+  .gen-style-227 { width: 100px; font-weight: 700; color: var(--white); font-size: 13px; }
+  .gen-style-228 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 4px; background: rgba(0,0,0,0.2); }
+  .gen-style-229 { justify-content: space-between; border-top: none; padding-top: 10px; }
+  .gen-style-230 { width: 700px; max-width: 95vw; background: var(--surface); color: var(--white); border-radius: 8px; }
+  .gen-style-231 { border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-shrink: 0; background: var(--surface2); }
+  .gen-style-232 { color: var(--white); font-weight: bold; font-size: 18px; }
+  .gen-style-233 { color: var(--muted); font-weight: bold; }
+  .gen-style-234 { padding: 10px 20px; overflow-y: auto; max-height: 80vh; }
+  .gen-style-235 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .gen-style-236 { display: flex; flex-direction: column; gap: 12px; }
+  .gen-style-237 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); }
+  .gen-style-238 { width: 120px; font-weight: bold; font-size: 13px; }
+  .gen-style-239 { flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none; }
+  .gen-style-240 { flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none; appearance: none; }
+  .gen-style-241 { color:black; }
+  .gen-style-242 { display: flex; align-items: center; gap: 20px; margin-top: 16px; }
+  .gen-style-243 { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .gen-style-244 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 300px; }
+  .gen-style-245 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .gen-style-246 { width: 140px; font-weight: bold; font-size: 13px; }
+  .gen-style-247 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px; }
+  .gen-style-248 { display: flex; gap: 16px; margin-top: 12px; }
+  .gen-style-249 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 140px; }
+  .gen-style-250 { font-weight: bold; font-size: 13px; width: 50px; }
+  .gen-style-251 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .gen-style-252 { width: 160px; font-weight: bold; font-size: 13px; }
+  .gen-style-253 { display: flex; border: 1px solid var(--border); border-radius: 4px; padding: 12px; background: rgba(0,0,0,0.2); margin-top: 12px; }
+  .gen-style-254 { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gen-style-255 { font-size: 13px; }
+  .gen-style-256 { display: flex; flex-direction: column; gap: 4px; }
+  .gen-style-257 { font-size: 11px; color: var(--sky); }
+  .gen-style-258 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); height: 35px; }
+  .gen-style-259 { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px; width: 50%; }
+  .gen-style-260 { display: flex; align-items: center; gap: 40px; margin-top: 16px; margin-bottom: 20px; }
+  .gen-style-261 { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: bold; }
+  .gen-style-262 { background: var(--accent-blue); color: white; border: none; padding: 8px 16px; margin-bottom: 12px; }
+  .gen-style-263 { width: 550px; max-width: 90vw; background: var(--surface); color: var(--white); border-radius: 8px; }
+  .gen-style-264 { border-bottom: 1px solid var(--border); padding-bottom: 10px; background: var(--surface2); }
+  .gen-style-265 { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .gen-style-266 { background: rgba(14, 165, 233, 0.05); border: 1px solid var(--border-bright); padding: 12px; border-radius: 6px; }
+  .gen-style-267 { font-size: 12px; color: var(--sky); font-family: 'DM Mono', monospace; margin-bottom: 4px; }
+  .gen-style-268 { font-size: 18px; font-weight: 700; color: var(--white); }
+  .gen-style-269 { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .gen-style-270 { display: flex; gap: 12px; }
+  .gen-style-271 { font-size: 11px; color: var(--accent-orange); font-family: 'DM Mono', monospace; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+  .gen-style-272 { font-weight: 700; font-size: 13px; margin-bottom: 8px; color: var(--white); }
+  .gen-style-273 { display: flex; gap: 12px; margin-bottom: 12px; }
+  .gen-style-274 { flex: 1; padding: 10px; }
+  .gen-style-275 { flex: 1; padding: 10px; border: 1px solid var(--border); }
+  .gen-style-276 { flex: 1; background: transparent; border: none; color: var(--white); font-size: 14px; padding: 12px 0; outline: none; font-weight: 700; text-align: right; }
+  .gen-style-277 { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 8px; }
+  .gen-style-278 { color: var(--muted); font-size: 12px; }
+  .gen-style-279 { font-weight: 700; color: var(--white); margin-left: 4px; }
+  .gen-style-280 { font-size: 22px; font-weight: 800; color: var(--sky); }
+  .gen-style-281 { justify-content: flex-end; border-top: 1px solid var(--border); padding: 12px 20px; background: var(--surface2); gap: 10px; }
+  .gen-style-282 { padding: 10px 20px; font-weight: 700; }
+  .gen-style-283 { padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px; }
+  .gen-style-284 { background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3); }
+  .gen-style-285 { padding: 8px 12px; color: var(--white); font-size: 12px; }
+  .gen-style-286 { padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px; }
+  .gen-style-287 { font-size: 11px; color: var(--sky); padding: 4px 8px; }
+  .gen-style-288 { font-weight: 500; }
+  .gen-style-289 { color: var(--sky); }
+  .gen-style-290 { font-weight: 700; color: var(--white); margin-bottom: 2px; }
+  .gen-style-291 { color: var(--muted); font-size: 11px; font-family: 'DM Mono', monospace; margin-bottom: 6px; }
+  .gen-style-292 { color: var(--sky); font-weight: 500; }
+  .gen-style-293 { color: var(--green); }
+  .gen-style-294 { font-size: 14px; margin-right: 4px; }
+  .gen-style-295 { margin-left: 4px; font-weight: 700; color: #fff; }
+  .gen-style-296 { background: rgba(239, 68, 68, 0.08); color: var(--danger); border-color: rgba(239, 68, 68, 0.25); }
+  .gen-style-297 { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-100%); z-index: 99999; display: flex; flex-direction: column; gap: 12px; align-items: center; pointer-events: none; transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+  .gen-style-298 { position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 12px; pointer-events: none; max-width: 360px; }
+
   :root {
     --bg: #f8fafc;
     --surface: #ffffff;
@@ -225,8 +525,8 @@
     align-items: center;
     gap: 14px;
     background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
     position: sticky;
     top: 0;
     z-index: 5;
@@ -809,7 +1109,7 @@
   /* Modals */
   .modal-overlay {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
     display: none; align-items: center; justify-content: center; z-index: 1000;
   }
   .modal-overlay.active { display: flex; }
@@ -856,8 +1156,8 @@
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(11, 15, 26, 0.95);
-    backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -919,8 +1219,8 @@
   /* Real-time Notification Styles */
   .rt-notification {
     background: rgba(15, 23, 42, 0.95);
-    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     border: 1px solid var(--border-bright);
     border-radius: 12px;
     padding: 16px;
@@ -1136,8 +1436,8 @@
       <span class="flag-pill sky" data-requires="ai_camera">● ai_camera</span>
       <span class="flag-pill purple" data-requires="learning_engine">● learning_engine</span>
     </div>
-    <div class="content" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 16px;">
-      <div class="flag-section" style="flex-shrink: 0;">
+    <div class="content gen-style-1">
+      <div class="flag-section gen-style-2">
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill sky" data-requires="ai_camera">ai_camera ON</span>
         <span class="flag-pill purple" data-requires="learning_engine">learning_engine ON</span>
@@ -1145,82 +1445,82 @@
         <span class="flag-pill green">Hold Bill ON</span>
       </div>
 
-      <div style="display:grid; grid-template-columns: 1fr 280px; gap:16px; flex: 1; min-height: 0;">
-        <div style="display: flex; flex-direction: column; height: 100%;">
+      <div class="gen-style-3">
+        <div class="gen-style-4">
           <!-- Top Horizontal Data Bar -->
-          <div style="display: flex; gap: 12px; background: var(--surface2); border: 1px solid var(--border); padding: 8px 12px; border-radius: 8px; align-items: center; font-size: 12px;">
-            <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px;">
-              <span class="icon" style="color:var(--danger)">👤</span>
-              <input type="text" id="pos-patient-input" placeholder="Patient Name" style="background: transparent; border: none; color: var(--white); width: 90px; font-size: 12px;" />
-              <input type="text" id="pos-patient-phone-input" placeholder="Phone" style="background: transparent; border: none; color: var(--white); width: 90px; font-size: 12px;" />
-              <button class="btn btn-ghost" style="padding: 2px 6px;" onclick="openModal('patient-modal')">+</button>
+          <div class="gen-style-5">
+            <div class="gen-style-6">
+              <span class="icon gen-style-7">👤</span>
+              <input type="text" id="pos-patient-input" placeholder="Patient Name" / class="gen-style-8">
+              <input type="text" id="pos-patient-phone-input" placeholder="Phone" / class="gen-style-8">
+              <button class="btn btn-ghost gen-style-9" onclick="openModal('patient-modal')">+</button>
             </div>
-            <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px;">
-              <span class="icon" style="color:var(--sky)">🩺</span>
-              <input type="text" id="pos-doctor-input" placeholder="Doctor [ALT+2]" style="background: transparent; border: none; color: var(--white); width: 140px; font-size: 12px;" />
-              <button class="btn btn-ghost" style="padding: 2px 6px;" onclick="openModal('doctor-modal')">+</button>
+            <div class="gen-style-6">
+              <span class="icon gen-style-10">🩺</span>
+              <input type="text" id="pos-doctor-input" placeholder="Doctor [ALT+2]" / class="gen-style-11">
+              <button class="btn btn-ghost gen-style-9" onclick="openModal('doctor-modal')">+</button>
             </div>
-            <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px;">
-              <input type="text" id="global-discount-input" placeholder="Discount [ALT+3]" style="background: transparent; border: none; color: var(--white); width: 100px; font-size: 12px;" oninput="applyGlobalDiscount()" />
+            <div class="gen-style-6">
+              <input type="text" id="global-discount-input" placeholder="Discount [ALT+3]" oninput="applyGlobalDiscount()" / class="gen-style-12">
             </div>
-            <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px;">
+            <div class="gen-style-6">
               <span class="text-muted">Inv:</span>
-              <input type="text" value="INV-2026-089" style="background: transparent; border: none; color: var(--sky); width: 90px; font-size: 12px; font-family: 'DM Mono', monospace;" readonly />
+              <input type="text" value="INV-2026-089" title="Invoice Number" readonly / class="gen-style-13">
             </div>
-            <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px;">
+            <div class="gen-style-6">
               <span class="text-muted">Add.Disc</span>
-              <input type="number" value="0" style="background: transparent; border: none; color: var(--white); width: 40px; font-size: 12px; text-align: right;" />
+              <input type="number" value="0" title="Additional Discount" / class="gen-style-14">
             </div>
-            <div style="display: flex; align-items: center; gap: 4px; margin-left: auto;">
-              <input type="text" value="24-05-2026" style="background: transparent; border: none; color: var(--white); width: 80px; font-size: 12px; text-align: right;" readonly />
+            <div class="gen-style-15">
+              <input type="text" value="24-05-2026" title="Invoice Date" readonly / class="gen-style-16">
             </div>
           </div>
 
           <!-- Main Table Card -->
-          <div class="card" style="display: flex; flex-direction: column; flex-grow: 1; margin-bottom: 0; padding: 0; overflow: hidden; border: 1px solid var(--border);">
-            <div class="tbl-wrap" style="flex-grow: 1; overflow-y: auto; border: none; border-radius: 0;">
-              <table style="width: 100%; border-collapse: collapse;">
-                <thead style="position: sticky; top: 0; background: var(--surface2); z-index: 10;">
+          <div class="card gen-style-17">
+            <div class="tbl-wrap gen-style-18">
+              <table class="gen-style-19">
+                <thead class="gen-style-20">
                   <tr>
-                    <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Sr.No</th>
-                    <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Medicine</th>
-                    <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Batch</th>
-                    <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Expiry</th>
-                    <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Margin%</th>
-                    <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">
-                      <div style="display: flex; justify-content: flex-end; align-items: center; gap: 6px;">
-                        <button class="btn btn-ghost" style="padding: 2px 4px; font-size: 10px; border: 1px solid var(--border); color: var(--sky); border-radius: 4px; cursor: pointer;" onclick="toggleMargin(this)" title="Toggle Margin Visibility">👁️ Margin</button>
+                    <th class="gen-style-21">Sr.No</th>
+                    <th class="gen-style-21">Medicine</th>
+                    <th class="gen-style-21">Batch</th>
+                    <th class="gen-style-21">Expiry</th>
+                    <th class="gen-style-22">Margin%</th>
+                    <th class="gen-style-22">
+                      <div class="gen-style-23">
+                        <button class="btn btn-ghost gen-style-24" onclick="toggleMargin(this)" title="Toggle Margin Visibility">👁️ Margin</button>
                         Disc%
                       </div>
                     </th>
-                    <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Qty</th>
-                    <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Loose</th>
-                    <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">MRP</th>
-                    <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">Net GST</th>
-                    <th style="padding: 8px 12px; text-align: right; color: var(--white); font-weight: 700; font-size: 11px; border-bottom: 1px solid var(--border);">Total</th>
-                    <th style="padding: 8px 12px; text-align: center; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border);">+</th>
+                    <th class="gen-style-22">Qty</th>
+                    <th class="gen-style-22">Loose</th>
+                    <th class="gen-style-22">MRP</th>
+                    <th class="gen-style-22">Net GST</th>
+                    <th class="gen-style-25">Total</th>
+                    <th class="gen-style-26">+</th>
                   </tr>
                 </thead>
                 <tbody>
                   <!-- Active Search Row -->
-                  <tr style="background: rgba(251,146,60,0.2); border-bottom: 1px solid var(--sky-dim); box-shadow: inset 0 0 10px rgba(251,146,60,0.15);">
-                    <td style="padding: 8px 12px; font-weight: 700; color: var(--sky);">1</td>
-                    <td style="padding: 8px 12px;">
-                      <input type="text" id="inline-search-input" value="" placeholder="Search or Enter Medicine..." style="width: 100%; background: transparent; border: none; color: var(--white); outline: none; font-weight: 600;" autofocus />
+                  <tr class="gen-style-27">
+                    <td class="gen-style-28">1</td>
+                    <td class="gen-style-29">
+                      <input type="text" id="inline-search-input" value="" placeholder="Search or Enter Medicine..." autofocus / class="gen-style-30">
                     </td>
-                    <td style="padding: 8px 12px; display: flex; align-items: center; gap: 4px;">
-                      <span style="background: #F87171; color: white; padding: 2px 4px; font-size: 10px; border-radius: 2px; font-weight: bold;">0:0</span>
-                      <input type="text" value="" placeholder="Batch/Details" style="width: 140px; background: transparent; border: none; color: var(--white); outline: none; font-size: 11px;" />
+                    <td class="gen-style-31">
+                      <span class="gen-style-32">0:0</span>
+                      <input type="text" value="" placeholder="Batch/Details" / class="gen-style-33">
                     </td>
-                    <td style="padding: 8px 12px;"><input type="text" value="" placeholder="Expiry" style="width: 50px; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0.00" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0.00" style="width: 60px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right;"><input type="text" value="0.00" style="width: 60px; text-align: right; background: transparent; border: none; color: var(--white); outline: none;" /></td>
-                    <td style="padding: 8px 12px; text-align: right; font-weight: 700; color: var(--sky);">0.00</td>
-                    <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding: 2px 6px; font-size: 11px; background:#F87171; border:none; color:white; border-radius: 4px; cursor: pointer;">✖</button></td>
+                    <td class="gen-style-29"><input type="text" value="" placeholder="Expiry" / class="gen-style-34"></td>
+                    <td class="gen-style-35"><input type="text" value="0.00" title="Margin Percentage" / class="gen-style-36"></td>
+                    <td class="gen-style-35"><input type="text" value="0" title="Discount Percentage" / class="gen-style-36"></td>
+                    <td class="gen-style-35"><input type="number" value="0" title="Quantity" / class="gen-style-36"></td>
+                    <td class="gen-style-35"><input type="number" value="0" title="Loose Quantity" / class="gen-style-36"></td>
+                    <td class="gen-style-35"><input type="text" value="0.00" title="MRP" / class="gen-style-37"></td>
+                    <td class="gen-style-35"><input type="text" value="0.00" title="Net GST" / class="gen-style-37"></td>
+                    <td class="gen-style-38">0.00</td>
+                    <td class="gen-style-39"><button class="btn btn-ghost gen-style-40">✖</button></td>
                   </tr>
                 </tbody>
               </table>
@@ -1230,69 +1530,69 @@
         </div>
 
         <!-- Right Sidebar -->
-        <div style="display: flex; flex-direction: column; gap: 16px; height: 100%;">
+        <div class="gen-style-41">
           
-          <div class="scan-area" id="pos-scan-area" data-requires="ai_camera" style="padding: 14px; display: flex; align-items: center; gap: 14px; text-align: left; min-height: auto; cursor: pointer; border: 1px solid var(--border); background: rgba(14, 165, 233, 0.03); margin: 0; border-radius: 8px; transition: all 0.3s ease;">
-            <div class="scan-icon" id="pos-scan-icon" style="font-size: 28px; margin: 0; background: var(--bg); padding: 8px; border-radius: 8px; box-shadow: 0 0 15px var(--sky-glow); transition: all 0.3s ease;">📷</div>
-            <div style="flex: 1;">
-              <div class="scan-text" id="pos-scan-text" style="font-size: 14px; font-weight: 700; color: var(--muted); transition: all 0.3s ease;">AI Camera Offline</div>
-              <div class="scan-hint" id="pos-scan-hint" style="margin-top: 4px; font-size: 11px; opacity: 0.9; color: var(--muted); transition: all 0.3s ease;">Enter patient name to wake up camera</div>
+          <div class="scan-area gen-style-42" id="pos-scan-area" data-requires="ai_camera">
+            <div class="scan-icon gen-style-43" id="pos-scan-icon">📷</div>
+            <div class="gen-style-44">
+              <div class="scan-text gen-style-45" id="pos-scan-text">AI Camera Offline</div>
+              <div class="scan-hint gen-style-46" id="pos-scan-hint">Enter patient name to wake up camera</div>
             </div>
-            <div id="pos-radar-sweep" style="display: none; width: 20px; height: 20px; border: 2px dashed var(--sky); border-radius: 50%; animation: scan-spin 1.5s linear infinite;"></div>
+            <div id="pos-radar-sweep" class="gen-style-47"></div>
           </div>
 
-          <div class="card" style="margin-bottom:0; flex-grow: 1; overflow-y: auto;">
+          <div class="card gen-style-48">
             <div class="card-title"><span class="icon">🧠</span> Doctor Suggestions</div>
             <div id="doctor-suggestions-container">
-              <div class="fs11 text-muted mb6" style="font-family:'DM Mono',monospace;">Select a doctor to view prescription patterns...</div>
-              <div class="text-muted" style="font-size:12px;text-align:center;padding:20px 0;">No active suggestion data available.</div>
+              <div class="fs11 text-muted mb6 gen-style-49">Select a doctor to view prescription patterns...</div>
+              <div class="text-muted gen-style-50">No active suggestion data available.</div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Bottom Summary Panel (Full Width) -->
-      <div class="pos-bottom-panel" style="background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); margin-top: 16px;">
-        <div style="display: flex; gap: 12px; align-items: center;">
-          <div style="background: var(--bg); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-family: 'DM Mono', monospace; color: var(--sky);">Remarks [ALT+R]</div>
-          <input type="text" placeholder="Add remarks here, these remarks help you to identify things around your bill..." style="flex-grow: 1; background: transparent; border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; color: var(--white); font-size: 12px;" />
+      <div class="pos-bottom-panel gen-style-51">
+        <div class="gen-style-52">
+          <div class="gen-style-53">Remarks [ALT+R]</div>
+          <input type="text" placeholder="Add remarks here, these remarks help you to identify things around your bill..." / class="gen-style-54">
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1.5fr; gap: 16px; font-size: 12px;">
+        <div class="gen-style-55">
           <div>
-            <div class="text-muted" style="font-size: 10px; margin-bottom: 4px;">DELIVERED BY</div>
-            <input type="text" style="width: 100%; background: var(--bg); border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; color: var(--white);" />
+            <div class="text-muted gen-style-56">DELIVERED BY</div>
+            <input type="text" placeholder="Delivered By" title="Delivered By" / class="gen-style-57">
           </div>
           <div>
-            <div class="text-muted" style="font-size: 10px; margin-bottom: 4px;">PAYMENT MODE</div>
-            <select style="width: 100%; background: var(--bg); border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; color: var(--sky);"><option>CASH</option><option>CARD</option><option>UPI</option></select>
+            <div class="text-muted gen-style-56">PAYMENT MODE</div>
+            <select title="Payment Mode" class="gen-style-58"><option>CASH</option><option>CARD</option><option>UPI</option></select>
           </div>
           <div>
-            <div class="text-muted" style="font-size: 10px; margin-bottom: 4px;">RECEIVED</div>
-            <div style="display: flex; align-items: center;"><span class="text-muted" style="margin-right:4px;">₹</span><input type="number" value="0" style="width: 100%; background: transparent; border: none; border-bottom: 1px dashed var(--border); color: var(--white); text-align: right;" /></div>
+            <div class="text-muted gen-style-56">RECEIVED</div>
+            <div class="gen-style-59"><span class="text-muted gen-style-60">₹</span><input type="number" value="0" title="Received Amount" / class="gen-style-61"></div>
           </div>
           <div>
-            <div class="text-muted" style="font-size: 10px; margin-bottom: 4px;">SELECTED TOTAL</div>
-            <div style="text-align: right; color: var(--white); padding-top: 4px; font-family: 'DM Mono', monospace;">0.00</div>
+            <div class="text-muted gen-style-56">SELECTED TOTAL</div>
+            <div class="gen-style-62">0.00</div>
           </div>
           <div>
-            <div class="text-muted" style="font-size: 10px; margin-bottom: 4px;">OUTSTANDING</div>
-            <div style="text-align: right; color: var(--danger); padding-top: 4px; font-family: 'DM Mono', monospace;">0.00</div>
+            <div class="text-muted gen-style-56">OUTSTANDING</div>
+            <div class="gen-style-63">0.00</div>
           </div>
-          <div style="display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; padding-left: 16px; border-left: 1px solid var(--border);">
-            <div style="display: flex; width: 100%; justify-content: space-between; font-size: 16px; font-weight: 700; color: var(--white); align-items: flex-end;">
-              <span class="text-muted" style="font-size: 14px; padding-bottom: 2px;">Total</span>
-              <span class="pos-bottom-panel-total" style="font-size: 20px; color: var(--sky);">₹ 145.30</span>
+          <div class="gen-style-64">
+            <div class="gen-style-65">
+              <span class="text-muted gen-style-66">Total</span>
+              <span class="pos-bottom-panel-total gen-style-67">₹ 145.30</span>
             </div>
-            <div style="display: flex; gap: 8px; margin-top: 8px;">
-              <button id="btn-save" class="btn btn-ghost" style="padding: 4px 12px; font-size: 11px;" onclick="processSale(false)">Save [F10]</button>
-              <button id="btn-save-print" class="btn btn-primary" style="padding: 4px 12px; font-size: 11px; box-shadow: 0 0 10px rgba(52,211,153,0.3);" onclick="processSale(true)">Save & Print [F11]</button>
-                <button id="btn-reminder" class="btn btn-primary" style="padding: 4px 12px; font-size: 11px; box-shadow: 0 0 10px rgba(56,189,248,0.3);" onclick="sendRefillReminder()">Send Refill Reminder</button>
+            <div class="gen-style-68">
+              <button id="btn-save" class="btn btn-ghost gen-style-69" onclick="processSale(false)">Save [F10]</button>
+              <button id="btn-save-print" class="btn btn-primary gen-style-70" onclick="processSale(true)">Save & Print [F11]</button>
+                <button id="btn-reminder" class="btn btn-primary gen-style-71" onclick="sendRefillReminder()">Send Refill Reminder</button>
             </div>
           </div>
         </div>
 
-        <div class="pos-bottom-panel-footer" style="display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace;">
+        <div class="pos-bottom-panel-footer gen-style-72">
           <div>Items/Qty: <span class="text-white">3 / 3</span></div>
           <div>Round Off (₹): <span class="text-white">0.00</span></div>
           <div>Disc (₹): <span class="text-white">14.00</span></div>
@@ -1488,17 +1788,17 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="notice success">✅ Last backup completed at 14:00 today — 2.4 MB</div>
           <div class="progress-wrap">
             <div class="progress-label"><span>Next auto-backup</span><span>in 47 min</span></div>
-            <div class="progress-track"><div class="progress-fill" style="width:78%"></div></div>
+            <div class="progress-track"><div class="progress-fill gen-style-73"></div></div>
           </div>
           <button class="btn btn-ghost mt8" id="dashboardBackupBtn">🔄 Backup Now</button>
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📌</span> Pending Tasks</div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--danger)"></div><div class="log-msg">17 items at reorder level — place PO</div><div class="log-time">Urgent</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--accent-orange)"></div><div class="log-msg">3 invoices pending reconciliation</div><div class="log-time">Today</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--sky)"></div><div class="log-msg">Email import queue: 4 invoices</div><div class="log-time">Pending</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--muted)"></div><div class="log-msg">GST return due in 8 days</div><div class="log-time">Upcoming</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg">Backup to Telegram completed</div><div class="log-time">Done</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-74"></div><div class="log-msg">17 items at reorder level — place PO</div><div class="log-time">Urgent</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-75"></div><div class="log-msg">3 invoices pending reconciliation</div><div class="log-time">Today</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-76"></div><div class="log-msg">Email import queue: 4 invoices</div><div class="log-time">Pending</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-77"></div><div class="log-msg">GST return due in 8 days</div><div class="log-time">Upcoming</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-78"></div><div class="log-msg">Backup to Telegram completed</div><div class="log-time">Done</div></div>
         </div>
       </div>
     </div>
@@ -1525,7 +1825,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <td class="expiry-${item.expiry_date ? 'green' : 'red'}">${item.expiry_date}</td>
         <td>${item.reorder_level || ''}</td>
         <td><span class="badge badge-${item.quantity < (item.reorder_level||10) ? 'danger' : 'green'}">${item.quantity < (item.reorder_level||10) ? 'Low Stock' : 'OK'}</span></td>
-        <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">Edit</button></td>
+        <td><button class="btn btn-ghost gen-style-79">Edit</button></td>
       `;
       tbody.appendChild(tr);
     });
@@ -1615,11 +1915,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
     <div class="topbar">
-<div id="edit-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);justify-content:center;align-items:center;z-index:9999;">
-  <div style="background:var(--surface);padding:24px;border-radius:12px;border:1px solid var(--border);max-width:400px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,0.1);display:flex;flex-direction:column;gap:12px;">
-    <h3 style="font-family:'Syne',sans-serif;font-weight:700;color:var(--white);font-size:16px;">Edit Item</h3>
-    <input id="modal-field" placeholder="Value" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--white);padding:8px 12px;border-radius:6px;outline:none;" />
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+<div id="edit-modal" class="gen-style-80">
+  <div class="gen-style-81">
+    <h3 class="gen-style-82">Edit Item</h3>
+    <input id="modal-field" placeholder="Value" / class="gen-style-83">
+    <div class="gen-style-84">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveEdit()">Save</button>
     </div>
@@ -1629,51 +1929,51 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="page-title">📦 Inventory Management — Stock Master</div>
         <div class="page-subtitle">Page 3 · CRUD, low-stock highlights — always on</div>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <input type="file" id="file-upload-input" style="display: none;" accept=".pdf,.csv" onchange="uploadFile(this)" />
-        <button class="btn btn-ghost" style="border: 1px solid var(--border); font-size: 13px;" onclick="document.getElementById('file-upload-input').click()"><span class="icon">📤</span> Upload PDF / CSV</button>
+      <div class="gen-style-85">
+        <input type="file" id="file-upload-input" accept=".pdf,.csv" onchange="uploadFile(this)" / class="gen-style-86">
+        <button class="btn btn-ghost gen-style-87" onclick="document.getElementById('file-upload-input').click()"><span class="icon">📤</span> Upload PDF / CSV</button>
         <button class="btn btn-primary" onclick="openAddItemModal()">+ Add Item</button>
       </div>
     </div>
     <div class="content">
       <!-- Pre-Store Section -->
-      <div class="card" style="border: 1px dashed var(--sky); background: rgba(56, 189, 248, 0.05); margin-bottom: 24px; padding: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">
+      <div class="card gen-style-88">
+        <div class="gen-style-89">
           <div>
-            <div style="font-weight: 700; color: var(--sky); font-size: 14px;">📥 Pending Imports (Pre-Store)</div>
-            <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Source: <strong style="color: var(--white);">database (SQLite)</strong> • <span id="pending-imports-count">0 items extracted</span></div>
+            <div class="gen-style-90">📥 Pending Imports (Pre-Store)</div>
+            <div class="gen-style-91">Source: <strong class="gen-style-92">database (SQLite)</strong> • <span id="pending-imports-count">0 items extracted</span></div>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn btn-ghost" id="discard-all-btn" style="color: var(--danger); font-size: 12px; padding: 6px 12px;">Discard All</button>
-            <button class="btn btn-primary" id="commit-selected-btn" style="font-size: 12px; padding: 6px 12px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
+          <div class="gen-style-85">
+            <button class="btn btn-ghost gen-style-93" id="discard-all-btn">Discard All</button>
+            <button class="btn btn-primary gen-style-94" id="commit-selected-btn">Commit Selected to Stock</button>
           </div>
         </div>
         
-        <div class="tbl-wrap" style="border: none; background: transparent; margin: 0; box-shadow: none;">
-          <table style="width: 100%; border-collapse: collapse;">
-            <thead style="background: rgba(0,0,0,0.2);">
+        <div class="tbl-wrap gen-style-95">
+          <table class="gen-style-19">
+            <thead class="gen-style-96">
               <tr>
-                <th style="padding: 8px 12px; width: 40px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></th>
-                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Extracted Name</th>
-                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Match Status</th>
-                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Batch</th>
-                <th style="padding: 8px 12px; text-align: left; color: var(--muted); font-size: 11px;">Expiry</th>
-                <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px;">Qty</th>
-                <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px;">Free</th>
-                <th style="padding: 8px 12px; text-align: right; color: var(--muted); font-size: 11px;">Rate</th>
-                <th style="padding: 8px 12px; text-align: center; color: var(--muted); font-size: 11px;">Actions</th>
+                <th class="gen-style-97"><input type="checkbox" checked / class="gen-style-98"></th>
+                <th class="gen-style-99">Extracted Name</th>
+                <th class="gen-style-99">Match Status</th>
+                <th class="gen-style-99">Batch</th>
+                <th class="gen-style-99">Expiry</th>
+                <th class="gen-style-100">Qty</th>
+                <th class="gen-style-100">Free</th>
+                <th class="gen-style-100">Rate</th>
+                <th class="gen-style-101">Actions</th>
               </tr>
             </thead>
             <tbody id="pending-imports-body">
               <tr>
-                <td colspan="9" style="text-align: center; padding: 20px; color: var(--muted);">No pending imports. Upload a PDF or CSV file to queue items.</td>
+                <td colspan="9" class="gen-style-102">No pending imports. Upload a PDF or CSV file to queue items.</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div style="font-weight: 700; margin-bottom: 12px; color: var(--white); font-size: 15px;">📦 Active Inventory</div>
+      <div class="gen-style-103">📦 Active Inventory</div>
       <div class="notice warn">⚠️ 17 items are at or below their reorder level. Review highlighted rows.</div>
       <div class="tbl-wrap">
         <table>
@@ -1682,7 +1982,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </tr></thead>
           <tbody id="inventory-body">
             <tr>
-              <td colspan="9" style="text-align: center; padding: 20px; color: var(--muted);">Loading active inventory...</td>
+              <td colspan="9" class="gen-style-102">Loading active inventory...</td>
             </tr>
           </tbody>
         </table>
@@ -1800,11 +2100,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
     <div class="topbar">
-<div id="edit-purchase-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);justify-content:center;align-items:center;z-index:9999;">
-  <div style="background:var(--surface);padding:24px;border-radius:12px;border:1px solid var(--border);max-width:400px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,0.1);display:flex;flex-direction:column;gap:12px;">
-    <h3 style="font-family:'Syne',sans-serif;font-weight:700;color:var(--white);font-size:16px;">Edit Purchase</h3>
-    <input id="purchase-field" placeholder="Value" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--white);padding:8px 12px;border-radius:6px;outline:none;" />
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+<div id="edit-purchase-modal" class="gen-style-80">
+  <div class="gen-style-81">
+    <h3 class="gen-style-82">Edit Purchase</h3>
+    <input id="purchase-field" placeholder="Value" / class="gen-style-83">
+    <div class="gen-style-84">
       <button class="btn btn-ghost" onclick="closePurchaseModal()">Cancel</button>
       <button class="btn btn-primary" onclick="savePurchaseEdit()">Save</button>
     </div>
@@ -1816,108 +2116,108 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       <span class="flag-pill orange" data-requires="email_parser">email_parser</span>
     </div>
-    <div class="content" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0;">
+    <div class="content gen-style-104">
       <!-- Purchase Toolbar -->
-      <div style="display: flex; gap: 12px; background: var(--surface2); border: 1px solid var(--border); padding: 8px 12px; align-items: center; font-size: 11px;">
-        <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
-          <span class="icon" style="color:var(--sky)">⚗️</span>
-          <input type="text" id="distributor-input" placeholder="DISTRIBUTOR [ALT+1]" style="background: transparent; border: none; color: var(--white); width: 140px; font-size: 11px; text-transform: uppercase;" />
-          <button class="btn btn-ghost" style="padding: 2px 6px;" onclick="openModal('add-distributor-modal')">+</button>
+      <div class="gen-style-105">
+        <div class="gen-style-106">
+          <span class="icon gen-style-10">⚗️</span>
+          <input type="text" id="distributor-input" placeholder="DISTRIBUTOR [ALT+1]" / class="gen-style-107">
+          <button class="btn btn-ghost gen-style-9" onclick="openModal('add-distributor-modal')">+</button>
         </div>
-        <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
-          <input type="text" id="invoice-input" placeholder="INVOICE NO [ALT+2]" style="background: transparent; border: none; color: var(--white); width: 120px; font-size: 11px; text-transform: uppercase;" />
+        <div class="gen-style-106">
+          <input type="text" id="invoice-input" placeholder="INVOICE NO [ALT+2]" / class="gen-style-108">
         </div>
-        <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
-          <input type="text" value="24-05-2026" placeholder="[ALT+3]" style="background: transparent; border: none; color: var(--white); width: 80px; font-size: 11px;" />
+        <div class="gen-style-106">
+          <input type="text" value="24-05-2026" placeholder="[ALT+3]" / class="gen-style-109">
         </div>
-        <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
-          <input type="text" placeholder="Ex.Disc [ALT+4]" style="background: transparent; border: none; color: var(--white); width: 80px; font-size: 11px;" />
+        <div class="gen-style-106">
+          <input type="text" placeholder="Ex.Disc [ALT+4]" / class="gen-style-109">
         </div>
-        <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
-          <input type="text" placeholder="Cr.Amt [ALT+5]" style="background: transparent; border: none; color: var(--white); width: 80px; font-size: 11px;" />
+        <div class="gen-style-106">
+          <input type="text" placeholder="Cr.Amt [ALT+5]" / class="gen-style-109">
         </div>
-        <div style="display: flex; align-items: center; gap: 4px; border-right: 1px solid var(--border); padding-right: 8px;">
-          <input type="text" placeholder="CD % [ALT+6]" style="background: transparent; border: none; color: var(--white); width: 60px; font-size: 11px;" />
+        <div class="gen-style-106">
+          <input type="text" placeholder="CD % [ALT+6]" / class="gen-style-110">
         </div>
-        <div style="display: flex; align-items: center; gap: 12px; color: var(--muted);">
-          <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" /> Cash</label>
-          <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" /> Barcode</label>
-          <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" /> CD</label>
-          <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" /> HSN</label>
-          <label style="display: flex; align-items: center; gap: 4px;"><input type="checkbox" /> TCS%</label>
+        <div class="gen-style-111">
+          <label class="gen-style-112"><input type="checkbox" /> Cash</label>
+          <label class="gen-style-112"><input type="checkbox" /> Barcode</label>
+          <label class="gen-style-112"><input type="checkbox" /> CD</label>
+          <label class="gen-style-112"><input type="checkbox" /> HSN</label>
+          <label class="gen-style-112"><input type="checkbox" /> TCS%</label>
         </div>
-        <div style="margin-left: auto;">
-          <button class="btn btn-primary" id="btn-submit-purchase" onclick="submitPurchase()" style="padding: 4px 12px; font-size: 11px; background: #374151; color: white;">⬆ Upload [F2]</button>
+        <div class="gen-style-113">
+          <button class="btn btn-primary gen-style-114" id="btn-submit-purchase" onclick="submitPurchase()">⬆ Upload [F2]</button>
           <button class="btn btn-primary" onclick="openAddPurchaseModal()">+ Add Purchase</button>
-          <button class="btn btn-ghost" id="discard-all-purchases" style="margin-left: 8px; color: var(--danger); font-size: 11px; padding: 4px 10px;">Discard All</button>
-          <button class="btn btn-primary" id="commit-selected-purchases" style="margin-left: 8px; font-size: 11px; padding: 4px 10px; background: var(--sky); color: #000; border: none;">Commit Selected to Stock</button>
+          <button class="btn btn-ghost gen-style-115" id="discard-all-purchases">Discard All</button>
+          <button class="btn btn-primary gen-style-116" id="commit-selected-purchases">Commit Selected to Stock</button>
         </div>
       </div>
 
       <!-- Main Purchase Table -->
-      <div style="flex: 1; overflow-y: auto; position: relative;">
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
-          <thead style="position: sticky; top: 0; background: #2f3640; z-index: 10;">
-            <tr style="border-bottom: 1px solid var(--border);">
-              <th style="padding: 8px; width: 30px;"><input type="checkbox" checked /></th>
-              <th style="padding: 8px; width: 40px;">Sr.No</th>
-              <th style="padding: 8px;">Medicine</th>
-              <th style="padding: 8px;">Batch</th>
-              <th style="padding: 8px;">Expiry</th>
-              <th style="padding: 8px;">Rate</th>
-              <th style="padding: 8px;">MRP</th>
-              <th style="padding: 8px;">Qty</th>
-              <th style="padding: 8px;">Free</th>
-              <th style="padding: 8px;">CGST</th>
-              <th style="padding: 8px;">SGST</th>
-              <th style="padding: 8px;">CD</th>
-              <th style="padding: 8px;">Sch.₹</th>
-              <th style="padding: 8px;">Sch.%</th>
-              <th style="padding: 8px;">Net</th>
-              <th style="padding: 8px; text-align: right; width: 40px;"><button style="background:#374151; border:none; color:white; width: 20px; height: 20px; border-radius: 4px; cursor: pointer;">+</button></th>
+      <div class="gen-style-117">
+        <table class="gen-style-118">
+          <thead class="gen-style-119">
+            <tr class="gen-style-120">
+              <th class="gen-style-121"><input type="checkbox" checked /></th>
+              <th class="gen-style-122">Sr.No</th>
+              <th class="gen-style-123">Medicine</th>
+              <th class="gen-style-123">Batch</th>
+              <th class="gen-style-123">Expiry</th>
+              <th class="gen-style-123">Rate</th>
+              <th class="gen-style-123">MRP</th>
+              <th class="gen-style-123">Qty</th>
+              <th class="gen-style-123">Free</th>
+              <th class="gen-style-123">CGST</th>
+              <th class="gen-style-123">SGST</th>
+              <th class="gen-style-123">CD</th>
+              <th class="gen-style-123">Sch.₹</th>
+              <th class="gen-style-123">Sch.%</th>
+              <th class="gen-style-123">Net</th>
+              <th class="gen-style-124"><button class="gen-style-125">+</button></th>
             </tr>
           </thead>
           <tbody id="purchases-body">
             <tr>
-              <td colspan="17" style="text-align: center; padding: 20px; color: var(--muted);">Loading purchases history...</td>
+              <td colspan="17" class="gen-style-102">Loading purchases history...</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <!-- Bottom Panel -->
-      <div style="flex-shrink: 0; background: var(--bg); border-top: 1px solid var(--border);">
-        <div style="padding: 4px 12px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between;">
+      <div class="gen-style-126">
+        <div class="gen-style-127">
           <span>Rack: N/A Net CP ₹0.00, CGST: 0, SGST: 0, IGST: 0.00, HSN: N/A, Composition: N/A, Category: N/A</span>
           <span>Last Purchase Id: PU-14017F</span>
         </div>
-        <div style="background: var(--surface2); color: var(--white); padding: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 32px;">
-            <div style="display: flex; justify-content: space-between; width: 120px;"><span>Items/Qty</span> <span style="font-weight: bold;">1 / 0</span></div>
-            <div style="display: flex; justify-content: space-between; width: 120px;"><span>Scheme(₹)</span> <span style="font-weight: bold;">0.00</span></div>
-            <div style="display: flex; justify-content: space-between; width: 120px;"><span>Tax Total(₹)</span> <span style="font-weight: bold;">0.00</span></div>
-            <div style="display: flex; flex-direction: column; gap: 4px; width: 200px; grid-row: span 2;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="width: 80px; color: var(--sky);">Placed Order Id:</span>
-                <input type="text" style="flex: 1; border: 1px solid var(--border); padding: 4px; font-size: 11px; background: rgba(0,0,0,0.2); color: var(--white);" />
+        <div class="gen-style-128">
+          <div class="gen-style-129">
+            <div class="gen-style-130"><span>Items/Qty</span> <span class="gen-style-131">1 / 0</span></div>
+            <div class="gen-style-130"><span>Scheme(₹)</span> <span class="gen-style-131">0.00</span></div>
+            <div class="gen-style-130"><span>Tax Total(₹)</span> <span class="gen-style-131">0.00</span></div>
+            <div class="gen-style-132">
+              <div class="gen-style-133">
+                <span class="gen-style-134">Placed Order Id:</span>
+                <input type="text" / class="gen-style-135">
               </div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="width: 80px; color: var(--sky);">Remarks:</span>
-                <input type="text" style="flex: 1; border: 1px solid var(--border); padding: 4px; font-size: 11px; background: rgba(0,0,0,0.2); color: var(--white);" />
+              <div class="gen-style-133">
+                <span class="gen-style-134">Remarks:</span>
+                <input type="text" / class="gen-style-135">
               </div>
             </div>
             
-            <div style="display: flex; justify-content: space-between; width: 120px;"><span>CD (₹)</span> <span style="font-weight: bold;">0.00</span></div>
-            <div style="display: flex; justify-content: space-between; width: 120px;"><span>Add/Less</span> <span style="font-weight: bold;">0</span></div>
-            <div style="display: flex; justify-content: space-between; width: 120px;"><span>Gross Total (₹)</span> <span style="font-weight: bold;">0.00</span></div>
+            <div class="gen-style-130"><span>CD (₹)</span> <span class="gen-style-131">0.00</span></div>
+            <div class="gen-style-130"><span>Add/Less</span> <span class="gen-style-131">0</span></div>
+            <div class="gen-style-130"><span>Gross Total (₹)</span> <span class="gen-style-131">0.00</span></div>
           </div>
           
-          <div style="display: flex; align-items: center; gap: 16px; border-left: 1px solid var(--border); padding-left: 16px;">
-            <div style="text-align: right;">
-              <div style="color: var(--muted);">Order Total</div>
-              <div style="font-size: 20px; font-weight: bold; color: var(--white);">₹ 0</div>
+          <div class="gen-style-136">
+            <div class="gen-style-137">
+              <div class="gen-style-138">Order Total</div>
+              <div class="gen-style-139">₹ 0</div>
             </div>
-            <button class="btn btn-primary" style="background: #374151; color: white; border: none; font-size: 11px; padding: 8px 16px;">Generate Barcode<br>[F10]</button>
+            <button class="btn btn-primary gen-style-140">Generate Barcode<br>[F10]</button>
           </div>
         </div>
       </div>
@@ -2193,7 +2493,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="content">
     <div class="card">
       <div class="card-title">Return History</div>
-      <table style="width:100%; border-collapse:collapse;">
+      <table class="gen-style-141">
         <thead><tr><th>Return No</th><th>Original Invoice</th><th>Type</th><th>Total</th><th>Date</th></tr></thead>
         <tbody id="returns-body"></tbody>
       </table>
@@ -2202,7 +2502,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill sky" data-requires="ai_camera">ai_camera ON → Batch scan for expired strips enabled</span>
       </div>
-      <div style="display:flex;gap:12px;margin-bottom:16px;">
+      <div class="gen-style-142">
         <button class="btn btn-primary" onclick="handleCustomerReturn()">👤 Customer Returns</button>
         <button class="btn btn-ghost" onclick="handleDistributorReturn()">🏪 Distributor Returns</button>
       </div>
@@ -2266,7 +2566,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="content">
     <div class="card">
       <div class="card-title">Order History</div>
-      <table style="width:100%; border-collapse:collapse;">
+      <table class="gen-style-141">
         <thead><tr><th>Order ID</th><th>Product</th><th>Requester / Phone</th><th>Qty</th><th>Status</th><th>Date</th></tr></thead>
         <tbody id="orders-body"></tbody>
       </table>
@@ -2289,7 +2589,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📊</span> Request Tracker</div>
-          <div style="text-align: center; padding: 20px; color: var(--muted); font-size: 12px;">No active requests logged.</div>
+          <div class="gen-style-143">No active requests logged.</div>
         </div>
       </div>
     </div>
@@ -2334,7 +2634,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill green" data-requires="whatsapp">whatsapp ON → Daily expiry summary sent via WhatsApp</span>
       </div>
-      <div class="grid3" style="margin-bottom:16px;">
+      <div class="grid3 gen-style-144">
         <div class="kpi sky"><div class="kpi-label">Expiring &lt; 30 days</div><div class="kpi-value">4</div><div class="kpi-delta neg">Critical</div></div>
         <div class="kpi orange"><div class="kpi-label">Expiring 30–60 days</div><div class="kpi-value">11</div><div class="kpi-delta">Review soon</div></div>
         <div class="kpi green"><div class="kpi-label">Expiring 60–90 days</div><div class="kpi-value">23</div><div class="kpi-delta">Monitor</div></div>
@@ -2344,7 +2644,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <thead><tr><th>Product</th><th>Batch</th><th>Qty</th><th>Expiry</th><th>Days Left</th><th>Alert</th></tr></thead>
           <tbody id="expiry-body">
             <tr>
-              <td colspan="6" style="text-align: center; padding: 20px; color: var(--muted);">Loading expiring inventory...</td>
+              <td colspan="6" class="gen-style-102">Loading expiring inventory...</td>
             </tr>
           </tbody>
         </table>
@@ -2413,7 +2713,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 history.forEach(h => {
                   const div = document.createElement('div');
                   div.className = 'log-entry';
-                  div.innerHTML = `<div class="log-dot" style="background:var(--sky)"></div>` +
+                  div.innerHTML = `<div class="log-dot gen-style-76"></div>` +
                     `<div class="log-msg"><strong class="text-white">Invoice ${h.invoice_no}</strong><br>` +
                     `<span class="fs11 text-muted">${h.total_amount} on ${new Date(h.date).toLocaleDateString()}</span></div>` +
                     `<div class="log-time">${new Date(h.date).toLocaleTimeString()}</div>`;
@@ -2443,9 +2743,9 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">🕒</span> Purchase History</div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--sky)"></div><div class="log-msg"><strong class="text-white">Metformin 500mg × 30</strong><br><span class="fs11 text-muted">Bill #2024-0341 · ₹127.50</span></div><div class="log-time">May 10</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--sky)"></div><div class="log-msg"><strong class="text-white">Atorvastatin 10mg × 30</strong><br><span class="fs11 text-muted">Bill #2024-0298 · ₹210.00</span></div><div class="log-time">Apr 12</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--sky)"></div><div class="log-msg"><strong class="text-white">Amlodipine 5mg × 30</strong><br><span class="fs11 text-muted">Bill #2024-0254 · ₹89.00</span></div><div class="log-time">Mar 14</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-76"></div><div class="log-msg"><strong class="text-white">Metformin 500mg × 30</strong><br><span class="fs11 text-muted">Bill #2024-0341 · ₹127.50</span></div><div class="log-time">May 10</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-76"></div><div class="log-msg"><strong class="text-white">Atorvastatin 10mg × 30</strong><br><span class="fs11 text-muted">Bill #2024-0298 · ₹210.00</span></div><div class="log-time">Apr 12</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-76"></div><div class="log-msg"><strong class="text-white">Amlodipine 5mg × 30</strong><br><span class="fs11 text-muted">Bill #2024-0254 · ₹89.00</span></div><div class="log-time">Mar 14</div></div>
         </div>
       </div>
     </div>
@@ -2499,9 +2799,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="btn-row">
           <button class="btn btn-primary" id="generateReportBtn">📊 Generate Report</button>
           <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=sales', '_blank')">📄 Export PDF</button>
-          <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="cloud_export" onclick="
-            fetch('/api/utilities/cloud/push', { method: 'POST' })
-            .then(res => res.json())
+          <button class="btn btn-ghost gen-style-145" data-requires="cloud_export" onclick=" fetch('/api/utilities/cloud/push', { method: 'POST' }) .then(res => res.json())
             .then(data => alert(data.message))
             .catch(err => alert('Cloud push error'));
           ">☁️ Push to Cloud Storage</button>
@@ -2511,12 +2809,12 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="kpi sky"><div class="kpi-label">Monthly Revenue</div><div class="kpi-value">₹8.4L</div><div class="kpi-delta">▲ 11.2% vs last month</div></div>
         <div class="kpi green"><div class="kpi-label">Monthly Profit</div><div class="kpi-value">₹1.68L</div><div class="kpi-delta">▲ 9.0% vs last month</div></div>
         <div class="kpi orange"><div class="kpi-label">GST Payable (CGST)</div><div class="kpi-value">₹34,200</div><div class="kpi-delta">Due in 8 days</div></div>
-        <div class="kpi purple"><div class="kpi-label">Top Distributor</div><div class="kpi-value" style="font-size:17px;">Medico Traders</div><div class="kpi-delta">₹2.1L purchases this month</div></div>
+        <div class="kpi purple"><div class="kpi-label">Top Distributor</div><div class="kpi-value gen-style-146">Medico Traders</div><div class="kpi-delta">₹2.1L purchases this month</div></div>
       </div>
-      <div class="card mt16" id="report-results-card" style="display:none; margin-top:16px;">
+      <div class="card mt16 gen-style-147" id="report-results-card">
         <div class="card-title"><span class="icon">📈</span> Report Results</div>
         <div class="tbl-wrap">
-          <table style="width:100%; border-collapse:collapse;">
+          <table class="gen-style-141">
             <thead id="report-table-head"></thead>
             <tbody id="report-table-body"></tbody>
           </table>
@@ -2553,25 +2851,20 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="btn-row mt8">
             <button class="btn btn-primary" id="sendEmailBtn">Send Email</button>
-            <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="telegram" onclick="
-              const message = 'Daily Pharmacy Summary: Total Sales and Purchases have been recorded successfully.';
-              fetch('/api/utilities/telegram/send', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ message })
-              }).then(res => res.json()).then(data => alert(data.message)).catch(err => alert('Telegram Error'));
+            <button class="btn btn-ghost gen-style-145" data-requires="telegram" onclick=" const message = 'Daily Pharmacy Summary: Total Sales and Purchases have been recorded successfully.'; fetch('/api/utilities/telegram/send', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ message }) }).then(res => res.json()).then(data => alert(data.message)).catch(err => alert('Telegram Error'));
             ">☁️ Upload to Telegram</button>
           </div>
-          <div id="emailResult" class="notice mt8" style="display:none;"></div>
+          <div id="emailResult" class="notice mt8 gen-style-148"></div>
         </div>
 
         <!-- Distributor Inbox -->
         <div class="card">
           <div class="card-title"><span class="icon">📥</span> Distributor Emails Inbox</div>
-          <p class="text-muted" style="font-size:12px;margin-bottom:12px;">Fetch recent distributor emails and manually select invoice documents to import them.</p>
+          <p class="text-muted gen-style-149">Fetch recent distributor emails and manually select invoice documents to import them.</p>
           <div class="btn-row mb8">
             <button class="btn btn-ghost" onclick="fetchInboxEmails()">🔄 Refresh Inbox</button>
           </div>
-          <div class="tbl-wrap" style="max-height: 280px; overflow-y: auto;">
+          <div class="tbl-wrap gen-style-150">
             <table>
               <thead><tr><th>Date</th><th>From</th><th>Subject</th><th>Distributor</th><th>Action</th></tr></thead>
               <tbody id="inbox-emails-list">
@@ -2585,11 +2878,11 @@ document.addEventListener('DOMContentLoaded', () => {
       <!-- Attachment Processing Section -->
       <div class="card mt16">
         <div class="card-title"><span class="icon">📎</span> Email Attachments (CSV/Excel/Txt Orders)</div>
-        <p class="text-muted" style="font-size:12px;margin-bottom:12px;">Process pending medicine list documents received via email directly into the store inventory.</p>
+        <p class="text-muted gen-style-149">Process pending medicine list documents received via email directly into the store inventory.</p>
         <div class="btn-row mb8">
           <button class="btn btn-ghost" onclick="fetchAttachments()">🔄 Refresh Attachments</button>
         </div>
-        <div class="tbl-wrap" style="max-height: 280px; overflow-y: auto;">
+        <div class="tbl-wrap gen-style-150">
           <table>
             <thead><tr><th>Filename</th><th>Size</th><th>Date Received</th><th>Action</th></tr></thead>
             <tbody id="attachments-list">
@@ -2597,7 +2890,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </tbody>
           </table>
         </div>
-        <div id="attachmentParseResult" class="notice mt8" style="display:none;"></div>
+        <div id="attachmentParseResult" class="notice mt8 gen-style-148"></div>
       </div>
 
     </div>
@@ -2653,21 +2946,20 @@ document.addEventListener('DOMContentLoaded', () => {
               
               // Emojis/styles for order detection
               const orderBadge = mail.isOrder 
-                ? `<span class="badge badge-green" style="margin-left:4px;">Invoice</span>` 
+                ? `<span class="badge badge-green gen-style-151">Invoice</span>` 
                 : '';
               
               const importBtn = `
-                <button class="btn btn-primary" style="padding:4px 8px;font-size:11px;" 
-                        onclick="importManualEmail('${escapeHtml(mail.from)}', '${escapeHtml(mail.subject)}', '${escapeHtml(mail.body)}', '${mail.date}')">
+                <button class="btn btn-primary gen-style-152" onclick="importManualEmail('${escapeHtml(mail.from)}', '${escapeHtml(mail.subject)}', '${escapeHtml(mail.body)}', '${mail.date}')">
                   Import
                 </button>
               `;
 
               tr.innerHTML = `
-                <td class="mono text-muted" style="font-size:11px;">${formattedDate}</td>
-                <td class="text-white fw700" style="font-size:12px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${mail.from}">${mail.from}</td>
-                <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${mail.subject}">${mail.subject} ${orderBadge}</td>
-                <td class="text-sky fw700" style="font-size:12px;">${mail.distributorName}</td>
+                <td class="mono text-muted gen-style-153">${formattedDate}</td>
+                <td class="text-white fw700 gen-style-154" title="${mail.from}">${mail.from}</td>
+                <td title="${mail.subject}" class="gen-style-155">${mail.subject} ${orderBadge}</td>
+                <td class="text-sky fw700 gen-style-156">${mail.distributorName}</td>
                 <td>${importBtn}</td>
               `;
               list.appendChild(tr);
@@ -2718,16 +3010,15 @@ document.addEventListener('DOMContentLoaded', () => {
               const sizeKB = (file.size / 1024).toFixed(1) + ' KB';
               
               const parseBtn = `
-                <button class="btn btn-primary" style="padding:4px 8px;font-size:11px;" 
-                        onclick="parseAttachment('${escapeHtml(file.filename)}')">
+                <button class="btn btn-primary gen-style-152" onclick="parseAttachment('${escapeHtml(file.filename)}')">
                   Parse & Import
                 </button>
               `;
 
               tr.innerHTML = `
-                <td class="text-white fw700" style="font-size:12px;">${file.filename}</td>
-                <td class="mono text-muted" style="font-size:11px;">${sizeKB}</td>
-                <td class="mono text-muted" style="font-size:11px;">${formattedDate}</td>
+                <td class="text-white fw700 gen-style-156">${file.filename}</td>
+                <td class="mono text-muted gen-style-153">${sizeKB}</td>
+                <td class="mono text-muted gen-style-153">${formattedDate}</td>
                 <td>${parseBtn}</td>
               `;
               list.appendChild(tr);
@@ -2803,32 +3094,32 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="content">
       <div class="card">
         <div class="card-title"><span class="icon">📥</span> Manual Database Migration</div>
-        <p class="text-muted" style="font-size: 13px; margin-bottom: 16px;">
+        <p class="text-muted gen-style-157">
           Upload a `.zip` SQL database backup from your computer, or select an existing one, and click "Run Migration" to start the import.
         </p>
         
-        <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center;">
-          <input type="file" id="migration-file-upload" accept=".zip" style="display: none;" />
-          <button id="upload-migration-btn" class="btn btn-secondary" style="background: var(--surface2); border: 1px solid var(--border); color: var(--white); padding: 8px 16px; border-radius: 4px; cursor: pointer;">Select & Upload Zip</button>
-          <span id="upload-status" class="text-muted" style="font-size: 13px; flex: 1;"></span>
+        <div class="gen-style-158">
+          <input type="file" id="migration-file-upload" accept=".zip" / class="gen-style-86">
+          <button id="upload-migration-btn" class="btn btn-secondary gen-style-159">Select & Upload Zip</button>
+          <span id="upload-status" class="text-muted gen-style-160"></span>
         </div>
 
-        <div style="display: flex; gap: 12px; margin-bottom: 20px;">
-          <select id="migration-file-select" style="flex: 1; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: var(--white); border-radius: 4px;">
+        <div class="gen-style-161">
+          <select id="migration-file-select" class="gen-style-162">
             <option value="">Loading files...</option>
           </select>
           <button id="run-migration-btn" class="btn btn-primary">Run Migration</button>
         </div>
 
-        <div style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <div class="gen-style-163">
+          <div class="gen-style-164">
             <strong id="migration-state">Status: Idle</strong>
             <span id="migration-file" class="text-sky"></span>
           </div>
-          <div style="width: 100%; background: var(--surface2); height: 8px; border-radius: 4px; overflow: hidden;">
-            <div id="migration-progress" style="width: 0%; height: 100%; background: var(--green); transition: width 0.3s;"></div>
+          <div class="gen-style-165">
+            <div id="migration-progress" class="gen-style-166"></div>
           </div>
-          <div id="migration-msg" class="text-muted mt8" style="font-size: 12px;">Waiting to start...</div>
+          <div id="migration-msg" class="text-muted mt8 gen-style-167">Waiting to start...</div>
         </div>
       </div>
       <script>
@@ -2959,17 +3250,17 @@ document.addEventListener('DOMContentLoaded', () => {
             <table>
               <thead><tr><th>☐</th><th>Product</th><th>Batch</th><th>MRP</th></tr></thead>
               <tbody>
-                <tr><td colspan="4" style="text-align:center; padding: 12px; color: var(--muted);">No items ready.</td></tr>
+                <tr><td colspan="4" class="gen-style-168">No items ready.</td></tr>
               </tbody>
             </table>
           </div>
         </div>
         <div class="card" data-requires="custom_labels">
           <div class="card-title"><span class="icon">👁️</span> Label Preview</div>
-          <div style="background:white;border-radius:8px;padding:14px;color:#111;font-family:'DM Mono',monospace;font-size:11px;line-height:1.6;border:2px dashed var(--border)">
-            <div style="font-weight:700;font-size:13px;color:#0b0f1a;">Paracetamol 500mg</div>
+          <div class="gen-style-169">
+            <div class="gen-style-170">Paracetamol 500mg</div>
             <div>Batch: B-2024-11 · Exp: Jun 2026</div>
-            <div style="margin:6px 0;font-size:20px;letter-spacing:0.3em;">|||||||||||||||||</div>
+            <div class="gen-style-171">|||||||||||||||||</div>
             <div>MRP: ₹18.00</div>
           </div>
           <div class="btn-row mt14">
@@ -3026,7 +3317,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="card-title"><span class="icon">⚡</span> Manual Controls</div>
           <div class="progress-wrap">
             <div class="progress-label"><span>Next scheduled backup</span><span>in 47 min</span></div>
-            <div class="progress-track"><div class="progress-fill" style="width:22%"></div></div>
+            <div class="progress-track"><div class="progress-fill gen-style-172"></div></div>
           </div>
           <div class="btn-row mt14">
             <button class="btn btn-primary" id="backupNowBtn">💾 Backup Now</button>
@@ -3035,9 +3326,9 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📁</span> Backup Files</div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1400.db</strong><br><span class="fs11 text-muted">2.4 MB · Telegram ✓</span></div><div class="log-time">14:00</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1300.db</strong><br><span class="fs11 text-muted">2.3 MB · Telegram ✓</span></div><div class="log-time">13:00</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">backup_20250523_1200.db</strong><br><span class="fs11 text-muted">2.3 MB · Local only</span></div><div class="log-time">12:00</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-78"></div><div class="log-msg"><strong class="text-white">backup_20250523_1400.db</strong><br><span class="fs11 text-muted">2.4 MB · Telegram ✓</span></div><div class="log-time">14:00</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-78"></div><div class="log-msg"><strong class="text-white">backup_20250523_1300.db</strong><br><span class="fs11 text-muted">2.3 MB · Telegram ✓</span></div><div class="log-time">13:00</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-78"></div><div class="log-msg"><strong class="text-white">backup_20250523_1200.db</strong><br><span class="fs11 text-muted">2.3 MB · Local only</span></div><div class="log-time">12:00</div></div>
           <button class="btn btn-ghost mt8" id="restoreBackupBtn">🔄 Restore from Backup…</button>
         </div>
       </div>
@@ -3082,56 +3373,56 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
         <div class="card-title"><span class="icon">🚀</span> Feature Flags</div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">📷 AI Camera OCR <span class="badge badge-sky" style="margin-left:6px;">ai_camera</span></div>
+            <div class="toggle-name">📷 AI Camera OCR <span class="badge badge-sky gen-style-173">ai_camera</span></div>
             <div class="toggle-desc">Enables camera-based product scanning on POS and Returns pages</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-ai_camera" checked /><span class="slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">📧 Email Parser <span class="badge badge-orange" style="margin-left:6px;">email_parser</span></div>
+            <div class="toggle-name">📧 Email Parser <span class="badge badge-orange gen-style-173">email_parser</span></div>
             <div class="toggle-desc">Gmail integration for auto-importing distributor invoices and orders</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-email_parser" checked /><span class="slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">💬 WhatsApp Integration <span class="badge badge-green" style="margin-left:6px;">whatsapp</span></div>
+            <div class="toggle-name">💬 WhatsApp Integration <span class="badge badge-green gen-style-173">whatsapp</span></div>
             <div class="toggle-desc">Expiry alerts, refill reminders, dispatch notifications via WhatsApp</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-whatsapp" checked /><span class="slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">☁️ Cloud Backup <span class="badge badge-sky" style="margin-left:6px;">cloud_backup</span></div>
+            <div class="toggle-name">☁️ Cloud Backup <span class="badge badge-sky gen-style-173">cloud_backup</span></div>
             <div class="toggle-desc">Upload hourly backups to Telegram channel</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-cloud_backup" checked /><span class="slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">🧠 Learning Engine <span class="badge badge-purple" style="margin-left:6px;">learning_engine</span></div>
+            <div class="toggle-name">🧠 Learning Engine <span class="badge badge-purple gen-style-173">learning_engine</span></div>
             <div class="toggle-desc">Doctor-wise suggestion sidebar in POS billing</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-learning_engine" checked /><span class="slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">⚖️ Legal Register <span class="badge badge-danger" style="margin-left:6px;">legal_register</span></div>
+            <div class="toggle-name">⚖️ Legal Register <span class="badge badge-danger gen-style-173">legal_register</span></div>
             <div class="toggle-desc">Schedule H1/Narcotic tracking, mandatory doctor ID in POS</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-legal_register" /><span class="slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">🏷️ Custom Labels <span class="badge badge-sky" style="margin-left:6px;">custom_labels</span></div>
+            <div class="toggle-name">🏷️ Custom Labels <span class="badge badge-sky gen-style-173">custom_labels</span></div>
             <div class="toggle-desc">Dynamic label templates in Barcode Generator</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-custom_labels" /><span class="slider"></span></label>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <div class="toggle-name">☁️ Cloud Export <span class="badge badge-sky" style="margin-left:6px;">cloud_export</span></div>
+            <div class="toggle-name">☁️ Cloud Export <span class="badge badge-sky gen-style-173">cloud_export</span></div>
             <div class="toggle-desc">Push generated PDFs to cloud storage from Reports page</div>
           </div>
           <label class="toggle"><input type="checkbox" id="flag-cloud_export" /><span class="slider"></span></label>
@@ -3185,11 +3476,11 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
         <div class="btn-row mt14"><button class="btn btn-primary" id="save-api-key-btn">💾 Save API Key</button></div>
       </div>
       
-      <div class="card" style="grid-column: 1 / -1;">
+      <div class="card gen-style-174">
         <div class="card-title"><span class="icon">🔄</span> Patient Refill Manager</div>
         <div class="grid2">
           <div>
-            <h4 style="color: var(--white); margin-bottom: 10px;">Add New Refill Schedule</h4>
+            <h4 class="gen-style-175">Add New Refill Schedule</h4>
             <div class="field mt8"><label>Patient Name</label><input type="text" id="refill-patient-name" placeholder="John Doe" /></div>
             <div class="field mt8"><label>Patient WhatsApp Phone</label><input type="text" id="refill-patient-phone" placeholder="+919876543210" /></div>
             <div class="field mt8">
@@ -3205,8 +3496,8 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
             </div>
           </div>
           <div>
-            <h4 style="color: var(--white); margin-bottom: 10px;">Active Refill Schedules</h4>
-            <div class="tbl-wrap mt8" style="max-height: 250px; overflow-y: auto;">
+            <h4 class="gen-style-175">Active Refill Schedules</h4>
+            <div class="tbl-wrap mt8 gen-style-176">
               <table>
                 <thead>
                   <tr>
@@ -3218,7 +3509,7 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
                   </tr>
                 </thead>
                 <tbody id="refills-list-body">
-                  <tr><td colspan="5" style="text-align:center;">Loading refills...</td></tr>
+                  <tr><td colspan="5" class="gen-style-177">Loading refills...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -3226,15 +3517,15 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
         </div>
       </div>
       
-      <h3 style="margin-top: 24px; color: var(--text);">🔌 Integration Settings</h3>
-      <div class="grid3" style="margin-top: 16px;">
+      <h3 class="gen-style-178">🔌 Integration Settings</h3>
+      <div class="grid3 gen-style-179">
         <div class="card">
           <div class="card-title"><span class="icon">📧</span> Gmail Settings</div>
           <div class="field mb6"><label>Gmail Address</label><input type="email" id="gmail_user" placeholder="pharmacy@gmail.com" /></div>
           <div class="field mb6">
             <label>16-Digit App Password</label>
             <input type="password" id="gmail_pass" placeholder="xxxx xxxx xxxx xxxx" />
-            <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;">Required for secure inbox access</div>
+            <div class="gen-style-180">Required for secure inbox access</div>
           </div>
           <div class="field mb6"><label>Polling Interval</label>
             <select id="email_polling_interval"><option>5 minutes</option><option>15 minutes</option><option>30 minutes</option><option>1 hour</option></select>
@@ -3269,7 +3560,7 @@ document.getElementById('restoreBackupBtn').addEventListener('click', async () =
           <div class="field mb6">
             <label>Chat ID</label>
             <input type="text" placeholder="-1001234567890" />
-            <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;">Target group or channel ID</div>
+            <div class="gen-style-180">Target group or channel ID</div>
           </div>
           <div class="field mb6"><label>Notification Level</label>
             <select><option>All Backups</option><option>Only Errors</option></select>
@@ -3434,7 +3725,7 @@ async function loadRefillManager() {
       if (tbody) {
         tbody.innerHTML = '';
         if (refills.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 12px; color: var(--muted);">No active refills found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" class="gen-style-168">No active refills found.</td></tr>';
           return;
         }
         refills.forEach(item => {
@@ -3562,7 +3853,7 @@ document.querySelectorAll('.page#page14 .test-conn-btn').forEach(btn => {
             <table>
               <thead><tr><th>Time</th><th>Recipient</th><th>Message Type</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
-                <tr><td colspan="5" style="text-align:center; padding: 12px; color: var(--muted);">No dispatch entries found.</td></tr>
+                <tr><td colspan="5" class="gen-style-168">No dispatch entries found.</td></tr>
               </tbody>
             </table>
           </div>
@@ -3583,15 +3874,15 @@ document.querySelectorAll('.page#page14 .test-conn-btn').forEach(btn => {
             </table>
           </div>
           
-          <h4 style="margin-top:16px;color:var(--text);margin-bottom:8px;">Add Delivery Boy</h4>
-          <div class="grid2" style="gap:8px;">
+          <h4 class="gen-style-181">Add Delivery Boy</h4>
+          <div class="grid2 gen-style-182">
             <div class="field"><label>Name</label><input type="text" id="boy-name" placeholder="Ravi Kumar" /></div>
             <div class="field"><label>WhatsApp</label><input type="text" id="boy-phone" placeholder="+919876543210" /></div>
           </div>
-          <div class="grid2" style="gap:8px;margin-top:8px;">
+          <div class="grid2 gen-style-183">
             <div class="field"><label>Telegram Chat ID</label><input type="text" id="boy-telegram" placeholder="-1001234567" /></div>
-            <div class="field" style="display:flex;align-items:center;margin-top:18px;">
-              <label class="toggle" style="margin-right:8px;"><input type="checkbox" id="boy-active" checked /><span class="slider"></span></label>
+            <div class="field gen-style-184">
+              <label class="toggle gen-style-185"><input type="checkbox" id="boy-active" checked /><span class="slider"></span></label>
               <span class="text-white">Active</span>
             </div>
           </div>
@@ -3624,7 +3915,7 @@ document.querySelectorAll('.page#page14 .test-conn-btn').forEach(btn => {
                   </label>
                 </td>
                 <td>
-                  <button class="btn btn-ghost text-danger" style="padding:3px 8px;font-size:11px;" onclick="deleteDeliveryBoy(${boy.id})">Delete</button>
+                  <button class="btn btn-ghost text-danger gen-style-186" onclick="deleteDeliveryBoy(${boy.id})">Delete</button>
                 </td>
               `;
               list.appendChild(tr);
@@ -3736,10 +4027,10 @@ function runArchive(){
         <div class="card-title"><span class="icon">🕐</span> Archive Configuration</div>
         <div class="field mb6">
           <label>Age Threshold (years) — default: 3</label>
-          <input type="range" min="1" max="10" value="3" style="accent-color:var(--sky);width:100%;margin-top:6px;" />
-          <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--sky);margin-top:4px;">Selected: 3 years → Records older than May 2022 will be archived</div>
+          <input type="range" min="1" max="10" value="3" / class="gen-style-187">
+          <div class="gen-style-188">Selected: 3 years → Records older than May 2022 will be archived</div>
         </div>
-        <div class="toggle-row" style="padding:10px 0;">
+        <div class="toggle-row gen-style-189">
           <div class="toggle-info">
             <div class="toggle-name">🔒 Preserve Schedule H1 / Narcotic Records</div>
             <div class="toggle-desc">Controlled by <strong>legal_register</strong> flag — mandatory legal records never purged</div>
@@ -3750,9 +4041,9 @@ function runArchive(){
           <button class="btn btn-ghost" onclick="previewArchive()">📊 Preview Records to Archive</button>
           <button class="btn btn-danger ml-auto" onclick="runArchive()">🗄️ Run Archive</button>
         </div>
-        <div class="progress-wrap mt14" style="display:none;">
+        <div class="progress-wrap mt14 gen-style-148">
           <div class="progress-label"><span>Archiving…</span><span>0%</span></div>
-          <div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>
+          <div class="progress-track"><div class="progress-fill gen-style-190"></div></div>
         </div>
       </div>
     </div>
@@ -3859,8 +4150,8 @@ document.addEventListener('DOMContentLoaded', () => {
           <button class="btn btn-primary">➕ Add Entry</button>
           <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=compliance', '_blank')">📄 Export Register PDF</button>
         </div>
-      <div id="add-entry-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
-  <div style="background:#222;padding:20px;max-width:400px;">
+      <div id="add-entry-modal" class="gen-style-191">
+  <div class="gen-style-192">
     <h3>Add Compliance Entry</h3>
     <input id="entry-date" type="date" placeholder="Date"/><br/>
     <input id="entry-product" placeholder="Product"/><br/>
@@ -3895,15 +4186,15 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="card-title"><span class="icon">⚙️</span> Engine Configuration</div>
           <div class="field mb6">
             <label>Learning Sensitivity</label>
-            <input type="range" min="1" max="10" value="7" style="accent-color:var(--accent-purple);width:100%;margin-top:6px;" />
-            <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--accent-purple);margin-top:4px;">7 / 10 — High Sensitivity</div>
+            <input type="range" min="1" max="10" value="7" / class="gen-style-193">
+            <div class="gen-style-194">7 / 10 — High Sensitivity</div>
           </div>
           <div class="field mb6">
             <label>Suggestion Count (per doctor)</label>
             <select><option>3</option><option>4</option><option selected>5</option><option>8</option></select>
           </div>
           <div class="btn-row mt14">
-            <button class="btn btn-ghost" id="refreshModelBtn" style="color:var(--accent-purple);border-color:rgba(167,139,250,0.3);">🔄 Refresh Model</button>
+            <button class="btn btn-ghost gen-style-195" id="refreshModelBtn">🔄 Refresh Model</button>
           </div>
         </div>
         <div class="card">
@@ -3912,7 +4203,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <table>
               <thead><tr><th>Doctor</th><th>Top Product</th><th>Suggestions Used</th><th>Accuracy</th></tr></thead>
               <tbody>
-                <tr><td colspan="4" style="text-align:center; padding: 12px; color: var(--muted);">No statistics loaded.</td></tr>
+                <tr><td colspan="4" class="gen-style-168">No statistics loaded.</td></tr>
               </tbody>
             </table>
           </div>
@@ -3920,18 +4211,18 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <!-- AI Learning Engine Data Processing Section -->
-      <div class="card" style="grid-column: 1 / -1; margin-top: 24px;">
+      <div class="card gen-style-196">
         <div class="card-title"><span class="icon">🔧</span> Data Processing</div>
         <div class="field mb6">
           <label for="raw-data">Legacy Data</label>
-          <textarea id="raw-data" placeholder="Paste messy legacy CSV or SQL data here..." rows="8" style="width:100%;"></textarea>
+          <textarea id="raw-data" placeholder="Paste messy legacy CSV or SQL data here..." rows="8" class="gen-style-197"></textarea>
         </div>
         <div class="btn-row mb6">
           <button class="btn btn-primary" id="analyzeStructureBtn">Analyze Structure</button>
         </div>
         <div class="field mb6">
           <label>Mapping Result</label>
-          <pre id="mapping-result" style="background:#111;color:#0f0;padding:8px;max-height:200px;overflow:auto;border-radius:4px;"></pre>
+          <pre id="mapping-result" class="gen-style-198"></pre>
         </div>
         <div class="btn-row mt14">
           <button class="btn btn-success" id="processDataBtn">Process Data</button>
@@ -4017,7 +4308,7 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
         <span class="flag-section-label">Active Flags:</span>
         <span class="flag-pill green">whatsapp ON → All notification types route through this hub</span>
       </div>
-      <div id="qr-section" class="card"><div class="card-title"><span class="icon">🔒</span> WhatsApp QR Auth</div><div class="field"><label>Status</label><div id="qr-status">Initializing...</div></div><img id="qr-img" style="display:none; max-width:200px; margin-top:8px;" /></div>
+      <div id="qr-section" class="card"><div class="card-title"><span class="icon">🔒</span> WhatsApp QR Auth</div><div class="field"><label>Status</label><div id="qr-status">Initializing...</div></div><img id="qr-img" / class="gen-style-199"></div>
       <div class="notice info">💬 All WhatsApp notifications — expiry alerts, refill reminders, dispatches — route through this hub.</div>
       <div class="grid2">
         <div class="card">
@@ -4038,10 +4329,10 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
         </div>
         <div class="card">
           <div class="card-title"><span class="icon">📋</span> Outbound Log</div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">Refill Reminder → Ramesh Kumar</strong><br><span class="fs11 text-muted">Metformin 500mg · Due May 25</span></div><div class="log-time">14:02</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">Expiry Alert → Dr. Sharma</strong><br><span class="fs11 text-muted">4 items expiring this week</span></div><div class="log-time">13:00</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--green)"></div><div class="log-msg"><strong class="text-white">Dispatch → PharmaDist Ltd</strong><br><span class="fs11 text-muted">Order #PO-2024-089 confirmed</span></div><div class="log-time">12:45</div></div>
-          <div class="log-entry"><div class="log-dot" style="background:var(--danger)"></div><div class="log-msg"><strong class="text-white">Failed → Unknown Number</strong><br><span class="fs11 text-muted">Invalid WhatsApp recipient</span></div><div class="log-time">11:30</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-78"></div><div class="log-msg"><strong class="text-white">Refill Reminder → Ramesh Kumar</strong><br><span class="fs11 text-muted">Metformin 500mg · Due May 25</span></div><div class="log-time">14:02</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-78"></div><div class="log-msg"><strong class="text-white">Expiry Alert → Dr. Sharma</strong><br><span class="fs11 text-muted">4 items expiring this week</span></div><div class="log-time">13:00</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-78"></div><div class="log-msg"><strong class="text-white">Dispatch → PharmaDist Ltd</strong><br><span class="fs11 text-muted">Order #PO-2024-089 confirmed</span></div><div class="log-time">12:45</div></div>
+          <div class="log-entry"><div class="log-dot gen-style-74"></div><div class="log-msg"><strong class="text-white">Failed → Unknown Number</strong><br><span class="fs11 text-muted">Invalid WhatsApp recipient</span></div><div class="log-time">11:30</div></div>
         </div>
       </div>
     </div>
@@ -4108,18 +4399,18 @@ document.getElementById('refreshModelBtn')?.addEventListener('click', async () =
     if (!billTableBody) return;
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td style="padding: 8px 12px; color: var(--muted);">*</td>
-      <td style="padding: 8px 12px;" class="text-white fw700">${name}</td>
-      <td style="padding: 8px 12px;" class="mono">${batch}</td>
-      <td style="padding: 8px 12px;" class="mono">12/26</td>
-      <td style="padding: 8px 12px; text-align: right;" class="text-green"><span class="margin-value">${margin.replace('%','')}</span>%</td>
-      <td style="padding: 8px 12px; text-align: right;"><input type="number" class="disc-input" value="${disc.replace('%','')}" min="0" style="width: 40px; text-align: right; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--white);" oninput="validateMargins()" />%</td>
-      <td style="padding: 8px 12px; text-align: right;"><input type="number" value="1" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-      <td style="padding: 8px 12px; text-align: right;"><input type="number" value="0" min="0" style="width: 40px; text-align: right; background: transparent; border: none; color: var(--white);" /></td>
-      <td style="padding: 8px 12px; text-align: right;">${mrp}</td>
-      <td style="padding: 8px 12px; text-align: right;">₹2.50</td>
-      <td style="padding: 8px 12px; text-align: right;" class="text-white fw700">${total}</td>
-      <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="this.closest('tr').remove(); if(typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();">❌</button></td>
+      <td class="gen-style-200">*</td>
+      <td class="text-white fw700 gen-style-29">${name}</td>
+      <td class="mono gen-style-29">${batch}</td>
+      <td class="mono gen-style-29">12/26</td>
+      <td class="text-green gen-style-35"><span class="margin-value">${margin.replace('%','')}</span>%</td>
+      <td class="gen-style-35"><input type="number" class="disc-input gen-style-201" value="${disc.replace('%','')}" min="0" oninput="validateMargins()" />%</td>
+      <td class="gen-style-35"><input type="number" value="1" min="0" / class="gen-style-202"></td>
+      <td class="gen-style-35"><input type="number" value="0" min="0" / class="gen-style-202"></td>
+      <td class="gen-style-35">${mrp}</td>
+      <td class="gen-style-35">₹2.50</td>
+      <td class="text-white fw700 gen-style-35">${total}</td>
+      <td class="gen-style-39"><button class="btn btn-ghost gen-style-79" onclick="this.closest('tr').remove(); if(typeof saveCartToLocalStorage === 'function') saveCartToLocalStorage();">❌</button></td>
     `;
     // Insert after the inline search row (which is the first child)
     if (billTableBody.children.length > 0) {
@@ -4517,27 +4808,27 @@ document.getElementById('generateReportBtn')?.addEventListener('click', async ()
     body.innerHTML = '';
     
     if (typeQuery === 'sales') {
-      head.innerHTML = '<tr><th style="padding: 8px 12px; text-align: left;">Invoice No</th><th style="padding: 8px 12px; text-align: right;">Total Amount</th><th style="padding: 8px 12px; text-align: left;">Date</th></tr>';
+      head.innerHTML = '<tr><th class="gen-style-203">Invoice No</th><th class="gen-style-35">Total Amount</th><th class="gen-style-203">Date</th></tr>';
       data.forEach(row => {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--border)';
-        tr.innerHTML = `<td style="padding: 8px 12px;">${row.invoice_no || ''}</td><td style="padding: 8px 12px; text-align: right; color: var(--white); font-weight: 700;">₹${row.total_amount || 0}</td><td style="padding: 8px 12px;">${row.date || ''}</td>`;
+        tr.innerHTML = `<td class="gen-style-29">${row.invoice_no || ''}</td><td class="gen-style-204">₹${row.total_amount || 0}</td><td class="gen-style-29">${row.date || ''}</td>`;
         body.appendChild(tr);
       });
     } else if (typeQuery === 'purchases') {
-      head.innerHTML = '<tr><th style="padding: 8px 12px; text-align: left;">Invoice No</th><th style="padding: 8px 12px; text-align: left;">Distributor</th><th style="padding: 8px 12px; text-align: right;">Total</th><th style="padding: 8px 12px; text-align: left;">Date</th></tr>';
+      head.innerHTML = '<tr><th class="gen-style-203">Invoice No</th><th class="gen-style-203">Distributor</th><th class="gen-style-35">Total</th><th class="gen-style-203">Date</th></tr>';
       data.forEach(row => {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--border)';
-        tr.innerHTML = `<td style="padding: 8px 12px;">${row.invoice_no || ''}</td><td style="padding: 8px 12px;">${row.distributor || ''}</td><td style="padding: 8px 12px; text-align: right; color: var(--white); font-weight: 700;">₹${row.total_amount || 0}</td><td style="padding: 8px 12px;">${row.date || ''}</td>`;
+        tr.innerHTML = `<td class="gen-style-29">${row.invoice_no || ''}</td><td class="gen-style-29">${row.distributor || ''}</td><td class="gen-style-204">₹${row.total_amount || 0}</td><td class="gen-style-29">${row.date || ''}</td>`;
         body.appendChild(tr);
       });
     } else {
-      head.innerHTML = '<tr><th style="padding: 8px 12px; text-align: left;">Timestamp</th><th style="padding: 8px 12px; text-align: left;">Action Type</th><th style="padding: 8px 12px; text-align: left;">Description</th></tr>';
+      head.innerHTML = '<tr><th class="gen-style-203">Timestamp</th><th class="gen-style-203">Action Type</th><th class="gen-style-203">Description</th></tr>';
       data.forEach(row => {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--border)';
-        tr.innerHTML = `<td style="padding: 8px 12px;">${row.timestamp || ''}</td><td style="padding: 8px 12px;"><span class="flag-pill sky">${row.action_type || ''}</span></td><td style="padding: 8px 12px;">${row.description || ''}</td>`;
+        tr.innerHTML = `<td class="gen-style-29">${row.timestamp || ''}</td><td class="gen-style-29"><span class="flag-pill sky">${row.action_type || ''}</span></td><td class="gen-style-29">${row.description || ''}</td>`;
         body.appendChild(tr);
       });
     }
@@ -4577,367 +4868,367 @@ document.querySelectorAll('.page#page14 .btn-primary').forEach(btn => {
 
 <!-- Modals -->
 <div class="modal-overlay" id="patient-modal">
-  <div class="modal" style="width: 550px; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column;">
-    <div class="modal-header" style="border-bottom: none; padding-bottom: 10px; flex-shrink: 0;">
+  <div class="modal gen-style-205">
+    <div class="modal-header gen-style-206">
       <div class="modal-title">Add Patient</div>
       <button class="modal-close" onclick="closeModal('patient-modal')">✖</button>
     </div>
-    <div class="modal-body" style="padding: 10px 20px; overflow-y: auto; flex-grow: 1;">
+    <div class="modal-body gen-style-207">
       
       <!-- Name -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Name</div>
-        <input type="text" id="new-patient-name" placeholder="Add name" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Name</div>
+        <input type="text" id="new-patient-name" placeholder="Add name" / class="gen-style-210">
       </div>
 
       <!-- Identifier -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Identifier</div>
-        <input type="text" placeholder="Add Identifier" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Identifier</div>
+        <input type="text" placeholder="Add Identifier" / class="gen-style-210">
       </div>
 
       <!-- Family -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Family</div>
-        <input type="text" placeholder="Search Family" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Family</div>
+        <input type="text" placeholder="Search Family" / class="gen-style-210">
       </div>
 
       <!-- Email -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Email</div>
-        <input type="email" placeholder="Add Email" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Email</div>
+        <input type="email" placeholder="Add Email" / class="gen-style-210">
       </div>
 
       <!-- Phone -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Phone</div>
-        <input type="tel" id="new-patient-phone" placeholder="Add Phone" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Phone</div>
+        <input type="tel" id="new-patient-phone" placeholder="Add Phone" / class="gen-style-210">
       </div>
 
       <!-- Pincode -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Pincode</div>
-        <input type="text" placeholder="Add Pincode" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Pincode</div>
+        <input type="text" placeholder="Add Pincode" / class="gen-style-210">
       </div>
 
       <!-- Address -->
-      <div style="display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="font-weight: 700; color: var(--white); font-size: 13px; margin-bottom: 8px;">Address</div>
-        <textarea placeholder="Add Address" rows="3" style="background: transparent; border: none; color: var(--white); font-size: 13px; outline: none; resize: none;"></textarea>
+      <div class="gen-style-211">
+        <div class="gen-style-212">Address</div>
+        <textarea placeholder="Add Address" rows="3" class="gen-style-213"></textarea>
       </div>
 
       <!-- Age -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Age</div>
-        <input type="number" placeholder="Add Age" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Age</div>
+        <input type="number" placeholder="Add Age" / class="gen-style-210">
       </div>
 
       <!-- Gender -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Gender</div>
-        <div style="flex: 1; display: flex; gap: 16px; padding: 12px 0;">
-          <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 6px;"><input type="radio" name="gender" value="Male" style="accent-color: var(--sky);" /> Male</label>
-          <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 6px;"><input type="radio" name="gender" value="Female" style="accent-color: var(--sky);" /> Female</label>
-          <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 6px;"><input type="radio" name="gender" value="Other" style="accent-color: var(--sky);" /> Other</label>
+      <div class="gen-style-208">
+        <div class="gen-style-209">Gender</div>
+        <div class="gen-style-214">
+          <label class="gen-style-215"><input type="radio" name="gender" value="Male" / class="gen-style-98"> Male</label>
+          <label class="gen-style-215"><input type="radio" name="gender" value="Female" / class="gen-style-98"> Female</label>
+          <label class="gen-style-215"><input type="radio" name="gender" value="Other" / class="gen-style-98"> Other</label>
         </div>
       </div>
 
       <!-- Discount % -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Discount %</div>
-        <input type="number" placeholder="Add Discount" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Discount %</div>
+        <input type="number" placeholder="Add Discount" / class="gen-style-210">
       </div>
 
       <!-- Credit Limit -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Credit Limit</div>
-        <input type="number" placeholder="Add Credit Limit" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-209">Credit Limit</div>
+        <input type="number" placeholder="Add Credit Limit" / class="gen-style-210">
       </div>
 
       <!-- SMS/WhatsApp Toggle -->
-      <div style="display: flex; align-items: center; padding: 0 12px; margin-bottom: 12px;">
-        <label style="font-size: 13px; color: var(--white); display: flex; align-items: center; gap: 8px; cursor: pointer;">
-          <input type="checkbox" id="no-whatsapp" style="accent-color: #25D366; width: 16px; height: 16px;" /> 
+      <div class="gen-style-216">
+        <label class="gen-style-217">
+          <input type="checkbox" id="no-whatsapp" / class="gen-style-218"> 
           Dont send Order WhatsApp (PDF)
         </label>
       </div>
 
       <!-- Payment -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 120px; font-weight: 700; color: var(--white); font-size: 13px;">Payment</div>
-        <select style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none; appearance: none;">
-          <option style="color: black;">CASH</option>
-          <option style="color: black;">CARD</option>
-          <option style="color: black;">UPI</option>
+      <div class="gen-style-208">
+        <div class="gen-style-209">Payment</div>
+        <select class="gen-style-219">
+          <option class="gen-style-220">CASH</option>
+          <option class="gen-style-220">CARD</option>
+          <option class="gen-style-220">UPI</option>
         </select>
       </div>
 
     </div>
-    <div class="modal-footer" style="justify-content: space-between; border-top: none; padding-top: 10px; flex-shrink: 0;">
-      <button class="btn btn-primary" onclick="savePatient()">Add Patient <span style="font-size:10px; opacity:0.7; margin-left:4px;">[CTRL+S]</span></button>
-      <div style="display: flex; gap: 8px;">
-        <button class="btn btn-ghost" style="border: 1px solid var(--border);">TB Details</button>
-        <button class="btn btn-ghost" onclick="closeModal('patient-modal')" style="border: 1px solid var(--border);">Cancel <span style="font-size:10px; opacity:0.7; margin-left:4px;">[ESC]</span></button>
+    <div class="modal-footer gen-style-221">
+      <button class="btn btn-primary" onclick="savePatient()">Add Patient <span class="gen-style-222">[CTRL+S]</span></button>
+      <div class="gen-style-85">
+        <button class="btn btn-ghost gen-style-223">TB Details</button>
+        <button class="btn btn-ghost gen-style-223" onclick="closeModal('patient-modal')">Cancel <span class="gen-style-222">[ESC]</span></button>
       </div>
     </div>
   </div>
 </div>
 
 <div class="modal-overlay" id="doctor-modal">
-  <div class="modal" style="width: 480px; max-width: 90vw;">
-    <div class="modal-header" style="border-bottom: none; padding-bottom: 10px;">
+  <div class="modal gen-style-224">
+    <div class="modal-header gen-style-225">
       <div class="modal-title">Add Doctor</div>
       <button class="modal-close" onclick="closeModal('doctor-modal')">✖</button>
     </div>
-    <div class="modal-body" style="padding: 10px 20px;">
+    <div class="modal-body gen-style-226">
       
       <!-- Name -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Name</div>
-        <input type="text" id="new-doctor-name" placeholder="Add name" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-227">Name</div>
+        <input type="text" id="new-doctor-name" placeholder="Add name" / class="gen-style-210">
       </div>
 
       <!-- Degree -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Degree</div>
-        <input type="text" placeholder="Add Degree" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-227">Degree</div>
+        <input type="text" placeholder="Add Degree" / class="gen-style-210">
       </div>
 
       <!-- Reg.No. -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Reg.No.</div>
-        <input type="text" placeholder="Add registration number" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-227">Reg.No.</div>
+        <input type="text" placeholder="Add registration number" / class="gen-style-210">
       </div>
 
       <!-- Hospital -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Hospital</div>
-        <input type="text" placeholder="Add Hospital" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-208">
+        <div class="gen-style-227">Hospital</div>
+        <input type="text" placeholder="Add Hospital" / class="gen-style-210">
       </div>
 
       <!-- Address -->
-      <div style="display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2);">
-        <div style="font-weight: 700; color: var(--white); font-size: 13px; margin-bottom: 8px;">Address</div>
-        <textarea placeholder="Add Address" rows="3" style="background: transparent; border: none; color: var(--white); font-size: 13px; outline: none; resize: none;"></textarea>
+      <div class="gen-style-211">
+        <div class="gen-style-212">Address</div>
+        <textarea placeholder="Add Address" rows="3" class="gen-style-213"></textarea>
       </div>
 
       <!-- Phone -->
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; margin-bottom: 4px; background: rgba(0,0,0,0.2);">
-        <div style="width: 100px; font-weight: 700; color: var(--white); font-size: 13px;">Phone</div>
-        <input type="tel" placeholder="Add Phone" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 12px 0; outline: none;" />
+      <div class="gen-style-228">
+        <div class="gen-style-227">Phone</div>
+        <input type="tel" placeholder="Add Phone" / class="gen-style-210">
       </div>
 
     </div>
-    <div class="modal-footer" style="justify-content: space-between; border-top: none; padding-top: 10px;">
-      <button class="btn btn-primary" onclick="saveDoctor()">Add Doctor <span style="font-size:10px; opacity:0.7; margin-left:4px;">[CTRL+S]</span></button>
-      <button class="btn btn-ghost" onclick="closeModal('doctor-modal')" style="border: 1px solid var(--border);">Cancel <span style="font-size:10px; opacity:0.7; margin-left:4px;">[ESC]</span></button>
+    <div class="modal-footer gen-style-229">
+      <button class="btn btn-primary" onclick="saveDoctor()">Add Doctor <span class="gen-style-222">[CTRL+S]</span></button>
+      <button class="btn btn-ghost gen-style-223" onclick="closeModal('doctor-modal')">Cancel <span class="gen-style-222">[ESC]</span></button>
     </div>
   </div>
 </div>
 
 <div class="modal-overlay" id="add-medicine-modal">
-  <div class="modal" style="width: 700px; max-width: 95vw; background: var(--surface); color: var(--white); border-radius: 8px;">
-    <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-shrink: 0; background: var(--surface2);">
-      <div class="modal-title" style="color: var(--white); font-weight: bold; font-size: 18px;">Add Medicine - xyz strip of 15</div>
-      <button class="modal-close" onclick="closeModal('add-medicine-modal')" style="color: var(--muted); font-weight: bold;">✖</button>
+  <div class="modal gen-style-230">
+    <div class="modal-header gen-style-231">
+      <div class="modal-title gen-style-232">Add Medicine - xyz strip of 15</div>
+      <button class="modal-close gen-style-233" onclick="closeModal('add-medicine-modal')">✖</button>
     </div>
-    <div class="modal-body" style="padding: 10px 20px; overflow-y: auto; max-height: 80vh;">
+    <div class="modal-body gen-style-234">
       
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Name</div>
-            <input type="text" value="xyz strip of 15" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+      <div class="gen-style-235">
+        <div class="gen-style-236">
+          <div class="gen-style-237">
+            <div class="gen-style-238">Name</div>
+            <input type="text" value="xyz strip of 15" / class="gen-style-239">
           </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Category</div>
-            <select style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none; appearance: none;"><option style="color:black;">MEDICINE</option></select>
+          <div class="gen-style-237">
+            <div class="gen-style-238">Category</div>
+            <select class="gen-style-240"><option class="gen-style-241">MEDICINE</option></select>
           </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Therapeutic</div>
-            <input type="text" placeholder="Therapeutic" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+          <div class="gen-style-237">
+            <div class="gen-style-238">Therapeutic</div>
+            <input type="text" placeholder="Therapeutic" / class="gen-style-239">
           </div>
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Item Type</div>
-            <input type="text" placeholder="Item Type" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+        <div class="gen-style-236">
+          <div class="gen-style-237">
+            <div class="gen-style-238">Item Type</div>
+            <input type="text" placeholder="Item Type" / class="gen-style-239">
           </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Packaging</div>
-            <input type="text" placeholder="Packaging" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+          <div class="gen-style-237">
+            <div class="gen-style-238">Packaging</div>
+            <input type="text" placeholder="Packaging" / class="gen-style-239">
           </div>
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">Sub Therapeutic</div>
-            <input type="text" placeholder="Sub Therapeut" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+          <div class="gen-style-237">
+            <div class="gen-style-238">Sub Therapeutic</div>
+            <input type="text" placeholder="Sub Therapeut" / class="gen-style-239">
           </div>
         </div>
       </div>
       
-      <div style="display: flex; align-items: center; gap: 20px; margin-top: 16px;">
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;"><input type="checkbox" /> Is Loose</label>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 300px;">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Qty Per Unit</div>
-          <input type="text" placeholder="Qty per unit" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+      <div class="gen-style-242">
+        <label class="gen-style-243"><input type="checkbox" /> Is Loose</label>
+        <div class="gen-style-244">
+          <div class="gen-style-238">Qty Per Unit</div>
+          <input type="text" placeholder="Qty per unit" / class="gen-style-239">
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Medicine Barcode</div>
-          <input type="text" placeholder="Medicine Barcode" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+      <div class="gen-style-245">
+        <div class="gen-style-237">
+          <div class="gen-style-238">Medicine Barcode</div>
+          <input type="text" placeholder="Medicine Barcode" / class="gen-style-239">
         </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 140px; font-weight: bold; font-size: 13px;">Medicine Short Code</div>
-          <input type="text" placeholder="Medicine Sh" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">UCode</div>
-        <input type="text" placeholder="UCode" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Manufacturer</div>
-        <input type="text" placeholder="Manufacturer Name" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Marketed By</div>
-        <input type="text" placeholder="Marketed By" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; gap: 16px; margin-top: 12px;">
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 140px;">
-          <div style="font-weight: bold; font-size: 13px; width: 50px;">CGST</div>
-          <input type="text" value="0" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 140px;">
-          <div style="font-weight: bold; font-size: 13px; width: 50px;">SGST</div>
-          <input type="text" value="0" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-        </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); width: 140px;">
-          <div style="font-weight: bold; font-size: 13px; width: 50px;">IGST</div>
-          <input type="text" value="0" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+        <div class="gen-style-237">
+          <div class="gen-style-246">Medicine Short Code</div>
+          <input type="text" placeholder="Medicine Sh" / class="gen-style-239">
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Min Stock</div>
-          <input type="text" placeholder="Min Stock" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+      <div class="gen-style-247">
+        <div class="gen-style-238">UCode</div>
+        <input type="text" placeholder="UCode" / class="gen-style-239">
+      </div>
+
+      <div class="gen-style-247">
+        <div class="gen-style-238">Manufacturer</div>
+        <input type="text" placeholder="Manufacturer Name" / class="gen-style-239">
+      </div>
+
+      <div class="gen-style-247">
+        <div class="gen-style-238">Marketed By</div>
+        <input type="text" placeholder="Marketed By" / class="gen-style-239">
+      </div>
+
+      <div class="gen-style-248">
+        <div class="gen-style-249">
+          <div class="gen-style-250">CGST</div>
+          <input type="text" value="0" / class="gen-style-239">
         </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Max Stock</div>
-          <input type="text" placeholder="Max Stock" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+        <div class="gen-style-249">
+          <div class="gen-style-250">SGST</div>
+          <input type="text" value="0" / class="gen-style-239">
+        </div>
+        <div class="gen-style-249">
+          <div class="gen-style-250">IGST</div>
+          <input type="text" value="0" / class="gen-style-239">
         </div>
       </div>
 
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 160px; font-weight: bold; font-size: 13px;">Salts(Compounds)</div>
-        <input type="text" placeholder="" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
-      </div>
-
-      <div style="display: flex; border: 1px solid var(--border); border-radius: 4px; padding: 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 140px; font-weight: bold; font-size: 13px;">Schedule Type</div>
-        <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <label style="font-size: 13px;"><input type="checkbox" checked /> None</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled H</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled H1</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Narcotics</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled X</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled G</label>
-          <label style="font-size: 13px;"><input type="checkbox" /> Scheduled C</label>
+      <div class="gen-style-251">
+        <div class="gen-style-237">
+          <div class="gen-style-238">Min Stock</div>
+          <input type="text" placeholder="Min Stock" / class="gen-style-239">
+        </div>
+        <div class="gen-style-237">
+          <div class="gen-style-238">Max Stock</div>
+          <input type="text" placeholder="Max Stock" / class="gen-style-239">
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-            <div style="width: 120px; font-weight: bold; font-size: 13px;">HSN Code</div>
-            <input type="text" placeholder="HSN Code" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+      <div class="gen-style-247">
+        <div class="gen-style-252">Salts(Compounds)</div>
+        <input type="text" placeholder="" / class="gen-style-239">
+      </div>
+
+      <div class="gen-style-253">
+        <div class="gen-style-246">Schedule Type</div>
+        <div class="gen-style-254">
+          <label class="gen-style-255"><input type="checkbox" checked /> None</label>
+          <label class="gen-style-255"><input type="checkbox" /> Scheduled H</label>
+          <label class="gen-style-255"><input type="checkbox" /> Scheduled H1</label>
+          <label class="gen-style-255"><input type="checkbox" /> Narcotics</label>
+          <label class="gen-style-255"><input type="checkbox" /> Scheduled X</label>
+          <label class="gen-style-255"><input type="checkbox" /> Scheduled G</label>
+          <label class="gen-style-255"><input type="checkbox" /> Scheduled C</label>
+        </div>
+      </div>
+
+      <div class="gen-style-251">
+        <div class="gen-style-256">
+          <div class="gen-style-237">
+            <div class="gen-style-238">HSN Code</div>
+            <input type="text" placeholder="HSN Code" / class="gen-style-239">
           </div>
-          <a href="#" style="font-size: 11px; color: var(--sky);">Lookup HSN with their GST Rates</a>
+          <a href="#" class="gen-style-257">Lookup HSN with their GST Rates</a>
         </div>
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); height: 35px;">
-          <div style="width: 120px; font-weight: bold; font-size: 13px;">Rack</div>
-          <input type="text" placeholder="Rack" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+        <div class="gen-style-258">
+          <div class="gen-style-238">Rack</div>
+          <input type="text" placeholder="Rack" / class="gen-style-239">
         </div>
       </div>
 
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Substitute</div>
-        <input type="text" placeholder="Add Substitute" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+      <div class="gen-style-247">
+        <div class="gen-style-238">Substitute</div>
+        <input type="text" placeholder="Add Substitute" / class="gen-style-239">
       </div>
 
-      <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2); margin-top: 12px; width: 50%;">
-        <div style="width: 120px; font-weight: bold; font-size: 13px;">Substitute Type</div>
-        <input type="text" placeholder="Select Type" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 13px; padding: 8px 0; outline: none;" />
+      <div class="gen-style-259">
+        <div class="gen-style-238">Substitute Type</div>
+        <input type="text" placeholder="Select Type" / class="gen-style-239">
       </div>
 
-      <div style="display: flex; align-items: center; gap: 40px; margin-top: 16px; margin-bottom: 20px;">
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: bold;"><input type="checkbox" /> Disable Auto Barcode Printing</label>
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: bold;"><input type="checkbox" /> TB Medicine</label>
+      <div class="gen-style-260">
+        <label class="gen-style-261"><input type="checkbox" /> Disable Auto Barcode Printing</label>
+        <label class="gen-style-261"><input type="checkbox" /> TB Medicine</label>
       </div>
 
-      <button class="btn btn-primary" onclick="closeModal('add-medicine-modal')" style="background: var(--accent-blue); color: white; border: none; padding: 8px 16px; margin-bottom: 12px;">Add Medicine</button>
+      <button class="btn btn-primary gen-style-262" onclick="closeModal('add-medicine-modal')">Add Medicine</button>
     </div>
   </div>
 </div>
 
 <div class="modal-overlay" id="ai-camera-detect-modal">
-  <div class="modal" style="width: 550px; max-width: 90vw; background: var(--surface); color: var(--white); border-radius: 8px;">
-    <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 10px; background: var(--surface2);">
-      <div class="modal-title" style="color: var(--white); font-weight: bold; font-size: 18px;">📷 AI Camera Product Detection</div>
-      <button class="modal-close" onclick="closeModal('ai-camera-detect-modal')" style="color: var(--muted); font-weight: bold;">✖</button>
+  <div class="modal gen-style-263">
+    <div class="modal-header gen-style-264">
+      <div class="modal-title gen-style-232">📷 AI Camera Product Detection</div>
+      <button class="modal-close gen-style-233" onclick="closeModal('ai-camera-detect-modal')">✖</button>
     </div>
-    <div class="modal-body" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="modal-body gen-style-265">
       
       <!-- Extracted Text Info -->
-      <div style="background: rgba(14, 165, 233, 0.05); border: 1px solid var(--border-bright); padding: 12px; border-radius: 6px;">
-        <div style="font-size: 12px; color: var(--sky); font-family: 'DM Mono', monospace; margin-bottom: 4px;">OCR SCAN RESULT</div>
-        <div id="ai-detect-title" style="font-size: 18px; font-weight: 700; color: var(--white);">Paracetamol 500mg</div>
-        <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--muted);">
-          <div style="display: flex; gap: 12px;">
-            <span>Batch: <strong id="ai-detect-batch" style="color: var(--white);">B-2024-11</strong></span>
-            <span>Expiry: <strong id="ai-detect-expiry" style="color: var(--white);">06/26</strong></span>
+      <div class="gen-style-266">
+        <div class="gen-style-267">OCR SCAN RESULT</div>
+        <div id="ai-detect-title" class="gen-style-268">Paracetamol 500mg</div>
+        <div class="gen-style-269">
+          <div class="gen-style-270">
+            <span>Batch: <strong id="ai-detect-batch" class="gen-style-92">B-2024-11</strong></span>
+            <span>Expiry: <strong id="ai-detect-expiry" class="gen-style-92">06/26</strong></span>
           </div>
-          <div id="ai-detect-recommendation" style="font-size: 11px; color: var(--accent-orange); font-family: 'DM Mono', monospace; margin-top: 4px; display: flex; align-items: center; gap: 4px;"></div>
+          <div id="ai-detect-recommendation" class="gen-style-271"></div>
         </div>
       </div>
 
       <!-- Quantity Management -->
       <div>
-        <div style="font-weight: 700; font-size: 13px; margin-bottom: 8px; color: var(--white);">Quantity Type</div>
-        <div style="display: flex; gap: 12px; margin-bottom: 12px;">
-          <button id="ai-qty-type-strip" class="btn btn-primary" style="flex: 1; padding: 10px;" onclick="selectQtyType('strip')">📦 Full Strip (10 units)</button>
-          <button id="ai-qty-type-loose" class="btn btn-ghost" style="flex: 1; padding: 10px; border: 1px solid var(--border);" onclick="selectQtyType('loose')">💊 Loose Quantity (Individual)</button>
+        <div class="gen-style-272">Quantity Type</div>
+        <div class="gen-style-273">
+          <button id="ai-qty-type-strip" class="btn btn-primary gen-style-274" onclick="selectQtyType('strip')">📦 Full Strip (10 units)</button>
+          <button id="ai-qty-type-loose" class="btn btn-ghost gen-style-275" onclick="selectQtyType('loose')">💊 Loose Quantity (Individual)</button>
         </div>
         
-        <div style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; padding: 0 12px; background: rgba(0,0,0,0.2);">
-          <div style="width: 140px; font-weight: bold; font-size: 13px;" id="ai-qty-label">Number of Strips</div>
-          <input type="number" id="ai-qty-val" value="1" min="1" style="flex: 1; background: transparent; border: none; color: var(--white); font-size: 14px; padding: 12px 0; outline: none; font-weight: 700; text-align: right;" oninput="updatePricing()" />
+        <div class="gen-style-237">
+          <div id="ai-qty-label" class="gen-style-246">Number of Strips</div>
+          <input type="number" id="ai-qty-val" value="1" min="1" oninput="updatePricing()" / class="gen-style-276">
         </div>
       </div>
 
       <!-- Pricing Summary -->
-      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 8px;">
+      <div class="gen-style-277">
         <div>
-          <span style="color: var(--muted); font-size: 12px;">Unit Price:</span>
-          <span id="ai-detect-unit-price" style="font-weight: 700; color: var(--white); margin-left: 4px;">₹1.80</span>
+          <span class="gen-style-278">Unit Price:</span>
+          <span id="ai-detect-unit-price" class="gen-style-279">₹1.80</span>
         </div>
-        <div style="text-align: right;">
-          <div style="color: var(--muted); font-size: 12px;">Estimated Total</div>
-          <div id="ai-detect-total" style="font-size: 22px; font-weight: 800; color: var(--sky);">₹18.00</div>
+        <div class="gen-style-137">
+          <div class="gen-style-278">Estimated Total</div>
+          <div id="ai-detect-total" class="gen-style-280">₹18.00</div>
         </div>
       </div>
 
     </div>
-    <div class="modal-footer" style="justify-content: flex-end; border-top: 1px solid var(--border); padding: 12px 20px; background: var(--surface2); gap: 10px;">
-      <button class="btn btn-ghost" onclick="closeModal('ai-camera-detect-modal')" style="border: 1px solid var(--border);">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmAICameraProduct()" style="padding: 10px 20px; font-weight: 700;">Confirm & Add to Bill</button>
+    <div class="modal-footer gen-style-281">
+      <button class="btn btn-ghost gen-style-223" onclick="closeModal('ai-camera-detect-modal')">Cancel</button>
+      <button class="btn btn-primary gen-style-282" onclick="confirmAICameraProduct()">Confirm & Add to Bill</button>
     </div>
   </div>
 </div>
@@ -4956,15 +5247,15 @@ async function loadMedicines() {
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid var(--border)';
       tr.innerHTML = `
-        <td style="padding: 8px 12px;"><input type="checkbox" checked style="accent-color: var(--sky);" /></td>
-        <td style="padding: 8px 12px; font-weight: 600; color: var(--white); font-size: 13px;">${med.name}</td>
-        <td style="padding: 8px 12px;"><span style="background: rgba(16, 185, 129, 0.15); color: var(--green); padding: 4px 8px; border-radius: 4px; font-size: 11px; border: 1px solid rgba(16, 185, 129, 0.3);">Linked to Inventory</span></td>
-        <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">-</td>
-        <td style="padding: 8px 12px; color: var(--white); font-size: 12px;" class="mono">-</td>
-        <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">-</td>
-        <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">-</td>
-        <td style="padding: 8px 12px; text-align: right; color: var(--white); font-size: 13px;">-</td>
-        <td style="padding: 8px 12px; text-align: center;"><button class="btn btn-ghost" style="font-size: 11px; color: var(--sky); padding: 4px 8px;">Edit</button></td>
+        <td class="gen-style-29"><input type="checkbox" checked / class="gen-style-98"></td>
+        <td class="gen-style-283">${med.name}</td>
+        <td class="gen-style-29"><span class="gen-style-284">Linked to Inventory</span></td>
+        <td class="mono gen-style-285">-</td>
+        <td class="mono gen-style-285">-</td>
+        <td class="gen-style-286">-</td>
+        <td class="gen-style-286">-</td>
+        <td class="gen-style-286">-</td>
+        <td class="gen-style-39"><button class="btn btn-ghost gen-style-287">Edit</button></td>
       `;
       tbody.appendChild(tr);
     });
@@ -5150,7 +5441,7 @@ document.getElementById('pos-scan-area')?.addEventListener('click', function() {
     // Update recommendation notice in UI
     const recEl = document.getElementById('ai-detect-recommendation');
     if (recEl) {
-      recEl.innerHTML = `💡 <span style="font-weight: 500;">${recMessage}</span>`;
+      recEl.innerHTML = `💡 <span class="gen-style-288">${recMessage}</span>`;
     }
 
     // Open detect modal
@@ -5196,15 +5487,15 @@ document.getElementById('pos-scan-area')?.addEventListener('click', function() {
     el.className = 'rt-notification';
     el.innerHTML = `
       <div class="rt-notification-header">
-        <div class="rt-notification-title" style="color: var(--sky);">
+        <div class="rt-notification-title gen-style-289">
           <span>📷</span> ${data.title}
         </div>
         <div class="rt-notification-time">${data.timestamp || 'now'}</div>
       </div>
       <div class="rt-notification-body">
-        <div style="font-weight: 700; color: var(--white); margin-bottom: 2px;">📦 Distributor: ${data.distributorName}</div>
-        <div style="color: var(--muted); font-size: 11px; font-family: 'DM Mono', monospace; margin-bottom: 6px;">Invoice: ${data.invoiceNo}</div>
-        <div style="color: var(--sky); font-weight: 500;">AI Camera successfully auto-processed Telegram bill photo into inventory.</div>
+        <div class="gen-style-290">📦 Distributor: ${data.distributorName}</div>
+        <div class="gen-style-291">Invoice: ${data.invoiceNo}</div>
+        <div class="gen-style-292">AI Camera successfully auto-processed Telegram bill photo into inventory.</div>
       </div>
     `;
 
@@ -5228,21 +5519,21 @@ document.getElementById('pos-scan-area')?.addEventListener('click', function() {
     el.className = 'rt-notification top-type';
     el.innerHTML = `
       <div class="rt-notification-header">
-        <div class="rt-notification-title" style="color: var(--green);">
+        <div class="rt-notification-title gen-style-293">
           <span>📧</span> ${data.title}
         </div>
         <div class="rt-notification-time">${data.timestamp || 'now'}</div>
       </div>
       <div class="rt-notification-body">
-        <div style="font-weight: 700; color: var(--white); margin-bottom: 2px;">Distributor: ${data.distributorName}</div>
-        <div style="color: var(--muted); font-size: 11px; font-family: 'DM Mono', monospace; margin-bottom: 6px;">Bill/Vou No: ${data.invoiceNo || 'N/A'}</div>
+        <div class="gen-style-290">Distributor: ${data.distributorName}</div>
+        <div class="gen-style-291">Bill/Vou No: ${data.invoiceNo || 'N/A'}</div>
         ${data.whatsappSent ? `
           <div class="rt-notification-badge">
-            <span style="font-size: 14px; margin-right: 4px;">💬</span> Auto-sent to Delivery Boys: <span style="margin-left: 4px; font-weight: 700; color: #fff;">${data.whatsappNumber}</span>
+            <span class="gen-style-294">💬</span> Auto-sent to Delivery Boys: <span class="gen-style-295">${data.whatsappNumber}</span>
           </div>
         ` : `
-          <div class="rt-notification-badge" style="background: rgba(239, 68, 68, 0.08); color: var(--danger); border-color: rgba(239, 68, 68, 0.25);">
-            <span style="font-size: 14px; margin-right: 4px;">⚠️</span> No active delivery boys found to dispatch WhatsApp
+          <div class="rt-notification-badge gen-style-296">
+            <span class="gen-style-294">⚠️</span> No active delivery boys found to dispatch WhatsApp
           </div>
         `}
       </div>
@@ -5290,8 +5581,8 @@ document.getElementById('pos-scan-area')?.addEventListener('click', function() {
 </script>
 
 <!-- Notifications Containers -->
-<div id="top-notifications-container" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-100%); z-index: 99999; display: flex; flex-direction: column; gap: 12px; align-items: center; pointer-events: none; transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);"></div>
-<div id="right-notifications-container" style="position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 12px; pointer-events: none; max-width: 360px;"></div>
+<div id="top-notifications-container" class="gen-style-297"></div>
+<div id="right-notifications-container" class="gen-style-298"></div>
 
 </body>
 </html>

@@ -1,17 +1,12 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import fs from 'fs';
+import path from 'path';
 
 // Helper function to calculate similarity using Levenshtein distance
-function similarity(s1: string, s2: string, threshold: number = 0.8): number {
+function levenshteinSimilarity(s1: string, s2: string): number {
   const maxLen = Math.max(s1.length, s2.length);
-  const minLen = Math.min(s1.length, s2.length);
-  
   if (maxLen === 0) return 1.0;
-
-  // Shortcut: if the length difference is greater than the allowed error, it cannot match
-  if ((maxLen - minLen) / maxLen > (1 - threshold)) {
-    return 0.0;
-  }
 
   // Simple Levenshtein distance implementation
   const editDistance = (a: string, b: string): number => {
@@ -44,6 +39,94 @@ function similarity(s1: string, s2: string, threshold: number = 0.8): number {
   return 1.0 - distance / maxLen;
 }
 
+// Helper function to calculate phonetic similarity using Soundex-like algorithm
+function phoneticSimilarity(s1: string, s2: string): number {
+  const soundex = (str: string): string => {
+    if (str.length === 0) return "0000";
+    str = str.toUpperCase();
+    const soundexMap: Record<string, string> = {
+      'B': '1', 'F': '1', 'P': '1', 'V': '1',
+      'C': '2', 'G': '2', 'J': '2', 'K': '2', 'Q': '2', 'S': '2', 'X': '2', 'Z': '2',
+      'D': '3', 'T': '3',
+      'L': '4',
+      'M': '5', 'N': '5',
+      'R': '6'
+    };
+
+    let result = str[0];
+    let lastDigit = soundexMap[str[0]] || '0';
+
+    for (let i = 1; i < str.length && result.length < 4; i++) {
+      const code = soundexMap[str[i]] || '0';
+      if (code !== '0' && code !== lastDigit) {
+        result += code;
+        lastDigit = code;
+      }
+    }
+
+    return result.padEnd(4, '0').substring(0, 4);
+  };
+
+  const code1 = soundex(s1);
+  const code2 = soundex(s2);
+
+  // Simple matching: count matching characters
+  let matches = 0;
+  for (let i = 0; i < 4; i++) {
+    if (code1[i] === code2[i]) matches++;
+  }
+  return matches / 4.0;
+}
+
+// Helper function to calculate n-gram similarity
+function ngramSimilarity(s1: string, s2: string, n: number = 2): number {
+  if (s1.length < n || s2.length < n) {
+    return s1 === s2 ? 1.0 : 0.0;
+  }
+
+  const getNgrams = (str: string, n: number): Set<string> => {
+    const ngrams = new Set<string>();
+    for (let i = 0; i <= str.length - n; i++) {
+      ngrams.add(str.substring(i, i + n));
+    }
+    return ngrams;
+  };
+
+  const ngrams1 = getNgrams(s1.toLowerCase(), n);
+  const ngrams2 = getNgrams(s2.toLowerCase(), n);
+
+  if (ngrams1.size === 0 && ngrams2.size === 0) return 1.0;
+  if (ngrams1.size === 0 || ngrams2.size === 0) return 0.0;
+
+  let intersection = 0;
+  for (const ngram of ngrams1) {
+    if (ngrams2.has(ngram)) intersection++;
+  }
+
+  const union = ngrams1.size + ngrams2.size - intersection;
+  return intersection / union;
+}
+
+// Enhanced similarity function combining multiple techniques
+function enhancedSimilarity(s1: string, s2: string): number {
+  // Convert to lowercase and clean for better matching
+  const clean1 = s1.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean2 = s2.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (clean1 === clean2) return 1.0; // Exact match after cleaning
+
+  // Calculate individual similarities
+  const levSim = levenshteinSimilarity(clean1, clean2);
+  const phoneSim = phoneticSimilarity(clean1, clean2);
+  const ngramSim = ngramSimilarity(clean1, clean2, 2); // Bigrams
+
+  // Weighted combination optimized for medicine names
+  // Levenshtein: good for overall character differences
+  // Phonetic: good for OCR errors (O/Q, 1/I/l, etc.)
+  // N-gram: good for transposed/missing characters
+  return (levSim * 0.5) + (phoneSim * 0.3) + (ngramSim * 0.2);
+}
+
 export interface FilterOptions {
   enableInternetFallback?: boolean;
   internetApiEndpoint?: string;
@@ -69,9 +152,62 @@ export class ProductNameFilterService {
   private dbPath: string;
   private readonly DEFAULT_THRESHOLD = 0.8; // 80% similarity threshold
   private readonly DEFAULT_TIMEOUT = 5000; // 5 seconds
+  private corrections: Map<string, { correctName: string; count: number }> = new Map();
+  private readonly correctionsPath: string;
 
   constructor(dbPath: string = './data/app.db') {
     this.dbPath = dbPath;
+    this.correctionsPath = path.resolve(process.cwd(), 'data', 'ocr_corrections.json');
+    this.loadCorrections();
+  }
+
+  private loadCorrections(): void {
+    try {
+      if (fs.existsSync(this.correctionsPath)) {
+        const data = fs.readFileSync(this.correctionsPath, 'utf8');
+        const correctionsArray: Array<{ocr: string; correct: string; count: number}> = JSON.parse(data);
+
+        // Convert array to Map for efficient lookup
+        for (const item of correctionsArray) {
+          this.corrections.set(item.ocr.trim().toLowerCase(), {
+            correctName: item.correct,
+            count: item.count
+          });
+        }
+
+        console.log(`Loaded ${this.corrections.size} OCR correction pairs from audit learning`);
+      }
+    } catch (error) {
+      console.warn('Failed to load OCR corrections:', error);
+      // Continue with empty corrections map
+    }
+  }
+
+  private saveCorrections(): void {
+    try {
+      // Convert Map to array for JSON serialization
+      const correctionsArray: Array<{ocr: string; correct: string; count: number}> = [];
+
+      for (const [ocrText, { correctName, count }] of this.corrections.entries()) {
+        correctionsArray.push({ ocr: ocrText, correct: correctName, count });
+      }
+
+      // Sort by count descending and keep top 1000 entries
+      correctionsArray.sort((a, b) => b.count - a.count);
+      if (correctionsArray.length > 1000) {
+        correctionsArray.length = 1000;
+      }
+
+      // Ensure data directory exists
+      const dataDir = path.dirname(this.correctionsPath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      fs.writeFileSync(this.correctionsPath, JSON.stringify(correctionsArray, null, 2));
+    } catch (error) {
+      console.error('Failed to save OCR corrections:', error);
+    }
   }
 
   async initialize(): Promise<void> {
@@ -86,6 +222,39 @@ export class ProductNameFilterService {
       console.error('Failed to initialize ProductNameFilterService:', error);
       throw new Error(`Failed to load medicine names from database: ${(error as any).message}`);
     }
+  }
+
+  /**
+   * Learn from a pharmacist correction - when they correct an OCR misrecognition
+   * @param ocrText The original OCR text that was incorrect
+   * @param correctName The correct medicine name as identified by the pharmacist
+   */
+  public learnFromCorrection(ocrText: string, correctName: string): void {
+    if (!ocrText || !correctName) return;
+
+    const normalizedOcr = ocrText.trim().toLowerCase();
+    const normalizedCorrect = correctName.trim();
+
+    // Get existing entry or create new
+    const existing = this.corrections.get(normalizedOcr);
+    if (existing) {
+      // If it's already mapped to the same correct name, increment count
+      if (existing.correctName === normalizedCorrect) {
+        existing.count++;
+      }
+      // If it's mapped to a different name, we'll keep the one with higher count
+      // This handles conflicting corrections over time
+    } else {
+      // New correction pair
+      this.corrections.set(normalizedOcr, {
+        correctName: normalizedCorrect,
+        count: 1
+      });
+    }
+
+    // Save to file periodically (we could batch this, but for simplicity saving each time)
+    this.saveCorrections();
+    console.log(`Learned OCR correction: "${ocrText}" → "${correctName}"`);
   }
 
   async filterProductNames(ocrText: string, options: FilterOptions = {}): Promise<FilterResult> {
@@ -117,9 +286,17 @@ export class ProductNameFilterService {
     const normalizedOcr = ocrText.toLowerCase().trim();
     const scoredMatches: Array<{ name: string; score: number }> = [];
 
+    // First check if we have learned corrections for this OCR text
+    const learnedCorrection = this.corrections.get(normalizedOcr);
+    if (learnedCorrection) {
+      // Add the learned correction with high confidence (0.95)
+      scoredMatches.push({ name: learnedCorrection.correctName, score: 0.95 });
+      console.log(`Using learned correction: "${normalizedOcr}" → "${learnedCorrection.correctName}" (count: ${learnedCorrection.count})`);
+    }
+
     // Local fuzzy matching with score caching
     for (const medicineName of this.medicineNames) {
-      const similarityScore = similarity(normalizedOcr, medicineName.toLowerCase(), minConfidenceThreshold);
+      const similarityScore = enhancedSimilarity(normalizedOcr, medicineName.toLowerCase());
       if (similarityScore >= minConfidenceThreshold) {
         scoredMatches.push({ name: medicineName, score: similarityScore });
       }

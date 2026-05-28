@@ -19,7 +19,25 @@
       "Bash(gzip *)",
       "Bash(ren *)",
       "Bash(npm audit *)",
-      "PowerShell(npm audit *)"
+      "PowerShell(npm audit *)",
+      "Bash(/reload-plugins *)",
+      "Skill(telegram:configure)",
+      "Skill(telegram:access)",
+      "PowerShell(icacls C:\\\\Users\\\\ratna\\\\.claude\\\\channels\\\\telegram\\\\.env /inheritance:r /grant:r \"$\\($env:USERNAME\\):\\(R\\)\")",
+      "PowerShell(cd \"E:\\\\CURRENT PROJECT ON WORKING\\\\AI PHARMACY\"; $token = $env:TELEGRAM_BOT_TOKEN; if \\($token\\) { Write-Host \"TELEGRAM_BOT_TOKEN: SET \\(length: $\\($token.Length\\)\\)\" } else { Write-Host \"TELEGRAM_BOT_TOKEN: NOT SET\" })",
+      "Bash(node_modules/.bin/tsc *)",
+      "Bash(PUPPETEER_SKIP_DOWNLOAD=true npm install *)",
+      "Bash(PUPTERER_SKIP_DOWNLOAD=true npm install *)",
+      "Bash(echo \"Database connection: $?\")",
+      "Bash(echo \"Config: $?\")",
+      "Bash(echo \"Invoice service: $?\")",
+      "Bash(echo \"Medicine service: $?\")",
+      "Bash(echo \"Sales route: $?\")",
+      "Bash(npm rebuild *)",
+      "Bash(npm test *)",
+      "Bash(sudo apt-get update)",
+      "Bash(sudo apt-get install -y build-essential python3)",
+      "Bash(npm install *)"
     ]
   },
   "hooks": {
@@ -29,7 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -c \"[System.Media.SystemSounds]::Exclamation.Play()\""
+            "command": "powershell.exe -c \"[System.Media.SystemSounds]::Exclamation.Play()\""
           }
         ]
       }
@@ -40,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -c \"[System.Media.SystemSounds]::Exclamation.Play()\""
+            "command": "powershell.exe -c \"[System.Media.SystemSounds]::Exclamation.Play()\""
           }
         ]
       }

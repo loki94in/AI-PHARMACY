@@ -37,19 +37,74 @@ If you are asked to generate a "plan" or an "artifact", **do not save it to the 
 If you are generating a massive checklist, log output, or plan, the terminal streaming may freeze or hang (e.g., getting stuck "Generating..." for 15+ minutes). To avoid this:
 **Rule:** Write large outputs directly to a markdown file in the workspace or artifact directory rather than attempting to stream thousands of tokens directly to the chat console. 
 
-## 9. Windows Operating System Rules (CRITICAL)
-This project is running natively on **Windows**. You MUST adhere to these Windows-specific rules:
-1. **Line Endings:** Windows uses `\r\n` (CRLF) for line endings. If you use a strict string-matching Edit tool, DO NOT try to type literal `\n` characters in your code blocks to guess invisible whitespace. Your guess will fail because of the CRLF mismatch. Always copy the EXACT text from the `Read` command output, or use `fs.writeFileSync` / `fs.appendFileSync` if you are getting stuck in an Edit loop.
-2. **Commands:** When running shell commands, you are in a Windows Command Prompt (`cmd`) or PowerShell. 
-   - DO NOT use `cp`, use `copy`.
-   - DO NOT use `ls`, use `dir`.
-   - DO NOT use `rm -rf`, use `rmdir /s /q` or `del /s /q`.
-   - DO NOT use `grep` or `cat` in your shell terminal. Use native Node.js scripts or PowerShell equivalents if absolutely necessary.
 
-## 10. Handling Silent Commands
-When executing terminal commands that are naturally silent on success (such as `python -c "import module"` or silent scripts), ALWAYS append a command to print a confirmation (e.g., `&& echo "Success"` or adding `print('OK')`). This ensures you receive text feedback and do not falsely assume the command timed out or failed due to an empty response.
+When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` before doing anything else.
+The Four Principles in Detail
+## 9. Think Before Coding
+Don't assume. Don't hide confusion. Surface tradeoffs.
 
-## 11. Skill and Plugin Synchronization
+LLMs often pick an interpretation silently and run with it. This principle forces explicit reasoning:
+
+State assumptions explicitly — If uncertain, ask rather than guess
+Present multiple interpretations — Don't pick silently when ambiguity exists
+Push back when warranted — If a simpler approach exists, say so
+Stop when confused — Name what's unclear and ask for clarification
+## 10. Simplicity First
+Minimum code that solves the problem. Nothing speculative.
+
+Combat the tendency toward overengineering:
+
+No features beyond what was asked
+No abstractions for single-use code
+No "flexibility" or "configurability" that wasn't requested
+No error handling for impossible scenarios
+If 200 lines could be 50, rewrite it
+The test: Would a senior engineer say this is overcomplicated? If yes, simplify.
+
+## 11. Surgical Changes
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+
+Don't "improve" adjacent code, comments, or formatting
+Don't refactor things that aren't broken
+Match existing style, even if you'd do it differently
+If you notice unrelated dead code, mention it — don't delete it
+When your changes create orphans:
+
+Remove imports/variables/functions that YOUR changes made unused
+Don't remove pre-existing dead code unless asked
+The test: Every changed line should trace directly to the user's request.
+
+## 12. Goal-Driven Execution
+Define success criteria. Loop until verified.
+
+Transform imperative tasks into verifiable goals:
+
+Instead of...	Transform to...
+"Add validation"	"Write tests for invalid inputs, then make them pass"
+"Fix the bug"	"Write a test that reproduces it, then make it pass"
+"Refactor X"	"Ensure tests pass before and after"
+For multi-step tasks, state a brief plan:
+
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+
+## 13. Token Efficiency
+Minimize tokens without reducing clarity, correctness, or maintainability.
+
+- Ask only necessary questions
+- Keep context focused and relevant
+- Prefer concise explanations and smaller diffs
+- Avoid repetition, verbosity, and speculative output
+- Generate only what was requested
+- Use simple structure over clever complexity
+
+The test: Could this achieve the same result with fewer tokens and no loss of understanding?
+Strong success criteria let the LLM loop independently. Weak criteria ("make it work") require constant clarification.
+
+## 14. Skill and Plugin Synchronization
 Whenever you install, update, or configure a new skill, plugin, or tool for the Claude CLI, you MUST automatically check for and run the equivalent installation command for the VS Code extension (if available) to ensure both the CLI and VS Code environments remain perfectly in sync on the PC.
 
 By following these rules, we will build a flawless application together!

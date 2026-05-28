@@ -1,5 +1,6 @@
 // AI Camera Service for OCR processing using Tesseract.js (offline capable)
 import { createWorker } from 'tesseract.js';
+import { Jimp } from 'jimp';
 import { productNameFilterService } from './productNameFilterService.js';
 import { paddleOcrService } from './paddleOcrService.js';
 import fs from 'fs';
@@ -28,6 +29,17 @@ class AICameraService {
   private worker: any = null;
   private initialized: boolean = false;
 
+  private async preprocess(buffer: Buffer): Promise<Buffer> {
+    try {
+      const image = await Jimp.read(buffer);
+      image.greyscale().contrast(0.2);
+      return await image.getBuffer('image/jpeg');
+    } catch (err) {
+      console.error('Preprocessing failed, using original:', err);
+      return buffer;
+    }
+  }
+
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
@@ -37,11 +49,16 @@ class AICameraService {
         gzip: false             // Use uncompressed local traineddata file
       });
       await this.worker.setParameters({
-        tessedit_pageseg_mode: 6, // Assume a single uniform block of text
+        tessedit_pageseg_mode: 11, // Sparse text. Find as much text as possible in no particular order.
         preserve_interword_spaces: '1',
+
+        // Medicine label specific optimizations for offline OCR
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-/ mgμ%', // Expected medicine label chars
+        user_defined_dictionary: './data/medicine_dict.txt', // Custom medicine dictionary
+        user_patterns_file: './data/medicine_patterns.txt',  // Patterns like "\\d+mg", "\\d+ tablet"
       });
       this.initialized = true;
-      console.log('AI Camera Service initialized with local Tesseract.js config');
+      console.log('AI Camera Service initialized with local Tesseract.js config and medicine dictionary');
     } catch (error) {
       console.error('Failed to initialize AI Camera Service:', error);
       throw error;
@@ -49,6 +66,21 @@ class AICameraService {
   }
 
   async processImage(imageData: string | Buffer): Promise<any> {
+    let buffer: Buffer;
+    if (typeof imageData === 'string') {
+      if (imageData.startsWith('data:')) {
+        const base64Data = imageData.split(',')[1];
+        buffer = Buffer.from(base64Data, 'base64');
+      } else {
+        buffer = Buffer.from(imageData, 'base64');
+      }
+    } else {
+      buffer = imageData;
+    }
+
+    // Apply preprocessing
+    const processedBuffer = await this.preprocess(buffer);
+
     let localOcrResult: OCRResult = { text: '', confidence: 0, words: [] };
     let fallbackUsed = false;
 
@@ -61,18 +93,7 @@ class AICameraService {
       const tempFilePath = path.join(tempDir, `ocr_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`);
       
       try {
-        let buffer: Buffer;
-        if (typeof imageData === 'string') {
-          if (imageData.startsWith('data:')) {
-            const base64Data = imageData.split(',')[1];
-            buffer = Buffer.from(base64Data, 'base64');
-          } else {
-            buffer = Buffer.from(imageData, 'base64');
-          }
-        } else {
-          buffer = imageData;
-        }
-        await fs.promises.writeFile(tempFilePath, buffer);
+        await fs.promises.writeFile(tempFilePath, processedBuffer);
 
         const ocrResult = await paddleOcrService.scanImage(tempFilePath);
         if (ocrResult && ocrResult.success) {
@@ -105,7 +126,7 @@ class AICameraService {
 
       try {
         // 1. Run local Tesseract OCR
-        const { data } = await this.worker.recognize(imageData);
+        const { data } = await this.worker.recognize(processedBuffer);
         const words = data.words ? data.words.map((word: any) => ({
           text: word.text,
           confidence: word.confidence,

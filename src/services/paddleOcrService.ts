@@ -6,6 +6,17 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function getWslPath(winPath: string): string {
+  const normalized = path.normalize(winPath).replace(/\\/g, '/');
+  const match = normalized.match(/^([a-zA-Z]):\/(.*)/);
+  if (match) {
+    const drive = match[1].toLowerCase();
+    const rest = match[2];
+    return `/mnt/${drive}/${rest}`;
+  }
+  return normalized;
+}
+
 class PaddleOcrService {
   private pythonCommand: string = 'python';
   private scriptPath: string;
@@ -26,6 +37,16 @@ class PaddleOcrService {
 
     this.isAvailableChecked = true;
 
+    // Check PYTHON_PATH environment variable first
+    if (process.env.PYTHON_PATH) {
+      const available = await this.testPythonEnv(process.env.PYTHON_PATH);
+      if (available) {
+        this.pythonCommand = process.env.PYTHON_PATH;
+        this.isOcrAvailable = true;
+        return true;
+      }
+    }
+
     // Test default 'python' command
     let available = await this.testPythonEnv('python');
     if (available) {
@@ -42,6 +63,14 @@ class PaddleOcrService {
       return true;
     }
 
+    // Try 'wsl python3' command as fallback for Windows systems with WSL
+    available = await this.testPythonEnv('wsl python3');
+    if (available) {
+      this.pythonCommand = 'wsl python3';
+      this.isOcrAvailable = true;
+      return true;
+    }
+
     console.warn('[AICamera] Python environment or paddleocr packages not found. Falling back to Tesseract.js.');
     this.isOcrAvailable = false;
     return false;
@@ -49,7 +78,12 @@ class PaddleOcrService {
 
   private testPythonEnv(cmd: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const proc = spawn(cmd, ['-c', 'import sys; from paddleocr import PaddleOCR; print("OK")']);
+      let proc;
+      if (cmd === 'wsl python3') {
+        proc = spawn('wsl', ['python3', '-c', 'import sys; from paddleocr import PaddleOCR; print("OK")']);
+      } else {
+        proc = spawn(cmd, ['-c', 'import paddle; from paddleocr import PaddleOCR; print("OK")']);
+      }
       let stdout = '';
       
       proc.stdout.on('data', (data) => {
@@ -81,7 +115,14 @@ class PaddleOcrService {
     }
 
     return new Promise((resolve) => {
-      const proc = spawn(this.pythonCommand, [this.scriptPath, filePath]);
+      let proc;
+      if (this.pythonCommand === 'wsl python3') {
+        const wslScriptPath = getWslPath(this.scriptPath);
+        const wslFilePath = getWslPath(filePath);
+        proc = spawn('wsl', ['python3', wslScriptPath, wslFilePath]);
+      } else {
+        proc = spawn(this.pythonCommand, [this.scriptPath, filePath]);
+      }
       let stdout = '';
       let stderr = '';
 
@@ -101,7 +142,13 @@ class PaddleOcrService {
         }
 
         try {
-          const parsed = JSON.parse(stdout.trim());
+          let output = stdout;
+          if (stdout.includes('___OCR_RESULT___')) {
+            output = stdout.split('___OCR_RESULT___')[1].trim();
+          } else {
+            output = stdout.trim().split('\n').pop() || '';
+          }
+          const parsed = JSON.parse(output);
           resolve(parsed);
         } catch (err: any) {
           console.error('[PaddleOcrService] Failed to parse JSON stdout:', err, 'stdout:', stdout);
