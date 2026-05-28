@@ -4,7 +4,11 @@ import { dbManager } from '../database/connection.js';
 import { config } from '../config';
 
 export interface InvoiceItem {
-  inventoryId: number;
+  inventoryId?: number;
+  medicineName?: string;
+  batchNo?: string;
+  expiryDate?: string;
+  mrp?: number;
   quantity: number;
   unitPrice: number;
 }
@@ -17,6 +21,8 @@ export interface InvoiceData {
   patientName?: string;
   patientPhone?: string;
   patientAddress?: string;
+  paymentMedium?: string;
+  paymentStatus?: string;
 }
 
 export interface InvoiceResult {
@@ -91,24 +97,96 @@ export class InvoiceService {
       // Calculate totals
       const { subtotal, tax, total } = this.calculateTotals(data.items, data.discount || 0);
 
+      // Resolve paymentMedium and status
+      const paymentMedium = data.paymentMedium || 'CASH';
+      const paymentStatus = data.paymentStatus || (paymentMedium === 'CREDIT' ? 'UNPAID' : 'PAID');
+
       // Insert invoice
       const result = await db.run(
-        'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount) VALUES (?, ?, ?, ?)',
-        [invoiceNo, customerId, total, tax]
+        'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status) VALUES (?, ?, ?, ?, ?, ?)',
+        [invoiceNo, customerId, total, tax, paymentMedium, paymentStatus]
       );
       const invoiceId = result.lastID;
 
+      // Update credit balance if CREDIT
+      if (paymentMedium === 'CREDIT' && customerId) {
+        await db.run(
+          'UPDATE customers SET credit_balance = credit_balance + ?, credit_enabled = 1 WHERE id = ?',
+          [total, customerId]
+        );
+      }
+
       // Insert line items and update inventory (in same transaction)
       for (const item of data.items) {
+        let invId = item.inventoryId;
+        
+        if (!invId && item.medicineName) {
+          // Find or create medicine
+          let med = await db.get('SELECT id FROM medicines WHERE name = ?', [item.medicineName]);
+          let medId;
+          if (med) {
+            medId = med.id;
+          } else {
+            const medRes = await db.run('INSERT INTO medicines (name, mrp) VALUES (?, ?)', [item.medicineName, item.mrp || item.unitPrice]);
+            medId = medRes.lastID;
+          }
+          
+          // Find or create inventory item under this medicine & batch
+          const batch = item.batchNo || 'B-MANUAL';
+          let inv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [medId, batch]);
+          if (inv) {
+            invId = inv.id;
+          } else {
+            const invRes = await db.run(
+              'INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, mrp, unit_price) VALUES (?, ?, ?, ?, ?, ?)',
+              [medId, 100, batch, item.expiryDate || '12/30', item.mrp || item.unitPrice, item.unitPrice]
+            );
+            invId = invRes.lastID;
+          }
+        } else if (invId) {
+          // If inventoryId is provided, double check it exists, otherwise auto-create or fall back
+          const invExists = await db.get('SELECT id FROM inventory_master WHERE id = ?', [invId]);
+          if (!invExists) {
+            if (item.medicineName) {
+              let med = await db.get('SELECT id FROM medicines WHERE name = ?', [item.medicineName]);
+              let medId = med ? med.id : (await db.run('INSERT INTO medicines (name) VALUES (?)', [item.medicineName])).lastID;
+              invId = (await db.run(
+                'INSERT INTO inventory_master (id, medicine_id, quantity, batch_no, expiry_date, mrp, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [invId, medId, 100, item.batchNo || 'B-MANUAL', item.expiryDate || '12/30', item.mrp || item.unitPrice, item.unitPrice]
+              )).lastID;
+            } else {
+              const medId = (await db.run('INSERT INTO medicines (name) VALUES (?)', [`Item ${invId}`])).lastID;
+              await db.run(
+                'INSERT INTO inventory_master (id, medicine_id, quantity, batch_no, expiry_date, mrp, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [invId, medId, 100, 'B-MANUAL', '12/30', item.unitPrice, item.unitPrice]
+              );
+            }
+          }
+        } else {
+          // Absolute fallback
+          const medId = (await db.run('INSERT INTO medicines (name) VALUES (?)', ['Generic Medicine'])).lastID;
+          invId = (await db.run(
+            'INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, mrp, unit_price) VALUES (?, ?, ?, ?, ?, ?)',
+            [medId, 100, 'B-MANUAL', '12/30', item.unitPrice, item.unitPrice]
+          )).lastID;
+        }
+
         await db.run(
           'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price) VALUES (?, ?, ?, ?)',
-          [invoiceId, item.inventoryId, item.quantity, item.unitPrice]
+          [invoiceId, invId, item.quantity, item.unitPrice]
         );
         // Decrement stock
         await db.run(
           'UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?',
-          [item.quantity, item.inventoryId]
+          [item.quantity, invId]
         );
+      }
+
+      // Trigger WhatsApp delivery asynchronously
+      if (customerId) {
+        import('./whatsappInvoiceService.js').then(({ whatsappInvoiceService }) => {
+          whatsappInvoiceService.sendInvoiceViaWhatsApp(invoiceId).catch(console.error);
+        });
       }
 
       return { invoiceNo, total, tax, subtotal };

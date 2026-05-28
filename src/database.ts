@@ -192,6 +192,9 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE customers ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE customers ADD COLUMN age TEXT`,
     `ALTER TABLE customers ADD COLUMN gender TEXT`,
+    `ALTER TABLE customers ADD COLUMN credit_enabled INTEGER DEFAULT 0`,
+    `ALTER TABLE customers ADD COLUMN credit_balance REAL DEFAULT 0`,
+    `ALTER TABLE sales_invoices ADD COLUMN payment_status TEXT DEFAULT 'PAID'`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -296,6 +299,17 @@ export async function ensureSchema(dbPath: string) {
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT
+    );
+
+    -- Resilient WhatsApp transmission queue
+    CREATE TABLE IF NOT EXISTS pending_whatsapp_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER,
+      recipient_phone TEXT,
+      pdf_path TEXT,
+      caption TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      retries INTEGER DEFAULT 0
     );
   `);
 

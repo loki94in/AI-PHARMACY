@@ -9,7 +9,9 @@ const pageConfigs = {
     rush: { title: 'Rush Hour Sales', subtitle: 'Fast Bulk Entry (No Patient Details)' },
     inventory: { title: 'Inventory Master', subtitle: 'Stock Control & Tracking' },
     purchases: { title: 'Purchases', subtitle: 'Distributor Billing & Logs' },
+    returns: { title: 'Returns & Expiry', subtitle: 'Batch-Centric Return & Expiry Correction' },
     crm: { title: 'CRM & Patients', subtitle: 'Patient History & Refills' },
+    'stamp-designer': { title: 'Stamp & Signature Studio', subtitle: 'Extract custom stamps and signatures from physical photos' },
     settings: { title: 'Settings', subtitle: 'System Preferences & Integrations' }
 };
 

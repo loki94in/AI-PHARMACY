@@ -35,6 +35,8 @@ import messagingRouter from './routes/messaging.js';
 import aiCameraRouter from './routes/aiCamera.js';
 import telegramPrescriptionRouter from './routes/telegramPrescription.js';
 import refillsRouter from './routes/refills.js';
+import { whatsappQueue } from './services/whatsappQueue.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,7 +82,7 @@ const upload = multer({
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN || '*',
   credentials: true
 }));
 app.use(rateLimit({
@@ -251,6 +253,7 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+  whatsappQueue.startWorker();
 });
 
 // Graceful shutdown

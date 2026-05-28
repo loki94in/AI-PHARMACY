@@ -3,11 +3,13 @@ import express from 'express';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const UPLOADS_DIR = path.resolve(__dirname, '..', '..', 'uploads');
 
 const router = express.Router();
 
@@ -75,6 +77,62 @@ router.post('/save', async (req, res) => {
   } catch (error) {
     console.error('Bulk settings save error:', error);
     res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+// Upload custom stamp (base64 transparent PNG)
+router.post('/upload-stamp', async (req, res) => {
+  try {
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: 'Image data required' });
+
+    // Clean base64 header
+    const base64Data = image.replace(/^data:image\/png;base64,/, "");
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
+
+    const stampPath = path.join(UPLOADS_DIR, 'custom_stamp.png');
+    fs.writeFileSync(stampPath, buffer);
+
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_custom_stamp', 'true')");
+    await db.close();
+
+    res.json({ success: true, message: 'Custom stamp uploaded and enabled' });
+  } catch (err: any) {
+    console.error('Upload stamp error:', err);
+    res.status(500).json({ error: 'Failed to upload stamp' });
+  }
+});
+
+// Upload custom signature (base64 transparent PNG)
+router.post('/upload-signature', async (req, res) => {
+  try {
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: 'Image data required' });
+
+    // Clean base64 header
+    const base64Data = image.replace(/^data:image\/png;base64,/, "");
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
+
+    const sigPath = path.join(UPLOADS_DIR, 'custom_signature.png');
+    fs.writeFileSync(sigPath, buffer);
+
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_custom_signature', 'true')");
+    await db.close();
+
+    res.json({ success: true, message: 'Custom signature uploaded and enabled' });
+  } catch (err: any) {
+    console.error('Upload signature error:', err);
+    res.status(500).json({ error: 'Failed to upload signature' });
   }
 });
 

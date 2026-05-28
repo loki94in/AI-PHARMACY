@@ -11,9 +11,33 @@ router.get('/next-invoice', asyncHandler(async (req: express.Request, res: expre
   res.json({ invoice_no });
 }));
 
+// Search medicine in inventory by Name, Batch, or MRP
+router.get('/search-medicine', asyncHandler(async (req: express.Request, res: express.Response) => {
+  const query = req.query.q as string;
+  if (!query) {
+    return res.json([]);
+  }
+  const db = await dbManager.getConnection();
+  const sql = `
+    SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, 
+           im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
+           m.cgst, m.sgst, m.igst, m.hsn_code
+    FROM inventory_master im
+    JOIN medicines m ON im.medicine_id = m.id
+    WHERE m.name LIKE ? 
+       OR im.batch_no LIKE ? 
+       OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?
+    LIMIT 20
+  `;
+  const likeQuery = `%${query}%`;
+  const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery]);
+  await dbManager.close();
+  res.json(rows);
+}));
+
 // Create a new sale
 router.post('/', asyncHandler(async (req: express.Request, res: express.Response) => {
-  const { items = [], patient_id, doctor_id, discount = 0, patient_name, patient_phone, patient_address } = req.body;
+  const { items = [], patient_id, doctor_id, discount = 0, patient_name, patient_phone, patient_address, payment_medium } = req.body;
 
   // Basic validation
   if (!Array.isArray(items) || items.length === 0) {
@@ -28,7 +52,8 @@ router.post('/', asyncHandler(async (req: express.Request, res: express.Response
     discount,
     patientName: patient_name,
     patientPhone: patient_phone,
-    patientAddress: patient_address
+    patientAddress: patient_address,
+    paymentMedium: payment_medium
   });
 
   res.json({ success: true, invoice_no: result.invoiceNo, total: result.total, tax: result.tax });

@@ -140,6 +140,200 @@ router.post('/ai-camera/process', async (req, res) => {
   }
 });
 
+// Lookup purchase details for a medicine
+router.get('/lookup-purchases', async (req, res) => {
+  let db;
+  try {
+    const { name, batch } = req.query;
+    if (!name) {
+      return res.status(400).json({ error: 'Medicine name query is required' });
+    }
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+
+    // Fuzzy matching for medicine names
+    const medicines = await db.all('SELECT id, name FROM medicines WHERE name LIKE ? LIMIT 10', [`%${name}%`]);
+    if (medicines.length === 0) {
+      await db.close();
+      return res.json([]);
+    }
+
+    const medicineIds = medicines.map(m => m.id);
+    let query = `
+      SELECT pi.id as purchase_item_id, pi.batch_no, pi.expiry_date, pi.quantity as purchase_qty, pi.cost_price, pi.mrp, 
+             p.invoice_no, p.date as purchase_date, d.name as distributor_name, d.id as distributor_id,
+             m.name as medicine_name, m.id as medicine_id
+      FROM purchase_items pi
+      JOIN purchases p ON pi.purchase_id = p.id
+      JOIN distributors d ON p.distributor_id = d.id
+      JOIN medicines m ON pi.medicine_id = m.id
+      WHERE pi.medicine_id IN (${medicineIds.join(',')})
+    `;
+
+    const params: any[] = [];
+    if (batch) {
+      query += ` AND pi.batch_no LIKE ?`;
+      params.push(`%${batch}%`);
+    }
+    query += ` ORDER BY p.date DESC`;
+
+    const purchaseRecords = await db.all(query, params);
+    await db.close();
+    res.json(purchaseRecords);
+  } catch (err: any) {
+    if (db) await db.close();
+    console.error('Error looking up purchases:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Process a list of batch-centric return entries
+router.post('/process-returns', async (req, res) => {
+  let db;
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'A non-empty list of return items is required' });
+    }
+
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('BEGIN TRANSACTION');
+
+    const returnNo = 'RET-' + Date.now();
+    
+    // Group return items by distributor to create individual return references if needed,
+    // or aggregate under one single return transaction. Let's create one master return record:
+    const totalAmount = items.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 0)), 0);
+    const result = await db.run(
+      'INSERT INTO returns (return_no, type, total_amount, date) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
+      [returnNo, 'purchase', totalAmount]
+    );
+    const returnId = result.lastID;
+
+    for (const item of items) {
+      // Record return item
+      await db.run(
+        `INSERT INTO return_items (return_id, medicine_id, batch_no, quantity, cost_price, mrp, total_price) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          returnId,
+          item.medicine_id,
+          item.batch_no,
+          item.quantity,
+          item.cost_price,
+          item.mrp,
+          (item.cost_price || 0) * (item.quantity || 0)
+        ]
+      );
+
+      // Decrement inventory_master quantity if match exists
+      const invItem = await db.get(
+        'SELECT id, quantity FROM inventory_master WHERE medicine_id = ? AND batch_no = ?',
+        [item.medicine_id, item.batch_no]
+      );
+      if (invItem) {
+        const newQty = Math.max(0, invItem.quantity - item.quantity);
+        await db.run('UPDATE inventory_master SET quantity = ? WHERE id = ?', [newQty, invItem.id]);
+      }
+    }
+
+    await db.run('COMMIT');
+    await db.close();
+    res.json({ success: true, message: 'Returns successfully processed', returnNo });
+  } catch (err: any) {
+    if (db) {
+      await db.run('ROLLBACK');
+      await db.close();
+    }
+    console.error('Error processing returns:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Export consolidated PDF report grouped by distributor
+router.post('/export-pdf-report', async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'A non-empty list of return items is required' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=distributor_claims_${Date.now()}.pdf`);
+
+    const doc = new PDFDocument({ margin: 40 });
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(22).text('Consolidated Claims Report', { align: 'center' });
+    doc.fontSize(10).text('Generated on: ' + new Date().toLocaleString(), { align: 'center' });
+    doc.moveDown(1.5);
+
+    // Group items by distributor
+    const grouped: { [key: string]: any[] } = {};
+    items.forEach(item => {
+      const dist = item.distributor_name || 'Unassigned Distributor';
+      if (!grouped[dist]) grouped[dist] = [];
+      grouped[dist].push(item);
+    });
+
+    let overallTotal = 0;
+
+    for (const [distributor, entries] of Object.entries(grouped)) {
+      doc.fontSize(14).fillColor('#0284c7').text(`Distributor: ${distributor}`, { underline: true });
+      doc.moveDown(0.5);
+
+      // Table Header
+      const tableTop = doc.y;
+      doc.fontSize(9).fillColor('#64748b');
+      doc.text('Item Name', 40, tableTop, { width: 140 });
+      doc.text('Batch / Exp', 190, tableTop, { width: 90 });
+      doc.text('Invoice Ref', 290, tableTop, { width: 90 });
+      doc.text('Qty', 390, tableTop, { width: 30, align: 'right' });
+      doc.text('Cost', 430, tableTop, { width: 50, align: 'right' });
+      doc.text('Total', 490, tableTop, { width: 60, align: 'right' });
+      
+      doc.moveTo(40, tableTop + 12).lineTo(550, tableTop + 12).strokeColor('#e2e8f0').strokeWidth(1).stroke();
+      doc.moveDown(0.8);
+
+      let distTotal = 0;
+
+      entries.forEach(entry => {
+        const itemY = doc.y;
+        if (itemY > 700) {
+          doc.addPage();
+        }
+        
+        const lineTotal = (entry.cost_price || 0) * (entry.quantity || 0);
+        distTotal += lineTotal;
+
+        doc.fontSize(9).fillColor('#0f172a');
+        doc.text(entry.medicine_name || '', 40, doc.y, { width: 145 });
+        doc.text(`${entry.batch_no || '-'} / ${entry.expiry_date ? entry.expiry_date.split('T')[0] : '-'}`, 190, doc.y, { width: 95 });
+        doc.text(`${entry.invoice_no || '-'} (${entry.purchase_date ? entry.purchase_date.split('T')[0] : '-'})`, 290, doc.y, { width: 95 });
+        doc.text(String(entry.quantity || 0), 390, doc.y, { width: 30, align: 'right' });
+        doc.text(`₹${(entry.cost_price || 0).toFixed(2)}`, 430, doc.y, { width: 50, align: 'right' });
+        doc.text(`₹${lineTotal.toFixed(2)}`, 490, doc.y, { width: 60, align: 'right' });
+        
+        doc.moveDown(1.2);
+      });
+
+      overallTotal += distTotal;
+      doc.moveDown(0.2);
+      doc.fontSize(10).fillColor('#0f172a').text(`Distributor Total Claim: ₹${distTotal.toFixed(2)}`, 40, doc.y, { align: 'right', font: 'Helvetica-Bold' });
+      doc.moveDown(1.5);
+    }
+
+    doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor('#0f172a').strokeWidth(1.5).stroke();
+    doc.moveDown(0.5);
+    doc.fontSize(12).fillColor('#0f172a').text(`Grand Total Claim Amount: ₹${overallTotal.toFixed(2)}`, 40, doc.y, { align: 'right' });
+
+    doc.end();
+  } catch (err: any) {
+    console.error('Error generating claims PDF:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Helper function to extract medicine information from OCR text
 function extractMedicineInfo(text: string) {
   const info: any = {};
@@ -178,3 +372,4 @@ function extractMedicineInfo(text: string) {
 }
 
 export default router;
+

@@ -1,64 +1,236 @@
-<div class="page" id="page9">
+<div class="page active" id="page9">
+  <div class="topbar">
+    <div>
+      <div class="page-title">📈 Reports & Analytics</div>
+      <div class="page-subtitle">Page 9 · Financial summaries & Product lifecycle audit trace</div>
+    </div>
+    <span class="flag-pill sky" data-requires="cloud_export">cloud_export</span>
+  </div>
+
+  <div class="content flex flex-col gap-24">
+    <!-- Reports KPI Summary cards -->
+    <div class="grid-4 gap-16">
+      <div class="kpi sky" style="background: rgba(56,189,248,0.05); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+        <div class="kpi-label text-muted fs-11 text-uppercase">Monthly Revenue</div>
+        <div class="kpi-value fs-24 fw-800 text-main mt-8" data-key="page9" data-field="revenue">₹8.4L</div>
+        <div class="kpi-delta fs-11 text-green mt-4">▲ 11.2% vs last month</div>
+      </div>
+      <div class="kpi green" style="background: rgba(16,185,129,0.05); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+        <div class="kpi-label text-muted fs-11 text-uppercase">Monthly Profit</div>
+        <div class="kpi-value fs-24 fw-800 text-main mt-8" data-key="page9" data-field="profit">₹1.68L</div>
+        <div class="kpi-delta fs-11 text-green mt-4">▲ 9.0% vs last month</div>
+      </div>
+      <div class="kpi orange" style="background: rgba(249,115,22,0.05); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+        <div class="kpi-label text-muted fs-11 text-uppercase">GST Payable (CGST)</div>
+        <div class="kpi-value fs-24 fw-800 text-main mt-8" data-key="page9" data-field="gst">₹34,200</div>
+        <div class="kpi-delta fs-11 text-muted mt-4">Due in 8 days</div>
+      </div>
+      <div class="kpi purple" style="background: rgba(139,92,246,0.05); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+        <div class="kpi-label text-muted fs-11 text-uppercase">Top Distributor</div>
+        <div class="kpi-value fs-18 fw-800 text-main mt-8" data-key="page9" data-field="topDistributor" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Medico Traders</div>
+        <div class="kpi-delta fs-11 text-muted mt-4">₹2.1L purchases this month</div>
+      </div>
+    </div>
+
+    <!-- Reports generator actions -->
+    <div class="card p-20">
+      <div class="fw-700 fs-16 text-primary mb-16 flex items-center gap-8">
+        <i class="fa-solid fa-sliders"></i> General Report Exporter
+      </div>
+      <div class="grid-3 gap-16 items-end">
+        <div class="input-group mb-0">
+          <label>Report Type</label>
+          <select class="input-control w-100">
+            <option>Financial Summary</option>
+            <option>GST Report</option>
+            <option>Distributor Performance</option>
+            <option>Stock Valuation</option>
+          </select>
+        </div>
+        <div class="input-group mb-0">
+          <label>From Date</label>
+          <input type="date" class="input-control w-100" />
+        </div>
+        <div class="input-group mb-0">
+          <label>To Date</label>
+          <input type="date" class="input-control w-100" />
+        </div>
+      </div>
+      <div class="flex gap-12 mt-20">
+        <button class="btn btn-primary px-16 py-8">Generate Summary</button>
+        <button class="btn bg-surface border-all" onclick="window.open('/api/reports/export-pdf?type=sales', '_blank')">
+          <i class="fa-solid fa-file-pdf"></i> Export Sales PDF
+        </button>
+      </div>
+    </div>
+
+    <!-- NEW Section: All-in-One Product Lifecycle Ledger -->
+    <div class="card p-20 flex flex-col gap-16">
+      <div class="fw-700 fs-16 text-primary flex items-center gap-8">
+        <i class="fa-solid fa-clock-rotate-left"></i> All-in-One Product Trace & Lifecycle Ledger
+      </div>
+      <p class="text-muted fs-12" style="margin-top: -8px;">
+        Trace any product's complete inventory lifecycle. Search by Name, Batch No, Invoice/Bill No, Distributor, or Customer to instantly view all linked purchase receipts and retail sales.
+      </p>
+
+      <div class="flex gap-12">
+        <div class="flex-1 relative">
+          <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted);"></i>
+          <input type="text" id="trace-search-input" class="input-control w-100" style="padding-left: 36px;" placeholder="Search name, batch, invoice number, distributor or patient name..." />
+        </div>
+        <button class="btn btn-primary" onclick="performLifecycleTrace()">
+          <i class="fa-solid fa-search"></i> Trace Product
+        </button>
+      </div>
+
+      <div class="grid-2 gap-16 mt-8">
+        <!-- Purchase History Card -->
+        <div class="card p-16 flex flex-col" style="background: rgba(0, 0, 0, 0.15); min-height: 250px;">
+          <div class="fw-600 fs-14 text-sky mb-12 flex items-center gap-6">
+            <i class="fa-solid fa-truck-ramp-box"></i> Staged Purchases (Procured Stock)
+          </div>
+          <div class="table-container border-none flex-1" style="overflow-y: auto; max-height: 350px;">
+            <table class="fs-12">
+              <thead>
+                <tr>
+                  <th>Product & Batch</th>
+                  <th>Distributor & Bill No</th>
+                  <th>Date</th>
+                  <th class="text-right">Qty</th>
+                  <th class="text-right">Cost Price</th>
+                </tr>
+              </thead>
+              <tbody id="trace-purchases-body">
+                <tr>
+                  <td colspan="5" class="text-center text-muted py-24">Type a query above to trace product procurements.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Sales History Card -->
+        <div class="card p-16 flex flex-col" style="background: rgba(0, 0, 0, 0.15); min-height: 250px;">
+          <div class="fw-600 fs-14 text-accent mb-12 flex items-center gap-6">
+            <i class="fa-solid fa-cart-shopping"></i> Staged Sales (Dispatched Stock)
+          </div>
+          <div class="table-container border-none flex-1" style="overflow-y: auto; max-height: 350px;">
+            <table class="fs-12">
+              <thead>
+                <tr>
+                  <th>Product & Batch</th>
+                  <th>Patient & Bill No</th>
+                  <th>Date</th>
+                  <th class="text-right">Qty</th>
+                  <th class="text-right">Retail Price</th>
+                </tr>
+              </thead>
+              <tbody id="trace-sales-body">
+                <tr>
+                  <td colspan="5" class="text-center text-muted py-24">Type a query above to trace product customer sales.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+// Load default revenue KPI data from backend
 (async () => {
   try {
     const res = await fetch('/api/reports');
     if (!res.ok) throw new Error('Network response was not ok');
     const data = await res.json();
-    // Update KPI elements if they have data-key attributes (example)
     const map = {
-      revenue: data.monthlyRevenue,
-      profit: data.monthlyProfit,
-      gst: data.gstPayable,
-      topDistributor: data.topDistributor
+      revenue: data.monthlyRevenue || '₹8.4L',
+      profit: data.monthlyProfit || '₹1.68L',
+      gst: data.gstPayable || '₹34,200',
+      topDistributor: data.topDistributor || 'Medico Traders'
     };
     for (const [key, value] of Object.entries(map)) {
       const el = document.querySelector(`[data-key="page9"][data-field="${key}"]`);
-      if (el) el.textContent = typeof value === 'number' ? `₹${value}` : value;
+      if (el) el.textContent = typeof value === 'number' ? `₹${value.toLocaleString()}` : value;
     }
   } catch (e) {
     console.error('Reports fetch error:', e);
   }
 })();
+
+// Main performance lifecycle product tracer
+window.performLifecycleTrace = async () => {
+  const queryInput = document.getElementById('trace-search-input');
+  const query = queryInput.value.trim();
+  if (!query) {
+    alert('Please enter a medicine name, batch number, bill number, or distributor to trace');
+    return;
+  }
+
+  const pBody = document.getElementById('trace-purchases-body');
+  const sBody = document.getElementById('trace-sales-body');
+
+  pBody.innerHTML = '<tr><td colspan="5" class="text-center py-24"><i class="fa-solid fa-spinner fa-spin"></i> Tracing procurements...</td></tr>';
+  sBody.innerHTML = '<tr><td colspan="5" class="text-center py-24"><i class="fa-solid fa-spinner fa-spin"></i> Tracing sales...</td></tr>';
+
+  try {
+    const res = await fetch(`/api/reports/product-trace?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+
+    // Populate purchases
+    if (data.purchases.length === 0) {
+      pBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-24">No matching purchase records found.</td></tr>';
+    } else {
+      pBody.innerHTML = data.purchases.map(p => `
+        <tr>
+          <td>
+            <div class="fw-700">${p.medicine_name}</div>
+            <div class="fs-10 text-muted font-mono" style="margin-top:2px;">Batch: ${p.batch_no || '-'}</div>
+          </td>
+          <td>
+            <div class="fw-600 text-sky">${p.distributor_name}</div>
+            <div class="fs-10 text-muted font-mono" style="margin-top:2px;">Inv: ${p.invoice_no || '-'}</div>
+          </td>
+          <td class="font-mono">${p.transaction_date ? p.transaction_date.split('T')[0] : '-'}</td>
+          <td class="text-right fw-600 font-mono">${p.quantity}</td>
+          <td class="text-right font-mono text-accent">₹${(p.cost_price || 0).toFixed(2)}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Populate sales
+    if (data.sales.length === 0) {
+      sBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-24">No matching sales records found.</td></tr>';
+    } else {
+      sBody.innerHTML = data.sales.map(s => `
+        <tr>
+          <td>
+            <div class="fw-700">${s.medicine_name}</div>
+            <div class="fs-10 text-muted font-mono" style="margin-top:2px;">Batch: ${s.batch_no || '-'}</div>
+          </td>
+          <td>
+            <div class="fw-600 text-primary">${s.customer_name || 'Walk-in Customer'}</div>
+            <div class="fs-10 text-muted font-mono" style="margin-top:2px;">Inv: ${s.invoice_no || '-'}</div>
+          </td>
+          <td class="font-mono">${s.transaction_date ? s.transaction_date.split('T')[0] : '-'}</td>
+          <td class="text-right fw-600 font-mono">${s.quantity}</td>
+          <td class="text-right font-mono text-green">₹${(s.unit_price || 0).toFixed(2)}</td>
+        </tr>
+      `).join('');
+    }
+  } catch (err) {
+    console.error('Lifecycle trace error:', err);
+    pBody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-24">Error retrieving procurements data.</td></tr>';
+    sBody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-24">Error retrieving sales data.</td></tr>';
+  }
+};
+
+// Add keypress listener to trigger performLifecycleTrace on Enter key
+document.getElementById('trace-search-input').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    performLifecycleTrace();
+  }
+});
 </script>
-    <div class="topbar">
-      <div>
-        <div class="page-title">📈 Reports & Analytics</div>
-        <div class="page-subtitle">Page 9 · Financial, GST, Distributor Performance</div>
-      </div>
-      <span class="flag-pill sky" data-requires="cloud_export">cloud_export</span>
-    </div>
-    <div class="content">
-      <div class="card">
-        <div class="card-title"><span class="icon">🎛️</span> Report Generator</div>
-        <div class="form-row col3">
-          <div class="field"><label>Report Type</label>
-            <select>
-              <option>Financial Summary</option>
-              <option>GST Report</option>
-              <option>Distributor Performance</option>
-              <option>Stock Valuation</option>
-            </select>
-          </div>
-          <div class="field"><label>From Date</label><input type="date" /></div>
-          <div class="field"><label>To Date</label><input type="date" /></div>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-primary">📊 Generate Report</button>
-          <button class="btn btn-ghost" onclick="window.open('/api/reports/export-pdf?type=sales', '_blank')">📄 Export PDF</button>
-          <button class="btn btn-ghost" style="color:var(--sky);border-color:var(--border-bright);" data-requires="cloud_export" onclick="
-            fetch('/api/utilities/cloud/push', { method: 'POST' })
-            .then(res => res.json())
-            .then(data => alert(data.message))
-            .catch(err => alert('Cloud push error'));
-          ">☁️ Push to Cloud Storage</button>
-        </div>
-      </div>
-      <div class="grid2">
-        <div class="kpi sky"><div class="kpi-label">Monthly Revenue</div><div class="kpi-value">₹8.4L</div><div class="kpi-delta">▲ 11.2% vs last month</div></div>
-        <div class="kpi green"><div class="kpi-label">Monthly Profit</div><div class="kpi-value">₹1.68L</div><div class="kpi-delta">▲ 9.0% vs last month</div></div>
-        <div class="kpi orange"><div class="kpi-label">GST Payable (CGST)</div><div class="kpi-value">₹34,200</div><div class="kpi-delta">Due in 8 days</div></div>
-        <div class="kpi purple"><div class="kpi-label">Top Distributor</div><div class="kpi-value" style="font-size:17px;">Medico Traders</div><div class="kpi-delta">₹2.1L purchases this month</div></div>
-      </div>
-    </div>
-  </div>

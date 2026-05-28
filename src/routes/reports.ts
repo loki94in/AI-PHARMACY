@@ -159,5 +159,61 @@ router.get('/non-moving/data', async (req, res) => {
   }
 });
 
+// Product Trace audit endpoint (searches purchases & sales all-in-one)
+router.get('/product-trace', async (req, res) => {
+  const query = req.query.q as string;
+  if (!query) {
+    return res.json({ purchases: [], sales: [] });
+  }
+
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const likeQuery = `%${query}%`;
+
+    // Fetch matching purchases
+    const purchases = await db.all(`
+      SELECT pi.id, pi.batch_no, pi.expiry_date, pi.quantity, pi.cost_price, pi.mrp,
+             p.invoice_no, p.date as transaction_date, d.name as distributor_name,
+             m.name as medicine_name
+      FROM purchase_items pi
+      JOIN purchases p ON pi.purchase_id = p.id
+      JOIN distributors d ON p.distributor_id = d.id
+      JOIN medicines m ON pi.medicine_id = m.id
+      WHERE m.name LIKE ? 
+         OR pi.batch_no LIKE ? 
+         OR p.invoice_no LIKE ? 
+         OR d.name LIKE ?
+      ORDER BY p.date DESC
+      LIMIT 100
+    `, [likeQuery, likeQuery, likeQuery, likeQuery]);
+
+    // Fetch matching sales
+    const sales = await db.all(`
+      SELECT si.id, COALESCE(si.batch_no, im.batch_no) as batch_no, im.expiry_date, si.quantity, si.unit_price, si.mrp,
+             inv.invoice_no, inv.date as transaction_date, c.name as customer_name,
+             m.name as medicine_name
+      FROM sale_items si
+      JOIN sales_invoices inv ON si.invoice_id = inv.id
+      LEFT JOIN customers c ON inv.customer_id = c.id
+      JOIN inventory_master im ON si.inventory_id = im.id
+      JOIN medicines m ON im.medicine_id = m.id
+      WHERE m.name LIKE ?
+         OR COALESCE(si.batch_no, im.batch_no) LIKE ?
+         OR inv.invoice_no LIKE ?
+         OR c.name LIKE ?
+      ORDER BY inv.date DESC
+      LIMIT 100
+    `, [likeQuery, likeQuery, likeQuery, likeQuery]);
+
+    await db.close();
+    res.json({ purchases, sales });
+  } catch (err: any) {
+    if (db) await db.close();
+    console.error('Error tracing product:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
 

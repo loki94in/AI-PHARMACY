@@ -183,8 +183,11 @@ class TelegramBotService {
     });
 
     // Handle /bill command
-    this.bot.onText(/\/bill/, async (msg) => {
+    this.bot.onText(/\/bill(?:\s+(.+))?/, async (msg, match) => {
       const chatId = msg.chat.id;
+      const paymentArg = match && match[1] ? match[1].toUpperCase().trim() : 'CASH';
+      const paymentMedium = paymentArg === 'CREDIT' ? 'CREDIT' : 'CASH';
+
       try {
         const cartItems = telegramPrescriptionService.getCartItems(chatId);
         if (cartItems.length === 0) {
@@ -192,10 +195,9 @@ class TelegramBotService {
           return;
         }
 
-        this.bot?.sendMessage(chatId, '🧾 Generating bill from your cart...');
+        this.bot?.sendMessage(chatId, `🧾 Generating ${paymentMedium} bill from your cart...`);
 
         // Make internal API call to generate bill
-        // Using dynamic import to avoid TypeScript issues with node-fetch types
         const fetchModule = await import('node-fetch');
         const fetch = fetchModule.default || fetchModule;
         const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/telegram-prescription/bill/generate`, {
@@ -205,9 +207,10 @@ class TelegramBotService {
           },
           body: JSON.stringify({
             chatId: chatId,
-            patient_id: null, // Could be enhanced to ask for patient details
-            doctor_id: null,  // Could be enhanced to ask for doctor details
-            discount: 0
+            patient_id: null,
+            doctor_id: null,
+            discount: 0,
+            payment_medium: paymentMedium
           })
         });
 
@@ -219,11 +222,11 @@ class TelegramBotService {
 
         if (result.success) {
           this.bot?.sendMessage(chatId,
-            `✅ *Bill Generated Successfully!*\n\n` +
+            `✅ *Bill Generated Successfully! (${paymentMedium})*\n\n` +
             `📄 Invoice No: ${result.invoice_no}\n` +
             `💰 Total Amount: ₹${result.total.toFixed(2)}\n` +
             `🧾 Tax Amount: ₹${result.tax.toFixed(2)}\n\n` +
-            `Thank you for using AI Pharmacy!`,
+            (paymentMedium === 'CREDIT' ? `💬 Stamped bill sent to your WhatsApp number.` : `Thank you for using AI Pharmacy!`),
             { parse_mode: 'Markdown' }
           );
         } else {

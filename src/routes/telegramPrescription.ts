@@ -104,7 +104,7 @@ router.delete('/cart/:chatId', async (req, res) => {
 router.post('/bill/generate', async (req, res) => {
   let db;
   try {
-    const { chatId, patient_id, doctor_id, discount = 0 } = req.body;
+    const { chatId, patient_id, doctor_id, discount = 0, payment_medium } = req.body;
 
     if (!chatId) {
       return res.status(400).json({ error: 'Chat ID is required' });
@@ -130,6 +130,21 @@ router.post('/bill/generate', async (req, res) => {
 
     db = await open({ filename: DB_PATH, driver: sqlite3.Database });
 
+    // Link customer to telegram chatId if patient_id is not passed
+    let finalPatientId = patient_id;
+    if (!finalPatientId) {
+      const customer = await db.get("SELECT id FROM customers WHERE notes LIKE ?", [`%tg:${parsedChatId}%`]);
+      if (!customer) {
+        const custRes = await db.run(
+          "INSERT INTO customers (name, notes, credit_enabled) VALUES (?, ?, 1)",
+          [`Telegram User ${parsedChatId}`, `tg:${parsedChatId}`, 1]
+        );
+        finalPatientId = custRes.lastID;
+      } else {
+        finalPatientId = customer.id;
+      }
+    }
+
     // Generate invoice number
     const year = new Date().getFullYear();
     const prefix = `S-${year}-`;
@@ -153,12 +168,23 @@ router.post('/bill/generate', async (req, res) => {
     const tax = subtotal * taxRate;
     const total = subtotal + tax - discount;
 
+    const paymentMedium = payment_medium || 'CASH';
+    const paymentStatus = paymentMedium === 'CREDIT' ? 'UNPAID' : 'PAID';
+
     // Insert invoice
     const result = await db.run(
-      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount) VALUES (?, ?, ?, ?)',
-      [invoice_no, patient_id || null, total, tax]
+      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status) VALUES (?, ?, ?, ?, ?, ?)',
+      [invoice_no, finalPatientId, total, tax, paymentMedium, paymentStatus]
     );
     const invoiceId = result.lastID;
+
+    // Update customer credit balance if CREDIT
+    if (paymentMedium === 'CREDIT') {
+      await db.run(
+        'UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?',
+        [total, finalPatientId]
+      );
+    }
 
     // Insert line items and update inventory
     for (const item of items) {
@@ -174,6 +200,11 @@ router.post('/bill/generate', async (req, res) => {
 
     // Clear cart after successful bill generation
     telegramPrescriptionService.clearCart(parsedChatId);
+
+    // Trigger WhatsApp delivery asynchronously
+    import('../../services/whatsappInvoiceService.js').then(({ whatsappInvoiceService }) => {
+      whatsappInvoiceService.sendInvoiceViaWhatsApp(invoiceId).catch(console.error);
+    });
 
     res.json({
       success: true,

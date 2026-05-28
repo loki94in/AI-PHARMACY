@@ -134,28 +134,82 @@ router.post('/cloud/push', async (req, res) => {
   }
 });
 
-// Restore backup placeholder
-// New placeholder route: backup/restore
+// Restore latest backup
 router.post('/backup/restore', async (req, res) => {
   try {
+    const backupDir = path.resolve(__dirname, '..', '..', 'backup');
+    if (!fs.existsSync(backupDir)) {
+      return res.status(400).json({ error: 'No backups directory found' });
+    }
+    
+    // Find the latest backup file matching app_backup_*.db or backup_*.db
+    const files = fs.readdirSync(backupDir)
+      .filter(f => (f.startsWith('app_backup_') || f.startsWith('backup_') || f.startsWith('app_')) && f.endsWith('.db'))
+      .sort((a, b) => b.localeCompare(a)); // Sort descending for latest timestamp
+
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'No backup files found to restore' });
+    }
+
+    const latestBackup = files[0];
+    const backupPath = path.join(backupDir, latestBackup);
+
+    // Close active connection
+    const { dbManager } = await import('../database/connection.js');
+    await dbManager.close();
+
+    // Copy backup to DB_PATH
+    fs.copyFileSync(backupPath, DB_PATH);
+
+    // Re-open database connection to log action
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['RESTORE_BACKUP', 'Backup restore triggered via /backup/restore']);
+    await db.run(
+      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)', 
+      ['RESTORE_BACKUP', `Database successfully restored from backup: ${latestBackup}`]
+    );
     await db.close();
-    res.json({ success: true, message: 'Backup restored (simulated)' });
-  } catch (e) {
+
+    res.json({ success: true, message: `Backup restored successfully from: ${latestBackup}` });
+  } catch (e: any) {
     console.error('Backup restore error:', e);
-    res.status(500).json({ error: 'Failed to restore backup' });
+    res.status(500).json({ error: 'Failed to restore backup: ' + e.message });
   }
 });
+
 router.post('/restore', async (req, res) => {
   try {
+    const backupDir = path.resolve(__dirname, '..', '..', 'backup');
+    if (!fs.existsSync(backupDir)) {
+      return res.status(400).json({ error: 'No backups directory found' });
+    }
+    
+    const files = fs.readdirSync(backupDir)
+      .filter(f => (f.startsWith('app_backup_') || f.startsWith('backup_') || f.startsWith('app_')) && f.endsWith('.db'))
+      .sort((a, b) => b.localeCompare(a));
+
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'No backup files found to restore' });
+    }
+
+    const latestBackup = files[0];
+    const backupPath = path.join(backupDir, latestBackup);
+
+    const { dbManager } = await import('../database/connection.js');
+    await dbManager.close();
+
+    fs.copyFileSync(backupPath, DB_PATH);
+
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['RESTORE_BACKUP', 'Backup restore triggered']);
+    await db.run(
+      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)', 
+      ['RESTORE_BACKUP', `Database successfully restored from backup: ${latestBackup}`]
+    );
     await db.close();
-    res.json({ success: true, message: 'Backup restored (simulated)' });
-  } catch (e) {
+
+    res.json({ success: true, message: `Backup restored successfully from: ${latestBackup}` });
+  } catch (e: any) {
     console.error('Restore error:', e);
-    res.status(500).json({ error: 'Failed to restore backup' });
+    res.status(500).json({ error: 'Failed to restore backup: ' + e.message });
   }
 });
 

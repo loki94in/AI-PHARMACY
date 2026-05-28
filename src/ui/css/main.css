@@ -542,3 +542,9 @@ tbody tr:last-child td {
 .btn-action-large { height: 80px; display: flex; flex-direction: column; justify-content: center; }
 .action-icon { font-size: 20px; margin-bottom: 4px; }
 .info-box { padding: 12px; background: var(--surface-hover); border-radius: 8px; border: 1px dashed var(--border-color); margin-top: 16px; }
+
+/* Spreadsheet Grid */
+.spreadsheet-grid td { padding: 4px 8px; vertical-align: middle; }
+.spreadsheet-grid .input-control { border-radius: 4px; box-shadow: none; border-color: transparent; }
+.spreadsheet-grid .input-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
+.border-primary { border: 1px solid var(--primary); }

@@ -475,5 +475,68 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-05-28T15:55:23.769Z"
+  },
+  {
+    "id": "audit_1779992947544",
+    "imagePath": "data\\audit_images\\audit_1779992947544.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T18:29:07.547Z"
+  },
+  {
+    "id": "audit_1779993544204",
+    "imagePath": "data\\audit_images\\audit_1779993544204.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T18:39:04.211Z"
+  },
+  {
+    "id": "audit_1779993743470",
+    "imagePath": "data\\audit_images\\audit_1779993743470.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T18:42:23.473Z"
+  },
+  {
+    "id": "audit_1779994008613",
+    "imagePath": "data\\audit_images\\audit_1779994008613.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T18:46:48.615Z"
+  },
+  {
+    "id": "audit_1779994217268",
+    "imagePath": "data\\audit_images\\audit_1779994217268.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T18:50:17.271Z"
+  },
+  {
+    "id": "audit_1779994317252",
+    "imagePath": "data\\audit_images\\audit_1779994317252.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T18:51:57.256Z"
+  },
+  {
+    "id": "audit_1780006973150",
+    "imagePath": "data\\audit_images\\audit_1780006973150.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-05-28T22:22:53.154Z"
   }
 ]
