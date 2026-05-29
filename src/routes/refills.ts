@@ -80,4 +80,71 @@ router.post('/check', async (req, res) => {
   }
 });
 
+// Update a refill schedule manually
+router.put('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status, hold_for_stock } = req.body;
+
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    
+    // Check if refill exists
+    const refill = await db.get('SELECT * FROM patient_refills WHERE id = ?', [id]);
+    if (!refill) {
+      await db.close();
+      return res.status(404).json({ error: 'Refill not found' });
+    }
+
+    const updatedName = patient_name !== undefined ? patient_name : refill.patient_name;
+    const updatedPhone = patient_phone !== undefined ? patient_phone : refill.patient_phone;
+    const updatedMedicineId = medicine_id !== undefined ? medicine_id : refill.medicine_id;
+    const updatedInterval = refill_interval_days !== undefined ? parseInt(refill_interval_days, 10) : refill.refill_interval_days;
+    const updatedNextDate = next_refill_date !== undefined ? next_refill_date : refill.next_refill_date;
+    const updatedStatus = status !== undefined ? status : refill.status;
+    const updatedHold = hold_for_stock !== undefined ? parseInt(hold_for_stock, 10) : refill.hold_for_stock;
+
+    await db.run(
+      `UPDATE patient_refills 
+       SET patient_name = ?, patient_phone = ?, medicine_id = ?, refill_interval_days = ?, next_refill_date = ?, status = ?, hold_for_stock = ?
+       WHERE id = ?`,
+      [updatedName, updatedPhone, updatedMedicineId, updatedInterval, updatedNextDate, updatedStatus, updatedHold, id]
+    );
+
+    // If marked back to pending or values changed, re-run refilling triggers
+    if (updatedStatus === 'pending') {
+      await checkAllRefills(db);
+    }
+
+    await db.close();
+    res.json({ success: true, message: 'Refill updated successfully' });
+  } catch (err) {
+    if (db) await db.close();
+    console.error('Failed to update refill:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete/Cancel a refill schedule
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    
+    const result = await db.run('DELETE FROM patient_refills WHERE id = ?', [id]);
+    await db.close();
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Refill not found' });
+    }
+    
+    res.json({ success: true, message: 'Refill cancelled successfully' });
+  } catch (err) {
+    if (db) await db.close();
+    console.error('Failed to delete refill:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

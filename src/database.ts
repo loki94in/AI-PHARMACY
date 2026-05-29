@@ -195,6 +195,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE customers ADD COLUMN credit_enabled INTEGER DEFAULT 0`,
     `ALTER TABLE customers ADD COLUMN credit_balance REAL DEFAULT 0`,
     `ALTER TABLE sales_invoices ADD COLUMN payment_status TEXT DEFAULT 'PAID'`,
+    `ALTER TABLE patient_refills ADD COLUMN hold_for_stock INTEGER DEFAULT 0`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -310,6 +311,25 @@ export async function ensureSchema(dbPath: string) {
       caption TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       retries INTEGER DEFAULT 0
+    );
+
+    -- Expiry returns tracking and credit notes reconciliation
+    CREATE TABLE IF NOT EXISTS expiry_returns_tracking (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER,
+      distributor_id INTEGER,
+      return_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      original_amount REAL,
+      loss_percentage REAL DEFAULT 3.0,
+      expected_credit_amount REAL,
+      reminder_date DATETIME,
+      status TEXT CHECK(status IN ('pending', 'reconciled', 'overdue')) DEFAULT 'pending',
+      actual_credit_amount REAL DEFAULT 0,
+      reconciled_date DATETIME,
+      reconciled_purchase_id INTEGER,
+      FOREIGN KEY(return_id) REFERENCES returns(id),
+      FOREIGN KEY(distributor_id) REFERENCES distributors(id),
+      FOREIGN KEY(reconciled_purchase_id) REFERENCES purchases(id)
     );
   `);
 

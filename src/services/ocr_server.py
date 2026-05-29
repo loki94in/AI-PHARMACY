@@ -18,8 +18,8 @@ try:
     from paddleocr import PaddleOCR
     # Initialize PaddleOCR once on startup
     print("[OCR Server] Loading AI Models into memory...")
-    # Using default en dictionary, use_angle_cls=False for speed
-    ocr = PaddleOCR(lang='en', show_log=False, use_angle_cls=False)
+    # Using default en dictionary, use_angle_cls=False for speed, and limit side length to 720 to reduce RAM and CPU overhead
+    ocr = PaddleOCR(lang='en', show_log=False, use_angle_cls=False, det_limit_side_len=720)
     print("[OCR Server] Models loaded. Server ready.")
 except Exception as e:
     print(f"[OCR Server] Failed to initialize PaddleOCR: {e}")

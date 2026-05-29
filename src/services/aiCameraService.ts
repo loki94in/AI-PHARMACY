@@ -233,7 +233,17 @@ class AICameraService {
       buffer = imageData;
     }
 
-    await fs.promises.writeFile(absoluteImagePath, buffer);
+    try {
+      const image = await Jimp.read(buffer);
+      if (image.width > 800) {
+        image.resize({ w: 800 });
+      }
+      const compressedBuffer = await image.getBuffer('image/jpeg');
+      await fs.promises.writeFile(absoluteImagePath, compressedBuffer);
+    } catch (compressErr) {
+      console.error('Failed to compress audit image with Jimp, saving original:', compressErr);
+      await fs.promises.writeFile(absoluteImagePath, buffer);
+    }
 
     let queue: any[] = [];
     if (fs.existsSync(auditQueuePath)) {

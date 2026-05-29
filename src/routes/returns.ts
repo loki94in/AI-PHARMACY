@@ -38,7 +38,7 @@ router.get('/', async (_req, res) => {
 router.post('/', async (req, res) => {
   let db;
   try {
-    const { return_no, original_invoice_id, type, total_amount } = req.body;
+    const { return_no, original_invoice_id, type, total_amount, distributor_id, is_expiry, loss_percentage } = req.body;
     if (!return_no) {
       return res.status(400).json({ error: 'return_no is required' });
     }
@@ -46,7 +46,16 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'original_invoice_id is required' });
     }
     db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run('INSERT INTO returns (return_no, original_invoice_id, type, total_amount) VALUES (?,?,?,?)', [return_no, original_invoice_id, type || null, total_amount || 0]);
+    const result = await db.run(
+      'INSERT INTO returns (return_no, original_invoice_id, type, total_amount, distributor_id) VALUES (?,?,?,?,?)',
+      [return_no, original_invoice_id, type || null, total_amount || 0, distributor_id || null]
+    );
+    
+    if (type === 'purchase' && is_expiry && distributor_id) {
+      const { trackExpiryReturn } = await import('../services/creditNoteService.js');
+      await trackExpiryReturn(db, result.lastID as number, distributor_id as number, total_amount || 0, loss_percentage || 3.0);
+    }
+
     await db.close();
     res.json({ success: true, message: 'Return recorded' });
   } catch (err: any) {
@@ -63,7 +72,7 @@ router.post('/', async (req, res) => {
 
 router.post('/financial-note', async (req, res) => {
   let pdfDoc;
-  let stream;
+  let stream: any;
   try {
     const { type, amount, details } = req.body;
     if (!type) {
@@ -292,7 +301,7 @@ router.post('/export-pdf-report', async (req, res) => {
       doc.text('Cost', 430, tableTop, { width: 50, align: 'right' });
       doc.text('Total', 490, tableTop, { width: 60, align: 'right' });
       
-      doc.moveTo(40, tableTop + 12).lineTo(550, tableTop + 12).strokeColor('#e2e8f0').strokeWidth(1).stroke();
+      doc.moveTo(40, tableTop + 12).lineTo(550, tableTop + 12).strokeColor('#e2e8f0').lineWidth(1).stroke();
       doc.moveDown(0.8);
 
       let distTotal = 0;
@@ -319,11 +328,12 @@ router.post('/export-pdf-report', async (req, res) => {
 
       overallTotal += distTotal;
       doc.moveDown(0.2);
-      doc.fontSize(10).fillColor('#0f172a').text(`Distributor Total Claim: ₹${distTotal.toFixed(2)}`, 40, doc.y, { align: 'right', font: 'Helvetica-Bold' });
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text(`Distributor Total Claim: ₹${distTotal.toFixed(2)}`, 40, doc.y, { align: 'right' });
+      doc.font('Helvetica');
       doc.moveDown(1.5);
     }
 
-    doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor('#0f172a').strokeWidth(1.5).stroke();
+    doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor('#0f172a').lineWidth(1.5).stroke();
     doc.moveDown(0.5);
     doc.fontSize(12).fillColor('#0f172a').text(`Grand Total Claim Amount: ₹${overallTotal.toFixed(2)}`, 40, doc.y, { align: 'right' });
 

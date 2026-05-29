@@ -203,52 +203,8 @@ export class InventoryService {
    */
   async checkAndTriggerRefillsForMedicine(medicineId: number): Promise<void> {
     return await dbManager.transaction(async (db) => {
-      // Get current stock for this medicine
-      const stockRow = await db.get(
-        'SELECT SUM(quantity) as total_qty FROM inventory_master WHERE medicine_id = ?',
-        [medicineId]
-      );
-      const qty = stockRow ? (stockRow.total_qty || 0) : 0;
-
-      if (qty <= 0) {
-        // Out of stock - check for pending refills and notify pharmacist via Telegram
-        const pendingRefills = await db.all(
-          `SELECT pr.*, m.name as medicine_name, p.name as patient_name, p.phone as patient_phone
-           FROM patient_refills pr
-           JOIN medicines m ON pr.medicine_id = m.id
-           JOIN patients p ON pr.patient_id = p.id
-           WHERE pr.medicine_id = ? AND pr.status = 'pending'`,
-          [medicineId]
-        );
-
-        for (const refill of pendingRefills) {
-          const telegramMessage = `⚠️ REFILL ALERT: Patient ${refill.patient_name} (${refill.patient_phone}) is due for refill of "${refill.medicine_name}", but it is OUT OF STOCK. Please place a purchase order.`;
-          await telegramBotService.sendDefaultNotification(telegramMessage);
-        }
-      } else {
-        // In stock - check for pending refills and notify patients via WhatsApp
-        const pendingRefills = await db.all(
-          `SELECT pr.*, m.name as medicine_name, p.name as patient_name, p.phone as patient_phone
-           FROM patient_refills pr
-           JOIN medicines m ON pr.medicine_id = m.id
-           JOIN patients p ON pr.patient_id = p.id
-           WHERE pr.medicine_id = ? AND pr.status = 'pending'`,
-          [medicineId]
-        );
-
-        for (const refill of pendingRefills) {
-          const message = `Hello ${refill.patient_name}, your prescription refill for ${refill.medicine_name} is now ready and in stock! Please visit the pharmacy to collect it.`;
-          try {
-            await sendMessage(refill.patient_phone, undefined, message);
-            await db.run(
-              "UPDATE patient_refills SET status = 'notified' WHERE id = ?",
-              [refill.id]
-            );
-          } catch (err) {
-            console.error('Failed to send refill WhatsApp message:', err);
-          }
-        }
-      }
+      const { triggerPendingRefillsForMedicine } = await import('./refillService.js');
+      await triggerPendingRefillsForMedicine(db, medicineId);
     });
   }
 

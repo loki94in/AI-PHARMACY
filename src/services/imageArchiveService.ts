@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import Tesseract from 'tesseract.js';
 import AdmZip from 'adm-zip';
 import cron from 'node-cron';
+import { Jimp } from 'jimp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +63,7 @@ export class ImageArchiveService {
 
       const fileName = path.basename(filePath);
       
+      let targetPath: string;
       if (isRestricted) {
         // Move to important folder organized by current YYYY-MM
         const date = new Date();
@@ -72,26 +74,55 @@ export class ImageArchiveService {
           fs.mkdirSync(targetDir, { recursive: true });
         }
 
-        const targetPath = path.join(targetDir, fileName);
-        if (filePath !== targetPath) fs.renameSync(filePath, targetPath);
-        console.log(`[AI Auto-Detect] Image flagged as H1/Narcotic and moved to: ${targetPath}`);
-        return targetPath;
+        targetPath = path.join(targetDir, fileName);
       } else {
         // Move to temp folder
-        const targetPath = path.join(TEMP_DIR, fileName);
+        targetPath = path.join(TEMP_DIR, fileName);
+      }
+
+      // Compress and save to target path, then delete original if they are different
+      try {
+        const image = await Jimp.read(filePath);
+        if (image.width > 800) {
+          image.resize({ w: 800 });
+        }
+        const compressedBuffer = await image.getBuffer('image/jpeg');
+        await fs.promises.writeFile(targetPath, compressedBuffer);
+        if (filePath !== targetPath) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (compressErr) {
+        console.error('Failed to compress routed image with Jimp, renaming instead:', compressErr);
         if (filePath !== targetPath) {
           fs.renameSync(filePath, targetPath);
         }
-        console.log(`[AI Auto-Detect] Image marked as temporary and stored in: ${targetPath}`);
-        return targetPath;
       }
+
+      if (isRestricted) {
+        console.log(`[AI Auto-Detect] Image flagged as H1/Narcotic and compressed/moved to: ${targetPath}`);
+      } else {
+        console.log(`[AI Auto-Detect] Image marked as temporary and compressed/stored in: ${targetPath}`);
+      }
+      return targetPath;
 
     } catch (err) {
       console.error('Error in processAndRouteImage:', err);
       // Default to temp if OCR fails
       const targetPath = path.join(TEMP_DIR, path.basename(filePath));
-      if (filePath !== targetPath) {
-        fs.renameSync(filePath, targetPath);
+      try {
+        const image = await Jimp.read(filePath);
+        if (image.width > 800) {
+          image.resize({ w: 800 });
+        }
+        const compressedBuffer = await image.getBuffer('image/jpeg');
+        await fs.promises.writeFile(targetPath, compressedBuffer);
+        if (filePath !== targetPath) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (compressErr) {
+        if (filePath !== targetPath) {
+          fs.renameSync(filePath, targetPath);
+        }
       }
       return targetPath;
     }

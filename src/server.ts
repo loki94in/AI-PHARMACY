@@ -36,6 +36,9 @@ import aiCameraRouter from './routes/aiCamera.js';
 import telegramPrescriptionRouter from './routes/telegramPrescription.js';
 import refillsRouter from './routes/refills.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
+import cron from 'node-cron';
+import { checkAllRefills } from './services/refillService.js';
+import { checkOverdueCreditNotes, reconcileCreditNote } from './services/creditNoteService.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -174,6 +177,23 @@ app.post('/api/purchases', async (req, res) => {
   }
 });
 
+app.post('/api/returns/reconcile-credit', async (req, res) => {
+  const { distributor_id, actual_credit_amount, purchase_id } = req.body;
+  if (!distributor_id || actual_credit_amount === undefined) {
+    return res.status(400).json({ error: 'distributor_id and actual_credit_amount are required' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    const result = await reconcileCreditNote(db, distributor_id, actual_credit_amount, purchase_id);
+    await dbManager.close();
+    res.json(result);
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to reconcile credit note:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // API to fetch all catalog jobs
 app.get('/api/jobs', async (req, res) => {
   try {
@@ -254,6 +274,19 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
   whatsappQueue.startWorker();
+
+  // Daily check at 9:00 AM for patient refills & overdue credit notes
+  cron.schedule('0 9 * * *', async () => {
+    console.log('Running daily patient refill & overdue credit notes check...');
+    try {
+      const db = await dbManager.getConnection();
+      await checkAllRefills(db);
+      await checkOverdueCreditNotes(db);
+      await dbManager.close();
+    } catch (err) {
+      console.error('Failed running daily check cron:', err);
+    }
+  });
 });
 
 // Graceful shutdown
