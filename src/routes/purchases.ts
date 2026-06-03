@@ -3,6 +3,7 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { productNameFilterService } from '../services/productNameFilterService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,14 +53,30 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/manual', async (req, res) => {
-  const { distributor, invoice_no, date, cd_per, extra_credit, items } = req.body;
+  const { distributor, distributor_id, invoice_no, date, cd_per, extra_credit, items } = req.body;
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     await db.run('BEGIN TRANSACTION');
 
     // 1. Handle distributor
-    await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distributor]);
-    const distRow = await db.get('SELECT id FROM distributors WHERE name = ?', [distributor]);
+    let distId = distributor_id;
+    let distName = distributor;
+
+    if (distId) {
+      const dbDist = await db.get('SELECT name FROM distributors WHERE id = ?', [distId]);
+      if (dbDist) distName = dbDist.name;
+    } else if (distName) {
+      await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distName]);
+      const dbDist = await db.get('SELECT id FROM distributors WHERE name = ?', [distName]);
+      if (dbDist) distId = dbDist.id;
+    }
+
+    if (!distId && !distName) {
+      distName = 'Default Distributor';
+      await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distName]);
+      const dbDist = await db.get('SELECT id FROM distributors WHERE name = ?', [distName]);
+      if (dbDist) distId = dbDist.id;
+    }
 
     // Calculate totals securely on backend
     let subtotal = 0;
@@ -67,12 +84,12 @@ router.post('/manual', async (req, res) => {
     let totalSgst = 0;
 
     for (const item of items) {
-      const qty = parseFloat(item.qty) || 0;
-      const rate = parseFloat(item.rate) || 0;
-      const discPer = parseFloat(item.discPer) || 0;
-      const discRs = parseFloat(item.discRs) || 0;
-      const cgst = parseFloat(item.cgst) || 0;
-      const sgst = parseFloat(item.sgst) || 0;
+      const qty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
+      const rate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
+      const discPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
+      const discRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
+      const cgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
+      const sgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
 
       const baseAmt = qty * rate;
       const lineDisc = discRs + (baseAmt * discPer / 100);
@@ -89,52 +106,101 @@ router.post('/manual', async (req, res) => {
 
     const grandTotal = subtotal + totalCgst + totalSgst - globalCdDisc - extraCreditVal;
 
+    // Generate app_invoice_no sequentially
+    const transactionDate = date ? new Date(date) : new Date();
+    const year = isNaN(transactionDate.getTime()) ? new Date().getFullYear() : transactionDate.getFullYear();
+    const lastPur = await db.get(
+      `SELECT app_invoice_no FROM purchases 
+       WHERE app_invoice_no LIKE ? 
+       ORDER BY id DESC LIMIT 1`,
+      [`PUR-${year}-%`]
+    );
+    let nextSeq = 1;
+    if (lastPur && lastPur.app_invoice_no) {
+      const match = lastPur.app_invoice_no.match(/PUR-\d+-(\d+)/);
+      if (match) {
+        nextSeq = parseInt(match[1]) + 1;
+      }
+    }
+    const appInvoiceNo = `PUR-${year}-${nextSeq.toString().padStart(5, '0')}`;
+
     // 2. Insert into purchases
     const purchRes = await db.run(
-      `INSERT INTO purchases (distributor_id, invoice_no, date, total_amount, cgst_value, sgst_value) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [distRow.id, invoice_no, date, grandTotal, totalCgst, totalSgst]
+      `INSERT INTO purchases (distributor_id, invoice_no, app_invoice_no, date, total_amount, cgst_value, sgst_value) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [distId, invoice_no, appInvoiceNo, date, grandTotal, totalCgst, totalSgst]
     );
     const purchaseId = purchRes.lastID;
 
     // 3. Process items
     for (const item of items) {
-      const { medicine, batch, expiry, qty, rate, mrp, discPer, discRs, cgst, sgst } = item;
+      const { medicine, medicine_id, original_name, batch_no, expiry_date, qty, rate, mrp, discPer, discRs, cgst, sgst } = item;
       
-      // Ensure medicine exists
-      await db.run('INSERT OR IGNORE INTO medicines (name) VALUES (?)', [medicine]);
-      const medRow = await db.get('SELECT id FROM medicines WHERE name = ?', [medicine]);
-      const medId = medRow.id;
+      const medInputName = medicine || item.medicine_name;
+      const medInputId = medicine_id;
+      const rawBatch = item.batch !== undefined ? item.batch : (batch_no || '');
+      const rawExpiry = item.expiry !== undefined ? item.expiry : (expiry_date || '');
+      const rawQty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
+      const rawRate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
+      const rawCgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
+      const rawSgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
+      const rawDiscPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
+      const rawDiscRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
 
-      const baseAmt = qty * rate;
-      const lineDisc = discRs + (baseAmt * discPer / 100);
+      let medId = medInputId;
+      let medName = medInputName;
+
+      if (medId) {
+        const dbMed = await db.get('SELECT name FROM medicines WHERE id = ?', [medId]);
+        if (dbMed) medName = dbMed.name;
+      } else if (medName) {
+        await db.run('INSERT OR IGNORE INTO medicines (name) VALUES (?)', [medName]);
+        const dbMed = await db.get('SELECT id FROM medicines WHERE name = ?', [medName]);
+        if (dbMed) medId = dbMed.id;
+      }
+
+      if (!medId) {
+        continue;
+      }
+
+      const baseAmt = rawQty * rawRate;
+      const lineDisc = rawDiscRs + (baseAmt * rawDiscPer / 100);
       const taxable = baseAmt - lineDisc;
-      const cgstVal = taxable * (cgst / 100);
-      const sgstVal = taxable * (sgst / 100);
+      const cgstVal = taxable * (rawCgst / 100);
+      const sgstVal = taxable * (rawSgst / 100);
 
       // Insert purchase_items
       await db.run(`
         INSERT INTO purchase_items 
         (purchase_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp, cgst_per, cgst_value, sgst_per, sgst_value, cd_value)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [purchaseId, medId, batch, expiry, qty, rate, mrp, cgst, cgstVal, sgst, sgstVal, lineDisc]);
+      `, [purchaseId, medId, rawBatch, rawExpiry || null, rawQty, rawRate, mrp || 0, rawCgst, cgstVal, rawSgst, sgstVal, lineDisc]);
 
       // Update inventory_master
-      const invRow = await db.get('SELECT id, quantity FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [medId, batch]);
+      const invRow = await db.get('SELECT id, quantity FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [medId, rawBatch]);
       if (invRow) {
         await db.run('UPDATE inventory_master SET quantity = quantity + ?, cost_price = ?, mrp = ?, expiry_date = ? WHERE id = ?', 
-          [qty, rate, mrp, expiry, invRow.id]);
+          [rawQty, rawRate, mrp || 0, rawExpiry || null, invRow.id]);
       } else {
         await db.run(`
           INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, cost_price, mrp)
           VALUES (?, ?, ?, ?, ?, ?)
-        `, [medId, qty, batch, expiry, rate, mrp]);
+        `, [medId, rawQty, rawBatch, rawExpiry || null, rawRate, mrp || 0]);
+      }
+
+      // Learn mapping from user corrections/associations
+      if (original_name && medName && original_name.trim().toLowerCase() !== medName.trim().toLowerCase()) {
+        try {
+          productNameFilterService.learnFromCorrection(original_name.trim(), medName.trim());
+        } catch (learnError) {
+          console.warn('Failed to learn mapping from manual purchase item:', learnError);
+        }
       }
     }
 
     await db.run('COMMIT');
     await db.close();
-    res.json({ success: true, message: 'Purchase saved successfully' });
+    res.json({ success: true, message: 'Purchase saved successfully', app_invoice_no: appInvoiceNo });
   } catch (error) {
     console.error('Manual purchase error:', error);
     res.status(500).json({ error: 'Internal server error' });

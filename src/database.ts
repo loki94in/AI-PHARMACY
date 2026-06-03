@@ -32,6 +32,7 @@ export async function ensureSchema(dbPath: string) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       distributor_id INTEGER,
       invoice_no TEXT,
+      app_invoice_no TEXT,
       date DATETIME DEFAULT CURRENT_TIMESTAMP,
       total_amount REAL,
       FOREIGN KEY(distributor_id) REFERENCES distributors(id)
@@ -173,6 +174,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'PUBLISHED'`,
     `ALTER TABLE purchases ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE purchases ADD COLUMN business_date DATETIME`,
+    `ALTER TABLE purchases ADD COLUMN app_invoice_no TEXT`,
     // Sales invoices extra columns
     `ALTER TABLE sales_invoices ADD COLUMN doctor_id INTEGER`,
     `ALTER TABLE sales_invoices ADD COLUMN payment_medium TEXT`,

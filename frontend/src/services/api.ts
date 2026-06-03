@@ -100,6 +100,13 @@ export const api = {
   restoreHeldBill: (id: number) => apiClient.post(`/sales/hold/${id}/restore`).then(res => res.data),
   searchMedicine: (q: string) => apiClient.get('/sales/search-medicine', { params: { q } }).then(res => res.data),
   
+  // Sells (invoice list/edit)
+  listSales: (params?: { search?: string; date_from?: string; date_to?: string; batch?: string }) =>
+    apiClient.get('/sales/list', { params }).then(res => res.data),
+  getSale: (id: number) => apiClient.get(`/sales/${id}`).then(res => res.data),
+  updateSale: (id: number, data: any) => apiClient.put(`/sales/${id}`, data).then(res => res.data),
+  deleteSale: (id: number) => apiClient.delete(`/sales/${id}`).then(res => res.data),
+  
   // Purchases
   getPurchases: () => apiClient.get('/purchases').then(res => res.data),
   createPurchase: (data: any) => apiClient.post('/purchases', data).then(res => res.data),
@@ -113,6 +120,8 @@ export const api = {
   batchLastPurchase: (medicines: Array<{name: string}>, distributorId?: number) =>
     apiClient.post('/purchases/batch-last-purchase', { medicines, distributor_id: distributorId }).then(res => res.data),
   catalogSearch: (q: string) => apiClient.get('/inventory/catalog-search', { params: { q } }).then(res => res.data),
+  getLearnedMapping: (name: string) => apiClient.get('/learning/mapping', { params: { name } }).then(res => res.data),
+
   
   // CRM
   getPatients: () => apiClient.get('/crm/patients').then(r => r.data),
@@ -144,7 +153,7 @@ export const api = {
   getEmailInbox: () => apiClient.get('/email/inbox').then(res => res.data),
   getEmailAttachments: () => apiClient.get('/email/attachments').then(res => res.data),
   getEmailAttachmentsById: (emailId: number) => apiClient.get(`/email/${emailId}/attachments`).then(res => res.data),
-  parseAttachment: (filename: string) => apiClient.post('/email/attachments/parse', { filename }).then(res => res.data),
+  parseAttachment: (filename: string, importData: boolean = true) => apiClient.post('/email/attachments/parse', { filename, importData }).then(res => res.data),
   importManualEmail: (data: any) => apiClient.post('/email/import-manual', data).then(res => res.data),
   
   // License

@@ -173,5 +173,30 @@ router.post('/refresh-model', async (req, res) => {
   }
 });
 
+// Look up a learned mapping for a medicine name
+router.get('/mapping', async (req, res) => {
+  const name = (req.query.name as string || '').trim().toLowerCase();
+  if (!name) return res.status(400).json({ error: 'name query parameter is required' });
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const correction = await db.get('SELECT correct FROM ocr_corrections WHERE LOWER(ocr) = ?', [name]);
+    if (correction) {
+      const medicine = await db.get('SELECT id, name, mrp, rate, cgst_per, sgst_per FROM medicines WHERE LOWER(name) = ?', [correction.correct.toLowerCase()]);
+      if (medicine) {
+        await db.close();
+        return res.json({ success: true, mapped: true, medicine });
+      }
+    }
+    await db.close();
+    res.json({ success: true, mapped: false });
+  } catch (error: any) {
+    if (db) await db.close();
+    console.error('Failed to look up mapping:', error);
+    res.status(500).json({ error: 'Failed to look up mapping' });
+  }
+});
+
 export default router;
+
 

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Edit } from 'lucide-react';
 import { api, apiClient } from '../services/api';
 
@@ -23,6 +24,7 @@ interface BillItem {
   id: string;
   medicine_id: number | null;
   medicine_name: string;
+  original_name?: string;
   batch_no: string;
   expiry_date: string;
   qty: number;
@@ -56,6 +58,8 @@ interface PurchaseHistory {
 }
 
 const Purchases: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [distributors, setDistributors] = useState<Distributor[]>([]);
   const [selectedDistributor, setSelectedDistributor] = useState<number | null>(null);
   const [distributorSearch, setDistributorSearch] = useState('');
@@ -146,7 +150,8 @@ const Purchases: React.FC = () => {
   const fetchDistributors = async () => {
     try {
       const response = await api.getDistributors();
-      setDistributors(response.data || []);
+      const list = Array.isArray(response) ? response : (response.data || []);
+      setDistributors(list);
     } catch (error) {
       console.error('Error fetching distributors:', error);
     }
@@ -155,7 +160,8 @@ const Purchases: React.FC = () => {
   const fetchPurchaseHistory = async () => {
     try {
       const response = await api.getPurchases();
-      setPurchaseHistory(response.data || []);
+      const list = Array.isArray(response) ? response : (response.data || []);
+      setPurchaseHistory(list);
     } catch (error) {
       console.error('Error fetching purchase history:', error);
     }
@@ -299,6 +305,121 @@ const Purchases: React.FC = () => {
     return taxableAmount + cgstAmount + sgstAmount;
   };
 
+  // Handle prefilled purchase data from navigation state (e.g. from Mail page)
+  useEffect(() => {
+    if (location.state?.prefilledPurchase) {
+      const { distributorName, invoiceNo: prefInvoiceNo, date: prefDate, items: prefilledItems } = location.state.prefilledPurchase;
+      
+      if (prefInvoiceNo) setInvoiceNo(prefInvoiceNo);
+      if (prefDate) setInvoiceDate(prefDate);
+      
+      // Try to find matching distributor in distributors list
+      if (distributorName) {
+        setDistributorSearch(distributorName);
+        if (distributors.length > 0) {
+          const matched = distributors.find(
+            (d) => d.name.toLowerCase().includes(distributorName.toLowerCase()) || 
+                   distributorName.toLowerCase().includes(d.name.toLowerCase())
+          );
+          if (matched) {
+            setSelectedDistributor(matched.id);
+            setDistributorSearch(matched.name);
+          }
+        }
+      }
+
+      if (Array.isArray(prefilledItems) && prefilledItems.length > 0) {
+        const loadedItems = prefilledItems.map((item) => ({
+          id: crypto.randomUUID(),
+          medicine_id: null,
+          medicine_name: item.medicine_name || '',
+          original_name: item.medicine_name || '',
+          batch_no: item.batch_no || '',
+          expiry_date: item.expiry_date || '',
+          qty: item.qty || 0,
+          free_qty: item.free_qty || 0,
+          rate: item.rate || 0,
+          mrp: item.mrp || 0,
+          cgst_per: 0,
+          sgst_per: 0,
+          cd_rs: 0,
+          cd_per: 0,
+          amount: (item.qty || 0) * (item.rate || 0),
+          scheme_paid: 0,
+          scheme_free: 0,
+        }));
+        
+        setItems(loadedItems);
+        
+        // Auto-resolve medicine IDs for the loaded items
+        const resolveMedicines = async () => {
+          const updatedItems = loadedItems.map(item => ({ ...item, original_name: item.medicine_name }));
+          let hasChanges = false;
+          
+          for (let i = 0; i < updatedItems.length; i++) {
+            const mName = updatedItems[i].original_name;
+            if (!mName) continue;
+            try {
+              // 1. Check for learned mapping first
+              const learned = await api.getLearnedMapping(mName);
+              if (learned && learned.success && learned.mapped && learned.medicine) {
+                const match = learned.medicine;
+                updatedItems[i].medicine_id = match.id;
+                updatedItems[i].medicine_name = match.name;
+                updatedItems[i].mrp = match.mrp || 0;
+                updatedItems[i].rate = match.rate || updatedItems[i].rate;
+                updatedItems[i].cgst_per = match.cgst_per || 0;
+                updatedItems[i].sgst_per = match.sgst_per || 0;
+                updatedItems[i].amount = calculateItemAmount(updatedItems[i]);
+                hasChanges = true;
+                continue;
+              }
+
+              // 2. Fallback to catalog search for EXACT matches
+              const res = await api.catalogSearch(mName);
+              const matchedList = res || [];
+              if (matchedList.length > 0) {
+                const match = matchedList.find((m: any) => m.name.toLowerCase() === mName.toLowerCase());
+                if (match) {
+                  updatedItems[i].medicine_id = match.id;
+                  updatedItems[i].medicine_name = match.name;
+                  updatedItems[i].mrp = match.mrp || 0;
+                  updatedItems[i].rate = match.rate || updatedItems[i].rate;
+                  updatedItems[i].cgst_per = match.cgst_per || 0;
+                  updatedItems[i].sgst_per = match.sgst_per || 0;
+                  updatedItems[i].amount = calculateItemAmount(updatedItems[i]);
+                  hasChanges = true;
+                } else {
+                  // If not an exact match, make it empty so the user can fill the space
+                  updatedItems[i].medicine_id = null;
+                  updatedItems[i].medicine_name = '';
+                  updatedItems[i].amount = 0;
+                  hasChanges = true;
+                }
+              } else {
+                // No match, empty name
+                updatedItems[i].medicine_id = null;
+                updatedItems[i].medicine_name = '';
+                updatedItems[i].amount = 0;
+                hasChanges = true;
+              }
+            } catch (err) {
+              console.error('Error auto-resolving medicine:', mName, err);
+            }
+          }
+          if (hasChanges) {
+            setItems(updatedItems);
+          }
+        };
+        
+        resolveMedicines();
+      }
+      
+      // Clean up the location state so it doesn't populate again on component updates/re-renders
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, distributors, navigate, location.pathname]);
+
   const updateItem = (index: number, field: keyof BillItem, value: any) => {
     const newItems = [...items];
     const item = newItems[index];
@@ -395,6 +516,8 @@ const Purchases: React.FC = () => {
         extra_credit: extraCredit,
         items: validItems.map(item => ({
           medicine_id: item.medicine_id,
+          medicine: item.medicine_name,
+          original_name: item.original_name,
           batch_no: item.batch_no,
           expiry_date: item.expiry_date,
           qty: item.qty,
@@ -687,6 +810,12 @@ const Purchases: React.FC = () => {
                         </div>
                       )}
                     </div>
+                    {item.original_name && (
+                      <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-1 select-none">
+                        <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-medium border border-blue-500/20">Parsed Name:</span>
+                        <span className="font-mono truncate max-w-[200px]" title={item.original_name}>{item.original_name}</span>
+                      </div>
+                    )}
                     {schemeMatchStatus[item.id] && (
                       <p className="text-yellow-400 text-xs mt-1">{schemeMatchStatus[item.id]}</p>
                     )}
