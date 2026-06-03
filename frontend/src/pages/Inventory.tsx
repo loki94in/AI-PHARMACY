@@ -13,8 +13,17 @@ const Inventory = () => {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
 
+  const [specialOrders, setSpecialOrders] = useState<any[]>([]);
+
   useEffect(() => {
     loadInventory();
+    api.getOrders()
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSpecialOrders(data.filter(o => o.status === 'Pending' || o.status === 'Ordered'));
+        }
+      })
+      .catch(err => console.error('Error loading special orders for inventory:', err));
   }, []);
 
   const loadInventory = () => {
@@ -107,14 +116,27 @@ const Inventory = () => {
               ) : filteredItems.length === 0 ? (
                 <tr><td colSpan={7} className="p-8 text-center text-muted">No medicines found.</td></tr>
               ) : (
-                filteredItems.map(item => (
-                  <tr 
-                    key={item.id} 
-                    className="hover:bg-white/5 cursor-pointer transition-colors border-b border-glass-border"
-                    onClick={() => handleRowClick(item)}
-                  >
-                    <td className="p-4 text-sm text-muted">{item.id}</td>
-                    <td className="p-4 text-sm font-semibold">{item.name}</td>
+                filteredItems.map(item => {
+                  const pendingMatches = specialOrders.filter(
+                    o => o.product.toLowerCase().trim() === item.name.toLowerCase().trim() ||
+                         item.name.toLowerCase().includes(o.product.toLowerCase().trim())
+                  );
+                  const hasPending = pendingMatches.length > 0;
+                  return (
+                    <tr 
+                      key={item.id} 
+                      className="hover:bg-white/5 cursor-pointer transition-colors border-b border-glass-border"
+                      onClick={() => handleRowClick(item)}
+                    >
+                      <td className="p-4 text-sm text-muted">{item.id}</td>
+                      <td className="p-4 text-sm font-semibold flex items-center gap-2">
+                        {item.name}
+                        {hasPending && (
+                          <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse">
+                            ⚠️ Requested ({pendingMatches[0].qty})
+                          </span>
+                        )}
+                      </td>
                     <td className="p-4 text-sm">{item.batch_number || 'B-NEW'}</td>
                     <td className="p-4 text-sm">{item.expiry_date || '12/2028'}</td>
                     <td className="p-4 text-sm">
@@ -124,8 +146,9 @@ const Inventory = () => {
                     </td>
                     <td className="p-4 text-sm">₹{item.mrp?.toFixed(2) || '0.00'}</td>
                     <td className="p-4 text-sm text-muted">{item.rack_location || '-'}</td>
-                  </tr>
-                ))
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -155,6 +178,22 @@ const Inventory = () => {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Special Request Alert Banner */}
+              {specialOrders.filter(
+                o => o.product.toLowerCase().trim() === selectedItem.name.toLowerCase().trim() ||
+                     selectedItem.name.toLowerCase().includes(o.product.toLowerCase().trim())
+              ).map(o => (
+                <div key={o.id} className="bg-amber-500/10 border border-amber-500/30 text-amber-200 p-4 rounded-xl flex items-start gap-3">
+                  <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={18} />
+                  <div>
+                    <div className="font-bold text-xs">Pending Out-of-Stock Special Request</div>
+                    <p className="text-[11px] text-amber-300/80 mt-1">
+                      Customer <strong>{o.requester}</strong> ({o.phone}) requested <strong>{o.qty}</strong> unit(s) of this item. Please reserve/reconcile this stock when receiving purchases.
+                    </p>
+                  </div>
+                </div>
+              ))}
+
               {/* Batch Info Card */}
               <div className="grid grid-cols-2 gap-4 bg-white/5 p-4 rounded-xl border border-glass-border">
                 <div>

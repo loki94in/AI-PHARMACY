@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
-import { Download } from 'lucide-react';
+import { Download, Edit } from 'lucide-react';
 import { api, apiClient } from '../services/api';
 
 interface Medicine {
@@ -89,6 +89,7 @@ const Purchases: React.FC = () => {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [schemeMatchStatus, setSchemeMatchStatus] = useState<{ [key: string]: string }>({});
   const [showDistributorModal, setShowDistributorModal] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<any>(null);
   const [newDistributor, setNewDistributor] = useState({
     name: '',
     phone: '',
@@ -1031,6 +1032,13 @@ const Purchases: React.FC = () => {
                       >
                         <Download className="w-4 h-4" />
                       </button>
+                      <button
+                        onClick={() => setEditingPurchase(purchase)}
+                        className="p-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white ml-2"
+                        title="Edit Purchase"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -1359,6 +1367,75 @@ const Purchases: React.FC = () => {
                 className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Purchase Modal */}
+      {editingPurchase && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-white mb-4">Edit Purchase</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Invoice Number</label>
+                <input
+                  type="text"
+                  value={editingPurchase.invoice_no || ''}
+                  onChange={(e) => setEditingPurchase({ ...editingPurchase, invoice_no: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
+                <input
+                  type="date"
+                  value={editingPurchase.date || ''}
+                  onChange={(e) => setEditingPurchase({ ...editingPurchase, date: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Total Amount</label>
+                <input
+                  type="number"
+                  value={editingPurchase.total_amount || 0}
+                  onChange={(e) => setEditingPurchase({ ...editingPurchase, total_amount: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                  step="0.01"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setEditingPurchase(null)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await apiClient.put(`/purchases/${editingPurchase.id}`, {
+                      invoice_no: editingPurchase.invoice_no,
+                      date: editingPurchase.date,
+                      total_amount: editingPurchase.total_amount
+                    });
+                    setEditingPurchase(null);
+                    alert('Purchase updated successfully');
+                  } catch (error) {
+                    alert('Failed to update purchase');
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+              >
+                Save Changes
               </button>
             </div>
           </div>

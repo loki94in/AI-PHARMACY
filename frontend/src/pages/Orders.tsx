@@ -12,7 +12,8 @@ import {
   AlertCircle, 
   RefreshCw 
 } from 'lucide-react';
-import { api, SpecialOrder } from '../services/api';
+import { api } from '../services/api';
+import type { SpecialOrder } from '../services/api';
 
 const Orders = () => {
   const [orders, setOrders] = useState<SpecialOrder[]>([]);
@@ -151,7 +152,7 @@ const Orders = () => {
     setRefreshing(true);
     try {
       const alertedList = await api.getUncollectedAlerts();
-      const notifiedCount = alertedList.filter(o => o.autoWhatsAppSent).length;
+      const notifiedCount = alertedList.filter(o => o.notified).length;
       
       if (notifiedCount > 0) {
         showNotification(`Reminders scan complete. Sent WhatsApp alerts to ${notifiedCount} customer(s).`, 'success');
@@ -264,8 +265,8 @@ const Orders = () => {
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 flex-1 min-h-0">
         
         {/* LEFT COLUMN: Form to register requests */}
-        <div className="xl:col-span-1 flex flex-col space-y-6">
-          <div className="glass-panel p-6">
+        <div className="xl:col-span-1 flex flex-col min-h-0 overflow-y-auto scrollbar-thin">
+          <div className="glass-panel p-6 flex-1">
             <h3 className="font-bold flex items-center gap-2 mb-6 text-sm text-text border-b border-glass-border/30 pb-3">
               <Plus size={16} className="text-primary" /> 
               Register Out-of-Stock Request

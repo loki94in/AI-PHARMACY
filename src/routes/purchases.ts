@@ -274,7 +274,7 @@ router.put('/:id/full', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { distributor, invoice_no, total_amount } = req.body;
+  const { distributor, invoice_no, total_amount, date } = req.body;
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     // Upsert distributor name → get its id
@@ -285,8 +285,8 @@ router.put('/:id', async (req, res) => {
       ? await db.get('SELECT id FROM distributors WHERE name = ?', [distributor])
       : null;
     await db.run(
-      'UPDATE purchases SET distributor_id = ?, invoice_no = ?, total_amount = ? WHERE id = ?',
-      [distRow ? distRow.id : null, invoice_no, total_amount, id]
+      'UPDATE purchases SET distributor_id = ?, invoice_no = ?, total_amount = ?, date = ? WHERE id = ?',
+      [distRow ? distRow.id : null, invoice_no, total_amount, date, id]
     );
     await db.close();
     res.json({ success: true, message: 'Purchase updated' });

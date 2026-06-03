@@ -29,6 +29,7 @@ const POS = () => {
   const [cart, setCart] = useState<any[]>([]);
   const [sendWhatsApp, setSendWhatsApp] = useState(false); // DEFAULT: OFF
   const [paymentMedium, setPaymentMedium] = useState<string>('CASH'); // DEFAULT: CASH
+  const [specialOrders, setSpecialOrders] = useState<any[]>([]);
 
   // Multi-cart tab states
   const [tabs, setTabs] = useState<any[]>([
@@ -234,6 +235,17 @@ const POS = () => {
   }, []);
 
   useEffect(() => {
+    api.getOrders()
+      .then(data => {
+        if (Array.isArray(data)) {
+          const active = data.filter(o => o.status === 'Pending' || o.status === 'Ordered');
+          setSpecialOrders(active);
+        }
+      })
+      .catch(err => console.error('Error fetching special orders:', err));
+  }, []);
+
+  useEffect(() => {
     if (searchTerm.trim().length < 2) {
       setSearchResults([]);
       return;
@@ -264,6 +276,15 @@ const POS = () => {
   const [manualCostPrice, setManualCostPrice] = useState(0);
 
   const addToCart = (med: any) => {
+    // Check if added item has special order request
+    const pendingMatches = specialOrders.filter(
+      o => o.product.toLowerCase().trim() === med.name.toLowerCase().trim() ||
+           med.name.toLowerCase().includes(o.product.toLowerCase().trim())
+    );
+    if (pendingMatches.length > 0) {
+      alert(`🔔 Pending Out-of-Stock Request:\nCustomer "${pendingMatches[0].requester}" requested ${pendingMatches[0].qty} unit(s) of "${med.name}". Please ensure it is reserved or reconciled if needed!`);
+    }
+
     updateCart(prevCart => {
       const existing = prevCart.find(item => item.id === med.id);
       if (existing) {
@@ -289,6 +310,15 @@ const POS = () => {
 
   const addManualItem = () => {
     if (!manualName.trim()) return;
+    
+    // Check manual item
+    const pendingMatches = specialOrders.filter(
+      o => o.product.toLowerCase().trim() === manualName.toLowerCase().trim() ||
+           manualName.toLowerCase().includes(o.product.toLowerCase().trim())
+    );
+    if (pendingMatches.length > 0) {
+      alert(`🔔 Pending Out-of-Stock Request:\nCustomer "${pendingMatches[0].requester}" requested ${pendingMatches[0].qty} unit(s) of "${manualName}".`);
+    }
     
     const newItem = {
       id: Date.now(),
@@ -611,39 +641,53 @@ const POS = () => {
                     Matching Inventory Batch Records:
                   </div>
                   <div className="flex flex-col">
-                    {searchResults.map((med: any) => (
-                      <button
-                        key={med.inventory_id}
-                        type="button"
-                        onClick={() => {
-                          addToCart({
-                            id: med.inventory_id,
-                            name: med.medicine_name,
-                            batch: med.batch_no,
-                            expiry: med.expiry_date,
-                            mrp: med.mrp,
-                            costPrice: med.cost_price,
-                            salts: med.salts || med.hsn_code || 'Generic',
-                            packSize: med.pack_size || 10
-                          });
-                          setSearchTerm('');
-                          setSearchResults([]);
-                        }}
-                        className="flex items-center justify-between p-2.5 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-semibold text-text group-hover:text-primary transition-all">{med.medicine_name}</span>
-                          <span className="text-[9px] text-muted">Batch: <span className="font-mono text-text">{med.batch_no}</span> | Exp: <span className="font-mono text-text">{med.expiry_date}</span></span>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <div className="font-mono text-sky font-bold">MRP: ₹{med.mrp.toFixed(2)}</div>
-                            <div className="text-[9px] text-muted">Stock: {med.quantity} units</div>
+                    {searchResults.map((med: any) => {
+                      const pendingMatches = specialOrders.filter(
+                        o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
+                             med.medicine_name.toLowerCase().includes(o.product.toLowerCase().trim())
+                      );
+                      const hasPending = pendingMatches.length > 0;
+                      return (
+                        <button
+                          key={med.inventory_id}
+                          type="button"
+                          onClick={() => {
+                            addToCart({
+                              id: med.inventory_id,
+                              name: med.medicine_name,
+                              batch: med.batch_no,
+                              expiry: med.expiry_date,
+                              mrp: med.mrp,
+                              costPrice: med.cost_price,
+                              salts: med.salts || med.hsn_code || 'Generic',
+                              packSize: med.pack_size || 10
+                            });
+                            setSearchTerm('');
+                            setSearchResults([]);
+                          }}
+                          className="flex items-center justify-between p-2.5 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                        >
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-text group-hover:text-primary transition-all">{med.medicine_name}</span>
+                              {hasPending && (
+                                <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[9px] font-bold animate-pulse">
+                                  ⚠️ Request: {pendingMatches[0].requester} ({pendingMatches[0].qty})
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-muted">Batch: <span className="font-mono text-text">{med.batch_no}</span> | Exp: <span className="font-mono text-text">{med.expiry_date}</span></span>
                           </div>
-                          <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
-                        </div>
-                      </button>
-                    ))}
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <div className="font-mono text-sky font-bold">MRP: ₹{med.mrp.toFixed(2)}</div>
+                              <div className="text-[9px] text-muted">Stock: {med.quantity} units</div>
+                            </div>
+                            <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -776,24 +820,37 @@ const POS = () => {
                             placeholder="Change medicine..."
                           />
                           
-                          {/* Row-specific autocomplete dropdown */}
                           {activeRowSearchIndex === cart.indexOf(item) && rowSearchResults.length > 0 && (
                             <div className="absolute left-0 right-0 z-50 mt-1 bg-[#18181b]/98 backdrop-blur border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto w-64">
-                              {rowSearchResults.map((med: any) => (
-                                <button
-                                  key={med.inventory_id}
-                                  type="button"
-                                  onClick={() => {
-                                    const idx = cart.indexOf(item);
-                                    changeRowMedicine(idx, med);
-                                  }}
-                                  className="flex flex-col p-2 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full"
-                                >
-                                  <span className="font-semibold text-text">{med.medicine_name}</span>
-                                  <span className="text-[9px] text-muted font-mono mt-0.5">Batch: {med.batch_no} | Exp: {med.expiry_date}</span>
-                                  <span className="text-[9px] text-sky font-bold font-mono mt-0.5">MRP: ₹{med.mrp.toFixed(2)} | Stock: {med.quantity}</span>
-                                </button>
-                              ))}
+                              {rowSearchResults.map((med: any) => {
+                                const rowPendingMatches = specialOrders.filter(
+                                  o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
+                                       med.medicine_name.toLowerCase().includes(o.product.toLowerCase().trim())
+                                );
+                                const rowHasPending = rowPendingMatches.length > 0;
+                                return (
+                                  <button
+                                    key={med.inventory_id}
+                                    type="button"
+                                    onClick={() => {
+                                      const idx = cart.indexOf(item);
+                                      changeRowMedicine(idx, med);
+                                    }}
+                                    className="flex flex-col p-2 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full"
+                                  >
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-semibold text-text">{med.medicine_name}</span>
+                                      {rowHasPending && (
+                                        <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1 py-0.5 rounded text-[8px] font-bold animate-pulse">
+                                          ⚠️ {rowPendingMatches[0].requester} ({rowPendingMatches[0].qty})
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[9px] text-muted font-mono mt-0.5">Batch: {med.batch_no} | Exp: {med.expiry_date}</span>
+                                    <span className="text-[9px] text-sky font-bold font-mono mt-0.5">MRP: ₹{med.mrp.toFixed(2)} | Stock: {med.quantity}</span>
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
