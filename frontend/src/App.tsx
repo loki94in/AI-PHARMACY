@@ -11,7 +11,8 @@ import {
   LogOut,
   Database,
   RotateCcw,
-  ClipboardList
+  ClipboardList,
+  CalendarDays
 } from 'lucide-react';
 import React from 'react';
 
@@ -29,6 +30,7 @@ import Settings from './pages/Settings';
 import Mail from './pages/Mail';
 import Returns from './pages/Returns';
 import Orders from './pages/Orders';
+import Expiry from './pages/Expiry';
 
 const Sidebar = () => {
   const location = useLocation();
@@ -39,6 +41,7 @@ const Sidebar = () => {
     { path: '/mail', label: 'Distributor Mail', icon: <Activity size={18} /> },
     { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
     { path: '/returns', label: 'Returns', icon: <RotateCcw size={18} /> },
+    { path: '/expiry', label: 'Expiry Monitor', icon: <CalendarDays size={18} /> },
     { path: '/crm', label: 'CRM / Patients', icon: <Users size={18} /> },
     { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
     { path: '/doctors', label: 'Doctors', icon: <UserPlus size={18} /> },
@@ -111,6 +114,10 @@ const Topbar = () => {
         return 'Inventory Master';
       case '/purchases':
         return 'Purchase History';
+      case '/returns':
+        return 'Returns & Expiry';
+      case '/expiry':
+        return 'Expiry Monitor';
       case '/crm':
         return 'CRM / Patients';
       case '/orders':
@@ -162,7 +169,7 @@ const Topbar = () => {
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
-  const isFitPage = location.pathname === '/pos' || location.pathname === '/orders';
+  const isFitPage = location.pathname === '/pos' || location.pathname === '/orders' || location.pathname === '/expiry';
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-text selection:bg-primary/30">
@@ -191,6 +198,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/returns" element={<Returns />} />
+          <Route path="/expiry" element={<Expiry />} />
           <Route path="/pos" element={<POS />} />
           <Route path="/manual-purchase" element={<Purchases />} />
           <Route path="/purchases" element={<Purchases />} />

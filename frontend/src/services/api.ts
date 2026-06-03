@@ -165,4 +165,8 @@ export const api = {
   updateOrder: (id: number, data: Partial<SpecialOrder>) => apiClient.put(`/orders/${id}`, data).then(res => res.data),
   deleteOrder: (id: number) => apiClient.delete(`/orders/${id}`).then(res => res.data),
   getUncollectedAlerts: () => apiClient.get<SpecialOrder[]>('/orders/uncollected-alerts').then(res => res.data),
+
+  // Expiry Monitor
+  getExpiryList: (days?: number) => apiClient.get('/expiry', { params: { days } }).then(res => res.data),
+  sendExpiryAlerts: (data: { phone?: string, days?: number }) => apiClient.post('/expiry/send-alerts', data).then(res => res.data),
 };

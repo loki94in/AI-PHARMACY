@@ -396,6 +396,17 @@ ensureSchema(DB_PATH).then(() => {
     }
   });
 
+  // Automatic inventory near-expiry scan & WhatsApp alerts (Every 15 days at 9:00 AM)
+  cron.schedule('0 9 1,16 * *', async () => {
+    console.log('Running automatic 15-day near-expiry inventory scan...');
+    try {
+      const { runExpiryScanAndAlert } = await import('./services/expiryAlertService.js');
+      await runExpiryScanAndAlert(90);
+    } catch (err) {
+      console.error('Failed running 15-day expiry scan cron:', err);
+    }
+  });
+
   // Daily licensing tasks disabled permanently
   });
 }).catch(err => {
