@@ -80,8 +80,17 @@ router.post('/', async (req, res) => {
         const msg = `Hi ${requester || 'Customer'}, your special order for ${product} (Qty: ${qty}) has been taken in ${medicalName}. We will notify you when it is ready.`;
         await sendMessage(formattedPhone, undefined, msg);
         console.log(`Special order confirmation WhatsApp sent to ${requester}`);
-      } catch (wsError) {
+      } catch (wsError: any) {
         console.error(`Failed to send special order confirmation WhatsApp to ${requester}:`, wsError);
+        try {
+          const dbAlert = await open({ filename: DB_PATH, driver: sqlite3.Database });
+          await dbAlert.run(
+            "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
+            'AUTOMATION_ALERT',
+            `❌ WhatsApp Alert Failure: Failed to send special order confirmation to ${requester} (${phone}). Error: ${wsError.message || 'Unknown error'}`
+          );
+          await dbAlert.close();
+        } catch (_) {}
       }
     }
 
@@ -121,9 +130,14 @@ router.get('/uncollected-alerts', async (_req, res) => {
           await db.run('UPDATE special_orders SET notified = 1 WHERE id = ?', [order.id]);
           order.notified = 1;
           alertedOrders.push({ ...order, autoWhatsAppSent: true });
-        } catch (wsError) {
+        } catch (wsError: any) {
           console.error(`Failed to send auto collection reminder to ${order.requester}:`, wsError);
           alertedOrders.push({ ...order, autoWhatsAppSent: false, error: 'WhatsApp failed' });
+          await db.run(
+            "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
+            'AUTOMATION_ALERT',
+            `❌ WhatsApp Alert Failure: Failed to send collection reminder to ${order.requester} (${order.phone}). Error: ${wsError.message || 'Unknown error'}`
+          );
         }
       } else {
         alertedOrders.push({ ...order, autoWhatsAppSent: false });
@@ -174,8 +188,13 @@ router.put('/:id', async (req, res) => {
         const msg = `Hi ${newRequester || 'Customer'}, your special order for ${newProduct} (Qty: ${newQty}) is now READY for collection. Please visit us to collect it.`;
         await sendMessage(formattedPhone, undefined, msg);
         await db.run('UPDATE special_orders SET notified = 1 WHERE id = ?', [id]);
-      } catch (wsError) {
+      } catch (wsError: any) {
         console.error(`Failed to send status update WhatsApp to ${newRequester}:`, wsError);
+        await db.run(
+          "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
+          'AUTOMATION_ALERT',
+          `❌ WhatsApp Alert Failure: Failed to send "Ready" notification to ${newRequester} (${newPhone}). Error: ${wsError.message || 'Unknown error'}`
+        );
       }
     }
 

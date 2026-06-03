@@ -36,6 +36,11 @@ export interface DashboardStats {
   todaySales: number;
   lowStock: number;
   pendingTasks: number;
+  alerts?: Array<{
+    id: number;
+    description: string;
+    created_at: string;
+  }>;
 }
 
 export interface Medicine {
@@ -79,6 +84,7 @@ export interface SpecialOrder {
 // API methods mapping
 export const api = {
   getDashboard: () => apiClient.get<DashboardStats>('/dashboard').then(res => res.data),
+  dismissDashboardAlert: (id: number) => apiClient.delete(`/dashboard/alerts/${id}`).then(res => res.data),
   
   // Inventory
   getInventory: () => apiClient.get<InventoryItem[]>('/inventory').then(res => res.data),
@@ -137,6 +143,7 @@ export const api = {
   // Email / Mail Parser
   getEmailInbox: () => apiClient.get('/email/inbox').then(res => res.data),
   getEmailAttachments: () => apiClient.get('/email/attachments').then(res => res.data),
+  getEmailAttachmentsById: (emailId: number) => apiClient.get(`/email/${emailId}/attachments`).then(res => res.data),
   parseAttachment: (filename: string) => apiClient.post('/email/attachments/parse', { filename }).then(res => res.data),
   importManualEmail: (data: any) => apiClient.post('/email/import-manual', data).then(res => res.data),
   

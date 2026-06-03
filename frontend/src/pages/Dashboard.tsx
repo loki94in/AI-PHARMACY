@@ -23,6 +23,23 @@ const Dashboard = () => {
       });
   }, []);
 
+  const handleDismissAlert = async (id: number) => {
+    try {
+      await api.dismissDashboardAlert(id);
+      setStats(prev => {
+        if (!prev) return null;
+        const updatedAlerts = prev.alerts ? prev.alerts.filter(a => a.id !== id) : [];
+        return {
+          ...prev,
+          pendingTasks: Math.max(0, prev.pendingTasks - 1),
+          alerts: updatedAlerts
+        };
+      });
+    } catch (err) {
+      console.error('Failed to dismiss alert:', err);
+    }
+  };
+
   if (loading) {
     return <div className="animate-pulse flex space-x-4">Loading dashboard...</div>;
   }
@@ -105,6 +122,39 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Fallback System Alerts Panel */}
+      {stats?.alerts && stats.alerts.length > 0 && (
+        <div className="glass-panel border-amber-500/20 bg-amber-500/5 overflow-hidden">
+          <div className="p-5 border-b border-amber-500/20 flex justify-between items-center bg-amber-500/10">
+            <h3 className="font-bold flex items-center gap-2 text-amber-500">
+              <AlertTriangle size={18} className="animate-pulse" /> 
+              System Alerts & Missed Automations
+            </h3>
+            <span className="text-[10px] font-bold bg-amber-500/20 border border-amber-500/30 text-amber-500 px-2 py-0.5 rounded-full uppercase">
+              Action Required
+            </span>
+          </div>
+          <div className="divide-y divide-glass-border/30">
+            {stats.alerts.map(alert => (
+              <div key={alert.id} className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-semibold text-text">{alert.description}</p>
+                  <span className="text-[9px] text-muted font-mono">
+                    Logged: {new Date(alert.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleDismissAlert(alert.id)}
+                  className="px-3 py-1 bg-white/5 hover:bg-white/10 text-muted hover:text-text text-[10px] font-bold border border-glass-border rounded-lg transition-all"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent Sales Table Placeholder (Would be populated by another API call) */}
       <div className="glass-panel overflow-hidden">

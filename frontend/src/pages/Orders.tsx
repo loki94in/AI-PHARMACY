@@ -51,6 +51,14 @@ const Orders = () => {
 
   useEffect(() => {
     fetchOrders();
+
+    const handleRefresh = () => {
+      fetchOrders(true);
+    };
+    window.addEventListener('refresh-special-orders', handleRefresh);
+    return () => {
+      window.removeEventListener('refresh-special-orders', handleRefresh);
+    };
   }, []);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {

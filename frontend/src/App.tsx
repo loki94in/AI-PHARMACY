@@ -12,9 +12,16 @@ import {
   Database,
   RotateCcw,
   ClipboardList,
-  CalendarDays
+  CalendarDays,
+  Plus,
+  Check,
+  AlertTriangle,
+  Bell,
+  X
 } from 'lucide-react';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { toastEvent, quickOrderEvent } from './services/events';
+import { QuickOrderModal } from './components/QuickOrderModal';
 
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
@@ -155,6 +162,17 @@ const Topbar = () => {
         <h2 className="text-lg font-bold tracking-tight text-white">{title}</h2>
       </div>
       <div className="flex items-center gap-4">
+        {/* Quick Request Trigger Button */}
+        <button
+          onClick={() => quickOrderEvent.triggerOpen()}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 hover:bg-primary/20 hover:border-primary/40 text-primary hover:text-white transition-all text-xs font-bold active:scale-95 group shadow-[0_0_12px_rgba(59,130,246,0.05)]"
+          title="Quick Order / Special Request (Alt + O)"
+        >
+          <Plus size={13} className="group-hover:rotate-90 transition-transform duration-300" />
+          <span>Quick Request</span>
+          <span className="hidden sm:inline text-[9px] bg-black/40 border border-white/10 text-muted px-1.5 py-0.5 rounded font-mono font-normal">Alt + O</span>
+        </button>
+
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-bg border border-green/20">
           <div className="w-2 h-2 rounded-full bg-green animate-pulse"></div>
           <span className="text-xs font-bold text-green uppercase tracking-wide">Connected</span>
@@ -170,6 +188,15 @@ const Topbar = () => {
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const isFitPage = location.pathname === '/pos' || location.pathname === '/orders' || location.pathname === '/expiry';
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  useEffect(() => {
+    return toastEvent.subscribe((detail) => {
+      setToast(detail);
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    });
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-text selection:bg-primary/30">
@@ -179,6 +206,27 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
         <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-4 pt-2 pb-4' : 'overflow-y-auto p-6 pt-4 pb-6'} relative z-10 transition-all duration-200`}>
           {children}
         </main>
+        
+        {/* Global Modal & Notification elements */}
+        <QuickOrderModal />
+        
+        {toast && (
+          <div className={`fixed top-4 right-4 z-[9999] flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-xl animate-in slide-in-from-top-4 duration-300 ${
+            toast.type === 'success' 
+              ? 'bg-green-bg border-green/20 text-green' 
+              : toast.type === 'error'
+              ? 'bg-red-bg border-red/20 text-red'
+              : 'bg-primary/10 border-primary/20 text-primary'
+          }`}>
+            {toast.type === 'success' && <Check size={18} className="drop-shadow-[0_0_4px_rgba(16,185,129,0.5)]" />}
+            {toast.type === 'error' && <AlertTriangle size={18} className="drop-shadow-[0_0_4px_rgba(239,68,68,0.5)]" />}
+            {toast.type === 'info' && <Bell size={18} className="drop-shadow-[0_0_4px_rgba(59,130,246,0.5)]" />}
+            <span className="text-sm font-semibold tracking-wide">{toast.message}</span>
+            <button onClick={() => setToast(null)} className="ml-2 hover:text-white text-muted/60 transition-colors" title="Dismiss" aria-label="Dismiss toast">
+              <X size={14} />
+            </button>
+          </div>
+        )}
         
         {/* Subtle background glow effects wrapped in absolute layout boundary to avoid flexbox side-effects */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">

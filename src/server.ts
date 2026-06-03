@@ -383,6 +383,11 @@ ensureSchema(DB_PATH).then(() => {
     // whatsappQueue.startWorker(); // Disabled for testing
     startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));
 
+    // Run startup catch-up check for the 15-day expiry scan (handles PC downtime/off times)
+    import('./services/expiryAlertService.js')
+      .then(m => m.checkAndRunScheduledExpiryScan(90))
+      .catch(err => console.error('Failed running startup catch-up scan check:', err));
+
   // Daily check at 9:00 AM for patient refills & overdue credit notes
   cron.schedule('0 9 * * *', async () => {
     console.log('Running daily patient refill & overdue credit notes check...');

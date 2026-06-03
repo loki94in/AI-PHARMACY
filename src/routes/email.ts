@@ -126,6 +126,60 @@ router.get('/attachments', async (req, res) => {
   }
 });
 
+// GET /api/email/:id/attachments — get files available for a specific email
+router.get('/:id/attachments', async (req, res) => {
+  try {
+    const emailId = req.params.id;
+
+    // Fetch the email record from action_logs
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const email = await db.get(
+      'SELECT * FROM action_logs WHERE id = ? AND action_type = ?',
+      [emailId, 'EMAIL_RECEIVED']
+    );
+    await db.close();
+
+    if (!email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    // Read all files from uploads folder
+    const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const files = fs.readdirSync(uploadsDir);
+    const attachments = files
+      .filter(file => file.match(/\.(csv|txt|xlsx?|ods|pdf)$/i))
+      .map(filename => {
+        const filePath = path.join(uploadsDir, filename);
+        const stats = fs.statSync(filePath);
+        const ext = path.extname(filename).toLowerCase();
+        const contentTypes: Record<string, string> = {
+          '.pdf': 'application/pdf',
+          '.csv': 'text/csv',
+          '.txt': 'text/plain',
+          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          '.xls': 'application/vnd.ms-excel',
+          '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+        };
+        return {
+          filename,
+          size: stats.size,
+          contentType: contentTypes[ext] || 'application/octet-stream',
+          createdAt: stats.birthtime || stats.mtime,
+        };
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    res.json(attachments);
+  } catch (error) {
+    console.error('Failed to read email attachments:', error);
+    res.status(500).json({ error: 'Failed to retrieve attachments' });
+  }
+});
+
 // POST /api/email/attachments/parse
 router.post('/attachments/parse', async (req, res) => {
   const { filename } = req.body;

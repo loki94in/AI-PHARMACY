@@ -45,6 +45,29 @@ The PC application serves as the main billing hub, invoice generator, and databa
 
 ---
 
+## ⚡ React SPA Platform Modules (Desktop Console)
+
+The modern React SPA console provides high-density administrative controls, automated notifications, and quick data logging.
+
+### 1. Global Quick Special Request Overlay (`Alt + O`)
+- **Global Keybind Trigger**: Press **`Alt + O`**, **`Alt + N`**, or **`Ctrl + Shift + O`** from *any screen* (whether POS, Inventory, or Mail) to launch a floating glassmorphic Quick Request modal.
+- **Auto-Suggest Autocomplete**: Inputting characters triggers a debounced query searching the master catalog database, navigable via keyboard arrow keys.
+- **Automated Customer Dispatch**: Inputting a 10-digit customer phone number triggers an automatic WhatsApp booking confirmation to their mobile phone.
+- **Physical Header Hook**: Can also be clicked directly via the **`+ Quick Request`** badge in the header layout.
+
+### 2. Orders & Requests Module (`/orders` - Page 6)
+- **High-Density Split Layout**: Form-based request creation panel (25% width) + search/filter request index list (75% width) with internal scrolling.
+- **WhatsApp Automation Hooks**: Automates template message dispatches upon order registration and when switching status to `Ready` (e.g. notifying the client the drug is ready for pickup).
+- **Missed Automation Alert Recovery**: If a background WhatsApp dispatch fails, it logs an `AUTOMATION_ALERT` into the database, alerting users in the dashboard to review manually.
+- **Uncollected Reminders**: Evaluates pending orders over 2 days old and dispatches friendly reminder alerts.
+
+### 3. Expiry Monitor (`/expiry` - Page 7)
+- **Timeframe Boundary Filters**: Filter stock status for 30, 90, or 180 days.
+- **Distributor Report Bulk Dispatches**: Compile expiring lots and dispatch an automated summary list directly to distributor phone numbers.
+- **Resilience Engine**: Startup hooks run state comparisons to trigger missed scans in case the counter PC was turned off during the scheduled 15-day automated sweep.
+
+---
+
 ## 📱 Android Mobile App Workflow
 
 The Expo mobile app enables remote monitoring, inventory lookups, prescription scans, and checkout operations directly from the pharmacist's phone.

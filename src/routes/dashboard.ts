@@ -17,15 +17,36 @@ router.get('/', async (_req, res) => {
     // Simple aggregates
     const salesTodayRow = await db.get(`SELECT IFNULL(SUM(total_amount),0) as total FROM sales_invoices WHERE date(date) = date('now')`);
     const lowStockCount = await db.get(`SELECT COUNT(*) as cnt FROM inventory_master WHERE quantity < 5`);
-    const pendingTasks = 0; // Placeholder – could be derived from action_logs
+    const pendingTasksCount = await db.get(`SELECT COUNT(*) as cnt FROM action_logs WHERE action_type = 'AUTOMATION_ALERT'`);
+    const alerts = await db.all(`
+      SELECT id, description, created_at FROM action_logs 
+      WHERE action_type = 'AUTOMATION_ALERT'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `);
     await db.close();
     res.json({
       todaySales: salesTodayRow.total,
       lowStock: lowStockCount.cnt,
-      pendingTasks,
+      pendingTasks: pendingTasksCount.cnt,
+      alerts
     });
   } catch (err) {
     console.error('Dashboard error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Dismiss/Clear automation alert
+router.delete('/alerts/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('DELETE FROM action_logs WHERE id = ?', id);
+    await db.close();
+    res.json({ success: true, message: 'Alert dismissed successfully' });
+  } catch (err) {
+    console.error('Dismiss alert error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
