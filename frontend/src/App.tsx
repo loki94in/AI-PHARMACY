@@ -9,7 +9,8 @@ import {
   Settings as SettingsIcon, 
   Activity,
   LogOut,
-  Database
+  Database,
+  RotateCcw
 } from 'lucide-react';
 import React from 'react';
 
@@ -25,6 +26,7 @@ import Reports from './pages/Reports';
 import License from './pages/License';
 import Settings from './pages/Settings';
 import Mail from './pages/Mail';
+import Returns from './pages/Returns';
 
 const Sidebar = () => {
   const location = useLocation();
@@ -34,16 +36,17 @@ const Sidebar = () => {
     { path: '/purchases', label: 'Purchase History', icon: <Receipt size={18} /> },
     { path: '/mail', label: 'Distributor Mail', icon: <Activity size={18} /> },
     { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
+    { path: '/returns', label: 'Returns', icon: <RotateCcw size={18} /> },
     { path: '/crm', label: 'CRM / Patients', icon: <Users size={18} /> },
     { path: '/doctors', label: 'Doctors', icon: <UserPlus size={18} /> },
     { path: '/catalog', label: 'Catalog Upload', icon: <Database size={18} /> },
+    { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { path: '/dispatch', label: 'Dispatch', icon: <Activity size={18} /> },
     { path: '/reports', label: 'Reports', icon: <LayoutDashboard size={18} /> },
     { path: '/learning', label: 'AI Learning', icon: <Activity size={18} /> },
     { path: '/migration', label: 'Data Migration', icon: <Database size={18} /> },
     { path: '/license', label: 'License', icon: <Database size={18} /> },
     { path: '/settings', label: 'Settings', icon: <SettingsIcon size={18} /> },
-    { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
   ];
 
   return (
@@ -182,6 +185,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/inventory" element={<Inventory />} />
+          <Route path="/returns" element={<Returns />} />
           <Route path="/pos" element={<POS />} />
           <Route path="/manual-purchase" element={<Purchases />} />
           <Route path="/purchases" element={<Purchases />} />

@@ -65,6 +65,22 @@ const Purchases: React.FC = () => {
   const [extraCredit, setExtraCredit] = useState(0);
   const [items, setItems] = useState<BillItem[]>([createEmptyItem()]);
   const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistory[]>([]);
+  
+  // Helper to get date N days ago in YYYY-MM-DD format
+  const getNDaysAgo = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().split('T')[0];
+  };
+
+  // History list filter states
+  const [filterDistributor, setFilterDistributor] = useState('');
+  const [filterInvoice, setFilterInvoice] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState(getNDaysAgo(13));
+  const [filterEndDate, setFilterEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterMinAmount, setFilterMinAmount] = useState('');
+  const [filterMaxAmount, setFilterMaxAmount] = useState('');
+
   const [saving, setSaving] = useState(false);
   const [searchResults, setSearchResults] = useState<Medicine[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
@@ -434,6 +450,30 @@ const Purchases: React.FC = () => {
       alert('Failed to parse invoice file');
     }
   };
+
+  const filteredHistory = purchaseHistory.filter(purchase => {
+    const matchesDistributor = !filterDistributor.trim() || 
+      (purchase.distributor_name && purchase.distributor_name.toLowerCase().includes(filterDistributor.toLowerCase()));
+      
+    const matchesInvoice = !filterInvoice.trim() || 
+      (purchase.invoice_no && purchase.invoice_no.toLowerCase().includes(filterInvoice.toLowerCase()));
+      
+    const matchesDateRange = (() => {
+      if (!purchase.date) return false;
+      const pDate = purchase.date.substring(0, 10);
+      const start = filterStartDate || '0000-00-00';
+      const end = filterEndDate || '9999-99-99';
+      return pDate >= start && pDate <= end;
+    })();
+      
+    const matchesMinAmount = !filterMinAmount || 
+      purchase.total_amount >= Number(filterMinAmount);
+      
+    const matchesMaxAmount = !filterMaxAmount || 
+      purchase.total_amount <= Number(filterMaxAmount);
+      
+    return !!(matchesDistributor && matchesInvoice && matchesDateRange && matchesMinAmount && matchesMaxAmount);
+  });
 
   const totals = calculateTotals();
 
@@ -869,8 +909,79 @@ const Purchases: React.FC = () => {
 
       {/* Purchase History */}
       <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-        <h2 className="text-lg font-semibold text-white mb-4">Purchase History</h2>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <h2 className="text-lg font-semibold text-white">Purchase History</h2>
+          {purchaseHistory.length > 0 && (
+            <span className="text-xs text-slate-400">
+              Showing {filteredHistory.length} of {purchaseHistory.length} invoices
+            </span>
+          )}
+        </div>
         
+        {/* Filters Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3.5 mb-6 text-xs">
+          <div>
+            <label className="block text-gray-400 mb-1">Distributor</label>
+            <input 
+              type="text"
+              value={filterDistributor}
+              onChange={e => setFilterDistributor(e.target.value)}
+              placeholder="Filter distributor..."
+              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 mb-1">Invoice Number</label>
+            <input 
+              type="text"
+              value={filterInvoice}
+              onChange={e => setFilterInvoice(e.target.value)}
+              placeholder="Filter invoice..."
+              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 mb-1">From Date</label>
+            <input 
+              type="date"
+              value={filterStartDate}
+              onChange={e => setFilterStartDate(e.target.value)}
+              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 mb-1">To Date</label>
+            <input 
+              type="date"
+              value={filterEndDate}
+              onChange={e => setFilterEndDate(e.target.value)}
+              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 mb-1">Min Amount (₹)</label>
+            <input 
+              type="number"
+              value={filterMinAmount}
+              onChange={e => setFilterMinAmount(e.target.value)}
+              placeholder="Min amount"
+              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              min="0"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 mb-1">Max Amount (₹)</label>
+            <input 
+              type="number"
+              value={filterMaxAmount}
+              onChange={e => setFilterMaxAmount(e.target.value)}
+              placeholder="Max amount"
+              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              min="0"
+            />
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -883,15 +994,23 @@ const Purchases: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {purchaseHistory.map((purchase) => (
-                <tr key={purchase.id} className="border-b border-white/10">
-                  <td className="py-3 text-gray-300">{purchase.id}</td>
-                  <td className="py-3 text-white">{purchase.invoice_no}</td>
-                  <td className="py-3 text-gray-300">{purchase.date}</td>
-                  <td className="py-3 text-white">{purchase.distributor_name}</td>
-                  <td className="py-3 text-white font-medium">₹{purchase.total_amount.toFixed(2)}</td>
+              {filteredHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-slate-400">
+                    No matching invoices found.
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                filteredHistory.map((purchase) => (
+                  <tr key={purchase.id} className="border-b border-white/10">
+                    <td className="py-3 text-gray-300">{purchase.id}</td>
+                    <td className="py-3 text-white">{purchase.invoice_no}</td>
+                    <td className="py-3 text-gray-300">{purchase.date}</td>
+                    <td className="py-3 text-white">{purchase.distributor_name}</td>
+                    <td className="py-3 text-white font-medium">₹{purchase.total_amount.toFixed(2)}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

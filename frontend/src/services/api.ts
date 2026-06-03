@@ -131,4 +131,16 @@ export const api = {
   // License
   getLicenseStatus: () => apiClient.get('/license/status').then(res => res.data),
   activateLicense: (key: string) => apiClient.post('/license/activate', { key }).then(res => res.data),
+  
+  // Returns
+  getReturns: () => apiClient.get('/returns').then(res => res.data),
+  createReturn: (data: any) => apiClient.post('/returns', data).then(res => res.data),
+  getNearExpiry: (months: number = 6) => apiClient.get('/returns/near-expiry', { params: { months } }).then(res => res.data),
+  lookupPurchases: (name: string, batch?: string) => {
+    const params: any = { name };
+    if (batch) params.batch = batch;
+    return apiClient.get('/returns/lookup-purchases', { params }).then(res => res.data);
+  },
+  processReturns: (items: any[]) => apiClient.post('/returns/process-returns', { items }).then(res => res.data),
+  exportReturnsPDF: (items: any[]) => apiClient.post('/returns/export-pdf-report', { items }, { responseType: 'blob' }).then(res => res.data),
 };
