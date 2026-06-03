@@ -29,3 +29,26 @@ web-build/
 .wwebjs_cache/
 **/.wwebjs_auth/
 **/.wwebjs_cache/
+
+# OCR Models & Training Data (large binaries — download at runtime)
+data/models/
+eng.traineddata
+
+# SQL dumps & staging databases
+*.sql
+data/staging.db
+
+# Temp OCR & audit images
+data/temp_ocr/
+data/audit_images/
+
+# IDE / Tool caches
+.understand-anything/
+.codegraph/
+
+# Logs
+*.log
+
+# Misc temp/test artifacts
+temp.json
+test.csv

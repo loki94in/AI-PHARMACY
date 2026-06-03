@@ -11,6 +11,20 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
+// Helper to parse dynamic or text-based interval descriptions into numbers
+function parseIntervalDays(val: any): number {
+  if (typeof val === 'string') {
+    const cleaned = val.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleaned === 'weekly' || cleaned === '7days') return 7;
+    if (cleaned === '15days') return 15;
+    if (cleaned === 'monthly' || cleaned === '30days') return 30;
+    const parsed = parseInt(val, 10);
+    return isNaN(parsed) ? 30 : parsed;
+  }
+  if (typeof val === 'number') return val;
+  return 30;
+}
+
 // Register a manual patient refill request
 router.post('/', async (req, res) => {
   const { patient_name, patient_phone, medicine_id, refill_interval_days = 30 } = req.body;
@@ -23,7 +37,7 @@ router.post('/', async (req, res) => {
     db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     
     // Calculate next refill date
-    const intervalDays = parseInt(refill_interval_days, 10);
+    const intervalDays = parseIntervalDays(refill_interval_days);
     const nextRefillDate = new Date();
     nextRefillDate.setDate(nextRefillDate.getDate() + intervalDays);
     const nextRefillStr = nextRefillDate.toISOString().slice(0, 19).replace('T', ' ');
@@ -38,7 +52,7 @@ router.post('/', async (req, res) => {
     await checkAllRefills(db);
 
     await db.close();
-    res.json({ success: true, message: 'Refill registered successfully' });
+    res.json({ success: true, message: 'Refill registered successfully', interval_days: intervalDays });
   } catch (err) {
     if (db) await db.close();
     console.error('Failed to register refill:', err);
@@ -99,7 +113,7 @@ router.put('/:id', async (req, res) => {
     const updatedName = patient_name !== undefined ? patient_name : refill.patient_name;
     const updatedPhone = patient_phone !== undefined ? patient_phone : refill.patient_phone;
     const updatedMedicineId = medicine_id !== undefined ? medicine_id : refill.medicine_id;
-    const updatedInterval = refill_interval_days !== undefined ? parseInt(refill_interval_days, 10) : refill.refill_interval_days;
+    const updatedInterval = refill_interval_days !== undefined ? parseIntervalDays(refill_interval_days) : refill.refill_interval_days;
     const updatedNextDate = next_refill_date !== undefined ? next_refill_date : refill.next_refill_date;
     const updatedStatus = status !== undefined ? status : refill.status;
     const updatedHold = hold_for_stock !== undefined ? parseInt(hold_for_stock, 10) : refill.hold_for_stock;
@@ -117,7 +131,7 @@ router.put('/:id', async (req, res) => {
     }
 
     await db.close();
-    res.json({ success: true, message: 'Refill updated successfully' });
+    res.json({ success: true, message: 'Refill updated successfully', interval_days: updatedInterval });
   } catch (err) {
     if (db) await db.close();
     console.error('Failed to update refill:', err);

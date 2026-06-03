@@ -1,37 +1,48 @@
 import { Request, Response, NextFunction } from 'express';
-import { Database } from 'sqlite';
 import { dbManager } from '../database/connection.js';
 import { config } from '../config/index.js';
 
+async function getSessionToken(): Promise<string | null> {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get<{ value: string }>(
+      "SELECT value FROM app_settings WHERE key = 'license_session_token'"
+    );
+    return row?.value || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function authenticateApiKey(req: Request, res: Response, next: NextFunction) {
-  // Bypass authentication in test environment
-  if (process.env.NODE_ENV === 'test') {
+  // Skip auth in development and test environments
+  if (process.env.NODE_ENV !== 'production') {
     return next();
   }
 
-  let expectedApiKey = config.apiKey;
-
-  if (!process.env.API_KEY) {
-    console.warn('[WARNING] API_KEY environment variable is not set. Falling back to default "Pass@123".');
+  // License routes are always open (needed for activation)
+  if (req.path.startsWith('/api/license')) {
+    return next();
   }
 
-  // Dynamically load login password from settings database if present
-  try {
-    const db = await dbManager.getConnection();
-    const row = await db.get("SELECT value FROM app_settings WHERE key = 'login_password'");
-    await dbManager.close(); // Close after getting the setting
-    if (row && row.value) {
-      expectedApiKey = row.value;
-    }
-  } catch (_) {
-    // Fallback if DB table is not created yet
-    await dbManager.close();
+  // In production: validate against the session token issued at license activation.
+  const provided =
+    req.headers['x-session-token'] ||
+    req.headers['x-api-key'] ||
+    req.query['api-key'] ||
+    req.query['apiKey'];
+
+  if (!provided) {
+    return res.status(401).json({ error: 'Unauthorized: Missing session token.' });
   }
 
-  const apiKeyHeader = req.headers['x-api-key'] || req.query['api-key'] || req.query['apiKey'] || req.query['api_key'];
+  const expected = await getSessionToken();
 
-  if (!apiKeyHeader || apiKeyHeader !== expectedApiKey) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid or missing API Key' });
+  // Fall back to legacy API key for backwards compatibility during migration
+  const legacyKey = config.apiKey;
+
+  if (provided !== expected && provided !== legacyKey) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid session token.' });
   }
 
   next();

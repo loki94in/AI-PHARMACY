@@ -1,6 +1,7 @@
 
 import { dbManager } from '../database/connection.js';
 // @ts-ignore from '../database/connection.js';
+// @ts-ignore from '../database/connection.js';
 import { config } from '../config';
 
 export interface InvoiceItem {
@@ -180,6 +181,36 @@ export class InvoiceService {
           'UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?',
           [item.quantity, invId]
         );
+
+        // Check for compliance logging
+        const medData = await db.get(`
+          SELECT m.name, m.schedule_type
+          FROM inventory_master im
+          JOIN medicines m ON im.medicine_id = m.id
+          WHERE im.id = ?
+        `, [invId]);
+
+        if (medData && medData.schedule_type && ['H', 'H1', 'X'].includes(medData.schedule_type.toUpperCase())) {
+          let doctorName = 'Self/Walk-in';
+          if (data.doctorId) {
+            const doc = await db.get('SELECT name FROM doctors WHERE id = ?', [data.doctorId]);
+            if (doc) doctorName = doc.name;
+          }
+          await db.run(
+            `INSERT INTO compliance_logs 
+            (date, drug_name, patient_name, doctor_name, license_no, qty, bill_no, schedule_type)
+            VALUES (CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              medData.name, 
+              data.patientName || 'Walk-in',
+              doctorName,
+              'REG-NA', // Default license or could be pulled from doctor
+              item.quantity,
+              invoiceNo,
+              medData.schedule_type.toUpperCase()
+            ]
+          );
+        }
       }
 
       // Trigger WhatsApp delivery asynchronously

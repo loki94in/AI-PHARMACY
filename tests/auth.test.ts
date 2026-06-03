@@ -44,10 +44,10 @@ describe('API Auth Middleware', () => {
   afterEach(async () => {
     delete process.env.API_KEY;
     process.env.NODE_ENV = originalNodeEnv || 'test';
-    // Clean up or reset DB password to default
+    // Clean up session token
     try {
       const db = await dbManager.getConnection();
-      await db.run("UPDATE app_settings SET value = 'admin123' WHERE key = 'login_password'");
+      await db.run("DELETE FROM app_settings WHERE key = 'license_session_token'");
       await dbManager.close();
     } catch (_) {}
   });
@@ -61,9 +61,8 @@ describe('API Auth Middleware', () => {
 
   test('should block request without api key when NODE_ENV is not test', async () => {
     process.env.NODE_ENV = 'production';
-    process.env.API_KEY = 'secure-key-abc';
     const db = await dbManager.getConnection();
-    await db.run("UPDATE app_settings SET value = 'secure-key-abc' WHERE key = 'login_password'");
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('license_session_token', 'secure-key-abc')");
     await dbManager.close();
 
     const res = await request(app).get('/test-api');
@@ -73,9 +72,8 @@ describe('API Auth Middleware', () => {
 
   test('should allow request with valid X-API-Key', async () => {
     process.env.NODE_ENV = 'production';
-    process.env.API_KEY = 'secure-key-abc';
     const db = await dbManager.getConnection();
-    await db.run("UPDATE app_settings SET value = 'secure-key-abc' WHERE key = 'login_password'");
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('license_session_token', 'secure-key-abc')");
     await dbManager.close();
 
     const res = await request(app)
@@ -88,8 +86,9 @@ describe('API Auth Middleware', () => {
   test('should fallback to Pass@123 if API_KEY is not defined', async () => {
     process.env.NODE_ENV = 'production';
     delete process.env.API_KEY;
+    // No session token in DB — middleware falls back to config.apiKey ('Pass@123')
     const db = await dbManager.getConnection();
-    await db.run("UPDATE app_settings SET value = 'Pass@123' WHERE key = 'login_password'");
+    await db.run("DELETE FROM app_settings WHERE key = 'license_session_token'");
     await dbManager.close();
 
     const res = await request(app)

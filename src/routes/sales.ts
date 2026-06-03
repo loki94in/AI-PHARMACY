@@ -50,7 +50,7 @@ router.post('/', async (req, res) => {
   let db;
   try {
     db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    const { items = [], patient_id, doctor_id, discount = 0, patient_name, patient_phone, patient_address } = req.body;
+    const { items = [], patient_id, doctor_id, discount = 0, patient_name, patient_phone, patient_address, paymentMedium = 'CASH', paymentStatus = 'PAID', sendWhatsApp = false } = req.body;
 
     // Basic validation
     if (!Array.isArray(items) || items.length === 0) {
@@ -83,15 +83,15 @@ router.post('/', async (req, res) => {
 
     const taxRate = 0.05; // 5% tax
     const tax = subtotal * taxRate;
-    const total = subtotal + tax - discount;
+    const total = Math.round(subtotal + tax - discount);
 
     // Generate invoice number
     const invoice_no = await generateInvoiceNo(db);
 
     // Insert invoice
     const result = await db.run(
-      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount) VALUES (?, ?, ?, ?)',
-      [invoice_no, customerId, total, tax]
+      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status) VALUES (?, ?, ?, ?, ?, ?)',
+      [invoice_no, customerId, total, tax, paymentMedium, paymentStatus]
     );
     const invoiceId = result.lastID;
 
@@ -107,6 +107,18 @@ router.post('/', async (req, res) => {
     }
 
     await db.close();
+
+    // Trigger WhatsApp invoice sending if requested
+    if (sendWhatsApp) {
+      import('../services/whatsappInvoiceService.js')
+        .then(({ whatsappInvoiceService }) => {
+          whatsappInvoiceService.sendInvoiceViaWhatsApp(invoiceId).catch(err => {
+            console.error(`Error in async WhatsApp dispatch for invoice ${invoice_no}:`, err);
+          });
+        })
+        .catch(err => console.error('Failed to load whatsappInvoiceService:', err));
+    }
+
     res.json({ success: true, invoice_no, total, tax });
   } catch (error) {
     if (db) await db.close();
@@ -121,30 +133,74 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Hold a bill
+// Hold a bill (Unified endpoint supporting both HTML and React POS formats)
 router.post('/hold', async (req, res) => {
-  let dbHold;
+  let db;
   try {
     if (!req.body) {
       return res.status(400).json({ error: 'Request body required' });
     }
-    dbHold = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    const holdData = JSON.stringify(req.body);
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    
+    // Extract fields from body
+    const { 
+      temp_label, 
+      patient_name, 
+      patient_phone, 
+      doctor_name, 
+      discount = 0, 
+      remarks, 
+      cart_data,
+      data,
+      items,
+      patient,
+      doctor
+    } = req.body;
 
-    const holdInvoiceNo = await generateInvoiceNo(dbHold);
-    await dbHold.run('INSERT INTO held_bills (invoice_no, data) VALUES (?, ?)', [holdInvoiceNo, holdData]);
-    await dbHold.close();
-    res.json({ success: true, message: 'Bill held', invoice_no: holdInvoiceNo });
+    // Standardize variables
+    const finalPatientName = patient_name || (patient && typeof patient === 'object' ? patient.name : patient) || '';
+    const finalPatientPhone = patient_phone || (patient && typeof patient === 'object' ? patient.phone : '') || '';
+    const finalDoctor = doctor_name || doctor || '';
+    const finalDiscount = discount || 0;
+    const finalCartData = cart_data || items || [];
+    
+    // Create serialized data blob for compatibility with legacy HTML restoration
+    const serializedData = data || JSON.stringify({
+      items: finalCartData,
+      patient: patient || { name: finalPatientName, phone: finalPatientPhone },
+      doctor: finalDoctor,
+      discount: finalDiscount,
+      date: new Date().toLocaleString(),
+      remarks: remarks || ''
+    });
+
+    const holdInvoiceNo = await generateInvoiceNo(db);
+    
+    await db.run(
+      `INSERT INTO held_bills (
+        invoice_no, temp_label, patient_name, patient_phone, doctor_name, 
+        discount, remarks, cart_data, data
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        holdInvoiceNo,
+        temp_label || finalPatientName || 'Held Bill',
+        finalPatientName,
+        finalPatientPhone,
+        finalDoctor,
+        finalDiscount,
+        remarks || '',
+        typeof finalCartData === 'string' ? finalCartData : JSON.stringify(finalCartData),
+        serializedData
+      ]
+    );
+
+    await db.close();
+    res.json({ success: true, message: 'Bill held successfully', invoice_no: holdInvoiceNo });
   } catch (error) {
-    if (dbHold) await dbHold.close();
+    if (db) await db.close();
     const err = error as Error;
-    console.error(JSON.stringify({
-      message: 'Failed to hold bill',
-      error: err.message,
-      stack: err.stack,
-      timestamp: new Date().toISOString()
-    }));
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Failed to hold bill:', err);
+    res.status(500).json({ error: 'Failed to hold bill' });
   }
 });
 
@@ -216,33 +272,7 @@ router.get('/recommend-quantity', async (req, res) => {
   }
 });
 
-// Hold a bill session
-router.post('/hold', async (req, res) => {
-  const { temp_label, patient_name, patient_phone, doctor_name, discount = 0, remarks, cart_data } = req.body;
-  let db;
-  try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run(
-      `INSERT INTO held_bills (temp_label, patient_name, patient_phone, doctor_name, discount, remarks, cart_data)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        temp_label || patient_name || 'Held Bill',
-        patient_name || '',
-        patient_phone || '',
-        doctor_name || '',
-        discount,
-        remarks || '',
-        typeof cart_data === 'string' ? cart_data : JSON.stringify(cart_data || [])
-      ]
-    );
-    await db.close();
-    res.json({ success: true, message: 'Bill held successfully' });
-  } catch (error) {
-    if (db) await db.close();
-    console.error('Failed to hold bill:', error);
-    res.status(500).json({ error: 'Failed to hold bill' });
-  }
-});
+
 
 // List all held bills
 router.get('/hold', async (req, res) => {

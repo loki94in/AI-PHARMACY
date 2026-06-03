@@ -128,6 +128,19 @@ export async function ensureSchema(dbPath: string) {
       cart_data TEXT,
       date DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS ocr_corrections (
+      ocr TEXT PRIMARY KEY,
+      correct TEXT NOT NULL,
+      count INTEGER DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS ocr_audit_queue (
+      id TEXT PRIMARY KEY,
+      image_path TEXT NOT NULL,
+      raw_ocr_text TEXT,
+      cloud_suggested_text TEXT,
+      status TEXT CHECK(status IN ('pending_human_review', 'reviewed')) DEFAULT 'pending_human_review',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Safely add new columns to existing tables (SQLite throws if column exists — we catch and ignore)
@@ -146,6 +159,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE medicines ADD COLUMN manufactured_by TEXT`,
     `ALTER TABLE medicines ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE medicines ADD COLUMN packaging TEXT`,
+    `ALTER TABLE medicines ADD COLUMN strength TEXT`,
     `ALTER TABLE medicines ADD COLUMN item_type TEXT`,
     `ALTER TABLE medicines ADD COLUMN cgst REAL DEFAULT 0`,
     `ALTER TABLE medicines ADD COLUMN sgst REAL DEFAULT 0`,
@@ -196,6 +210,20 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE customers ADD COLUMN credit_balance REAL DEFAULT 0`,
     `ALTER TABLE sales_invoices ADD COLUMN payment_status TEXT DEFAULT 'PAID'`,
     `ALTER TABLE patient_refills ADD COLUMN hold_for_stock INTEGER DEFAULT 0`,
+    `ALTER TABLE catalog_jobs ADD COLUMN extracted_data TEXT`,
+    `ALTER TABLE catalog_jobs ADD COLUMN original_filename TEXT`,
+    `ALTER TABLE medicines ADD COLUMN schedule_type TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN invoice_no TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN temp_label TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN patient_name TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN patient_phone TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN doctor_name TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN discount REAL DEFAULT 0`,
+    `ALTER TABLE held_bills ADD COLUMN remarks TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN cart_data TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN data TEXT`,
+    `ALTER TABLE held_bills ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE held_bills ADD COLUMN date DATETIME DEFAULT CURRENT_TIMESTAMP`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -220,12 +248,6 @@ export async function ensureSchema(dbPath: string) {
       speciality TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS held_bills (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      invoice_no TEXT,
-      data TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
 
     CREATE TABLE IF NOT EXISTS compliance_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,6 +361,8 @@ export async function ensureSchema(dbPath: string) {
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('gmail_pass', '')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('login_password', 'admin123')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('master_password', 'master999')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('connection_mode', 'hybrid')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('bluetooth_com_port', 'COM1')");
 
   // Safely add legacy_id/speciality to doctors if the table already existed without them
   const doctorAlters = [

@@ -10,9 +10,15 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 export class PdfInvoiceService {
-  async generateInvoicePdf(invoiceId: number, outPath: string): Promise<void> {
+  async generateInvoicePdf(invoiceId: number, outPath: string, includeStampAndSig: boolean = true): Promise<void> {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     
+    // Fetch settings
+    await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+    const settingsRows = await db.all('SELECT key, value FROM app_settings');
+    const settings: Record<string, string> = {};
+    settingsRows.forEach(r => { settings[r.key] = r.value; });
+
     // Fetch invoice details
     const invoice = await db.get(
       `SELECT si.invoice_no, si.date, si.total_amount, si.tax_amount, si.payment_medium, si.payment_status,
@@ -40,6 +46,11 @@ export class PdfInvoiceService {
 
     await db.close();
 
+    const shopName = settings.shop_name || 'AI PHARMACY OS';
+    const shopAddress = settings.shop_address || '123 Health Ave, Medical District, Tech City';
+    const shopPhone = settings.shop_phone || '+91 99999 99999';
+    const shopLicence = settings.shop_licence || 'N/A';
+
     return new Promise((resolve, reject) => {
       try {
         const doc = new PDFDocument({ margin: 40 });
@@ -49,9 +60,9 @@ export class PdfInvoiceService {
         doc.pipe(stream);
 
         // Header / Business Info
-        doc.fontSize(20).fillColor('#0284c7').text('AI PHARMACY OS', { align: 'center', font: 'Helvetica-Bold' });
-        doc.fontSize(9).fillColor('#64748b').text('123 Health Ave, Medical District, Tech City', { align: 'center' });
-        doc.text('Phone: +91 99999 99999 | Email: contact@aipharmacy.com', { align: 'center' });
+        doc.fontSize(20).fillColor('#0284c7').text(shopName, { align: 'center', font: 'Helvetica-Bold' });
+        doc.fontSize(9).fillColor('#64748b').text(shopAddress, { align: 'center' });
+        doc.text(`Phone: ${shopPhone} | Licence: ${shopLicence}`, { align: 'center' });
         doc.moveDown(1.5);
 
         // Divider
@@ -117,46 +128,49 @@ export class PdfInvoiceService {
         doc.text('Grand Total:', 360, doc.y, { width: 100, align: 'right', font: 'Helvetica-Bold' });
         doc.text(`₹${(invoice.total_amount || 0).toFixed(2)}`, 480, doc.y - 12, { width: 70, align: 'right', font: 'Helvetica-Bold' });
 
-        // Check if custom stamp/signature files exist
+        // Check if custom stamp/signature files exist (only draw if includeStampAndSig is true)
         const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
         const customStampPath = path.join(uploadsDir, 'custom_stamp.png');
         const customSigPath = path.join(uploadsDir, 'custom_signature.png');
 
-        if (fs.existsSync(customStampPath)) {
-          doc.image(customStampPath, 140, doc.y - 20, { width: 80 });
-        } else {
-          // DRAW DIGITAL PHARMACY STAMP
-          doc.save();
-          doc.translate(140, doc.y - 10);
-          doc.rotate(-12);
-          
-          const stampColor = invoice.payment_status === 'UNPAID' ? '#f59e0b' : '#10b981';
-          doc.strokeColor(stampColor).lineWidth(2);
-          doc.circle(0, 0, 42).stroke();
-          doc.circle(0, 0, 38).stroke();
-          
-          doc.fillColor(stampColor).fontSize(7);
-          doc.text('AI PHARMACY OS', -35, -20, { width: 70, align: 'center' });
-          
-          doc.fontSize(8);
-          if (invoice.payment_status === 'UNPAID') {
-            doc.text('CREDIT ACCOUNT', -35, -3, { width: 70, align: 'center', font: 'Helvetica-Bold' });
-            doc.fontSize(7).text('PAYMENT PENDING', -35, 12, { width: 70, align: 'center' });
+        if (includeStampAndSig) {
+          if (fs.existsSync(customStampPath)) {
+            doc.image(customStampPath, 140, doc.y - 20, { width: 80 });
           } else {
-            doc.text('PAID & VERIFIED', -35, -3, { width: 70, align: 'center', font: 'Helvetica-Bold' });
-            doc.fontSize(7).text('THANK YOU', -35, 12, { width: 70, align: 'center' });
+            // DRAW DIGITAL PHARMACY STAMP
+            doc.save();
+            doc.translate(140, doc.y - 10);
+            doc.rotate(-12);
+            
+            const stampColor = invoice.payment_status === 'UNPAID' ? '#f59e0b' : '#10b981';
+            doc.strokeColor(stampColor).lineWidth(2);
+            doc.circle(0, 0, 42).stroke();
+            doc.circle(0, 0, 38).stroke();
+            
+            doc.fillColor(stampColor).fontSize(7);
+            doc.text(shopName, -35, -20, { width: 70, align: 'center' });
+            
+            doc.fontSize(8);
+            if (invoice.payment_status === 'UNPAID') {
+              doc.text('CREDIT ACCOUNT', -35, -3, { width: 70, align: 'center', font: 'Helvetica-Bold' });
+              doc.fontSize(7).text('PAYMENT PENDING', -35, 12, { width: 70, align: 'center' });
+            } else {
+              doc.text('PAID & VERIFIED', -35, -3, { width: 70, align: 'center', font: 'Helvetica-Bold' });
+              doc.fontSize(7).text('THANK YOU', -35, 12, { width: 70, align: 'center' });
+            }
+            
+            doc.restore();
+          }
+
+          // Render signature if it exists
+          if (fs.existsSync(customSigPath)) {
+            doc.image(customSigPath, 380, doc.y - 30, { width: 80 });
           }
           
-          doc.restore();
+          doc.fontSize(8).fillColor('#94a3b8').text('This is a computer generated document. Stamped digitally.', 40, 750, { align: 'center' });
+        } else {
+          doc.fontSize(8).fillColor('#94a3b8').text('This is a physical document. Signed and stamped manually.', 40, 750, { align: 'center' });
         }
-
-        // Render signature if it exists
-        if (fs.existsSync(customSigPath)) {
-          doc.image(customSigPath, 380, doc.y - 30, { width: 80 });
-        }
-
-        // Footer terms
-        doc.fontSize(8).fillColor('#94a3b8').text('This is a computer generated document. Stamped digitally.', 40, 750, { align: 'center' });
 
         doc.end();
       } catch (err) {

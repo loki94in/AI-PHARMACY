@@ -183,7 +183,6 @@ export class ProductNameFilterService {
       // Continue with empty corrections map
     }
   }
-
   private saveCorrections(): void {
     try {
       // Convert Map to array for JSON serialization
@@ -205,9 +204,11 @@ export class ProductNameFilterService {
         fs.mkdirSync(dataDir, { recursive: true });
       }
 
-      fs.writeFileSync(this.correctionsPath, JSON.stringify(correctionsArray, null, 2));
+      const tempPath = this.correctionsPath + '.tmp';
+      fs.writeFileSync(tempPath, JSON.stringify(correctionsArray, null, 2));
+      fs.renameSync(tempPath, this.correctionsPath);
     } catch (error) {
-      console.error('Failed to save OCR corrections:', error);
+      console.error('Failed to save OCR corrections atomically:', error);
     }
   }
 
@@ -217,6 +218,21 @@ export class ProductNameFilterService {
       const db = await open({ filename: activeDbPath, driver: sqlite3.Database });
       const rows = await db.all('SELECT DISTINCT name FROM medicines WHERE name IS NOT NULL AND name <> ""');
       this.medicineNames = rows.map(row => row.name).filter(Boolean);
+
+      // Load corrections from database
+      try {
+        const dbCorrections = await db.all('SELECT ocr, correct, count FROM ocr_corrections');
+        for (const item of dbCorrections) {
+          this.corrections.set(item.ocr.trim().toLowerCase(), {
+            correctName: item.correct,
+            count: item.count
+          });
+        }
+        console.log(`Loaded ${dbCorrections.length} OCR correction pairs from SQLite database`);
+      } catch (dbErr) {
+        console.warn('Failed to load corrections from database, falling back to JSON:', dbErr);
+      }
+
       await db.close();
       this.initialized = true;
     } catch (error) {
@@ -236,15 +252,15 @@ export class ProductNameFilterService {
     const normalizedOcr = ocrText.trim().toLowerCase();
     const normalizedCorrect = correctName.trim();
 
+    let count = 1;
     // Get existing entry or create new
     const existing = this.corrections.get(normalizedOcr);
     if (existing) {
       // If it's already mapped to the same correct name, increment count
       if (existing.correctName === normalizedCorrect) {
         existing.count++;
+        count = existing.count;
       }
-      // If it's mapped to a different name, we'll keep the one with higher count
-      // This handles conflicting corrections over time
     } else {
       // New correction pair
       this.corrections.set(normalizedOcr, {
@@ -255,6 +271,22 @@ export class ProductNameFilterService {
 
     // Save to file periodically (we could batch this, but for simplicity saving each time)
     this.saveCorrections();
+
+    // Save to SQLite database asynchronously
+    const activeDbPath = process.env.DB_PATH || this.dbPath;
+    open({ filename: activeDbPath, driver: sqlite3.Database })
+      .then(async (db) => {
+        await db.run(
+          'INSERT OR REPLACE INTO ocr_corrections (ocr, correct, count) VALUES (?, ?, ?)',
+          [normalizedOcr, normalizedCorrect, count]
+        );
+        await db.close();
+        console.log(`Saved OCR correction to database: "${normalizedOcr}" → "${normalizedCorrect}" (count: ${count})`);
+      })
+      .catch((dbErr) => {
+        console.error('Failed to save OCR correction to database:', dbErr);
+      });
+
     console.log(`Learned OCR correction: "${ocrText}" → "${correctName}"`);
   }
 

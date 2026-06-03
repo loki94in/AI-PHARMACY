@@ -1,0 +1,1228 @@
+// @ts-nocheck
+import React, { useState, useEffect, useCallback } from 'react';
+import { api, apiClient } from '../services/api';
+
+interface Medicine {
+  id: number;
+  name: string;
+  generic_name: string;
+  manufacturer: string;
+  pack_unit: string;
+  strength: string;
+  mrp: number;
+  rate: number;
+  scheme_paid: number;
+  scheme_free: number;
+  cgst_per: number;
+  sgst_per: number;
+  hsn_code: string;
+}
+
+interface BillItem {
+  id: string;
+  medicine_id: number | null;
+  medicine_name: string;
+  batch_no: string;
+  expiry_date: string;
+  qty: number;
+  free_qty: number;
+  rate: number;
+  mrp: number;
+  cgst_per: number;
+  sgst_per: number;
+  cd_rs: number;
+  cd_per: number;
+  amount: number;
+  scheme_paid: number;
+  scheme_free: number;
+}
+
+interface Distributor {
+  id: number;
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  state_code: string;
+}
+
+interface PurchaseHistory {
+  id: number;
+  invoice_no: string;
+  date: string;
+  distributor_name: string;
+  total_amount: number;
+}
+
+const Purchases: React.FC = () => {
+  const [distributors, setDistributors] = useState<Distributor[]>([]);
+  const [selectedDistributor, setSelectedDistributor] = useState<number | null>(null);
+  const [distributorSearch, setDistributorSearch] = useState('');
+  const [showDistributorDropdown, setShowDistributorDropdown] = useState(false);
+  const [invoiceNo, setInvoiceNo] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [globalCdPer, setGlobalCdPer] = useState(0);
+  const [extraCredit, setExtraCredit] = useState(0);
+  const [items, setItems] = useState<BillItem[]>([createEmptyItem()]);
+  const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistory[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [searchResults, setSearchResults] = useState<Medicine[]>([]);
+  const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [schemeMatchStatus, setSchemeMatchStatus] = useState<{ [key: string]: string }>({});
+  const [showDistributorModal, setShowDistributorModal] = useState(false);
+  const [newDistributor, setNewDistributor] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    state_code: '',
+  });
+  const [savingDistributor, setSavingDistributor] = useState(false);
+  const [showPriceHistoryModal, setShowPriceHistoryModal] = useState(false);
+  const [priceHistory, setPriceHistory] = useState<any[]>([]);
+  const [priceHistoryMedicine, setPriceHistoryMedicine] = useState('');
+  const [showMedicineModal, setShowMedicineModal] = useState(false);
+  const [newMedicine, setNewMedicine] = useState({
+    name: '',
+    generic_name: '',
+    manufacturer: '',
+    marketed_by: '',
+    pack_unit: 'Tablet',
+    strength: '',
+    pack_size: '',
+    cgst_per: 5,
+    sgst_per: 5,
+    hsn_code: '',
+  });
+  const [savingMedicine, setSavingMedicine] = useState(false);
+  const [activeMedicineIndex, setActiveMedicineIndex] = useState<number | null>(null);
+
+  function createEmptyItem(): BillItem {
+    return {
+      id: crypto.randomUUID(),
+      medicine_id: null,
+      medicine_name: '',
+      batch_no: '',
+      expiry_date: '',
+      qty: 0,
+      free_qty: 0,
+      rate: 0,
+      mrp: 0,
+      cgst_per: 0,
+      sgst_per: 0,
+      cd_rs: 0,
+      cd_per: 0,
+      amount: 0,
+      scheme_paid: 0,
+      scheme_free: 0,
+    };
+  }
+
+  useEffect(() => {
+    fetchDistributors();
+    fetchPurchaseHistory();
+  }, []);
+
+  const fetchDistributors = async () => {
+    try {
+      const response = await api.getDistributors();
+      setDistributors(response.data || []);
+    } catch (error) {
+      console.error('Error fetching distributors:', error);
+    }
+  };
+
+  const fetchPurchaseHistory = async () => {
+    try {
+      const response = await api.getPurchases();
+      setPurchaseHistory(response.data || []);
+    } catch (error) {
+      console.error('Error fetching purchase history:', error);
+    }
+  };
+
+  const saveDistributor = async () => {
+    if (!newDistributor.name) {
+      alert('Distributor name is required');
+      return;
+    }
+
+    setSavingDistributor(true);
+    try {
+      const response = await apiClient.post('/api/settings/distributors', newDistributor);
+      const saved = response.data.data;
+      
+      setDistributors([...distributors, saved]);
+      setSelectedDistributor(saved.id);
+      setDistributorSearch(saved.name);
+      
+      setNewDistributor({ name: '', phone: '', email: '', address: '', state_code: '' });
+      setShowDistributorModal(false);
+    } catch (error) {
+      console.error('Error saving distributor:', error);
+      alert('Failed to save distributor');
+    } finally {
+      setSavingDistributor(false);
+    }
+  };
+
+  const saveMedicine = async () => {
+    if (!newMedicine.name) {
+      alert('Medicine name is required');
+      return;
+    }
+
+    setSavingMedicine(true);
+    try {
+      const response = await apiClient.post('/api/medicines', newMedicine);
+      const saved = response.data.data;
+      
+      // Auto-select in the current row
+      if (activeMedicineIndex !== null) {
+        const newItems = [...items];
+        const item = newItems[activeMedicineIndex];
+        item.medicine_id = saved.id;
+        item.medicine_name = saved.name;
+        item.mrp = saved.mrp;
+        item.rate = saved.rate;
+        item.cgst_per = saved.cgst_per;
+        item.sgst_per = saved.sgst_per;
+        item.scheme_paid = saved.scheme_paid;
+        item.scheme_free = saved.scheme_free;
+        item.amount = calculateItemAmount(item);
+        setItems(newItems);
+      }
+      
+      setNewMedicine({
+        name: '', generic_name: '', manufacturer: '', marketed_by: '',
+        pack_unit: 'Tablet', strength: '', pack_size: '',
+        cgst_per: 5, sgst_per: 5, hsn_code: '',
+      });
+      setShowMedicineModal(false);
+      setActiveMedicineIndex(null);
+    } catch (error) {
+      console.error('Error saving medicine:', error);
+      alert('Failed to save medicine');
+    } finally {
+      setSavingMedicine(false);
+    }
+  };
+
+  const searchMedicines = useCallback(async (term: string, index: number) => {
+    if (term.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      const response = await api.catalogSearch(term);
+      setSearchResults(response.data || []);
+      setActiveSearchIndex(index);
+      setActiveMedicineIndex(index);
+    } catch (error) {
+      console.error('Error searching medicines:', error);
+    }
+  }, []);
+
+  const fetchPriceHistory = async (medicineName: string) => {
+    try {
+      const response = await apiClient.get(`/api/purchases/price-history?name=${encodeURIComponent(medicineName)}`);
+      setPriceHistory(response.data.data || []);
+      setPriceHistoryMedicine(medicineName);
+      setShowPriceHistoryModal(true);
+    } catch (error) {
+      console.error('Error fetching price history:', error);
+    }
+  };
+
+  const selectMedicine = async (medicine: Medicine, index: number) => {
+    const newItems = [...items];
+    const item = newItems[index];
+
+    item.medicine_id = medicine.id;
+    item.medicine_name = medicine.name;
+    item.mrp = medicine.mrp;
+    item.rate = medicine.rate;
+    item.cgst_per = medicine.cgst_per;
+    item.sgst_per = medicine.sgst_per;
+    item.scheme_paid = medicine.scheme_paid;
+    item.scheme_free = medicine.scheme_free;
+
+    try {
+      const response = await api.getLastPurchase(medicine.name, selectedDistributor || undefined);
+      if (response.data) {
+        const lastPurchase = response.data;
+        item.batch_no = lastPurchase.batch_no || '';
+        item.expiry_date = lastPurchase.expiry_date || '';
+        item.rate = lastPurchase.rate || medicine.rate;
+        item.mrp = lastPurchase.mrp || medicine.mrp;
+        item.cgst_per = lastPurchase.cgst_per || medicine.cgst_per;
+        item.sgst_per = lastPurchase.sgst_per || medicine.sgst_per;
+      }
+    } catch (error) {
+      console.log('No last purchase found for this medicine');
+    }
+
+    item.amount = calculateItemAmount(item);
+
+    setItems(newItems);
+    setSearchResults([]);
+    setActiveSearchIndex(null);
+  };
+
+  const calculateItemAmount = (item: BillItem): number => {
+    const baseAmount = item.qty * item.rate;
+    const discountAmount = item.cd_rs + (baseAmount * item.cd_per / 100);
+    const taxableAmount = baseAmount - discountAmount;
+    const cgstAmount = taxableAmount * item.cgst_per / 100;
+    const sgstAmount = taxableAmount * item.sgst_per / 100;
+    return taxableAmount + cgstAmount + sgstAmount;
+  };
+
+  const updateItem = (index: number, field: keyof BillItem, value: any) => {
+    const newItems = [...items];
+    const item = newItems[index];
+
+    if (field === 'qty' || field === 'free_qty' || field === 'rate' || field === 'mrp' || 
+        field === 'cgst_per' || field === 'sgst_per' || field === 'cd_rs' || field === 'cd_per') {
+      (item as any)[field] = parseFloat(value) || 0;
+    } else {
+      (item as any)[field] = value;
+    }
+
+    if (field === 'qty' && item.scheme_paid > 0) {
+      const expectedFree = Math.floor(item.qty / item.scheme_paid) * item.scheme_free;
+      if (item.free_qty > expectedFree) {
+        setSchemeMatchStatus(prev => ({
+          ...prev,
+          [item.id]: `Free qty reduced to ${expectedFree} (scheme: ${item.scheme_paid}+${item.scheme_free})`
+        }));
+        item.free_qty = expectedFree;
+      } else {
+        setSchemeMatchStatus(prev => {
+          const newStatus = { ...prev };
+          delete newStatus[item.id];
+          return newStatus;
+        });
+      }
+    }
+
+    item.amount = calculateItemAmount(item);
+    setItems(newItems);
+  };
+
+  const removeItem = (index: number) => {
+    if (items.length === 1) return;
+    const newItems = items.filter((_, i) => i !== index);
+    setItems(newItems);
+  };
+
+  const addNewItem = () => {
+    setItems([...items, createEmptyItem()]);
+  };
+
+  const calculateTotals = () => {
+    let subtotal = 0;
+    let totalCgst = 0;
+    let totalSgst = 0;
+    let totalCd = 0;
+
+    items.forEach(item => {
+      const baseAmount = item.qty * item.rate;
+      const discountAmount = item.cd_rs + (baseAmount * item.cd_per / 100);
+      const taxableAmount = baseAmount - discountAmount;
+      const cgstAmount = taxableAmount * item.cgst_per / 100;
+      const sgstAmount = taxableAmount * item.sgst_per / 100;
+
+      subtotal += taxableAmount;
+      totalCgst += cgstAmount;
+      totalSgst += sgstAmount;
+      totalCd += discountAmount;
+    });
+
+    const globalDiscount = subtotal * globalCdPer / 100;
+    const grandTotal = subtotal + totalCgst + totalSgst - globalDiscount - extraCredit;
+
+    return {
+      subtotal,
+      totalCgst,
+      totalSgst,
+      totalCd,
+      globalDiscount,
+      grandTotal,
+    };
+  };
+
+  const savePurchase = async () => {
+    if (!selectedDistributor || !invoiceNo) {
+      alert('Please fill in distributor and invoice number');
+      return;
+    }
+
+    const validItems = items.filter(item => item.medicine_id && item.qty > 0);
+    if (validItems.length === 0) {
+      alert('Please add at least one medicine with quantity');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await api.createManualPurchase({
+        distributor_id: selectedDistributor,
+        invoice_no: invoiceNo,
+        date: invoiceDate,
+        cd_per: globalCdPer,
+        extra_credit: extraCredit,
+        items: validItems.map(item => ({
+          medicine_id: item.medicine_id,
+          batch_no: item.batch_no,
+          expiry_date: item.expiry_date,
+          qty: item.qty,
+          free_qty: item.free_qty,
+          rate: item.rate,
+          mrp: item.mrp,
+          cgst_per: item.cgst_per,
+          sgst_per: item.sgst_per,
+          cd_rs: item.cd_rs,
+          cd_per: item.cd_per,
+        })),
+      });
+
+      alert('Purchase saved successfully!');
+      
+      setItems([createEmptyItem()]);
+      setSelectedDistributor(null);
+      setDistributorSearch('');
+      setInvoiceNo('');
+      setGlobalCdPer(0);
+      setExtraCredit(0);
+      fetchPurchaseHistory();
+    } catch (error) {
+      console.error('Error saving purchase:', error);
+      alert('Failed to save purchase');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!uploadedFile) return;
+
+    const formData = new FormData();
+    formData.append('file', uploadedFile);
+
+    try {
+      const response = await apiClient.post('/api/purchases/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const parsedItems = response.data.data;
+      const newItems = parsedItems.map((item: any) => ({
+        ...createEmptyItem(),
+        medicine_name: item.name,
+        qty: item.quantity || 0,
+        rate: item.price || 0,
+      }));
+
+      setItems(newItems);
+      setShowUploadModal(false);
+      setUploadedFile(null);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      alert('Failed to parse invoice file');
+    }
+  };
+
+  const totals = calculateTotals();
+
+  return (
+    <div className="p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">Purchase Management</h1>
+        <p className="text-gray-400">Track distributor invoices and manual entries</p>
+      </div>
+
+      {/* Header Section */}
+      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
+        <div className="flex items-center gap-3">
+          {/* Distributor */}
+          <div className="flex-1 min-w-0">
+            <label className="block text-sm font-medium text-gray-300 mb-1">Distributor *</label>
+            <div className="flex gap-1">
+              <div className="flex-1 min-w-0 relative">
+                <input
+                  type="text"
+                  value={distributorSearch}
+                  onChange={(e) => {
+                    setDistributorSearch(e.target.value);
+                    setShowDistributorDropdown(true);
+                    if (e.target.value === '') {
+                      setSelectedDistributor(null);
+                    }
+                  }}
+                  onFocus={() => setShowDistributorDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDistributorDropdown(false), 200)}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Type to search distributor..."
+                />
+                {showDistributorDropdown && distributorSearch && (
+                  <div className="absolute z-20 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {distributors
+                      .filter((d) => d.name.toLowerCase().includes(distributorSearch.toLowerCase()))
+                      .map((dist) => (
+                        <button
+                          key={dist.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setSelectedDistributor(dist.id);
+                            setDistributorSearch(dist.name);
+                            setShowDistributorDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 hover:bg-white/10 text-white text-sm"
+                        >
+                          {dist.name}
+                          {dist.phone && <span className="text-gray-400 ml-2">({dist.phone})</span>}
+                        </button>
+                      ))}
+                    {distributors.filter((d) => d.name.toLowerCase().includes(distributorSearch.toLowerCase())).length === 0 && (
+                      <div className="px-4 py-2 text-gray-400 text-sm">No match found. Click + to add.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowDistributorModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white w-9 h-9 rounded-lg font-bold flex-shrink-0"
+                title="Add new distributor"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Invoice No */}
+          <div className="w-44">
+            <label className="block text-sm font-medium text-gray-300 mb-1">Invoice No *</label>
+            <input
+              type="text"
+              value={invoiceNo}
+              onChange={(e) => setInvoiceNo(e.target.value)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="INV-2026-001"
+            />
+          </div>
+
+          {/* Date */}
+          <div className="w-36">
+            <label className="block text-sm font-medium text-gray-300 mb-1">Date</label>
+            <input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Global CD % */}
+          <div className="w-24">
+            <label className="block text-sm font-medium text-gray-300 mb-1">CD %</label>
+            <input
+              type="number"
+              value={globalCdPer}
+              onChange={(e) => setGlobalCdPer(parseFloat(e.target.value) || 0)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              min="0"
+              max="100"
+            />
+          </div>
+
+          {/* Extra Credit */}
+          <div className="w-28">
+            <label className="block text-sm font-medium text-gray-300 mb-1">Extra Credit</label>
+            <input
+              type="number"
+              value={extraCredit}
+              onChange={(e) => setExtraCredit(parseFloat(e.target.value) || 0)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              min="0"
+            />
+          </div>
+
+          {/* Upload Button */}
+          <div className="flex-shrink-0 pt-5">
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm"
+            >
+              📎 Upload
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Items Table */}
+      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-white">Line Items</h2>
+          <button
+            onClick={addNewItem}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+          >
+            + Add Row
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-gray-300 border-b border-white/20">
+                <th className="pb-3">#</th>
+                <th className="pb-3">Medicine</th>
+                <th className="pb-3">Batch</th>
+                <th className="pb-3">Exp</th>
+                <th className="pb-3">Rate</th>
+                <th className="pb-3">MRP</th>
+                <th className="pb-3">Qty</th>
+                <th className="pb-3">Free</th>
+                <th className="pb-3">CGST%</th>
+                <th className="pb-3">SGST%</th>
+                <th className="pb-3">CD ₹</th>
+                <th className="pb-3">CD %</th>
+                <th className="pb-3">Amount</th>
+                <th className="pb-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => (
+                <tr key={item.id} className="border-b border-white/10">
+                  <td className="py-3 text-gray-300">{index + 1}</td>
+                  <td className="py-3">
+                    <div className="relative">
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          value={item.medicine_name}
+                          onChange={(e) => {
+                            updateItem(index, 'medicine_name', e.target.value);
+                            searchMedicines(e.target.value, index);
+                          }}
+                          className="flex-1 min-w-0 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                          placeholder="Search medicine..."
+                        />
+                        {item.medicine_name && (
+                          <button
+                            onClick={() => fetchPriceHistory(item.medicine_name)}
+                            className="bg-yellow-600 hover:bg-yellow-700 text-white w-7 h-7 rounded text-sm flex-shrink-0"
+                            title="View price history from all distributors"
+                          >
+                            📊
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setActiveMedicineIndex(index);
+                            setShowMedicineModal(true);
+                          }}
+                          className="bg-green-600 hover:bg-green-700 text-white w-7 h-7 rounded text-sm font-bold flex-shrink-0"
+                          title="Add new medicine"
+                        >
+                          +
+                        </button>
+                      </div>
+                      {activeSearchIndex === index && searchResults.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {searchResults.map((medicine) => (
+                            <button
+                              key={medicine.id}
+                              onClick={() => selectMedicine(medicine, index)}
+                              className="w-full text-left px-4 py-2 hover:bg-white/10 text-white"
+                            >
+                              {medicine.name} - ₹{medicine.mrp}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {schemeMatchStatus[item.id] && (
+                      <p className="text-yellow-400 text-xs mt-1">{schemeMatchStatus[item.id]}</p>
+                    )}
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="text"
+                      value={item.batch_no}
+                      onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
+                      className="w-20 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="date"
+                      value={item.expiry_date}
+                      onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
+                      className="w-28 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3 relative group">
+                    <input
+                      type="number"
+                      value={item.rate}
+                      onChange={(e) => updateItem(index, 'rate', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                    {item.medicine_name && item.rate > 0 && (
+                      <div className="absolute z-20 bottom-full left-0 mb-2 hidden group-hover:block w-56">
+                        <div className="bg-gray-900 border border-blue-500 rounded-lg p-3 shadow-xl">
+                          <p className="text-white font-semibold text-sm mb-2">{item.medicine_name}</p>
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">MRP:</span>
+                              <span className="text-white">₹{item.mrp.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Rate:</span>
+                              <span className="text-green-400">₹{item.rate.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Margin:</span>
+                              <span className="text-yellow-400">₹{(item.mrp - item.rate).toFixed(2)} ({item.mrp > 0 ? (((item.mrp - item.rate) / item.mrp) * 100).toFixed(1) : 0}%)</span>
+                            </div>
+                            <div className="border-t border-gray-700 my-1"></div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Taxable:</span>
+                              <span className="text-white">₹{(item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">CGST ({item.cgst_per}%):</span>
+                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.cgst_per / 100).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">SGST ({item.sgst_per}%):</span>
+                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.sgst_per / 100).toFixed(2)}</span>
+                            </div>
+                            <div className="border-t border-gray-700 my-1"></div>
+                            <div className="flex justify-between font-bold">
+                              <span className="text-gray-300">Total:</span>
+                              <span className="text-white">₹{item.amount.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-3 relative group">
+                    <input
+                      type="number"
+                      value={item.mrp}
+                      onChange={(e) => updateItem(index, 'mrp', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                    {item.medicine_name && item.mrp > 0 && (
+                      <div className="absolute z-20 bottom-full left-0 mb-2 hidden group-hover:block w-56">
+                        <div className="bg-gray-900 border border-purple-500 rounded-lg p-3 shadow-xl">
+                          <p className="text-white font-semibold text-sm mb-2">{item.medicine_name}</p>
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">MRP:</span>
+                              <span className="text-purple-400">₹{item.mrp.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Rate:</span>
+                              <span className="text-green-400">₹{item.rate.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Margin:</span>
+                              <span className="text-yellow-400">₹{(item.mrp - item.rate).toFixed(2)} ({item.mrp > 0 ? (((item.mrp - item.rate) / item.mrp) * 100).toFixed(1) : 0}%)</span>
+                            </div>
+                            <div className="border-t border-gray-700 my-1"></div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Taxable:</span>
+                              <span className="text-white">₹{(item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">CGST ({item.cgst_per}%):</span>
+                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.cgst_per / 100).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">SGST ({item.sgst_per}%):</span>
+                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.sgst_per / 100).toFixed(2)}</span>
+                            </div>
+                            <div className="border-t border-gray-700 my-1"></div>
+                            <div className="flex justify-between font-bold">
+                              <span className="text-gray-300">Total:</span>
+                              <span className="text-white">₹{item.amount.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="number"
+                      value={item.qty}
+                      onChange={(e) => updateItem(index, 'qty', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="number"
+                      value={item.free_qty}
+                      onChange={(e) => updateItem(index, 'free_qty', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="number"
+                      value={item.cgst_per}
+                      onChange={(e) => updateItem(index, 'cgst_per', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="number"
+                      value={item.sgst_per}
+                      onChange={(e) => updateItem(index, 'sgst_per', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="number"
+                      value={item.cd_rs}
+                      onChange={(e) => updateItem(index, 'cd_rs', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3">
+                    <input
+                      type="number"
+                      value={item.cd_per}
+                      onChange={(e) => updateItem(index, 'cd_per', e.target.value)}
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                    />
+                  </td>
+                  <td className="py-3 text-white font-medium">
+                    ₹{item.amount.toFixed(2)}
+                  </td>
+                  <td className="py-3">
+                    <button
+                      onClick={() => removeItem(index)}
+                      className="text-red-400 hover:text-red-300"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Bill Summary */}
+      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
+        <h2 className="text-lg font-semibold text-white mb-4">Bill Summary</h2>
+        
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Subtotal</label>
+            <p className="text-xl font-bold text-white">₹{totals.subtotal.toFixed(2)}</p>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">CGST</label>
+            <p className="text-xl font-bold text-white">₹{totals.totalCgst.toFixed(2)}</p>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">SGST</label>
+            <p className="text-xl font-bold text-white">₹{totals.totalSgst.toFixed(2)}</p>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Global CD</label>
+            <p className="text-xl font-bold text-red-400">-₹{totals.globalDiscount.toFixed(2)}</p>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Extra Credit</label>
+            <p className="text-xl font-bold text-red-400">-₹{extraCredit.toFixed(2)}</p>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-white/20 flex justify-between items-center">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Grand Total</label>
+            <p className="text-3xl font-bold text-white">₹{totals.grandTotal.toFixed(2)}</p>
+          </div>
+          <button
+            onClick={savePurchase}
+            disabled={saving}
+            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-semibold disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Purchase'}
+          </button>
+        </div>
+      </div>
+
+      {/* Purchase History */}
+      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+        <h2 className="text-lg font-semibold text-white mb-4">Purchase History</h2>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-gray-300 border-b border-white/20">
+                <th className="pb-3">ID</th>
+                <th className="pb-3">Invoice</th>
+                <th className="pb-3">Date</th>
+                <th className="pb-3">Distributor</th>
+                <th className="pb-3">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchaseHistory.map((purchase) => (
+                <tr key={purchase.id} className="border-b border-white/10">
+                  <td className="py-3 text-gray-300">{purchase.id}</td>
+                  <td className="py-3 text-white">{purchase.invoice_no}</td>
+                  <td className="py-3 text-gray-300">{purchase.date}</td>
+                  <td className="py-3 text-white">{purchase.distributor_name}</td>
+                  <td className="py-3 text-white font-medium">₹{purchase.total_amount.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-white mb-4">Upload Invoice</h3>
+            <p className="text-gray-400 mb-4">Upload PDF or CSV file from distributor</p>
+            
+            <input
+              type="file"
+              accept=".pdf,.csv"
+              onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white mb-4"
+            />
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFileUpload}
+                disabled={!uploadedFile}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+              >
+                Upload & Parse
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Distributor Modal */}
+      {showDistributorModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-white mb-4">Add New Distributor</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={newDistributor.name}
+                  onChange={(e) => setNewDistributor({ ...newDistributor, name: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Distributor name"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Phone</label>
+                <input
+                  type="tel"
+                  value={newDistributor.phone}
+                  onChange={(e) => setNewDistributor({ ...newDistributor, phone: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                <input
+                  type="email"
+                  value={newDistributor.email}
+                  onChange={(e) => setNewDistributor({ ...newDistributor, email: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="distributor@example.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Address</label>
+                <textarea
+                  value={newDistributor.address}
+                  onChange={(e) => setNewDistributor({ ...newDistributor, address: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Full address"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">State Code</label>
+                <input
+                  type="text"
+                  value={newDistributor.state_code}
+                  onChange={(e) => setNewDistributor({ ...newDistributor, state_code: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. 27 (Maharashtra)"
+                  maxLength={2}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowDistributorModal(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveDistributor}
+                disabled={savingDistributor || !newDistributor.name}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+              >
+                {savingDistributor ? 'Saving...' : 'Add Distributor'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Medicine Modal */}
+      {showMedicineModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold text-white mb-4">Add New Medicine</h3>
+            
+            <div className="grid grid-cols-2 gap-4">
+              {/* Row 1 - Full width */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-300 mb-1">Medicine Name *</label>
+                <input
+                  type="text"
+                  value={newMedicine.name}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, name: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Medicine name"
+                />
+              </div>
+
+              {/* Row 2 - Type & Generic */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Type *</label>
+                <select
+                  value={newMedicine.pack_unit}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, pack_unit: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="Tablet">Tablet (Tab)</option>
+                  <option value="Capsule">Capsule (Cap)</option>
+                  <option value="Syrup">Syrup</option>
+                  <option value="Solution">Solution</option>
+                  <option value="Suspension">Suspension</option>
+                  <option value="Drop">Drop</option>
+                  <option value="Injection">Injection</option>
+                  <option value="Cream">Cream</option>
+                  <option value="Ointment">Ointment</option>
+                  <option value="Gel">Gel</option>
+                  <option value="Powder">Powder</option>
+                  <option value="Inhaler">Inhaler</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Generic Name</label>
+                <input
+                  type="text"
+                  value={newMedicine.generic_name}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, generic_name: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Paracetamol"
+                />
+              </div>
+
+              {/* Row 3 - Strength & Pack */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Strength</label>
+                <input
+                  type="text"
+                  value={newMedicine.strength}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, strength: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. 500mg, 10ml"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Pack</label>
+                <input
+                  type="text"
+                  value={newMedicine.pack_size}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, pack_size: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. 1x10 Tab, 1x30 Cap"
+                />
+              </div>
+
+              {/* Row 4 - Mfg & Mkdt */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Mfg (Manufacturer)</label>
+                <input
+                  type="text"
+                  value={newMedicine.manufacturer}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, manufacturer: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Cipla Ltd"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Mkdt (Marketed By)</label>
+                <input
+                  type="text"
+                  value={newMedicine.marketed_by}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, marketed_by: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Cipla Pvt Ltd"
+                />
+              </div>
+
+              {/* Row 5 - Tax */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">CGST %</label>
+                <input
+                  type="number"
+                  value={newMedicine.cgst_per}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, cgst_per: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">SGST %</label>
+                <input
+                  type="number"
+                  value={newMedicine.sgst_per}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, sgst_per: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Row 6 - HSN */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-300 mb-1">HSN Code</label>
+                <input
+                  type="text"
+                  value={newMedicine.hsn_code}
+                  onChange={(e) => setNewMedicine({ ...newMedicine, hsn_code: e.target.value })}
+                  className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. 3004"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => { setShowMedicineModal(false); setActiveMedicineIndex(null); }}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveMedicine}
+                disabled={savingMedicine || !newMedicine.name}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+              >
+                {savingMedicine ? 'Saving...' : 'Add Medicine'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Price History Modal */}
+      {showPriceHistoryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-white mb-2">Price History</h3>
+            <p className="text-gray-400 text-sm mb-4">Past purchase prices for: <span className="text-white">{priceHistoryMedicine}</span></p>
+            
+            {priceHistory.length === 0 ? (
+              <p className="text-gray-400 text-center py-8">No purchase history found for this medicine</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left text-gray-300 border-b border-white/20">
+                      <th className="pb-3">Date</th>
+                      <th className="pb-3">Distributor</th>
+                      <th className="pb-3">Batch</th>
+                      <th className="pb-3">Rate</th>
+                      <th className="pb-3">MRP</th>
+                      <th className="pb-3">CGST%</th>
+                      <th className="pb-3">SGST%</th>
+                      <th className="pb-3">CD ₹</th>
+                      <th className="pb-3">CD %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {priceHistory.map((item: any, idx: number) => (
+                      <tr key={idx} className="border-b border-white/10 hover:bg-white/5">
+                        <td className="py-3 text-gray-300">{item.date}</td>
+                        <td className="py-3 text-white">{item.distributor_name}</td>
+                        <td className="py-3 text-gray-300">{item.batch_no}</td>
+                        <td className="py-3 text-white font-medium">₹{item.rate}</td>
+                        <td className="py-3 text-white">₹{item.mrp}</td>
+                        <td className="py-3 text-gray-300">{item.cgst_per}%</td>
+                        <td className="py-3 text-gray-300">{item.sgst_per}%</td>
+                        <td className="py-3 text-gray-300">₹{item.cd_rs || 0}</td>
+                        <td className="py-3 text-gray-300">{item.cd_per || 0}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setShowPriceHistoryModal(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Purchases;

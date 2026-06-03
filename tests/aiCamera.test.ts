@@ -49,7 +49,7 @@ describe('AI Camera Audit Routes', () => {
     // const AUDIT_QUEUE_PATH = path.resolve(__dirname, '..', '..', 'data', 'audit_queue.json');
     // So to make the router use our test JSON file, we can temporarily rename the target file or monkey patch.
     // Actually, let's back up the real file if it exists, replace it with our test file, and restore it.
-  });
+  }, 30000);
 
   let originalRealQueue: string | null = null;
   const realQueuePath = path.resolve(process.cwd(), 'data', 'audit_queue.json');

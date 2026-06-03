@@ -836,7 +836,7 @@ export class EmailService {
   /**
    * Fetches recent emails (both seen and unseen) from Gmail IMAP
    */
-  public async fetchInbox(limit: number = 20): Promise<Array<any>> {
+  public async fetchInbox(limit: number = 50): Promise<Array<any>> {
     if (!this.imapConfig.user || !this.imapConfig.password || !this.imapConfig.host) {
       return this.getMockInbox();
     }

@@ -2,7 +2,10 @@
 import { createWorker } from 'tesseract.js';
 import { Jimp } from 'jimp';
 import { productNameFilterService } from './productNameFilterService.js';
-import { paddleOcrService } from './paddleOcrService.js';
+import { onnxOcrService } from './onnxOcrService.js';
+import { onlineDataEnricher } from './onlineDataEnricher.js';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -84,36 +87,23 @@ class AICameraService {
     let localOcrResult: OCRResult = { text: '', confidence: 0, words: [] };
     let fallbackUsed = false;
 
-    const isPaddleAvailable = await paddleOcrService.checkAvailability();
-    if (isPaddleAvailable) {
-      const tempDir = path.resolve(process.cwd(), 'data', 'temp_ocr');
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-      }
-      const tempFilePath = path.join(tempDir, `ocr_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`);
-      
+    const isONNXAvailable = await onnxOcrService.checkAvailability();
+    if (isONNXAvailable) {
       try {
-        await fs.promises.writeFile(tempFilePath, processedBuffer);
-
-        const ocrResult = await paddleOcrService.scanImage(tempFilePath);
+        const ocrResult = await onnxOcrService.scanImage(processedBuffer);
         if (ocrResult && ocrResult.success) {
-          const confidence = ocrResult.words && ocrResult.words.length > 0
-            ? Math.round(ocrResult.words.reduce((sum: number, w: any) => sum + w.confidence, 0) / ocrResult.words.length)
-            : 0;
           localOcrResult = {
             text: ocrResult.text || '',
-            confidence,
+            confidence: ocrResult.confidence || 0,
             words: ocrResult.words || []
           };
         } else {
-          console.warn('PaddleOCR failed, falling back to Tesseract:', ocrResult?.error);
+          console.warn('ONNX OCR failed, falling back to Tesseract:', ocrResult?.error);
           fallbackUsed = true;
         }
       } catch (err) {
-        console.error('Error executing PaddleOCR, falling back to Tesseract:', err);
+        console.error('Error executing ONNX OCR, falling back to Tesseract:', err);
         fallbackUsed = true;
-      } finally {
-        fs.promises.unlink(tempFilePath).catch(err => console.error('Failed to delete temp OCR file:', err));
       }
     } else {
       fallbackUsed = true;
@@ -195,7 +185,7 @@ class AICameraService {
     const priceMatch = localOcrResult.text.match(/(?:mrp|price|₹|rs)\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
     if (priceMatch) finalInfo.mrp = parseFloat(priceMatch[1]);
 
-    return {
+    const ocrResult = {
       text: localOcrResult.text,
       confidence: localOcrResult.confidence,
       words: localOcrResult.words,
@@ -204,6 +194,14 @@ class AICameraService {
       fallbackUsed: fallbackUsed,
       auditLogged: matches.length === 0
     };
+
+    try {
+      const enrichedResult = await onlineDataEnricher.enrichMedicineData(ocrResult);
+      return enrichedResult;
+    } catch (enrichError) {
+      console.error('Enrichment failed:', enrichError);
+      return ocrResult;
+    }
   }
 
   private async saveToAuditQueue(imageData: string | Buffer, rawOcrText: string, cloudResult: any): Promise<void> {
@@ -267,7 +265,39 @@ class AICameraService {
     };
 
     queue.push(newEntry);
-    await fs.promises.writeFile(auditQueuePath, JSON.stringify(queue, null, 2));
+    
+    // Save JSON atomically
+    try {
+      const tempQueuePath = auditQueuePath + '.tmp';
+      await fs.promises.writeFile(tempQueuePath, JSON.stringify(queue, null, 2));
+      await fs.promises.rename(tempQueuePath, auditQueuePath);
+    } catch (writeErr) {
+      console.error('Failed to write audit queue atomically:', writeErr);
+      await fs.promises.writeFile(auditQueuePath, JSON.stringify(queue, null, 2));
+    }
+
+    // Save to SQLite database
+    try {
+      const activeDbPath = process.env.DB_PATH || path.resolve(process.cwd(), 'data', 'app.db');
+      const db = await open({ filename: activeDbPath, driver: sqlite3.Database });
+      await db.run(
+        `INSERT OR REPLACE INTO ocr_audit_queue (id, image_path, raw_ocr_text, cloud_suggested_text, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          newEntry.id,
+          newEntry.imagePath,
+          newEntry.rawOcrText,
+          newEntry.cloudSuggestedText,
+          newEntry.status,
+          newEntry.createdAt
+        ]
+      );
+      await db.close();
+      console.log(`Saved unrecognized scan to SQLite audit queue table: ${id}`);
+    } catch (dbErr) {
+      console.error('Failed to save audit item to SQLite database:', dbErr);
+    }
+
     console.log(`Added unrecognized scan to audit queue: ${id}`);
   }
 

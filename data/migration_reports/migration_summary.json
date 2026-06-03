@@ -1,30 +1,30 @@
 {
-  "migration_date": "2026-05-26T10:51:47.190Z",
+  "migration_date": "2026-05-31T14:26:00.715Z",
   "source_format": "PostgreSQL pg_dump",
   "stats": {
     "categories": 8,
     "manufacturers": 10025,
     "distributors": 360,
     "doctors": 248,
-    "patients": 8743,
+    "patients": 8738,
     "medicines": 286213,
-    "batches": 34788,
-    "purchases": 14768,
-    "purchaseItems": 58606,
-    "salesInvoices": 26510,
-    "saleItems": 76648,
+    "batches": 34781,
+    "purchases": 14767,
+    "purchaseItems": 58599,
+    "salesInvoices": 26501,
+    "saleItems": 76622,
     "returns": 1288,
     "returnItems": 4826,
-    "stockLedger": 148419
+    "stockLedger": 148385
   },
   "id_maps": {
     "distributors": 161,
     "doctors": 248,
-    "patients_as_customers": 8743,
+    "patients_as_customers": 8738,
     "medicines": 286207,
-    "batches": 34787,
-    "purchases": 14713,
-    "sales_invoices": 23000,
+    "batches": 34780,
+    "purchases": 14712,
+    "sales_invoices": 22992,
     "returns": 1191
   }
 }

@@ -16,13 +16,22 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 async function enqueue() {
   await ensureSchema(DB_PATH);
   const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-  const entries = await fs.promises.readdir(CATALOG_DIR, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isFile() && /\.(pdf|csv)$/i.test(entry.name)) {
-      const fullPath = path.join(CATALOG_DIR, entry.name);
-      await db.run(`INSERT OR IGNORE INTO catalog_jobs (file_path) VALUES (?)`, fullPath);
+  
+  const targetPath = process.argv[2] || CATALOG_DIR;
+  const stat = await fs.promises.stat(targetPath);
+  
+  if (stat.isDirectory()) {
+    const entries = await fs.promises.readdir(targetPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && /\.(pdf|csv)$/i.test(entry.name)) {
+        const fullPath = path.join(targetPath, entry.name);
+        await db.run(`INSERT OR IGNORE INTO catalog_jobs (file_path) VALUES (?)`, fullPath);
+      }
     }
+  } else if (stat.isFile() && /\.(pdf|csv)$/i.test(targetPath)) {
+    await db.run(`INSERT OR IGNORE INTO catalog_jobs (file_path) VALUES (?)`, targetPath);
   }
+  
   await db.close();
   console.log('Enqueue complete');
 }

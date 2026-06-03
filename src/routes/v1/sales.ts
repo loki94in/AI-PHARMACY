@@ -2,6 +2,13 @@ import express from 'express';
 import { dbManager } from '../../database/connection.js';
 import { invoiceService } from '../../services/invoiceService.js';
 import { asyncHandler } from '../../middleware/asyncHandler.js';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { pdfInvoiceService } from '../../services/pdfInvoiceService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -33,6 +40,46 @@ router.get('/search-medicine', asyncHandler(async (req: express.Request, res: ex
   const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery]);
   await dbManager.close();
   res.json(rows);
+}));
+
+// Universal search for medicine and substitutes (same composition)
+router.get('/universal-search', asyncHandler(async (req: express.Request, res: express.Response) => {
+  const query = req.query.q as string;
+  if (!query) {
+    return res.json([]);
+  }
+  const db = await dbManager.getConnection();
+  const likeQuery = `%${query}%`;
+  
+  // Find medicines matching name or composition
+  const matchedMeds = await db.all(`
+    SELECT m.id, m.name, m.api_reference, m.mrp,
+           COALESCE((SELECT SUM(quantity) FROM inventory_master WHERE medicine_id = m.id), 0) as stock_qty
+    FROM medicines m
+    WHERE m.name LIKE ? OR m.api_reference LIKE ?
+    LIMIT 30
+  `, [likeQuery, likeQuery]);
+
+  const results = [];
+  for (const med of matchedMeds) {
+    let alternatives: Array<any> = [];
+    if (med.api_reference && med.api_reference.trim() !== '') {
+      // Find substitutes with same composition
+      alternatives = await db.all(`
+        SELECT m2.id, m2.name, m2.api_reference, m2.mrp,
+               COALESCE((SELECT SUM(quantity) FROM inventory_master WHERE medicine_id = m2.id), 0) as stock_qty
+        FROM medicines m2
+        WHERE m2.api_reference = ? AND m2.id != ?
+      `, [med.api_reference, med.id]);
+    }
+    results.push({
+      ...med,
+      alternatives
+    });
+  }
+
+  await dbManager.close();
+  res.json(results);
 }));
 
 // Create a new sale
@@ -151,6 +198,87 @@ router.delete('/hold/:id', asyncHandler(async (req: express.Request, res: expres
   await db.run('DELETE FROM held_bills WHERE id = ?', id);
   await dbManager.close();
   res.json({ success: true, message: 'Held bill removed' });
+}));
+
+// Get sales invoice history
+router.get('/history', asyncHandler(async (req: express.Request, res: express.Response) => {
+  const db = await dbManager.getConnection();
+  const limit = parseInt(req.query.limit as string) || 100;
+  const months = parseInt(req.query.months as string) || 2;
+  
+  let dateFilter = '';
+  if (months > 0) {
+    // Basic SQLite date filter for N months ago
+    dateFilter = `WHERE si.date >= datetime('now', '-${months} months')`;
+  }
+  
+  const rows = await db.all(`
+    SELECT si.id, si.invoice_no, si.date, si.total_amount, si.tax_amount, si.payment_medium, si.payment_status,
+           c.name as customer_name, c.phone as customer_phone
+    FROM sales_invoices si
+    LEFT JOIN customers c ON si.customer_id = c.id
+    ${dateFilter}
+    ORDER BY si.date DESC
+    LIMIT ?
+  `, [limit]);
+  await dbManager.close();
+  res.json(rows);
+}));
+
+// Get detailed invoice details with items
+router.get('/history/:id', asyncHandler(async (req: express.Request, res: express.Response) => {
+  const { id } = req.params;
+  const db = await dbManager.getConnection();
+  const invoice = await db.get(`
+    SELECT si.id, si.invoice_no, si.date, si.total_amount, si.tax_amount, si.payment_medium, si.payment_status,
+           c.name as customer_name, c.phone as customer_phone, c.address as customer_address
+    FROM sales_invoices si
+    LEFT JOIN customers c ON si.customer_id = c.id
+    WHERE si.id = ?
+  `, id);
+
+  if (!invoice) {
+    await dbManager.close();
+    return res.status(404).json({ error: 'Invoice not found' });
+  }
+
+  const items = await db.all(`
+    SELECT si.quantity, si.unit_price, m.name as medicine_name, im.batch_no
+    FROM sale_items si
+    JOIN inventory_master im ON si.inventory_id = im.id
+    JOIN medicines m ON im.medicine_id = m.id
+    WHERE si.invoice_id = ?
+  `, id);
+
+  await dbManager.close();
+  res.json({ invoice, items });
+}));
+
+// GET /api/sales/invoice/:id/pdf
+router.get('/invoice/:id/pdf', asyncHandler(async (req: express.Request, res: express.Response) => {
+  const { id } = req.params;
+  const includeStamp = req.query.stamp !== 'false'; // defaults to true, false if physical print
+  
+  const tempPath = path.resolve(__dirname, '..', '..', '..', 'uploads', `temp-invoice-${id}-${Date.now()}.pdf`);
+  
+  try {
+    await pdfInvoiceService.generateInvoicePdf(parseInt(id), tempPath, includeStamp);
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="invoice_${id}.pdf"`);
+    
+    const stream = fs.createReadStream(tempPath);
+    stream.pipe(res);
+    
+    stream.on('end', () => {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch (err) {}
+    });
+  } catch (error) {
+    console.error('Failed to generate invoice PDF:', error);
+    res.status(500).json({ error: 'Failed to generate invoice PDF' });
+  }
 }));
 
 export default router;

@@ -148,4 +148,19 @@ router.delete('/audit/:id', async (req, res) => {
   }
 });
 
+// Analyze base64 image from camera stream
+router.post('/analyze', async (req, res) => {
+  const { image } = req.body;
+  if (!image) {
+    return res.status(400).json({ error: 'Image data (base64 string) is required' });
+  }
+  try {
+    const result = await aiCameraService.processImage(image);
+    res.json(result);
+  } catch (error: any) {
+    console.error('OCR Camera scan processing failed:', error);
+    res.status(500).json({ error: `OCR Camera scan processing failed: ${error.message}` });
+  }
+});
+
 export default router;

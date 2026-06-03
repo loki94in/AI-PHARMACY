@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-bg text-text min-h-screen font-sans;
+    background-image: 
+      radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.06), transparent 25%),
+      radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.06), transparent 25%);
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-glass-bg border border-glass-border backdrop-blur-md rounded-2xl shadow-lg;
+  }
+
+  .premium-input {
+    @apply bg-black/20 border border-border rounded-lg px-3 py-2 text-text text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary-glow;
+  }
+
+  .premium-btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 relative overflow-hidden active:scale-95;
+  }
+}
+
+/* Hide number input arrows (spinners) - all quantities entered manually */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}

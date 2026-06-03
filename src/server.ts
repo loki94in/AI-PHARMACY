@@ -6,10 +6,21 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import multer from 'multer';
+import { exec } from 'child_process';
 import { authenticateApiKey } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { dbManager } from './database/connection.js';
+import { extractFromPdf, extractFromCsv } from './extractor.js';
+import { startWorker as startCatalogWorker } from './worker/catalogWorker.js';
+import { ensureSchema } from './database.js';
+import { eventService } from './services/eventService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', 'data', 'app.db');
+
+// Startup check disabled permanently
 
 // Agent 2 (CRM & Utilities) Routers
 import crmRouter from './routes/crm.js';
@@ -39,10 +50,6 @@ import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
 import { checkAllRefills } from './services/refillService.js';
 import { checkOverdueCreditNotes, reconcileCreditNote } from './services/creditNoteService.js';
-
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -83,9 +90,15 @@ const upload = multer({
 });
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false // Disable CSP so inline scripts and styles in index.html can run
+}));
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: (origin, callback) => {
+    // Reflect the request origin back, or allow if no origin (e.g., server-to-server/mobile)
+    if (!origin) return callback(null, true);
+    callback(null, true);
+  },
   credentials: true
 }));
 app.use(rateLimit({
@@ -97,31 +110,116 @@ app.use(rateLimit({
 }));
 app.use(express.json({ limit: '1mb' }));
 
-// Serve UI static files
-app.use('/ui', express.static(path.join(__dirname, 'ui')));
+
 app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads')));
 
-// File upload endpoint
+// Serve the frontend UI
+app.get('/', (req, res) => {
+  res.redirect('/test');
+});
+
+// Serve the API test console
+app.get('/test', (req, res) => {
+  res.sendFile(path.join(__dirname, 'test-console.html'));
+});
+
+// Session token auth for all other API routes
+app.use('/api', authenticateApiKey);
+
+// File upload endpoint (Now async for background processing)
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
     const fullPath = req.file.path;
-
-    // Process image for archiving/H1-Rx detection
-    // This would be handled by a service in a more complete refactor
-    const newPath = fullPath; // Placeholder - would call imageArchiveService
-
+    const originalName = req.file.originalname || path.basename(fullPath);
+    
     const db = await dbManager.getConnection();
-    await db.run(`INSERT OR IGNORE INTO catalog_jobs (file_path) VALUES (?)`, newPath || fullPath);
+    const result = await db.run(
+      `INSERT INTO catalog_jobs (file_path, original_filename, status) VALUES (?, ?, 'pending')`,
+      [fullPath, originalName]
+    );
     await dbManager.close();
 
-    res.json({ success: true, message: 'File uploaded and queued for processing', file: req.file.filename });
+    res.json({ success: true, message: 'Processing in background', jobId: result.lastID });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'Internal server error during upload' });
+  }
+});
+
+app.get('/api/catalog/job/:id', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const job = await db.get(`SELECT * FROM catalog_jobs WHERE id = ?`, req.params.id);
+    await dbManager.close();
+    
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.status !== 'done' && job.status !== 'ready_for_review') {
+      return res.status(400).json({ error: 'Job is not ready yet', status: job.status });
+    }
+    
+    res.json({ 
+      success: true, 
+      jobId: job.id, 
+      extractedData: job.extracted_data ? JSON.parse(job.extracted_data) : [],
+      original_filename: job.original_filename
+    });
+  } catch (error) {
+    console.error('Fetch job error:', error);
+    res.status(500).json({ error: 'Internal server error fetching job' });
+  }
+});
+
+// New Catalog Import Endpoint (Receives confirmed preview data)
+app.post('/api/catalog/import', async (req, res) => {
+  const { medicines } = req.body;
+  if (!Array.isArray(medicines)) {
+    return res.status(400).json({ error: 'Invalid payload, expected array of medicines' });
+  }
+  
+  try {
+    const db = await dbManager.getConnection();
+    
+    for (const med of medicines) {
+      if (!med.name) continue;
+      
+      const existing = await db.get(`SELECT id FROM medicines WHERE lower(name) = lower(?)`, med.name);
+      if (existing) {
+        const updates = [];
+        const params = [];
+        
+        if (med.manufacturer) { updates.push("manufacturer = COALESCE(NULLIF(manufacturer, ''), ?)"); params.push(med.manufacturer); }
+        if (med.marketed_by) { updates.push("marketed_by = COALESCE(NULLIF(marketed_by, ''), ?)"); params.push(med.marketed_by); }
+        if (med.api_reference) { updates.push("api_reference = COALESCE(NULLIF(api_reference, ''), ?)"); params.push(med.api_reference); }
+        if (med.strength) { updates.push("strength = COALESCE(NULLIF(strength, ''), ?)"); params.push(med.strength); }
+        if (med.packaging_type) { updates.push("packaging = COALESCE(NULLIF(packaging, ''), ?)"); params.push(med.packaging_type); }
+        
+        if (updates.length > 0) {
+            params.push(existing.id);
+            const setClause = updates.join(', ');
+            await db.run(`UPDATE medicines SET ${setClause} WHERE id = ?`, ...params);
+        }
+      } else {
+        await db.run(
+          `INSERT INTO medicines (name, api_reference, strength, packaging, manufacturer, marketed_by) VALUES (?, ?, ?, ?, ?, ?)`,
+          med.name,
+          med.api_reference || null,
+          med.strength || null,
+          med.packaging_type || null,
+          med.manufacturer || null,
+          med.marketed_by || null
+        );
+      }
+    }
+    
+    await dbManager.close();
+    res.json({ success: true, message: 'Catalog imported successfully' });
   } catch (error) {
     await dbManager.close();
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Import error:', error);
+    res.status(500).json({ error: 'Internal server error during import' });
   }
 });
 
@@ -240,8 +338,16 @@ app.get('/api/notifications/stream', (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  // This would use a notification service in a complete refactor
-  // For now, placeholder implementation
+  const listener = (eventData: any) => {
+    res.write(`data: ${JSON.stringify(eventData)}\n\n`);
+  };
+
+  eventService.on('server_event', listener);
+
+  req.on('close', () => {
+    eventService.removeListener('server_event', listener);
+  });
+
   res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Connected to notifications stream' })}\n\n`);
 });
 
@@ -271,9 +377,11 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  whatsappQueue.startWorker();
+ensureSchema(DB_PATH).then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}/test`);
+    // whatsappQueue.startWorker(); // Disabled for testing
+    startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));
 
   // Daily check at 9:00 AM for patient refills & overdue credit notes
   cron.schedule('0 9 * * *', async () => {
@@ -287,9 +395,15 @@ app.listen(PORT, () => {
       console.error('Failed running daily check cron:', err);
     }
   });
+
+  // Daily licensing tasks disabled permanently
+  });
+}).catch(err => {
+  console.error('Failed to initialize database schema:', err);
+  process.exit(1);
 });
 
-// Graceful shutdown
+// For graceful shutdown (handled manually for now)
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await dbManager.close();

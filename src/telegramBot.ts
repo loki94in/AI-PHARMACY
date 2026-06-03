@@ -25,9 +25,10 @@ class TelegramBotService {
   constructor() {
     this.token = process.env.TELEGRAM_BOT_TOKEN;
     this.lang = process.env.TELEGRAM_LANG || 'en';
-    if (this.token) {
-      this.initializeBot();
-    }
+    // Telegram disabled for testing
+    // if (this.token) {
+    //   this.initializeBot();
+    // }
   }
 
   private initializeBot(): void {

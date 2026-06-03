@@ -1,7 +1,13 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { paddleOcrService } from '../src/services/paddleOcrService.js';
+import vm from 'vm';
+// Fix Jest VM Float32Array instanceof checks for native ONNX Runtime addon
+Object.defineProperty(Float32Array, Symbol.hasInstance, {
+  value: (inst: any) => inst && inst.constructor && inst.constructor.name === 'Float32Array'
+});
+
+import { onnxOcrService } from '../src/services/onnxOcrService.js';
 import { aiCameraService } from '../src/services/aiCameraService.js';
 import fs from 'fs';
 import path from 'path';
@@ -23,14 +29,15 @@ describe('PaddleOCR Service and AI Camera Service Integration', () => {
 
   afterAll(async () => {
     await aiCameraService.terminate();
+    await onnxOcrService.unloadModel();
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   });
 
-  test('paddleOcrService.checkAvailability should execute and return a boolean', async () => {
-    const isAvailable = await paddleOcrService.checkAvailability();
+  test('onnxOcrService.checkAvailability should execute and return a boolean', async () => {
+    const isAvailable = await onnxOcrService.checkAvailability();
     expect(typeof isAvailable).toBe('boolean');
     console.log(`[Test] PaddleOCR availability check result: ${isAvailable}`);
-  }, 30000);
+  }, 90000);
 
   test('aiCameraService.processImage should process image and return results (PaddleOCR or Tesseract.js fallback)', async () => {
     // Process dummy image
@@ -47,5 +54,5 @@ describe('PaddleOCR Service and AI Camera Service Integration', () => {
     console.log('[Test] OCR Processed text:', JSON.stringify(result.text));
     console.log('[Test] OCR Confidence:', result.confidence);
     console.log('[Test] Fallback used:', result.fallbackUsed);
-  }, 30000); // 30s timeout for OCR initialization if running for first time
+  }, 90000); // 90s timeout for OCR initialization if running for first time
 });

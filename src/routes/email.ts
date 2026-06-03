@@ -5,6 +5,7 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { emailService } from '../services/emailService.js';
+import { eventService } from '../services/eventService.js';
 
 
 import fs from 'fs';
@@ -55,17 +56,18 @@ router.post('/', async (req, res) => {
     }
 
     console.log(`Email processed from ${from}: ${subject}`);
-
+    eventService.broadcast('email_update', { success: true, message: 'Email received and processed' });
     res.json({ success: true, message: 'Email received and processed' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Email parse error:', error);
+    eventService.broadcast('email_update', { success: false, error: error.message || 'Failed to process email' });
     res.status(500).json({ error: 'Failed to process email' });
   }
 });
 
 // GET /api/email/inbox
 router.get('/inbox', async (req, res) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
   try {
     const inbox = await emailService.fetchInbox(limit);
     res.json(inbox);
@@ -137,9 +139,11 @@ router.post('/attachments/parse', async (req, res) => {
     }
 
     const result = await emailService.parseAndImportAttachment(filePath);
+    eventService.broadcast('email_update', { success: true, message: 'Attachment parsed successfully' });
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to parse attachment:', error);
+    eventService.broadcast('email_update', { success: false, error: error.message || 'Failed to parse attachment' });
     res.status(500).json({ error: 'Failed to parse attachment' });
   }
 });

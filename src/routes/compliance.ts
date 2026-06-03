@@ -64,4 +64,19 @@ router.post('/add-schedule-h1', async (req, res) => {
   }
 });
 
+router.get('/h1-register', async (req, res) => {
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    // Try querying compliance_logs table
+    const rows = await db.all('SELECT * FROM compliance_logs ORDER BY id DESC');
+    await db.close();
+    res.json(rows);
+  } catch (err) {
+    if (db) await db.close();
+    console.error('Fetch Schedule H1 register error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

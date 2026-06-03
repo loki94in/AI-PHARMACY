@@ -6,6 +6,8 @@ import zlib from 'zlib';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import readline from 'readline';
+import csvParser from 'csv-parser';
+import { eventService } from '../services/eventService.js';
 
 // PostgreSQL COPY parser
 import { parseCopyHeader, parseCopyDataRow, isCopyEndMarker, isPgDump } from './parsers/pgCopyParser.js';
@@ -49,19 +51,27 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const MIGRATION_DIR = path.join(PROJECT_ROOT, 'MIGRATION SAMPEL');
 const TEMP_DIR = path.join(PROJECT_ROOT, 'data', 'temp_migration');
 const DB_PATH = process.env.DB_PATH || path.join(PROJECT_ROOT, 'data', 'app.db');
+const STAGING_DB_PATH = path.join(PROJECT_ROOT, 'data', 'staging.db');
 
-export let migrationStatus = {
+export const migrationStatus = new Proxy({
   active: false,
   progress: 0,
   message: 'Idle',
-  file: null as string | null
-};
+  file: null as string | null,
+  isStagingReady: false,
+}, {
+  set(target: any, prop: string, value: any) {
+    target[prop] = value;
+    eventService.broadcast('migration_update', { ...target });
+    return true;
+  }
+});
 
 // Ensure directories exist
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-export async function runManualMigration(fileName: string): Promise<void> {
+export async function runManualMigration(fileName: string, mapping?: Record<string, string>, skipLines: number = 0): Promise<void> {
   if (migrationStatus.active) {
     throw new Error('A migration is already in progress.');
   }
@@ -71,29 +81,44 @@ export async function runManualMigration(fileName: string): Promise<void> {
   }
   
   const lowerFileName = fileName.toLowerCase();
-  const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz'];
+  const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz', '.csv'];
   const isValid = allowedExtensions.some(ext => lowerFileName.endsWith(ext));
   
   if (!isValid) {
-    throw new Error('Unsupported file format for migration. Supported formats: .zip, .sql, .sql.gz/gz, .tar.gz/tgz');
+    throw new Error('Unsupported file format for migration. Supported formats: .zip, .sql, .sql.gz/gz, .tar.gz/tgz, .csv');
   }
 
-  await processMigrationFile(filePath);
+  await processMigrationFile(filePath, mapping, skipLines);
 }
 
-async function processMigrationFile(filePath: string) {
+async function processMigrationFile(filePath: string, mapping?: Record<string, string>, skipLines: number = 0) {
   let extractPath: string | undefined = undefined;
   try {
     const ext = path.extname(filePath).toLowerCase();
     const basename = path.basename(filePath);
-    migrationStatus = { active: true, progress: 0, message: 'Processing migration file...', file: basename };
+    Object.assign(migrationStatus, { active: true, progress: 0, message: 'Processing migration file...', file: basename });
 
     const archiveDir = path.join(PROJECT_ROOT, 'data', 'archived_migrations');
     if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
 
+    // Step 0: Clone the database to staging.db
+    migrationStatus.message = 'Creating staging database...';
+    if (fs.existsSync(DB_PATH)) {
+      await fs.promises.copyFile(DB_PATH, STAGING_DB_PATH);
+    }
+
     let sqlFilePath = filePath;
 
-    if (ext === '.sql') {
+    if (ext === '.csv') {
+      migrationStatus.message = 'CSV file detected — starting dynamic import into staging...';
+      await parseAndImportCSV(filePath, STAGING_DB_PATH, mapping, skipLines);
+      Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
+      if (!filePath.includes('archived_migrations')) {
+        fs.renameSync(filePath, path.join(archiveDir, basename));
+      }
+      return;
+    }
+    else if (ext === '.sql') {
       // Direct SQL file — use as-is
       sqlFilePath = filePath;
     }
@@ -104,32 +129,37 @@ async function processMigrationFile(filePath: string) {
       sqlFilePath = path.join(extractPath, 'decompressed_backup.sql');
       
       await new Promise<void>((resolve, reject) => {
+        const gzStream = zlib.createGunzip();
+        gzStream.on('error', reject);
+        const writeStream = fs.createWriteStream(sqlFilePath);
+        writeStream.on('close', resolve);
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
         fs.createReadStream(filePath)
-          .pipe(zlib.createGunzip())
-          .pipe(fs.createWriteStream(sqlFilePath))
-          .on('close', resolve)
-          .on('error', reject);
+          .pipe(gzStream)
+          .pipe(writeStream);
       });
     }
     else if (ext === '.zip') {
       extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
       fs.mkdirSync(extractPath, { recursive: true });
       try {
-        await new Promise<void>((resolve, reject) => {
-          fs.createReadStream(filePath)
-            .pipe(unzipper.Extract({ path: extractPath }))
-            .on('close', resolve)
-            .on('error', reject);
-        });
+        await fs.createReadStream(filePath)
+          .pipe(unzipper.Extract({ path: extractPath }))
+          .promise();
       } catch (unzipError: any) {
         if (unzipError.message?.includes('invalid signature')) {
           sqlFilePath = path.join(extractPath, 'extracted_backup.sql');
           await new Promise<void>((resolve, reject) => {
+            const gzStream = zlib.createGunzip();
+            gzStream.on('error', reject);
+            const writeStream = fs.createWriteStream(sqlFilePath);
+            writeStream.on('close', resolve);
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
             fs.createReadStream(filePath)
-              .pipe(zlib.createGunzip())
-              .pipe(fs.createWriteStream(sqlFilePath))
-              .on('close', resolve)
-              .on('error', reject);
+              .pipe(gzStream)
+              .pipe(writeStream);
           });
         } else {
           throw new Error(`Failed to extract ZIP file: ${unzipError.message}`);
@@ -189,14 +219,14 @@ async function processMigrationFile(filePath: string) {
     const formatDetected = await detectDumpFormat(sqlFilePath);
 
     if (formatDetected === 'pg_dump') {
-      migrationStatus.message = 'PostgreSQL dump detected — starting multi-pass import...';
-      await parseAndImportPgDump(sqlFilePath);
+      migrationStatus.message = 'PostgreSQL dump detected — starting multi-pass import into staging...';
+      await parseAndImportPgDump(sqlFilePath, STAGING_DB_PATH);
     } else {
-      migrationStatus.message = 'Legacy SQL format detected — parsing INSERT statements...';
-      await parseAndImportLegacySQL(sqlFilePath);
+      migrationStatus.message = 'Legacy SQL format detected — parsing INSERT statements into staging...';
+      await parseAndImportLegacySQL(sqlFilePath, STAGING_DB_PATH);
     }
 
-    migrationStatus = { active: false, progress: 100, message: 'Migration Complete!', file: null };
+    Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
 
     // Archive the original file (don't archive if we read from archived_migrations)
     if (!filePath.includes('archived_migrations')) {
@@ -205,7 +235,7 @@ async function processMigrationFile(filePath: string) {
 
   } catch (err: any) {
     console.error('Migration failed:', err);
-    migrationStatus = { active: false, progress: 0, message: `Failed: ${err.message}`, file: null };
+    Object.assign(migrationStatus, { active: false, progress: 0, message: `Failed: ${err.message}`, file: null });
     throw err; // Re-throw so caller knows it failed
   } finally {
     if (extractPath && fs.existsSync(extractPath)) {
@@ -244,8 +274,8 @@ async function detectDumpFormat(sqlPath: string): Promise<'pg_dump' | 'legacy'> 
  * Pass 3: Inventory & stock (batch, inventory, inventory_medicine)
  * Pass 4: Sales & returns (orders, order_item, return_orders, return_order_item, stock_effects)
  */
-async function parseAndImportPgDump(sqlPath: string) {
-  const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
+  const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
   
   // Enable WAL mode for better concurrent write performance
   await db.run('PRAGMA journal_mode = WAL');
@@ -487,10 +517,10 @@ async function generateMigrationReport(db: any, stats: any) {
 /**
  * Legacy SQL parser (INSERT-based) — kept for backward compatibility.
  */
-async function parseAndImportLegacySQL(sqlPath: string) {
+async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
   migrationStatus.message = 'Parsing and Importing SQL Data (legacy format)...';
 
-  const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+  const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
 
   const fileStream = fs.createReadStream(sqlPath);
   const rl = readline.createInterface({
@@ -540,4 +570,110 @@ async function parseAndImportLegacySQL(sqlPath: string) {
 
   await db.close();
   migrationStatus.message = `Migration Complete! Processed ${linesProcessed} lines, migrated ${linesMigrated} rows`;
+}
+
+/**
+ * Dynamic CSV parser and importer for inventory/medicines.
+ * Automatically creates missing columns in inventory_master or maps them using the provided mapping.
+ */
+async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?: Record<string, string>, skipLines: number = 0) {
+  const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
+  
+  const tableInfo = await db.all('PRAGMA table_info(inventory_master)');
+  const existingCols = tableInfo.map(c => c.name.toLowerCase());
+  
+  const results: any[] = [];
+  let rowCount = 0;
+  
+  migrationStatus.message = 'Reading and analyzing CSV structure...';
+  
+  await new Promise<void>((resolve, reject) => {
+    fs.createReadStream(csvPath)
+      .pipe(csvParser({ skipLines: skipLines })) // Skip user-defined garbage rows
+      .on('headers', async (headers) => {
+        for (const rawHeader of headers) {
+          const rawColName = rawHeader.trim();
+          if (!rawColName) continue;
+          
+          let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
+          
+          // Apply mapping if provided
+          if (mapping && mapping[rawColName] && mapping[rawColName] !== 'IGNORE') {
+            colName = mapping[rawColName];
+          } else if (mapping && mapping[rawColName] === 'IGNORE') {
+            continue; // Skip this column entirely
+          }
+
+          if (!existingCols.includes(colName) && colName !== '') {
+            try {
+              await db.run(`ALTER TABLE inventory_master ADD COLUMN "${colName}" TEXT`);
+              existingCols.push(colName);
+            } catch (e: any) {
+              console.error(`Failed to add column ${colName}:`, e.message);
+            }
+          }
+        }
+      })
+      .on('data', (data) => {
+        results.push(data);
+        rowCount++;
+        if (rowCount % 1000 === 0) {
+          migrationStatus.progress = Math.min(50, Math.floor((rowCount / 50000) * 50));
+        }
+      })
+      .on('end', async () => {
+        migrationStatus.message = `Parsed ${rowCount} CSV rows. Inserting into database...`;
+        
+        await db.run('BEGIN TRANSACTION');
+        try {
+          let insertCount = 0;
+          for (const row of results) {
+            const medName = row['Medicine'] || 'Unknown Product';
+            let med = await db.get('SELECT id FROM medicines WHERE name = ?', [medName]);
+            if (!med) {
+              const result = await db.run('INSERT INTO medicines (name) VALUES (?)', [medName]);
+              med = { id: result.lastID };
+            }
+
+            const colsToInsert = ['medicine_id'];
+            const valuesToInsert = [med.id];
+            const placeholders = ['?'];
+
+            for (const [key, val] of Object.entries(row)) {
+              const rawColName = key.trim();
+              let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
+              
+              if (mapping && mapping[rawColName] === 'IGNORE') continue;
+              if (mapping && mapping[rawColName]) {
+                colName = mapping[rawColName];
+              }
+
+              if (!colName || colName === 'medicine' || val === '') continue;
+              
+              if (existingCols.includes(colName)) {
+                colsToInsert.push(`"${colName}"`);
+                valuesToInsert.push(val);
+                placeholders.push('?');
+              }
+            }
+
+            const insertQuery = `INSERT INTO inventory_master (${colsToInsert.join(', ')}) VALUES (${placeholders.join(', ')})`;
+            await db.run(insertQuery, valuesToInsert);
+            
+            insertCount++;
+            if (insertCount % 1000 === 0) {
+              migrationStatus.progress = 50 + Math.min(50, Math.floor((insertCount / rowCount) * 50));
+            }
+          }
+          await db.run('COMMIT');
+          resolve();
+        } catch (err: any) {
+          await db.run('ROLLBACK');
+          reject(err);
+        } finally {
+          await db.close();
+        }
+      })
+      .on('error', reject);
+  });
 }

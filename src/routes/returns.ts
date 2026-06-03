@@ -70,6 +70,71 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Fetch near expiry items grouped by distributor
+router.get('/near-expiry', async (req, res) => {
+  let db;
+  try {
+    const monthsStr = (req.query.months as string) || '6';
+    const months = parseInt(monthsStr, 10);
+    
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    // Fetch all stock > 0 and try to join with purchase history to find the distributor
+    const rows = await db.all(`
+      SELECT im.id as inventory_id, im.batch_no, im.expiry_date, im.quantity, im.cost_price, im.mrp,
+             m.name as medicine_name, d.name as distributor_name, d.id as distributor_id
+      FROM inventory_master im
+      JOIN medicines m ON im.medicine_id = m.id
+      LEFT JOIN purchase_items pi ON pi.medicine_id = m.id AND pi.batch_no = im.batch_no
+      LEFT JOIN purchases p ON pi.purchase_id = p.id
+      LEFT JOIN distributors d ON p.distributor_id = d.id
+      WHERE im.quantity > 0
+      GROUP BY im.id
+    `);
+    
+    await db.close();
+
+    const now = new Date();
+    const thresholdDate = new Date();
+    thresholdDate.setMonth(now.getMonth() + months);
+
+    const nearExpiryItems = rows.filter(row => {
+      if (!row.expiry_date) return false;
+      let expDate;
+      // Handle MM/YY or MM/YYYY
+      if (row.expiry_date.includes('/')) {
+        const parts = row.expiry_date.split('/');
+        let year = parseInt(parts[1], 10);
+        const month = parseInt(parts[0], 10) - 1; // 0-indexed
+        if (year < 100) year += 2000;
+        expDate = new Date(year, month + 1, 0); // Last day of that month
+      } else {
+        expDate = new Date(row.expiry_date);
+      }
+      return expDate <= thresholdDate;
+    });
+
+    // Group by distributor
+    const grouped: any = {};
+    for (const item of nearExpiryItems) {
+      const distId = item.distributor_id || 'unknown';
+      if (!grouped[distId]) {
+        grouped[distId] = {
+          distributor_id: item.distributor_id,
+          distributor_name: item.distributor_name || 'Unknown Distributor',
+          items: []
+        };
+      }
+      grouped[distId].items.push(item);
+    }
+
+    res.json(Object.values(grouped));
+  } catch (err: any) {
+    if (db) await db.close();
+    console.error('Near expiry fetch error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/financial-note', async (req, res) => {
   let pdfDoc;
   let stream: any;
