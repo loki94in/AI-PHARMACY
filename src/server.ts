@@ -381,6 +381,8 @@ ensureSchema(DB_PATH).then(() => {
   app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}/test`);
     // whatsappQueue.startWorker(); // Disabled for testing
+    // NOTE: Enable below line in production to send WhatsApp refill reminders via queue
+    whatsappQueue.startWorker();
     startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));
 
     // Run startup catch-up check for the 15-day expiry scan (handles PC downtime/off times)

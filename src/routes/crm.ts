@@ -10,7 +10,72 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
-// Get customers
+// Get patients
+router.get('/patients', async (req, res) => {
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const patients = await db.all('SELECT * FROM customers ORDER BY id DESC');
+    await db.close();
+    res.json(patients);
+  } catch (error) {
+    console.error('Failed to fetch patients:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create patient
+router.post('/patients', async (req, res) => {
+  const { name, phone, address, notes } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const result = await db.run(
+      'INSERT INTO customers (name, phone, address, notes) VALUES (?, ?, ?, ?)',
+      [name, phone || '', address || '', notes || '']
+    );
+    const newPatient = await db.get('SELECT * FROM customers WHERE id = ?', result.lastID);
+    await db.close();
+    res.status(201).json(newPatient);
+  } catch (error) {
+    console.error('Failed to create patient:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update patient
+router.put('/patients/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, phone, address, notes } = req.body;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run(
+      'UPDATE customers SET name=?, phone=?, address=?, notes=? WHERE id=?',
+      [name, phone || '', address || '', notes || '', id]
+    );
+    const updated = await db.get('SELECT * FROM customers WHERE id = ?', id);
+    await db.close();
+    res.json(updated);
+  } catch (error) {
+    console.error('Failed to update patient:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete patient
+router.delete('/patients/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('DELETE FROM customers WHERE id = ?', id);
+    await db.close();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete patient:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get customers (legacy alias)
 router.get('/', async (req, res) => {
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
@@ -18,26 +83,6 @@ router.get('/', async (req, res) => {
     await db.close();
     res.json(customers);
   } catch (error) {
-    console.error('Failed to fetch customers:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Create customer
-router.post('/', async (req, res) => {
-  const { name, phone, address, notes } = req.body;
-  if (!name) return res.status(400).json({ error: 'Name is required' });
-  
-  try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run(
-      'INSERT INTO customers (name, phone, address, notes) VALUES (?, ?, ?, ?)',
-      [name, phone || '', address || '', notes || '']
-    );
-    await db.close();
-    res.json({ success: true, message: 'Customer created successfully' });
-  } catch (error) {
-    console.error('Failed to create customer:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

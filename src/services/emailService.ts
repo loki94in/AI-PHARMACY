@@ -14,7 +14,7 @@ import { extractDateFromText } from '../utils/dateExtractor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const getDbPath = () => process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 interface EmailOptions {
   user: string;
@@ -91,13 +91,13 @@ export class EmailService {
     let connection: any = null;
 
     try {
-      await ensureSchema(DB_PATH);
+      await ensureSchema(getDbPath());
 
       let user = this.imapConfig.user;
       let password = this.imapConfig.password;
 
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
         const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
         const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
         await db.close();
@@ -250,7 +250,7 @@ export class EmailService {
    */
   private async logEmailReceived(email: ProcessedEmail): Promise<void> {
     try {
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
       await db.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_RECEIVED', `From: ${email.from}, Subject: ${email.subject}`]
@@ -363,7 +363,7 @@ export class EmailService {
   private async notifyDeliveryBoys(orderInfo: any): Promise<void> {
     let db = null;
     try {
-      db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      db = await open({ filename: getDbPath(), driver: sqlite3.Database });
       const activeBoys = await db.all('SELECT * FROM delivery_boys WHERE is_active = 1');
       await db.close();
 
@@ -434,7 +434,7 @@ export class EmailService {
         const logMsg = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} ${orderInfo.timeStr}`;
 
         // Log as potential order for follow-up
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ORDER_DETECTED', logMsg]
@@ -457,7 +457,7 @@ export class EmailService {
 
       if (isInquiryRelated) {
         // Log as potential inquiry
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_INQUIRY_DETECTED', `Potential inquiry detected: ${email.subject}`]
@@ -486,7 +486,7 @@ export class EmailService {
         // Check if attachment is a medicine list (CSV, Excel, etc.)
         if (attachment.filename.match(/\.(csv|xlsx?|ods)$/i)) {
           // Log as potential medicine list for processing
-          const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+          const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
           await db.run(
             'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
             ['EMAIL_ATTACHMENT_MEDICINE_LIST', `Medicine list attachment: ${attachment.filename}`]
@@ -499,7 +499,7 @@ export class EmailService {
         }
 
         // Save attachment to disk for manual review if needed
-        const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+        const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
         if (!fs.existsSync(uploadsDir)) {
           fs.mkdirSync(uploadsDir, { recursive: true });
         }
@@ -518,7 +518,7 @@ export class EmailService {
   private async processMedicineOrder(email: ProcessedEmail): Promise<void> {
     try {
       const orderInfo = this.extractOrderInfo(email);
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
       
       // Log order processing start
       await db.run(
@@ -583,7 +583,7 @@ export class EmailService {
     } catch (error) {
       console.error('Error processing medicine order:', error);
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ORDER_ERROR', `Error processing medicine order: ${email.subject} - ${(error as any).message}`]
@@ -606,7 +606,7 @@ export class EmailService {
       }
 
       // Log that we're sending an auto-response
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
       await db.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_AUTO_RESPONSE_SENDING', `Sending auto-response to: ${email.from}`]
@@ -622,7 +622,7 @@ export class EmailService {
 
       if (responseSent) {
         // Log successful auto-response
-        const db2 = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
         await db2.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_AUTO_RESPONSE_SENT', `Auto-response sent to: ${email.from}`]
@@ -631,7 +631,7 @@ export class EmailService {
         console.log('Auto-response sent successfully to:', email.from);
       } else {
         // Log failed auto-response
-        const db2 = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
         await db2.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_AUTO_RESPONSE_FAILED', `Failed to send auto-response to: ${email.from}`]
@@ -644,7 +644,7 @@ export class EmailService {
 
       // Log the error
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_AUTO_RESPONSE_ERROR', `Error sending auto-response to: ${email.from} - ${(error as any).message}`]
@@ -666,7 +666,7 @@ export class EmailService {
   }): Promise<void> {
     try {
       // Log that we're processing the attachment
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
       await db.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_ATTACHMENT_PROCESSING', `Processing medicine list attachment: ${attachment.filename}`]
@@ -675,7 +675,7 @@ export class EmailService {
 
       // For now, we'll just log that we processed it
       // In a real implementation, this would parse the CSV/XLS and update inventory or create orders
-      const db2 = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
       await db2.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_ATTACHMENT_PROCESSED', `Medicine list attachment processed: ${attachment.filename}`]
@@ -694,7 +694,7 @@ export class EmailService {
 
       // Log the error
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ATTACHMENT_ERROR', `Error processing medicine list attachment: ${attachment.filename} - ${(error as any).message}`]
@@ -709,6 +709,7 @@ export class EmailService {
   private getMockInbox(): Array<any> {
     return [
       {
+        id: 101,
         uid: 101,
         from: "bajaj.pharma@gmail.com",
         subject: "Invoice for Paracetamol and Amoxicillin shipment - INV-2026-441",
@@ -722,6 +723,7 @@ export class EmailService {
         hasAttachments: true
       },
       {
+        id: 102,
         uid: 102,
         from: "senior.agency@pharma.com",
         subject: "Urgent: Delivery voucher Nitin Agency - VOU-8891",
@@ -735,6 +737,7 @@ export class EmailService {
         hasAttachments: false
       },
       {
+        id: 103,
         uid: 103,
         from: "tapadiya.dist@gmail.com",
         subject: "Monthly Statement & Bill - Tapadiya Distributors",
@@ -753,11 +756,34 @@ export class EmailService {
   /**
    * Parses an attachment file (CSV/txt) and imports its items into inventory/medicines.
    */
-  public async parseAndImportAttachment(filePath: string): Promise<{ success: boolean; count: number; items: Array<{ name: string; quantity: number }> }> {
+  public async parseAndImportAttachment(
+    filePath: string,
+    importData: boolean = true
+  ): Promise<{
+    success: boolean;
+    count: number;
+    items: Array<{
+      name: string;
+      quantity: number;
+      rate?: number;
+      mrp?: number;
+      batch_no?: string;
+      expiry_date?: string;
+      free_qty?: number;
+    }>;
+  }> {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       const lines = content.split(/\r?\n/);
-      const items: Array<{ name: string; quantity: number }> = [];
+      const items: Array<{
+        name: string;
+        quantity: number;
+        rate?: number;
+        mrp?: number;
+        batch_no?: string;
+        expiry_date?: string;
+        free_qty?: number;
+      }> = [];
 
       // Determine if CSV
       const isCsv = filePath.endsWith('.csv');
@@ -765,8 +791,13 @@ export class EmailService {
       if (isCsv && lines.length > 0) {
         // Simple CSV parser
         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('medicine') || h.includes('item') || h.includes('product'));
+        const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('medicine') || h.includes('item') || h.includes('product') || h.includes('desc'));
         const qtyIdx = headers.findIndex(h => h.includes('qty') || h.includes('quantity') || h.includes('units') || h.includes('count'));
+        const rateIdx = headers.findIndex(h => h.includes('rate') || h.includes('price') || h.includes('cost') || h.includes('purchase'));
+        const mrpIdx = headers.findIndex(h => h.includes('mrp'));
+        const batchIdx = headers.findIndex(h => h.includes('batch') || h.includes('lot'));
+        const expiryIdx = headers.findIndex(h => h.includes('expiry') || h.includes('exp'));
+        const freeIdx = headers.findIndex(h => h.includes('free'));
 
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
@@ -775,8 +806,21 @@ export class EmailService {
           const name = nameIdx !== -1 ? cols[nameIdx] : cols[0];
           const qtyStr = qtyIdx !== -1 ? cols[qtyIdx] : cols[1];
           const qty = parseInt(qtyStr) || 10;
+
+          const rateStr = rateIdx !== -1 ? cols[rateIdx] : '0';
+          const rate = parseFloat(rateStr) || 0;
+
+          const mrpStr = mrpIdx !== -1 ? cols[mrpIdx] : '0';
+          const mrp = parseFloat(mrpStr) || 0;
+
+          const batch_no = batchIdx !== -1 ? cols[batchIdx] : '';
+          const expiry_date = expiryIdx !== -1 ? cols[expiryIdx] : '';
+
+          const freeStr = freeIdx !== -1 ? cols[freeIdx] : '0';
+          const free_qty = parseInt(freeStr) || 0;
+
           if (name && isNaN(Number(name))) {
-            items.push({ name, quantity: qty });
+            items.push({ name, quantity: qty, rate, mrp, batch_no, expiry_date, free_qty });
           }
         }
       } else {
@@ -799,32 +843,43 @@ export class EmailService {
         return { success: false, count: 0, items: [] };
       }
 
-      // Add/update to database inventory
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-      for (const item of items) {
-        let med = await db.get('SELECT id FROM medicines WHERE name LIKE ? LIMIT 1', [`%${item.name}%`]);
-        if (!med) {
-          const medResult = await db.run('INSERT INTO medicines (name) VALUES (?)', [item.name]);
-          med = { id: medResult.lastID };
+      if (importData) {
+        // Add/update to database inventory
+        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        for (const item of items) {
+          let med = await db.get('SELECT id FROM medicines WHERE name LIKE ? LIMIT 1', [`%${item.name}%`]);
+          if (!med) {
+            const medResult = await db.run('INSERT INTO medicines (name) VALUES (?)', [item.name]);
+            med = { id: medResult.lastID };
+          }
+          const existingInv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? LIMIT 1', [med.id]);
+          if (existingInv) {
+            await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [item.quantity, existingInv.id]);
+          } else {
+            await db.run(
+              'INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, unit_price, cost_price, reorder_level, mrp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              [
+                med.id,
+                item.quantity,
+                item.batch_no || 'B-IMPORT-' + Date.now().toString().slice(-4),
+                item.expiry_date || '2028-12-31',
+                item.rate || 10,
+                item.rate || 8,
+                10,
+                item.mrp || 15
+              ]
+            );
+          }
         }
-        const existingInv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? LIMIT 1', [med.id]);
-        if (existingInv) {
-          await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [item.quantity, existingInv.id]);
-        } else {
-          await db.run(
-            'INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, unit_price, cost_price, reorder_level, mrp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [med.id, item.quantity, 'B-IMPORT-' + Date.now().toString().slice(-4), '2028-12-31', 10, 8, 10, 15]
-          );
-        }
-      }
 
-      // Log action
-      const filename = path.basename(filePath);
-      await db.run(
-        'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-        ['EMAIL_ATTACHMENT_PROCESSED', `Manually parsed attachment: ${filename}, imported ${items.length} items.`]
-      );
-      await db.close();
+        // Log action
+        const filename = path.basename(filePath);
+        await db.run(
+          'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+          ['EMAIL_ATTACHMENT_PROCESSED', `Manually parsed attachment: ${filename}, imported ${items.length} items.`]
+        );
+        await db.close();
+      }
 
       return { success: true, count: items.length, items };
     } catch (error) {
@@ -879,6 +934,7 @@ export class EmailService {
           const orderInfo = this.extractOrderInfo(processedEmail);
 
           emails.push({
+            id: item.attributes.uid,
             uid: item.attributes.uid,
             from: processedEmail.from,
             subject: processedEmail.subject,

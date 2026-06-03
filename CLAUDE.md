@@ -39,6 +39,15 @@ If you are generating a massive checklist, log output, or plan, the terminal str
 
 
 When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` before doing anything else.
+
+## CRITICAL: Auto-Update Knowledge Graph
+
+After ANY code change (add/edit/delete/rename file), run:
+```bash
+node scripts/quick-update.mjs
+```
+This takes ~30 seconds and keeps the knowledge graph in sync. See `AGENTS.md` for full details.
+
 The Four Principles in Detail
 ## 9. Think Before Coding
 Don't assume. Don't hide confusion. Surface tradeoffs.

@@ -1,4 +1,4 @@
-// Migration Utility API (Agent 2)
+// Migration Utility API
 import express from 'express';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import multer from 'multer';
+import AdmZip from 'adm-zip';
+import * as XLSX from 'xlsx';
 import { migrationStatus, runManualMigration } from '../worker/migrationWorker.js';
 import csvParser from 'csv-parser';
 
@@ -16,8 +18,59 @@ const MIGRATION_DIR = path.resolve(__dirname, '..', '..', 'MIGRATION SAMPEL');
 
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
 
-const ALLOWED_MIGRATION_EXTENSIONS = /\.(zip|sql|gz|tgz|csv)$/i;
-const MAX_MIGRATION_SIZE = 50 * 1024 * 1024 * 1024; // 50GB
+const ALLOWED_MIGRATION_EXTENSIONS = /\.(zip|sql|gz|tgz|csv|xlsx|xls)$/i;
+const MAX_MIGRATION_SIZE = 500 * 1024 * 1024; // 500MB
+
+// ─── AUTO FILE-TYPE DETECTION ────────────────────────────────────────────────
+const INVENTORY_KEYWORDS = ['batch', 'expiry', 'exp', 'rack', 'stock', 'qty', 'quantity', 'mrp', 'rate', 'medicine', 'product', 'item'];
+const PURCHASE_KEYWORDS = ['distributor', 'supplier', 'vendor', 'purchase', 'invoice', 'bill', 'received', 'party', 'cgst', 'sgst'];
+const SALES_KEYWORDS = ['patient', 'customer', 'sold', 'sale', 'bill_no', 'sell', 'doctor', 'retail', 'receipt'];
+const CUSTOMER_KEYWORDS = ['name', 'phone', 'mobile', 'address', 'credit', 'balance'];
+
+function autoDetectFileType(headers: string[]): { type: string; confidence: number } {
+  const lower = headers.map(h => h.toLowerCase().replace(/[^a-z]/g, '_'));
+  const score = (keywords: string[]) =>
+    lower.filter(h => keywords.some(k => h.includes(k))).length;
+
+  const scores = {
+    inventory: score(INVENTORY_KEYWORDS),
+    purchases: score(PURCHASE_KEYWORDS),
+    sales: score(SALES_KEYWORDS),
+    customers: score(CUSTOMER_KEYWORDS),
+  };
+  const best = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  const total = Object.values(scores).reduce((a, b) => a + b, 0) || 1;
+  return { type: best[1] > 0 ? best[0] : 'unknown', confidence: Math.round((best[1] / total) * 100) };
+}
+
+// Helper: read headers from a CSV file
+async function readCsvHeaders(filePath: string, skipLines = 0): Promise<{ headers: string[], samples: any[] }> {
+  const headers: string[] = [];
+  const samples: any[] = [];
+  await new Promise<void>((resolve, reject) => {
+    fs.createReadStream(filePath)
+      .pipe(csvParser({ skipLines }))
+      .on('headers', (h: string[]) => headers.push(...h))
+      .on('data', (row: any) => { if (samples.length < 5) samples.push(row); })
+      .on('end', resolve)
+      .on('error', reject);
+  });
+  return { headers, samples };
+}
+
+// Helper: read headers from an Excel file
+function readExcelHeaders(filePath: string): { headers: string[], samples: any[], sheetNames: string[] } {
+  const wb = XLSX.readFile(filePath, { sheetRows: 6 });
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[];
+  if (!rows || rows.length === 0) return { headers: [], samples: [], sheetNames: wb.SheetNames };
+  const headers = (rows[0] as string[]).map(String).filter(h => h.trim());
+  const samples = rows.slice(1, 6).map(row =>
+    Object.fromEntries(headers.map((h, i) => [h, (row as any[])[i] ?? '']))
+  );
+  return { headers, samples, sheetNames: wb.SheetNames };
+}
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -35,7 +88,7 @@ const upload = multer({
     if (ALLOWED_MIGRATION_EXTENSIONS.test(file.originalname)) {
       cb(null, true);
     } else {
-      cb(new Error('Only .zip, .sql, .gz, .tgz, .csv files are allowed'));
+      cb(new Error('Only .zip, .sql, .gz, .tgz, .csv, .xlsx, .xls files are allowed'));
     }
   }
 });
@@ -139,7 +192,8 @@ router.post('/analyze', async (req, res) => {
       isCsv: true,
       headers: Array.from(headersSet).filter(h => h.trim() !== ''),
       samples: sampleRows,
-      fileSize: stat.size
+      fileSize: stat.size,
+      detected: autoDetectFileType(Array.from(headersSet).filter(h => h.trim() !== '')),
     });
   } catch (err: any) {
     console.error('CSV Analyze Error:', err);
@@ -147,7 +201,125 @@ router.post('/analyze', async (req, res) => {
   }
 });
 
+// ─── ANALYZE EXCEL FILE ───────────────────────────────────────────────────────
+router.post('/analyze-excel', async (req, res) => {
+  const { fileName, sheetIndex } = req.body;
+  if (!fileName) return res.status(400).json({ error: 'fileName required' });
+  const filePath = path.join(MIGRATION_DIR, fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  const ext = fileName.toLowerCase();
+  if (!ext.endsWith('.xlsx') && !ext.endsWith('.xls')) {
+    return res.status(400).json({ error: 'Not an Excel file' });
+  }
+  try {
+    const wb = XLSX.readFile(filePath, { sheetRows: 6 });
+    const sheetName = wb.SheetNames[sheetIndex ?? 0] ?? wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[];
+    const headers = (rows[0] as string[]).map(String).filter(h => h.trim());
+    const samples = rows.slice(1, 6).map(row =>
+      Object.fromEntries(headers.map((h, i) => [h, (row as any[])[i] ?? '']))
+    );
+    const stat = fs.statSync(filePath);
+    res.json({
+      isExcel: true,
+      sheetNames: wb.SheetNames,
+      activeSheet: sheetName,
+      headers,
+      samples,
+      fileSize: stat.size,
+      detected: autoDetectFileType(headers),
+    });
+  } catch (err: any) {
+    console.error('Excel Analyze Error:', err);
+    res.status(500).json({ error: 'Failed to analyze Excel file', details: err.message });
+  }
+});
+
+// ─── ANALYZE ZIP FILE ─────────────────────────────────────────────────────────
+// Extracts the ZIP in memory (no disk write), reads headers of each file inside
+router.post('/analyze-zip', async (req, res) => {
+  const { fileName } = req.body;
+  if (!fileName) return res.status(400).json({ error: 'fileName required' });
+  const filePath = path.join(MIGRATION_DIR, fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  if (!fileName.toLowerCase().endsWith('.zip')) {
+    return res.status(400).json({ error: 'Not a ZIP file' });
+  }
+  try {
+    const zip = new AdmZip(filePath);
+    const entries = zip.getEntries();
+    const supportedExts = ['.csv', '.xlsx', '.xls', '.sql'];
+    const files: any[] = [];
+
+    for (const entry of entries) {
+      if (entry.isDirectory) continue;
+      const name = path.basename(entry.entryName);
+      const ext = path.extname(name).toLowerCase();
+      if (!supportedExts.includes(ext)) continue;
+
+      // Extract this file to MIGRATION_DIR so it can be analyzed/processed
+      const extractedName = `zip_${Date.now()}_${name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const extractedPath = path.join(MIGRATION_DIR, extractedName);
+      fs.writeFileSync(extractedPath, entry.getData());
+
+      let headers: string[] = [];
+      let samples: any[] = [];
+      let sheetNames: string[] = [];
+
+      try {
+        if (ext === '.csv') {
+          const r = await readCsvHeaders(extractedPath);
+          headers = r.headers;
+          samples = r.samples;
+        } else if (ext === '.xlsx' || ext === '.xls') {
+          const r = readExcelHeaders(extractedPath);
+          headers = r.headers;
+          samples = r.samples;
+          sheetNames = r.sheetNames;
+        } else if (ext === '.sql') {
+          headers = ['[SQL file — will be auto-imported]'];
+          samples = [];
+        }
+      } catch (_) { /* keep going even if one file fails */ }
+
+      const detected = autoDetectFileType(headers);
+      files.push({
+        originalName: name,
+        extractedFileName: extractedName,
+        ext: ext.replace('.', ''),
+        headers,
+        samples: samples.slice(0, 3),
+        sheetNames,
+        detected,
+        rowCount: null, // unknown without full parse
+      });
+    }
+
+    res.json({ zipFile: fileName, files });
+  } catch (err: any) {
+    console.error('ZIP Analyze Error:', err);
+    res.status(500).json({ error: 'Failed to analyze ZIP file', details: err.message });
+  }
+});
+
+// ─── ROLLBACK: Delete staging DB ─────────────────────────────────────────────
+router.delete('/staging/rollback', async (_req, res) => {
+  const STAGING_DB_PATH_LOCAL = path.resolve(__dirname, '..', '..', 'data', 'staging.db');
+  try {
+    if (fs.existsSync(STAGING_DB_PATH_LOCAL)) {
+      fs.unlinkSync(STAGING_DB_PATH_LOCAL);
+    }
+    // Reset migration status
+    Object.assign(migrationStatus, { active: false, progress: 0, message: 'Idle', file: null, isStagingReady: false });
+    res.json({ success: true, message: 'Staging cleared. Ready for a fresh migration.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to rollback staging', details: err.message });
+  }
+});
+
 // --- STAGING APIS ---
+
 const STAGING_DB_PATH = path.resolve(__dirname, '..', '..', 'data', 'staging.db');
 
 router.get('/staging/inventory', async (req, res) => {

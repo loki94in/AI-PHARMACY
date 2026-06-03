@@ -122,15 +122,18 @@ const Orders = () => {
       
       if (field === 'status') {
         showNotification(`Order status updated to "${value}".`, 'success');
-        if (value === 'Ready' && originalOrder.phone) {
-          showNotification('WhatsApp notification sent to customer.', 'info');
+        // Backend automatically sends WhatsApp when status → 'Ready' (see orders.ts route)
+        // Re-fetch to get updated notified flag from server
+        const refreshed = await api.getOrders();
+        setOrders(refreshed);
+        const updated = refreshed.find((o: any) => o.id === id);
+        if (value === 'Ready' && updated?.notified === 1 && originalOrder.phone) {
+          showNotification('✅ WhatsApp notification sent to customer.', 'info');
         }
       } else {
         showNotification('Order details updated.', 'success');
+        fetchOrders();
       }
-
-      // Re-fetch to sync notified count or logs
-      fetchOrders();
     } catch (err) {
       console.error('Error updating order:', err);
       showNotification('Failed to update order.', 'error');

@@ -2,15 +2,21 @@ import { PaddleOcrService } from 'paddleocr';
 import * as ort from 'onnxruntime-node';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { Jimp } from 'jimp';
+
+// Resolve paths relative to THIS file, not CWD — fixes flake in Jest / different launch dirs
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const MODELS_DIR = path.resolve(__dirname, '..', '..', '..', 'data', 'models');
 
 class OnnxOcrService {
   private ocrService: PaddleOcrService | null = null;
   private isLoaded: boolean = false;
-  private readonly detPath = path.resolve('data/models/det_model.onnx');
-  private readonly recPath = path.resolve('data/models/rec_model.onnx');
-  private readonly clsPath = path.resolve('data/models/cls_model.onnx');
-  private readonly dictPath = path.resolve('data/models/en_dict.txt');
+  private readonly detPath = path.join(MODELS_DIR, 'det_model.onnx');
+  private readonly recPath = path.join(MODELS_DIR, 'rec_model.onnx');
+  private readonly clsPath = path.join(MODELS_DIR, 'cls_model.onnx');
+  private readonly dictPath = path.join(MODELS_DIR, 'en_dict.txt');
   private idleTimeout: NodeJS.Timeout | null = null;
   private readonly IDLE_TIME_MS = 105 * 60 * 1000; // 1 hour 45 minutes (105 minutes) as per pharmacy requirements
 

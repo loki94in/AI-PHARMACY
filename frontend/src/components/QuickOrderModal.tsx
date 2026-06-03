@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Search, Plus, Minus, Send, ClipboardList, Check, Sparkles, Loader2 } from 'lucide-react';
+import { X, Search, Plus, Minus, Send, ClipboardList, Sparkles, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import { toastEvent, quickOrderEvent } from '../services/events';
 

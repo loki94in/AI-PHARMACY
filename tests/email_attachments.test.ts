@@ -20,19 +20,11 @@ describe('Email Attachments API', () => {
     // Create a mock uploads directory inside our tmpDir
     uploadsDir = path.join(tmpDir, 'uploads');
     fs.mkdirSync(uploadsDir, { recursive: true });
-
-    // Mock path resolve in endpoints by setting environment/config if needed,
-    // but since they use relative path resolve to __dirname, let's make sure
-    // we create a file in the actual project uploads folder for integration testing if necessary.
-    // For unit tests, we'll create a test file in the project uploads folder and clean it up.
-    const projectUploads = path.resolve(process.cwd(), 'uploads');
-    if (!fs.existsSync(projectUploads)) {
-      fs.mkdirSync(projectUploads, { recursive: true });
-    }
+    process.env.UPLOADS_DIR = uploadsDir;
 
     // Write a test CSV file
     fs.writeFileSync(
-      path.join(projectUploads, 'test_attachment_order.csv'),
+      path.join(uploadsDir, 'test_attachment_order.csv'),
       'medicine_name,qty,price\nParacetamol 650mg,50,12\nAmoxicillin 500mg,30,25'
     );
 
@@ -44,13 +36,6 @@ describe('Email Attachments API', () => {
 
   afterAll(() => {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
-    try {
-      const projectUploads = path.resolve(process.cwd(), 'uploads');
-      const testFile = path.join(projectUploads, 'test_attachment_order.csv');
-      if (fs.existsSync(testFile)) {
-        fs.unlinkSync(testFile);
-      }
-    } catch (_) {}
   });
 
   test('GET /api/email/attachments lists uploads files', async () => {

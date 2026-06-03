@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Mail as MailIcon,
   RefreshCw,
@@ -10,7 +11,6 @@ import {
   Loader,
   File,
   FileSpreadsheet,
-  AlertCircle,
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -58,6 +58,7 @@ function formatBytes(bytes: number) {
 }
 
 const Mail = () => {
+  const navigate = useNavigate();
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEmail, setSelectedEmail] = useState<EmailRecord | null>(null);
@@ -125,13 +126,47 @@ const Mail = () => {
     setProcessResult(null);
     try {
       const selectedFiles = attachments.filter((a) => a.isSelected);
+      const allItems: any[] = [];
       const results: any[] = [];
+
       for (const file of selectedFiles) {
-        const res = await api.parseAttachment(file.filename);
+        // Parse the attachment but do NOT directly commit/import it to the database inventory
+        const res = await api.parseAttachment(file.filename, false);
         results.push({ filename: file.filename, ...res });
+        if (res && res.success && Array.isArray(res.items)) {
+          allItems.push(...res.items);
+        }
       }
+
       setProcessResult(results);
-      alert(`${selectedFiles.length} file(s) processed successfully! Stock imported into database.`);
+
+      if (allItems.length === 0) {
+        alert('No items could be parsed from the selected attachment(s).');
+        return;
+      }
+
+      // Extract invoice no if match found
+      const invoiceNoMatch = selectedEmail.subject.match(/INV-\d+-\d+/i) || selectedEmail.subject.match(/\b([A-Z0-9_\-\/]{4,15})\b/);
+
+      // Navigate to Purchases (Manual Entry) and pass the prefilled data
+      navigate('/manual-purchase', {
+        state: {
+          prefilledPurchase: {
+            distributorName: selectedEmail.distributorName || '',
+            invoiceNo: invoiceNoMatch ? invoiceNoMatch[0] : '',
+            date: selectedEmail.date ? new Date(selectedEmail.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            items: allItems.map(item => ({
+              medicine_name: item.name || '',
+              qty: item.quantity || 0,
+              free_qty: item.free_qty || 0,
+              rate: item.rate || 0,
+              mrp: item.mrp || 0,
+              batch_no: item.batch_no || '',
+              expiry_date: item.expiry_date || '',
+            }))
+          }
+        }
+      });
     } catch (err: any) {
       console.error('Error processing attachments:', err);
       alert('Failed to process one or more files.');

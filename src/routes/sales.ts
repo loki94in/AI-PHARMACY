@@ -97,10 +97,10 @@ router.post('/', async (req, res) => {
 
     // Insert line items and update inventory
     for (const item of items) {
-      const { inventory_id, quantity = 0, unit_price = 0 } = item;
+      const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0 } = item;
       await db.run(
-        'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price) VALUES (?, ?, ?, ?)',
-        [invoiceId, inventory_id, quantity, unit_price]
+        'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)',
+        [invoiceId, inventory_id, quantity, unit_price, loose_qty]
       );
       // Decrement stock
       await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
@@ -273,6 +273,230 @@ router.get('/recommend-quantity', async (req, res) => {
 });
 
 
+
+// List all sales invoices with customer info and items
+router.get('/list', async (req, res) => {
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const { search, date_from, date_to, batch } = req.query;
+
+    let query = `
+      SELECT 
+        si.id, si.invoice_no, si.date, si.total_amount, si.tax_amount,
+        si.payment_medium, si.payment_status, si.roff,
+        si.cgst_value, si.sgst_value, si.igst_value,
+        c.name as customer_name, c.phone as customer_phone
+      FROM sales_invoices si
+      LEFT JOIN customers c ON si.customer_id = c.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    if (search) {
+      query += ` AND (si.invoice_no LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)`;
+      const s = `%${search}%`;
+      params.push(s, s, s);
+    }
+    if (date_from) {
+      query += ` AND DATE(si.date) >= DATE(?)`;
+      params.push(date_from);
+    }
+    if (date_to) {
+      query += ` AND DATE(si.date) <= DATE(?)`;
+      params.push(date_to);
+    }
+
+    query += ` ORDER BY si.date DESC`;
+
+    const invoices = await db.all(query, params);
+
+    // If batch filter requested, further filter by item batch numbers
+    if (batch) {
+      const batchLower = `%${batch}%`;
+      const filtered = [];
+      for (const inv of invoices) {
+        const items = await db.all(
+          `SELECT si.*, im.batch_number, m.name as medicine_name
+           FROM sale_items si
+           JOIN inventory_master im ON si.inventory_id = im.id
+           JOIN medicines m ON im.medicine_id = m.id
+           WHERE si.invoice_id = ? AND (im.batch_number LIKE ? OR m.name LIKE ?)`,
+          [inv.id, batchLower, batchLower]
+        );
+        if (items.length > 0) {
+          inv.items = items;
+          filtered.push(inv);
+        }
+      }
+      await db.close();
+      return res.json(filtered);
+    }
+
+    // Attach items for each invoice
+    for (const inv of invoices) {
+      inv.items = await db.all(
+        `SELECT si.*, im.batch_number, im.expiry_date, m.name as medicine_name, m.mrp, im.pack_size
+         FROM sale_items si
+         JOIN inventory_master im ON si.inventory_id = im.id
+         JOIN medicines m ON im.medicine_id = m.id
+         WHERE si.invoice_id = ?`,
+        [inv.id]
+      );
+    }
+
+    await db.close();
+    res.json(invoices);
+  } catch (error) {
+    if (db) await db.close();
+    const err = error as Error;
+    console.error(JSON.stringify({ message: 'Failed to list sales', error: err.message, timestamp: new Date().toISOString() }));
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get single sale invoice with items
+router.get('/:id', async (req, res) => {
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const { id } = req.params;
+
+    const invoice = await db.get(
+      `SELECT si.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address
+       FROM sales_invoices si
+       LEFT JOIN customers c ON si.customer_id = c.id
+       WHERE si.id = ?`,
+      [id]
+    );
+
+    if (!invoice) {
+      await db.close();
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    invoice.items = await db.all(
+      `SELECT si.*, im.batch_number, im.expiry_date, im.mrp as item_mrp, im.pack_size,
+              m.name as medicine_name, m.mrp as medicine_mrp
+       FROM sale_items si
+       JOIN inventory_master im ON si.inventory_id = im.id
+       JOIN medicines m ON im.medicine_id = m.id
+       WHERE si.invoice_id = ?`,
+      [id]
+    );
+
+    await db.close();
+    res.json(invoice);
+  } catch (error) {
+    if (db) await db.close();
+    const err = error as Error;
+    console.error(JSON.stringify({ message: 'Failed to get sale', error: err.message, timestamp: new Date().toISOString() }));
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update a sale invoice (items, customer, discount, etc.)
+router.put('/:id', async (req, res) => {
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const { id } = req.params;
+    const { items, patient_name, patient_phone, discount = 0, paymentMedium, paymentStatus } = req.body;
+
+    // Check invoice exists
+    const existing = await db.get('SELECT * FROM sales_invoices WHERE id = ?', [id]);
+    if (!existing) {
+      await db.close();
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    // Resolve customer
+    let customerId = existing.customer_id;
+    if (patient_name) {
+      const existingCust = await db.get('SELECT id FROM customers WHERE name = ? AND phone = ?', [patient_name, patient_phone || '']);
+      if (existingCust) {
+        customerId = existingCust.id;
+      } else {
+        const custResult = await db.run('INSERT INTO customers (name, phone) VALUES (?, ?)', [patient_name, patient_phone || '']);
+        customerId = custResult.lastID;
+      }
+    }
+
+    // If items changed, reverse old stock and replace
+    if (Array.isArray(items)) {
+      // Reverse old stock
+      const oldItems = await db.all('SELECT inventory_id, quantity FROM sale_items WHERE invoice_id = ?', [id]);
+      for (const oi of oldItems) {
+        await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [oi.quantity, oi.inventory_id]);
+      }
+
+      // Delete old items
+      await db.run('DELETE FROM sale_items WHERE invoice_id = ?', [id]);
+
+      // Compute new totals
+      let subtotal = 0;
+      for (const item of items) {
+        const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0 } = item;
+        await db.run('INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)', [id, inventory_id, quantity, unit_price, loose_qty]);
+        await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
+        subtotal += quantity * unit_price;
+      }
+
+      const taxRate = 0.05;
+      const tax = subtotal * taxRate;
+      const total = Math.round(subtotal + tax - discount);
+
+      await db.run(
+        'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status) WHERE id = ?',
+        [customerId, total, tax, paymentMedium || null, paymentStatus || null, id]
+      );
+    } else {
+      // Just update customer/discount
+      await db.run('UPDATE sales_invoices SET customer_id = ? WHERE id = ?', [customerId, id]);
+    }
+
+    await db.close();
+    res.json({ success: true, message: 'Invoice updated' });
+  } catch (error) {
+    if (db) await db.close();
+    const err = error as Error;
+    console.error(JSON.stringify({ message: 'Failed to update sale', error: err.message, timestamp: new Date().toISOString() }));
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete a sale invoice (reverses stock)
+router.delete('/:id', async (req, res) => {
+  let db;
+  try {
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const { id } = req.params;
+
+    const existing = await db.get('SELECT * FROM sales_invoices WHERE id = ?', [id]);
+    if (!existing) {
+      await db.close();
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    // Reverse stock
+    const items = await db.all('SELECT inventory_id, quantity FROM sale_items WHERE invoice_id = ?', [id]);
+    for (const item of items) {
+      await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [item.quantity, item.inventory_id]);
+    }
+
+    // Delete items then invoice
+    await db.run('DELETE FROM sale_items WHERE invoice_id = ?', [id]);
+    await db.run('DELETE FROM sales_invoices WHERE id = ?', [id]);
+
+    await db.close();
+    res.json({ success: true, message: 'Invoice deleted, stock restored' });
+  } catch (error) {
+    if (db) await db.close();
+    const err = error as Error;
+    console.error(JSON.stringify({ message: 'Failed to delete sale', error: err.message, timestamp: new Date().toISOString() }));
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // List all held bills
 router.get('/hold', async (req, res) => {

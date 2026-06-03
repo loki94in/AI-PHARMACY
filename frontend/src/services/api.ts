@@ -136,6 +136,10 @@ export const api = {
   },
   analyzeMigrationFile: (fileName: string, skipLines: number = 0) => 
     apiClient.post('/migration/analyze', { fileName, skipLines }).then(r => r.data),
+  analyzeZipFile: (fileName: string) =>
+    apiClient.post('/migration/analyze-zip', { fileName }).then(r => r.data),
+  analyzeExcelFile: (fileName: string, sheetIndex?: number) =>
+    apiClient.post('/migration/analyze-excel', { fileName, sheetIndex }).then(r => r.data),
   runMigration: (fileName: string, mapping: any, skipLines: number = 0) => 
     apiClient.post('/migration/run', { fileName, mapping, skipLines }).then(r => r.data),
   getMigrationStatus: () => apiClient.get('/migration/status').then(r => r.data),
@@ -144,6 +148,9 @@ export const api = {
   getStagingPurchases: () => apiClient.get('/migration/staging/purchases').then(r => r.data),
   finalizeMigration: (regenerateInvoices: boolean = false) => 
     apiClient.post('/migration/staging/finalize', { regenerateInvoices }).then(r => r.data),
+  rollbackMigration: () =>
+    apiClient.delete('/migration/staging/rollback').then(r => r.data),
+
   
   addPatient: (data: any) => apiClient.post('/crm/patients', data).then(res => res.data),
   getDoctors: () => apiClient.get('/crm/doctors').then(res => res.data),
@@ -185,4 +192,16 @@ export const api = {
   // Expiry Monitor
   getExpiryList: (days?: number) => apiClient.get('/expiry', { params: { days } }).then(res => res.data),
   sendExpiryAlerts: (data: { phone?: string, days?: number }) => apiClient.post('/expiry/send-alerts', data).then(res => res.data),
+
+  // Dispatch Orders
+  getDispatchOrders: () => apiClient.get('/dispatch/orders').then(res => res.data),
+  createDispatchOrder: (data: any) => apiClient.post('/dispatch/orders', data).then(res => res.data),
+  updateDispatchOrder: (id: number, data: any) => apiClient.put(`/dispatch/orders/${id}`, data).then(res => res.data),
+  deleteDispatchOrder: (id: number) => apiClient.delete(`/dispatch/orders/${id}`).then(res => res.data),
+  getDeliveryBoys: () => apiClient.get('/dispatch/delivery-boys').then(res => res.data),
+
+  // CRM — extended
+  updatePatient: (id: number, data: any) => apiClient.put(`/crm/patients/${id}`, data).then(res => res.data),
+  deletePatient: (id: number) => apiClient.delete(`/crm/patients/${id}`).then(res => res.data),
+  getPatientHistory: (id: number) => apiClient.get(`/crm/${id}/history`).then(res => res.data),
 };

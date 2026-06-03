@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api, apiClient } from '../services/api';
 import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers } from 'lucide-react';
 
@@ -51,8 +52,25 @@ const Returns: React.FC = () => {
     };
   }
 
+  const location = useLocation();
+
   useEffect(() => {
     fetchReturnHistory();
+    // Auto-prefill from Expiry page navigation
+    const prefilledItems = location.state?.prefilledReturnItems;
+    if (prefilledItems && prefilledItems.length > 0) {
+      const mapped = prefilledItems.map((item: any) => ({
+        id: crypto.randomUUID(),
+        medicine_id: item.medicine_id ?? null,
+        medicine_name: item.medicine_name || '',
+        batch_no: item.batch_no || '',
+        expiry_date: item.expiry_date || '',
+        quantity: item.quantity || 0,
+        cost_price: item.mrp || 0,
+        mrp: item.mrp || 0,
+      }));
+      setItems(mapped);
+    }
   }, []);
 
   const fetchReturnHistory = async () => {

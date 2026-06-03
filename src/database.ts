@@ -191,6 +191,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE sale_items ADD COLUMN sgst_value REAL DEFAULT 0`,
     `ALTER TABLE sale_items ADD COLUMN discount_per REAL DEFAULT 0`,
     `ALTER TABLE sale_items ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE sale_items ADD COLUMN loose_qty INTEGER DEFAULT 0`,
     // Returns extra columns
     `ALTER TABLE returns ADD COLUMN cgst_value REAL DEFAULT 0`,
     `ALTER TABLE returns ADD COLUMN sgst_value REAL DEFAULT 0`,
@@ -354,6 +355,22 @@ export async function ensureSchema(dbPath: string) {
       FOREIGN KEY(return_id) REFERENCES returns(id),
       FOREIGN KEY(distributor_id) REFERENCES distributors(id),
       FOREIGN KEY(reconciled_purchase_id) REFERENCES purchases(id)
+    );
+
+    -- Dispatch delivery orders (home delivery management)
+    CREATE TABLE IF NOT EXISTS dispatch_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_name TEXT NOT NULL,
+      patient_phone TEXT,
+      address TEXT,
+      items TEXT,
+      notes TEXT,
+      delivery_boy_id INTEGER,
+      invoice_no TEXT,
+      status TEXT CHECK(status IN ('Pending','In Transit','Delivered')) DEFAULT 'Pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      delivered_at DATETIME,
+      FOREIGN KEY(delivery_boy_id) REFERENCES delivery_boys(id)
     );
   `);
 

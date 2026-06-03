@@ -38,11 +38,13 @@ import Mail from './pages/Mail';
 import Returns from './pages/Returns';
 import Orders from './pages/Orders';
 import Expiry from './pages/Expiry';
+import Sells from './pages/Sells';
 
 const Sidebar = () => {
   const location = useLocation();
   const menuItems = [
     { path: '/pos', label: 'Sales / POS', icon: <ShoppingCart size={18} /> },
+    { path: '/sells', label: 'Sells / Bills', icon: <Receipt size={18} /> },
     { path: '/manual-purchase', label: 'Manual Purchase', icon: <Receipt size={18} /> },
     { path: '/purchases', label: 'Purchase History', icon: <Receipt size={18} /> },
     { path: '/mail', label: 'Distributor Mail', icon: <Activity size={18} /> },
@@ -117,6 +119,8 @@ const Topbar = () => {
         return 'Dashboard';
       case '/pos':
         return 'Sales / POS';
+      case '/sells':
+        return 'Sells / Bills';
       case '/inventory':
         return 'Inventory Master';
       case '/purchases':
@@ -248,6 +252,7 @@ function App() {
           <Route path="/returns" element={<Returns />} />
           <Route path="/expiry" element={<Expiry />} />
           <Route path="/pos" element={<POS />} />
+          <Route path="/sells" element={<Sells />} />
           <Route path="/manual-purchase" element={<Purchases />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/crm" element={<CRM />} />

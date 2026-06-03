@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   CalendarDays, 
   Search, 
@@ -7,10 +8,8 @@ import {
   AlertCircle, 
   AlertTriangle, 
   RefreshCw, 
-  Printer, 
-  Trash2, 
-  CheckCircle2, 
-  Clock 
+  CheckCircle2,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -25,6 +24,7 @@ interface ExpiryItem {
 }
 
 const Expiry = () => {
+  const navigate = useNavigate();
   const [items, setItems] = useState<ExpiryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,6 +32,7 @@ const Expiry = () => {
   const [daysFilter, setDaysFilter] = useState(90);
   const [customPhone, setCustomPhone] = useState('');
   const [sendingAlerts, setSendingAlerts] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   
   // Notification Toast State
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -65,6 +66,20 @@ const Expiry = () => {
     setTimeout(() => {
       setNotification(null);
     }, 5000);
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleSendToReturns = () => {
+    const selected = filteredItems.filter(item => selectedIds.has(item.id));
+    if (selected.length === 0) return;
+    navigate('/returns', { state: { prefilledReturnItems: selected } });
   };
 
   const handleSendWhatsAppAlerts = async (e: React.FormEvent) => {
@@ -170,6 +185,15 @@ const Expiry = () => {
           <p className="text-xs text-muted mt-1">Audit near-expiry and expired stock batches, manage inventory levels, and send dispatch alerts.</p>
         </div>
         <div className="flex items-center gap-3">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleSendToReturns}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30 transition-all text-xs font-bold"
+            >
+              <RotateCcw size={13} />
+              Return {selectedIds.size} Selected
+            </button>
+          )}
           <button 
             onClick={() => fetchExpiryItems(daysFilter, true)} 
             disabled={refreshing}
@@ -328,6 +352,12 @@ const Expiry = () => {
             <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10 select-none">
                 <tr>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 w-8">
+                    <input type="checkbox" className="rounded" onChange={e => {
+                      if (e.target.checked) setSelectedIds(new Set(filteredItems.map(i => i.id)));
+                      else setSelectedIds(new Set());
+                    }} checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} readOnly />
+                  </th>
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">ID</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">Medicine Name</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">Batch Number</th>
@@ -357,11 +387,20 @@ const Expiry = () => {
                   filteredItems.map(item => {
                     const daysDiff = getExpiryDaysDiff(item.expiry_date);
                     const details = getExpiryStatusDetails(daysDiff);
+                    const isSelected = selectedIds.has(item.id);
                     return (
                       <tr 
                         key={item.id} 
-                        className={`hover:bg-white/5 border-b border-glass-border/20 transition-all ${details.rowClass}`}
+                        className={`hover:bg-white/5 border-b border-glass-border/20 transition-all ${details.rowClass} ${isSelected ? 'bg-red-500/10' : ''}`}
                       >
+                        <td className="p-4">
+                          <input
+                            type="checkbox"
+                            className="rounded cursor-pointer"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(item.id)}
+                          />
+                        </td>
                         <td className="p-4 text-muted font-mono select-none">
                           {item.id}
                         </td>

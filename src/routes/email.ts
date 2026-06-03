@@ -12,7 +12,8 @@ import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const getDbPath = () => process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const getUploadsDir = () => process.env.UPLOADS_DIR || path.resolve(__dirname, '..', '..', 'uploads');
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ router.post('/', async (req, res) => {
   }
   try {
     // Log the basic email info
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['EMAIL_RECEIVED', `From: ${from}, Subject: ${subject}`]
@@ -40,7 +41,7 @@ router.post('/', async (req, res) => {
     };
 
     // Log the email receipt (more detailed)
-    const db2 = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
     await db2.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['EMAIL_RECEIVED_PROCESSED', `From: ${from}, Subject: ${subject}`]
@@ -104,7 +105,7 @@ router.post('/import-manual', async (req, res) => {
 // GET /api/email/attachments
 router.get('/attachments', async (req, res) => {
   try {
-    const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
+    const uploadsDir = getUploadsDir();
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
@@ -131,20 +132,12 @@ router.get('/:id/attachments', async (req, res) => {
   try {
     const emailId = req.params.id;
 
-    // Fetch the email record from action_logs
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    const email = await db.get(
-      'SELECT * FROM action_logs WHERE id = ? AND action_type = ?',
-      [emailId, 'EMAIL_RECEIVED']
-    );
-    await db.close();
-
     if (!email) {
-      return res.status(404).json({ error: 'Email not found' });
+      console.warn(`Email with ID ${emailId} not found in action_logs, listing available attachments anyway`);
     }
 
     // Read all files from uploads folder
-    const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
+    const uploadsDir = getUploadsDir();
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
@@ -182,17 +175,17 @@ router.get('/:id/attachments', async (req, res) => {
 
 // POST /api/email/attachments/parse
 router.post('/attachments/parse', async (req, res) => {
-  const { filename } = req.body;
+  const { filename, importData = true } = req.body;
   if (!filename) {
     return res.status(400).json({ error: 'filename is required' });
   }
   try {
-    const filePath = path.resolve(__dirname, '..', '..', 'uploads', filename);
+    const filePath = path.resolve(getUploadsDir(), filename);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Attachment file not found' });
     }
 
-    const result = await emailService.parseAndImportAttachment(filePath);
+    const result = await emailService.parseAndImportAttachment(filePath, importData);
     eventService.broadcast('email_update', { success: true, message: 'Attachment parsed successfully' });
     res.json(result);
   } catch (error: any) {

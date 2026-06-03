@@ -1,4 +1,4 @@
-// Dispatch & Support API (Agent 2)
+// Dispatch & Support API
 import express from 'express';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
@@ -11,26 +11,94 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
-// Create a dispatch request (e.g., support ticket)
-router.post('/', async (req, res) => {
-  const { type, description, contact } = req.body;
-  if (!type || !description) {
-    return res.status(400).json({ error: 'type and description required' });
-  }
+// ─── DISPATCH ORDERS ────────────────────────────────────────────────────────
+
+// GET all dispatch orders (with delivery boy name joined)
+router.get('/orders', async (_req, res) => {
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run(
-      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-      ['DISPATCH', `${type}: ${description}`]
-    );
+    const orders = await db.all(`
+      SELECT d.*, db.name as delivery_boy_name, db.whatsapp_number as delivery_boy_phone
+      FROM dispatch_orders d
+      LEFT JOIN delivery_boys db ON d.delivery_boy_id = db.id
+      ORDER BY d.created_at DESC
+    `);
     await db.close();
-    // In a real system, this could trigger WhatsApp/Email notifications
-    res.json({ success: true, message: 'Dispatch logged' });
-  } catch (error) {
-    console.error('Dispatch error:', error);
-    res.status(500).json({ error: 'Failed to log dispatch' });
+    res.json(orders);
+  } catch (err) {
+    console.error('Dispatch orders fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch dispatch orders' });
   }
 });
+
+// POST create dispatch order
+router.post('/orders', async (req, res) => {
+  const { patient_name, patient_phone, address, items, notes, delivery_boy_id, invoice_no } = req.body;
+  if (!patient_name) return res.status(400).json({ error: 'patient_name is required' });
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const result = await db.run(
+      `INSERT INTO dispatch_orders (patient_name, patient_phone, address, items, notes, delivery_boy_id, invoice_no)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [patient_name, patient_phone || '', address || '', items || '', notes || '', delivery_boy_id || null, invoice_no || '']
+    );
+    const newOrder = await db.get(`
+      SELECT d.*, db.name as delivery_boy_name FROM dispatch_orders d
+      LEFT JOIN delivery_boys db ON d.delivery_boy_id = db.id WHERE d.id = ?`, result.lastID);
+    await db.close();
+    res.status(201).json(newOrder);
+  } catch (err) {
+    console.error('Create dispatch order error:', err);
+    res.status(500).json({ error: 'Failed to create dispatch order' });
+  }
+});
+
+// PUT update dispatch order status / fields
+router.put('/orders/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status, delivery_boy_id, notes, address, patient_phone } = req.body;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const existing = await db.get('SELECT * FROM dispatch_orders WHERE id = ?', id);
+    if (!existing) { await db.close(); return res.status(404).json({ error: 'Order not found' }); }
+
+    const newStatus = status ?? existing.status;
+    const newBoy = delivery_boy_id ?? existing.delivery_boy_id;
+    const deliveredAt = newStatus === 'Delivered' && existing.status !== 'Delivered'
+      ? new Date().toISOString() : existing.delivered_at;
+
+    await db.run(
+      `UPDATE dispatch_orders SET status=?, delivery_boy_id=?, notes=?, address=?, patient_phone=?, delivered_at=? WHERE id=?`,
+      [newStatus, newBoy, notes ?? existing.notes, address ?? existing.address,
+       patient_phone ?? existing.patient_phone, deliveredAt, id]
+    );
+    const updated = await db.get(`
+      SELECT d.*, db.name as delivery_boy_name FROM dispatch_orders d
+      LEFT JOIN delivery_boys db ON d.delivery_boy_id = db.id WHERE d.id = ?`, id);
+    await db.close();
+    res.json(updated);
+  } catch (err) {
+    console.error('Update dispatch order error:', err);
+    res.status(500).json({ error: 'Failed to update dispatch order' });
+  }
+});
+
+// DELETE dispatch order
+router.delete('/orders/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const result = await db.run('DELETE FROM dispatch_orders WHERE id = ?', id);
+    await db.close();
+    if (result.changes === 0) return res.status(404).json({ error: 'Order not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete dispatch order error:', err);
+    res.status(500).json({ error: 'Failed to delete dispatch order' });
+  }
+});
+
+// ─── DELIVERY BOYS ────────────────────────────────────────────────────────────
 
 // GET /api/dispatch/delivery-boys
 router.get('/delivery-boys', async (req, res) => {
@@ -48,9 +116,7 @@ router.get('/delivery-boys', async (req, res) => {
 // POST /api/dispatch/delivery-boys
 router.post('/delivery-boys', async (req, res) => {
   const { name, whatsapp_number, telegram_chat_id, is_active } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: 'Name is required' });
-  }
+  if (!name) return res.status(400).json({ error: 'Name is required' });
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const result = await db.run(
@@ -73,19 +139,11 @@ router.put('/delivery-boys/:id', async (req, res) => {
   try {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const existing = await db.get('SELECT * FROM delivery_boys WHERE id = ?', id);
-    if (!existing) {
-      await db.close();
-      return res.status(404).json({ error: 'Delivery boy not found' });
-    }
+    if (!existing) { await db.close(); return res.status(404).json({ error: 'Delivery boy not found' }); }
     await db.run(
-      `UPDATE delivery_boys SET name = ?, whatsapp_number = ?, telegram_chat_id = ?, is_active = ? WHERE id = ?`,
-      [
-        name !== undefined ? name : existing.name,
-        whatsapp_number !== undefined ? whatsapp_number : existing.whatsapp_number,
-        telegram_chat_id !== undefined ? telegram_chat_id : existing.telegram_chat_id,
-        is_active !== undefined ? is_active : existing.is_active,
-        id
-      ]
+      `UPDATE delivery_boys SET name=?, whatsapp_number=?, telegram_chat_id=?, is_active=? WHERE id=?`,
+      [name ?? existing.name, whatsapp_number ?? existing.whatsapp_number,
+       telegram_chat_id ?? existing.telegram_chat_id, is_active ?? existing.is_active, id]
     );
     const updated = await db.get('SELECT * FROM delivery_boys WHERE id = ?', id);
     await db.close();
@@ -103,9 +161,7 @@ router.delete('/delivery-boys/:id', async (req, res) => {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const result = await db.run('DELETE FROM delivery_boys WHERE id = ?', id);
     await db.close();
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Delivery boy not found' });
-    }
+    if (result.changes === 0) return res.status(404).json({ error: 'Delivery boy not found' });
     res.json({ success: true, message: 'Delivery boy deleted' });
   } catch (error) {
     console.error('Delete delivery boy error:', error);
@@ -113,4 +169,20 @@ router.delete('/delivery-boys/:id', async (req, res) => {
   }
 });
 
+// Legacy support route
+router.post('/', async (req, res) => {
+  const { type, description } = req.body;
+  if (!type || !description) return res.status(400).json({ error: 'type and description required' });
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['DISPATCH', `${type}: ${description}`]);
+    await db.close();
+    res.json({ success: true, message: 'Dispatch logged' });
+  } catch (error) {
+    console.error('Dispatch error:', error);
+    res.status(500).json({ error: 'Failed to log dispatch' });
+  }
+});
+
 export default router;
+
