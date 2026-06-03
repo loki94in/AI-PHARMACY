@@ -10,7 +10,8 @@ import {
   Activity,
   LogOut,
   Database,
-  RotateCcw
+  RotateCcw,
+  ClipboardList
 } from 'lucide-react';
 import React from 'react';
 
@@ -27,6 +28,7 @@ import License from './pages/License';
 import Settings from './pages/Settings';
 import Mail from './pages/Mail';
 import Returns from './pages/Returns';
+import Orders from './pages/Orders';
 
 const Sidebar = () => {
   const location = useLocation();
@@ -38,6 +40,7 @@ const Sidebar = () => {
     { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
     { path: '/returns', label: 'Returns', icon: <RotateCcw size={18} /> },
     { path: '/crm', label: 'CRM / Patients', icon: <Users size={18} /> },
+    { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
     { path: '/doctors', label: 'Doctors', icon: <UserPlus size={18} /> },
     { path: '/catalog', label: 'Catalog Upload', icon: <Database size={18} /> },
     { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
@@ -110,6 +113,8 @@ const Topbar = () => {
         return 'Purchase History';
       case '/crm':
         return 'CRM / Patients';
+      case '/orders':
+        return 'Orders & Requests';
       case '/migration':
         return 'Data Migration';
       case '/manual-purchase':
@@ -190,6 +195,7 @@ function App() {
           <Route path="/manual-purchase" element={<Purchases />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/crm" element={<CRM />} />
+          <Route path="/orders" element={<Orders />} />
           <Route path="/migration" element={<Migration />} />
           <Route path="/doctors" element={<Doctors />} />
           <Route path="/dispatch" element={<Dispatch />} />

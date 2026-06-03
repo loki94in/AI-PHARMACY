@@ -160,5 +160,23 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-06-03T05:47:58.531Z"
+  },
+  {
+    "id": "audit_1780467918550",
+    "imagePath": "data\\audit_images\\audit_1780467918550.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-03T06:25:18.751Z"
+  },
+  {
+    "id": "audit_1780468498594",
+    "imagePath": "data\\audit_images\\audit_1780468498594.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-03T06:34:58.771Z"
   }
 ]

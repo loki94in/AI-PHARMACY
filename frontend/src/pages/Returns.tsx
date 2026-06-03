@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, apiClient } from '../services/api';
-import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package } from 'lucide-react';
+import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers } from 'lucide-react';
 
 interface ReturnItem {
   id: string;
@@ -19,33 +19,24 @@ interface ReturnItem {
   distributor_id?: number;
 }
 
-interface NearExpiryGroup {
+interface GroupedReturn {
   distributor_id: number;
   distributor_name: string;
-  items: any[];
-}
-
-interface ReturnRecord {
-  id: number;
-  return_no: string;
-  original_invoice_id: number;
-  type: string;
+  invoice_no: string;
+  purchase_date: string;
+  items: ReturnItem[];
   total_amount: number;
-  date: string;
 }
 
 const Returns: React.FC = () => {
-  const [returnType, setReturnType] = useState<'sale' | 'purchase'>('purchase');
   const [items, setItems] = useState<ReturnItem[]>([createEmptyItem()]);
-  const [returnHistory, setReturnHistory] = useState<ReturnRecord[]>([]);
-  const [nearExpiryGroups, setNearExpiryGroups] = useState<NearExpiryGroup[]>([]);
+  const [returnHistory, setReturnHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
-  const [showNearExpiry, setShowNearExpiry] = useState(false);
-  const [expiryMonths, setExpiryMonths] = useState(6);
-  const [selectedDistributor, setSelectedDistributor] = useState<number | null>(null);
+  const [showGroupedPreview, setShowGroupedPreview] = useState(false);
+  const [groupedReturns, setGroupedReturns] = useState<GroupedReturn[]>([]);
 
   function createEmptyItem(): ReturnItem {
     return {
@@ -71,19 +62,6 @@ const Returns: React.FC = () => {
       setReturnHistory(response.data || []);
     } catch (error) {
       console.error('Error fetching returns:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchNearExpiry = async () => {
-    setLoading(true);
-    try {
-      const response = await api.getNearExpiry(expiryMonths);
-      setNearExpiryGroups(response.data || []);
-      setShowNearExpiry(true);
-    } catch (error) {
-      console.error('Error fetching near expiry:', error);
     } finally {
       setLoading(false);
     }
@@ -125,23 +103,6 @@ const Returns: React.FC = () => {
     setActiveSearchIndex(null);
   };
 
-  const selectFromNearExpiry = (nearExpiryItem: any) => {
-    const newItem: ReturnItem = {
-      id: crypto.randomUUID(),
-      medicine_id: nearExpiryItem.medicine_id || null,
-      medicine_name: nearExpiryItem.medicine_name,
-      batch_no: nearExpiryItem.batch_no,
-      expiry_date: nearExpiryItem.expiry_date,
-      quantity: 1,
-      cost_price: nearExpiryItem.cost_price,
-      mrp: nearExpiryItem.mrp,
-      distributor_name: nearExpiryItem.distributor_name,
-      distributor_id: nearExpiryItem.distributor_id,
-    };
-
-    setItems([...items, newItem]);
-  };
-
   const updateItem = (index: number, field: keyof ReturnItem, value: any) => {
     const newItems = [...items];
     const item = newItems[index];
@@ -164,29 +125,72 @@ const Returns: React.FC = () => {
     setItems([...items, createEmptyItem()]);
   };
 
-  const calculateTotal = () => {
-    return items.reduce((sum, item) => sum + (item.cost_price * item.quantity), 0);
+  // Group items by distributor + invoice
+  const groupItemsByInvoice = (): GroupedReturn[] => {
+    const validItems = items.filter(item => item.medicine_id && item.quantity > 0);
+    
+    const grouped: { [key: string]: GroupedReturn } = {};
+    
+    validItems.forEach(item => {
+      // Create key from distributor + invoice to group
+      const key = `${item.distributor_id}_${item.invoice_no}`;
+      
+      if (!grouped[key]) {
+        grouped[key] = {
+          distributor_id: item.distributor_id || 0,
+          distributor_name: item.distributor_name || 'Unknown',
+          invoice_no: item.invoice_no || 'N/A',
+          purchase_date: item.purchase_date || '',
+          items: [],
+          total_amount: 0,
+        };
+      }
+      
+      grouped[key].items.push(item);
+      grouped[key].total_amount += item.cost_price * item.quantity;
+    });
+    
+    return Object.values(grouped);
+  };
+
+  const calculateGrandTotal = () => {
+    return items
+      .filter(item => item.medicine_id && item.quantity > 0)
+      .reduce((sum, item) => sum + (item.cost_price * item.quantity), 0);
+  };
+
+  const handlePreviewGrouped = () => {
+    const grouped = groupItemsByInvoice();
+    setGroupedReturns(grouped);
+    setShowGroupedPreview(true);
   };
 
   const processReturn = async () => {
-    const validItems = items.filter(item => item.medicine_id && item.quantity > 0);
-    if (validItems.length === 0) {
+    const grouped = groupItemsByInvoice();
+    
+    if (grouped.length === 0) {
       alert('Please add at least one medicine with quantity');
       return;
     }
 
     setSaving(true);
     try {
-      await api.processReturns(validItems.map(item => ({
-        medicine_id: item.medicine_id,
-        batch_no: item.batch_no,
-        quantity: item.quantity,
-        cost_price: item.cost_price,
-        mrp: item.mrp,
-      })));
+      // Process each group separately (one return per distributor/invoice)
+      for (const group of grouped) {
+        await api.processReturns(group.items.map(item => ({
+          medicine_id: item.medicine_id,
+          batch_no: item.batch_no,
+          quantity: item.quantity,
+          cost_price: item.cost_price,
+          mrp: item.mrp,
+          distributor_id: group.distributor_id,
+          invoice_no: group.invoice_no,
+        })));
+      }
 
-      alert('Return processed successfully!');
+      alert(`Successfully processed ${grouped.length} return(s)!`);
       setItems([createEmptyItem()]);
+      setShowGroupedPreview(false);
       fetchReturnHistory();
     } catch (error) {
       console.error('Error processing return:', error);
@@ -197,22 +201,25 @@ const Returns: React.FC = () => {
   };
 
   const exportPDF = async () => {
-    const validItems = items.filter(item => item.medicine_id && item.quantity > 0);
-    if (validItems.length === 0) {
+    const grouped = groupItemsByInvoice();
+    if (grouped.length === 0) {
       alert('No items to export');
       return;
     }
 
     try {
-      const blob = await api.exportReturnsPDF(validItems);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `return-report-${Date.now()}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      // Export each group as separate PDF
+      for (const group of grouped) {
+        const blob = await api.exportReturnsPDF(group.items);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `return-${group.distributor_name}-${group.invoice_no}-${Date.now()}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
     } catch (error) {
       console.error('Error exporting PDF:', error);
       alert('Failed to export PDF');
@@ -222,113 +229,14 @@ const Returns: React.FC = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Returns Management</h1>
-        <p className="text-gray-400">Process sale and purchase returns, track near-expiry items</p>
+        <h1 className="text-2xl font-bold text-white">Returns to Distributor</h1>
+        <p className="text-gray-400">Add medicines batch-wise, auto-grouped by distributor & invoice</p>
       </div>
-
-      {/* Return Type Toggle */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-300">Return Type:</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setReturnType('purchase')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                returnType === 'purchase'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white/10 text-gray-400 hover:bg-white/20'
-              }`}
-            >
-              Purchase Return
-            </button>
-            <button
-              onClick={() => setReturnType('sale')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                returnType === 'sale'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white/10 text-gray-400 hover:bg-white/20'
-              }`}
-            >
-              Sale Return
-            </button>
-          </div>
-
-          <div className="ml-auto flex gap-2">
-            <button
-              onClick={fetchNearExpiry}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"
-            >
-              <AlertTriangle size={16} />
-              Near Expiry
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Near Expiry Modal */}
-      {showNearExpiry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-white">Near Expiry Items (within {expiryMonths} months)</h3>
-              <button
-                onClick={() => setShowNearExpiry(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            {nearExpiryGroups.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">No near-expiry items found.</p>
-            ) : (
-              nearExpiryGroups.map((group) => (
-                <div key={group.distributor_id} className="mb-4">
-                  <h4 className="text-white font-medium mb-2">{group.distributor_name}</h4>
-                  <div className="bg-white/5 rounded-lg overflow-hidden">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="text-left text-gray-400 border-b border-white/10">
-                          <th className="p-3 text-xs">Medicine</th>
-                          <th className="p-3 text-xs">Batch</th>
-                          <th className="p-3 text-xs">Expiry</th>
-                          <th className="p-3 text-xs">Qty</th>
-                          <th className="p-3 text-xs">Cost</th>
-                          <th className="p-3 text-xs"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.items.map((item, idx) => (
-                          <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
-                            <td className="p-3 text-sm text-white">{item.medicine_name}</td>
-                            <td className="p-3 text-sm text-gray-300">{item.batch_no}</td>
-                            <td className="p-3 text-sm text-yellow-400">{item.expiry_date}</td>
-                            <td className="p-3 text-sm text-gray-300">{item.quantity}</td>
-                            <td className="p-3 text-sm text-gray-300">₹{item.cost_price}</td>
-                            <td className="p-3">
-                              <button
-                                onClick={() => selectFromNearExpiry(item)}
-                                className="text-green-400 hover:text-green-300 text-sm"
-                              >
-                                + Add
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Items Table */}
       <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-white">Return Items</h2>
+          <h2 className="text-lg font-semibold text-white">Add Return Items</h2>
           <button
             onClick={addItem}
             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm"
@@ -348,7 +256,7 @@ const Returns: React.FC = () => {
                 <th className="pb-3">Qty</th>
                 <th className="pb-3">Cost Price</th>
                 <th className="pb-3">Total</th>
-                <th className="pb-3">Invoice</th>
+                <th className="pb-3">Invoice Ref</th>
                 <th className="pb-3">Distributor</th>
                 <th className="pb-3"></th>
               </tr>
@@ -379,7 +287,7 @@ const Returns: React.FC = () => {
                             >
                               <div>{result.medicine_name}</div>
                               <div className="text-xs text-gray-400">
-                                Batch: {result.batch_no} | ₹{result.cost_price} | {result.distributor_name}
+                                Batch: {result.batch_no} | ₹{result.cost_price} | {result.distributor_name} | Inv: {result.invoice_no}
                               </div>
                             </button>
                           ))}
@@ -425,8 +333,16 @@ const Returns: React.FC = () => {
                   <td className="py-3 text-white font-medium">
                     ₹{(item.cost_price * item.quantity).toFixed(2)}
                   </td>
-                  <td className="py-3 text-gray-300 text-sm">{item.invoice_no || '-'}</td>
-                  <td className="py-3 text-gray-300 text-sm">{item.distributor_name || '-'}</td>
+                  <td className="py-3 text-gray-300 text-sm">
+                    <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs">
+                      {item.invoice_no || 'N/A'}
+                    </span>
+                  </td>
+                  <td className="py-3 text-gray-300 text-sm">
+                    <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs">
+                      {item.distributor_name || 'N/A'}
+                    </span>
+                  </td>
                   <td className="py-3">
                     <button
                       onClick={() => removeItem(index)}
@@ -446,8 +362,12 @@ const Returns: React.FC = () => {
       <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
         <div className="flex justify-between items-center">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Total Return Amount</label>
-            <p className="text-3xl font-bold text-white">₹{calculateTotal().toFixed(2)}</p>
+            <label className="block text-sm text-gray-400 mb-1">Grand Total (All Items)</label>
+            <p className="text-3xl font-bold text-white">₹{calculateGrandTotal().toFixed(2)}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {items.filter(i => i.medicine_id && i.quantity > 0).length} items from{' '}
+              {groupItemsByInvoice().length} distributor(s)
+            </p>
           </div>
           <div className="flex gap-3">
             <button
@@ -458,16 +378,103 @@ const Returns: React.FC = () => {
               Export PDF
             </button>
             <button
+              onClick={handlePreviewGrouped}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2"
+            >
+              <Layers size={18} />
+              Preview Grouped
+            </button>
+            <button
               onClick={processReturn}
               disabled={saving}
               className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-2"
             >
               <RotateCcw size={18} />
-              {saving ? 'Processing...' : 'Process Return'}
+              {saving ? 'Processing...' : 'Process Returns'}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Grouped Preview Modal */}
+      {showGroupedPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-5xl max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-white">
+                Preview: {groupedReturns.length} Separate Return Bill(s)
+              </h3>
+              <button
+                onClick={() => setShowGroupedPreview(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {groupedReturns.map((group, idx) => (
+                <div key={idx} className="bg-white/5 rounded-lg p-4 border border-white/10">
+                  <div className="flex justify-between items-center mb-3">
+                    <div>
+                      <h4 className="text-white font-semibold">{group.distributor_name}</h4>
+                      <p className="text-sm text-gray-400">
+                        Invoice: <span className="text-blue-400">{group.invoice_no}</span> | 
+                        Date: {group.purchase_date}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-green-400 font-bold">₹{group.total_amount.toFixed(2)}</p>
+                      <p className="text-xs text-gray-400">{group.items.length} item(s)</p>
+                    </div>
+                  </div>
+
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-400 border-b border-white/10">
+                        <th className="pb-2 text-left">Medicine</th>
+                        <th className="pb-2 text-left">Batch</th>
+                        <th className="pb-2 text-left">Expiry</th>
+                        <th className="pb-2 text-right">Qty</th>
+                        <th className="pb-2 text-right">Cost</th>
+                        <th className="pb-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((item, i) => (
+                        <tr key={i} className="border-b border-white/5">
+                          <td className="py-2 text-white">{item.medicine_name}</td>
+                          <td className="py-2 text-gray-300">{item.batch_no}</td>
+                          <td className="py-2 text-gray-300">{item.expiry_date}</td>
+                          <td className="py-2 text-right text-gray-300">{item.quantity}</td>
+                          <td className="py-2 text-right text-gray-300">₹{item.cost_price}</td>
+                          <td className="py-2 text-right text-white">₹{(item.cost_price * item.quantity).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowGroupedPreview(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={processReturn}
+                disabled={saving}
+                className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50"
+              >
+                {saving ? 'Processing...' : 'Confirm & Process All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Return History */}
       <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
@@ -494,15 +501,13 @@ const Returns: React.FC = () => {
                   <td colSpan={5} className="py-8 text-center text-gray-400">No returns recorded yet.</td>
                 </tr>
               ) : (
-                returnHistory.map((ret) => (
+                returnHistory.slice(0, 10).map((ret) => (
                   <tr key={ret.id} className="border-b border-white/10 hover:bg-white/5">
                     <td className="py-3 text-gray-300">{ret.id}</td>
                     <td className="py-3 text-white font-medium">{ret.return_no}</td>
                     <td className="py-3">
-                      <span className={`px-2 py-1 rounded text-xs ${
-                        ret.type === 'purchase' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
-                      }`}>
-                        {ret.type || 'N/A'}
+                      <span className="px-2 py-1 rounded text-xs bg-blue-500/20 text-blue-400">
+                        {ret.type || 'purchase'}
                       </span>
                     </td>
                     <td className="py-3 text-gray-300">{ret.date}</td>

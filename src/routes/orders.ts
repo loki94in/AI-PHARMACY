@@ -138,4 +138,74 @@ router.get('/uncollected-alerts', async (_req, res) => {
   }
 });
 
+// Update order status/details
+router.put('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status, priority, qty, product, requester, phone } = req.body;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await initOrdersTable(db);
+    
+    const existing = await db.get('SELECT * FROM special_orders WHERE id = ?', id);
+    if (!existing) {
+      await db.close();
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const newStatus = status !== undefined ? status : existing.status;
+    const newPriority = priority !== undefined ? priority : existing.priority;
+    const newQty = qty !== undefined ? qty : existing.qty;
+    const newProduct = product !== undefined ? product : existing.product;
+    const newRequester = requester !== undefined ? requester : existing.requester;
+    const newPhone = phone !== undefined ? phone : existing.phone;
+
+    await db.run(
+      `UPDATE special_orders 
+       SET status = ?, priority = ?, qty = ?, product = ?, requester = ?, phone = ? 
+       WHERE id = ?`,
+      [newStatus, newPriority, newQty, newProduct, newRequester, newPhone, id]
+    );
+
+    // If status changes to 'Ready' and the customer wasn't notified, auto send WhatsApp
+    if (newStatus === 'Ready' && existing.status !== 'Ready' && newPhone) {
+      try {
+        const cleanPhone = newPhone.replace(/\D/g, '');
+        const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+        const msg = `Hi ${newRequester || 'Customer'}, your special order for ${newProduct} (Qty: ${newQty}) is now READY for collection. Please visit us to collect it.`;
+        await sendMessage(formattedPhone, undefined, msg);
+        await db.run('UPDATE special_orders SET notified = 1 WHERE id = ?', [id]);
+      } catch (wsError) {
+        console.error(`Failed to send status update WhatsApp to ${newRequester}:`, wsError);
+      }
+    }
+
+    await db.close();
+    res.json({ success: true, message: 'Order updated successfully' });
+  } catch (err) {
+    console.error('Update order error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete an order
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await initOrdersTable(db);
+    
+    const result = await db.run('DELETE FROM special_orders WHERE id = ?', id);
+    await db.close();
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    res.json({ success: true, message: 'Order deleted successfully' });
+  } catch (err) {
+    console.error('Delete order error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

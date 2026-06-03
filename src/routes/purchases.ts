@@ -505,4 +505,165 @@ router.post('/batch-last-purchase', async (req, res) => {
   }
 });
 
+// Generate PDF invoice for a purchase
+router.get('/:id/pdf', async (req, res) => {
+  let db;
+  try {
+    const { id } = req.params;
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    
+    // Get purchase details
+    const purchase = await db.get(`
+      SELECT p.*, d.name as distributor_name, d.address as distributor_address, 
+             d.phone as distributor_phone, d.gstin as distributor_gstin
+      FROM purchases p 
+      LEFT JOIN distributors d ON p.distributor_id = d.id 
+      WHERE p.id = ?
+    `, [id]);
+    
+    if (!purchase) {
+      await db.close();
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+
+    // Get purchase items
+    const items = await db.all(`
+      SELECT pi.*, m.name as medicine_name 
+      FROM purchase_items pi
+      LEFT JOIN medicines m ON pi.medicine_id = m.id
+      WHERE pi.purchase_id = ?
+    `, [id]);
+
+    await db.close();
+
+    // Dynamic import for PDFKit
+    const { default: PDFDocument } = await import('pdfkit');
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=purchase-invoice-${purchase.invoice_no || id}.pdf`);
+    
+    const doc = new PDFDocument({ margin: 40 });
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(20).text('PURCHASE INVOICE', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor('#666').text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
+    doc.moveDown(1);
+
+    // Invoice Details Box
+    doc.fillColor('#f0f0f0');
+    doc.rect(40, doc.y, 520, 60).fill();
+    doc.fillColor('#000');
+    
+    doc.fontSize(10);
+    doc.text(`Invoice No: ${purchase.invoice_no || 'N/A'}`, 50, doc.y + 10);
+    doc.text(`Date: ${purchase.date || 'N/A'}`, 300, doc.y - 12);
+    doc.text(`Purchase ID: ${purchase.id}`, 50, doc.y + 8);
+    doc.text(`Distributor: ${purchase.distributor_name || 'N/A'}`, 300, doc.y - 12);
+    
+    doc.moveDown(2);
+
+    // Distributor Details
+    if (purchase.distributor_address || purchase.distributor_phone) {
+      doc.fontSize(10).fillColor('#333');
+      doc.text('Distributor Details:', 40, doc.y);
+      doc.moveDown(0.3);
+      doc.fontSize(9).fillColor('#666');
+      if (purchase.distributor_address) doc.text(`Address: ${purchase.distributor_address}`, 50);
+      if (purchase.distributor_phone) doc.text(`Phone: ${purchase.distributor_phone}`, 50);
+      if (purchase.distributor_gstin) doc.text(`GSTIN: ${purchase.distributor_gstin}`, 50);
+      doc.moveDown(0.5);
+    }
+
+    // Table Header
+    doc.fillColor('#333');
+    const tableTop = doc.y;
+    doc.fontSize(9).font('Helvetica-Bold');
+    doc.text('#', 40, tableTop, { width: 30 });
+    doc.text('Medicine Name', 70, tableTop, { width: 180 });
+    doc.text('Batch', 250, tableTop, { width: 60 });
+    doc.text('Exp', 310, tableTop, { width: 50 });
+    doc.text('Qty', 360, tableTop, { width: 40, align: 'right' });
+    doc.text('Rate', 400, tableTop, { width: 50, align: 'right' });
+    doc.text('CGST', 450, tableTop, { width: 40, align: 'right' });
+    doc.text('SGST', 490, tableTop, { width: 40, align: 'right' });
+    doc.text('Amount', 530, tableTop, { width: 60, align: 'right' });
+    
+    doc.moveTo(40, tableTop + 15).lineTo(560, tableTop + 15).strokeColor('#ccc').lineWidth(1).stroke();
+    doc.moveDown(1);
+
+    // Table Rows
+    doc.font('Helvetica').fontSize(8).fillColor('#333');
+    let subtotal = 0;
+    let totalCgst = 0;
+    let totalSgst = 0;
+
+    items.forEach((item, idx) => {
+      const itemY = doc.y;
+      if (itemY > 700) {
+        doc.addPage();
+      }
+
+      const qty = item.quantity || 0;
+      const rate = item.cost_price || 0;
+      const cgstPer = item.cgst_per || 0;
+      const sgstPer = item.sgst_per || 0;
+      const taxable = qty * rate;
+      const cgstVal = taxable * (cgstPer / 100);
+      const sgstVal = taxable * (sgstPer / 100);
+      const amount = taxable + cgstVal + sgstVal;
+
+      subtotal += taxable;
+      totalCgst += cgstVal;
+      totalSgst += sgstVal;
+
+      doc.text(`${idx + 1}`, 40, doc.y, { width: 30 });
+      doc.text(item.medicine_name || 'N/A', 70, doc.y, { width: 180 });
+      doc.text(item.batch_no || '-', 250, doc.y, { width: 60 });
+      doc.text(item.expiry_date || '-', 310, doc.y, { width: 50 });
+      doc.text(`${qty}`, 360, doc.y, { width: 40, align: 'right' });
+      doc.text(`₹${rate.toFixed(2)}`, 400, doc.y, { width: 50, align: 'right' });
+      doc.text(`${cgstPer}%`, 450, doc.y, { width: 40, align: 'right' });
+      doc.text(`${sgstPer}%`, 490, doc.y, { width: 40, align: 'right' });
+      doc.text(`₹${amount.toFixed(2)}`, 530, doc.y, { width: 60, align: 'right' });
+      
+      doc.moveDown(0.8);
+    });
+
+    // Totals
+    doc.moveTo(40, doc.y).lineTo(560, doc.y).strokeColor('#ccc').lineWidth(1).stroke();
+    doc.moveDown(0.5);
+
+    const grandTotal = subtotal + totalCgst + totalSgst;
+
+    doc.fontSize(9).font('Helvetica-Bold');
+    doc.text('Subtotal:', 400, doc.y, { width: 80, align: 'right' });
+    doc.text(`₹${subtotal.toFixed(2)}`, 500, doc.y, { width: 80, align: 'right' });
+    doc.moveDown(0.5);
+
+    doc.text(`CGST:`, 400, doc.y, { width: 80, align: 'right' });
+    doc.text(`₹${totalCgst.toFixed(2)}`, 500, doc.y, { width: 80, align: 'right' });
+    doc.moveDown(0.5);
+
+    doc.text(`SGST:`, 400, doc.y, { width: 80, align: 'right' });
+    doc.text(`₹${totalSgst.toFixed(2)}`, 500, doc.y, { width: 80, align: 'right' });
+    doc.moveDown(0.5);
+
+    doc.fontSize(11).fillColor('#000');
+    doc.text('Grand Total:', 400, doc.y, { width: 80, align: 'right' });
+    doc.text(`₹${grandTotal.toFixed(2)}`, 500, doc.y, { width: 80, align: 'right' });
+    doc.moveDown(1.5);
+
+    // Footer
+    doc.fontSize(8).fillColor('#999');
+    doc.text('This is a computer-generated invoice.', 40, doc.y, { align: 'center' });
+
+    doc.end();
+  } catch (error) {
+    console.error('Generate PDF error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

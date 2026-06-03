@@ -64,6 +64,18 @@ export interface InventoryItem extends Medicine {
   rack_location?: string;
 }
 
+export interface SpecialOrder {
+  id: number;
+  product: string;
+  requester: string;
+  phone: string;
+  qty: number;
+  priority: string;
+  status: string;
+  date: string;
+  notified: number;
+}
+
 // API methods mapping
 export const api = {
   getDashboard: () => apiClient.get<DashboardStats>('/dashboard').then(res => res.data),
@@ -143,4 +155,14 @@ export const api = {
   },
   processReturns: (items: any[]) => apiClient.post('/returns/process-returns', { items }).then(res => res.data),
   exportReturnsPDF: (items: any[]) => apiClient.post('/returns/export-pdf-report', { items }, { responseType: 'blob' }).then(res => res.data),
+  
+  // Purchase PDF
+  getPurchasePDF: (id: number) => apiClient.get(`/purchases/${id}/pdf`, { responseType: 'blob' }).then(res => res.data),
+
+  // Orders & Special Requests
+  getOrders: () => apiClient.get<SpecialOrder[]>('/orders').then(res => res.data),
+  createOrder: (data: Partial<SpecialOrder>) => apiClient.post('/orders', data).then(res => res.data),
+  updateOrder: (id: number, data: Partial<SpecialOrder>) => apiClient.put(`/orders/${id}`, data).then(res => res.data),
+  deleteOrder: (id: number) => apiClient.delete(`/orders/${id}`).then(res => res.data),
+  getUncollectedAlerts: () => apiClient.get<SpecialOrder[]>('/orders/uncollected-alerts').then(res => res.data),
 };

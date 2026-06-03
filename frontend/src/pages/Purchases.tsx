@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
+import { Download } from 'lucide-react';
 import { api, apiClient } from '../services/api';
 
 interface Medicine {
@@ -991,12 +992,13 @@ const Purchases: React.FC = () => {
                 <th className="pb-3">Date</th>
                 <th className="pb-3">Distributor</th>
                 <th className="pb-3">Total</th>
+                <th className="pb-3 text-center">PDF</th>
               </tr>
             </thead>
             <tbody>
               {filteredHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-slate-400">
+                  <td colSpan={6} className="py-6 text-center text-slate-400">
                     No matching invoices found.
                   </td>
                 </tr>
@@ -1008,6 +1010,28 @@ const Purchases: React.FC = () => {
                     <td className="py-3 text-gray-300">{purchase.date}</td>
                     <td className="py-3 text-white">{purchase.distributor_name}</td>
                     <td className="py-3 text-white font-medium">₹{purchase.total_amount.toFixed(2)}</td>
+                    <td className="py-3 text-center">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const pdfBlob = await api.getPurchasePDF(purchase.id);
+                            const url = window.URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `purchase-invoice-${purchase.invoice_no || purchase.id}.pdf`;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                          } catch (error) {
+                            alert('Failed to generate PDF');
+                          }
+                        }}
+                        className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                        title="Download PDF Invoice"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
