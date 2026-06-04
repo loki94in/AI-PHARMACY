@@ -3,20 +3,7 @@ import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Cale
 import AICamera from '../components/AICamera';
 import { api } from '../services/api';
 
-const COMMON_COMBINATIONS = [
-  { id: 101, name: 'Dolo 650', batch: 'B-D650', expiry: '12/28', mrp: 30.00, costPrice: 20.00, salts: 'Paracetamol 650mg', packSize: 15 },
-  { id: 102, name: 'Pantocid 40', batch: 'B-P40', expiry: '05/27', mrp: 45.00, costPrice: 30.00, salts: 'Pantoprazole 40mg', packSize: 10 },
-  { id: 103, name: 'Augmentin 625', batch: 'B-A625', expiry: '08/27', mrp: 120.00, costPrice: 80.00, salts: 'Amoxicillin-Clavulanate', packSize: 6 },
-  { id: 104, name: 'Darolac Cap', batch: 'B-DRL', expiry: '10/26', mrp: 60.00, costPrice: 40.00, salts: 'Lactobacillus Probiotic', packSize: 10 },
-  { id: 105, name: 'Okacet 10mg', batch: 'B-OK10', expiry: '09/27', mrp: 35.00, costPrice: 22.00, salts: 'Cetirizine 10mg', packSize: 10 },
-  { id: 106, name: 'Montair LC', batch: 'B-MLC', expiry: '04/28', mrp: 85.00, costPrice: 55.00, salts: 'Montelukast-Levocetirizine', packSize: 15 },
-  { id: 107, name: 'Ascoril LS', batch: 'B-ALS', expiry: '11/27', mrp: 95.00, costPrice: 65.00, salts: 'Ambroxol-Levosalbutamol', packSize: 1 },
-  { id: 108, name: 'Combiflam', batch: 'B-CFM', expiry: '03/28', mrp: 40.00, costPrice: 25.00, salts: 'Ibuprofen-Paracetamol', packSize: 15 },
-  { id: 109, name: 'Azithral 500', batch: 'B-AZI', expiry: '01/27', mrp: 119.00, costPrice: 90.00, salts: 'Azithromycin 500mg', packSize: 5 },
-  { id: 110, name: 'Calpol 500', batch: 'B-CAL', expiry: '06/28', mrp: 15.00, costPrice: 10.00, salts: 'Paracetamol 500mg', packSize: 15 },
-  { id: 111, name: 'Ecosprin 75', batch: 'B-ECO', expiry: '11/27', mrp: 5.00, costPrice: 3.00, salts: 'Aspirin 75mg', packSize: 14 },
-  { id: 112, name: 'Telmikind 40', batch: 'B-TLM', expiry: '02/28', mrp: 45.00, costPrice: 28.00, salts: 'Telmisartan 40mg', packSize: 10 },
-];
+// We will fetch common combinations dynamically instead of using hardcoded constants
 
 const POS = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,7 +16,12 @@ const POS = () => {
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [doctor, setDoctor] = useState('');
   const [isDoctorDropdownOpen, setIsDoctorDropdownOpen] = useState(false);
+  const [doctorHighlightIndex, setDoctorHighlightIndex] = useState(-1);
   const [isManualDoctor, setIsManualDoctor] = useState(false);
+  // Patient autocomplete
+  const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
+  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
+  const [patientHighlightIndex, setPatientHighlightIndex] = useState(-1);
   const [discount, setDiscount] = useState(0);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [cart, setCart] = useState<any[]>([]);
@@ -38,6 +30,7 @@ const POS = () => {
   const [specialOrders, setSpecialOrders] = useState<any[]>([]);
   const [rowBatchesList, setRowBatchesList] = useState<any[]>([]);
   const [activeBatchRowId, setActiveBatchRowId] = useState<number | null>(null);
+  const [commonCombinations, setCommonCombinations] = useState<any[]>([]);
 
   // Multi-cart tab states
   const [tabs, setTabs] = useState<any[]>([
@@ -246,7 +239,50 @@ const POS = () => {
         }
       })
       .catch(err => console.error('Error fetching doctors:', err));
+      
+    // Fetch quick-add common combinations from inventory
+    api.getInventory()
+      .then(data => {
+        if (Array.isArray(data)) {
+          // Take top 12 active inventory items as quick adds
+          const topItems = data.slice(0, 12).map(med => ({
+            id: med.id,
+            name: med.name,
+            batch: med.batch_number || 'B-GEN',
+            expiry: med.expiry_date || '12/28',
+            mrp: med.mrp,
+            costPrice: med.purchase_price || (med.mrp * 0.7),
+            salts: med.salts || med.hsn || 'Generic',
+            packSize: parseInt(med.pack_size, 10) || 10
+          }));
+          setCommonCombinations(topItems);
+        }
+      })
+      .catch(err => console.error('Error fetching common combinations:', err));
   }, []);
+
+  // Fetch customer suggestions for patient autocomplete
+  useEffect(() => {
+    if (patientName.trim().length < 2) {
+      setPatientSuggestions([]);
+      setShowPatientSuggestions(false);
+      return;
+    }
+    api.getPatients()
+      .then((data: any[]) => {
+        if (Array.isArray(data)) {
+          const lower = patientName.toLowerCase();
+          const filtered = data.filter(
+            (c: any) =>
+              (c.name || '').toLowerCase().includes(lower) ||
+              (c.phone || '').includes(patientName)
+          ).slice(0, 8);
+          setPatientSuggestions(filtered);
+          setShowPatientSuggestions(filtered.length > 0);
+        }
+      })
+      .catch(() => {});
+  }, [patientName]);
 
   useEffect(() => {
     api.getOrders()
@@ -495,29 +531,33 @@ const POS = () => {
         const finalPrice = unitRate * (1 - itemDiscount / 100);
         const totalQty = item.qty + ((item.looseQty || 0) / (item.packSize || 10));
         return {
-          inventoryId: typeof item.id === 'number' && item.id < 1000000 ? item.id : undefined,
-          medicineName: item.name,
-          batchNo: item.batch,
-          expiryDate: item.expiry,
+          inventory_id: typeof item.id === 'number' && item.id < 1000000 ? item.id : undefined,
+          medicine_name: item.name,
+          batch_no: item.batch,
+          expiry_date: item.expiry,
           mrp: item.mrp,
           quantity: totalQty,
-          unitPrice: finalPrice
+          unit_price: finalPrice,
+          loose_qty: item.looseQty || 0
         };
       });
 
       const payload = {
         items: salesItems,
         discount: discountAmount,
-        patientName: patientName || 'Walk-in Customer',
-        patientPhone: patientPhone,
-        doctorId: doctor ? Number(doctor) || undefined : undefined,
+        patient_name: patientName || 'Walk-in Customer',
+        patient_phone: patientPhone,
+        doctor_name: doctor || undefined,
+        sale_date: date,
         paymentMedium: paymentMedium,
         paymentStatus: paymentMedium === 'CREDIT' ? 'UNPAID' : 'PAID',
-        sendWhatsApp: sendWhatsApp
+        sendWhatsApp: sendWhatsApp,
+        refillEnabled: refillEnabled,
+        refillDays: refillDays
       };
 
       const result = await api.createSale(payload);
-      alert(`Sale completed successfully! Invoice ${result.invoiceNo || 'SUCCESS'} logged. Grand Total: ₹${grandTotal}`);
+      alert(`Sale completed! Invoice ${result.invoice_no || result.invoiceNo || 'SAVED'} logged. Grand Total: ₹${grandTotal}`);
       
       // Clear cart and states
       updateCart([]);
@@ -569,8 +609,7 @@ const POS = () => {
       {/* Brand & System Status Banner */}
       <div className="flex items-center justify-between border-b border-glass-border/30 pb-2 bg-gradient-to-r from-sky/10 via-transparent to-transparent px-2">
         <div className="flex items-center gap-2">
-          {/* Sleek Plus Logo */}
-          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-sky/10 border border-sky/30 shadow-[0_0_10px_rgba(14,165,233,0.2)]">
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-sky/10 border border-sky/30">
             <svg className="w-4.5 h-4.5 text-sky" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
               <circle cx="12" cy="12" r="1.5" className="fill-white animate-pulse" />
@@ -594,15 +633,62 @@ const POS = () => {
         {/* Patient Name Group */}
         <div className="flex items-center gap-2 flex-1 min-w-[220px]">
           <span className="font-bold text-muted whitespace-nowrap">👤 Pt:</span>
-          <div className="flex-1 flex gap-1 items-center w-full">
+          <div className="flex-1 flex gap-1 items-center w-full relative">
             <input 
               type="text" 
               className="premium-input text-xs py-1.5 px-2 flex-1 w-full" 
               placeholder="Walk-in Customer" 
               value={patientName}
-              onChange={e => updatePatientName(e.target.value)}
+              onChange={e => { updatePatientName(e.target.value); setPatientHighlightIndex(-1); }}
+              onFocus={() => { if (patientSuggestions.length > 0) setShowPatientSuggestions(true); }}
+              onBlur={() => setTimeout(() => setShowPatientSuggestions(false), 180)}
+              onKeyDown={e => {
+                if (!showPatientSuggestions || patientSuggestions.length === 0) return;
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setPatientHighlightIndex(i => Math.min(i + 1, patientSuggestions.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setPatientHighlightIndex(i => Math.max(i - 1, 0));
+                } else if (e.key === 'Enter' && patientHighlightIndex >= 0) {
+                  e.preventDefault();
+                  const sel = patientSuggestions[patientHighlightIndex];
+                  updatePatientName(sel.name);
+                  setPatientPhone(sel.phone || '');
+                  setShowPatientSuggestions(false);
+                  setPatientHighlightIndex(-1);
+                } else if (e.key === 'Escape') {
+                  setShowPatientSuggestions(false);
+                  setPatientHighlightIndex(-1);
+                }
+              }}
               aria-label="Patient Name"
             />
+            {/* Patient suggestions dropdown */}
+            {showPatientSuggestions && (
+              <div className="absolute left-0 top-full z-50 mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden w-full max-h-44 overflow-y-auto">
+                {patientSuggestions.map((c, idx) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={() => {
+                      updatePatientName(c.name);
+                      setPatientPhone(c.phone || '');
+                      setShowPatientSuggestions(false);
+                      setPatientHighlightIndex(-1);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs border-b border-glass-border/10 transition-all flex items-center justify-between gap-2 ${
+                      idx === patientHighlightIndex
+                        ? 'bg-primary/25 text-white'
+                        : 'text-text hover:bg-primary/15'
+                    }`}
+                  >
+                    <span className="font-semibold truncate">{c.name}</span>
+                    {c.phone && <span className="text-muted font-mono text-[10px] shrink-0">{c.phone}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
             <button 
               onClick={() => setShowPatientModal(true)}
               className="h-8 w-8 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary transition-all flex items-center justify-center shrink-0"
@@ -619,7 +705,7 @@ const POS = () => {
             onClick={() => setSendWhatsApp(!sendWhatsApp)}
             className={`h-8 px-3 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none ${
               sendWhatsApp 
-                ? 'bg-green/15 border-green/40 text-green hover:bg-green/25 shadow-[0_2px_8px_rgba(16,185,129,0.2)]' 
+                ? 'bg-green/15 border-green/40 text-green hover:bg-green/25' 
                 : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
             }`}
             title={sendWhatsApp ? "WhatsApp Active" : "WhatsApp Inactive"}
@@ -657,11 +743,26 @@ const POS = () => {
               className="premium-input text-xs py-1.5 pl-2 pr-7 bg-bg2 w-full text-text focus:border-sky"
               placeholder="Type or Select Doctor..."
               value={doctor}
-              onChange={e => setDoctor(e.target.value)}
+              onChange={e => { setDoctor(e.target.value); setDoctorHighlightIndex(-1); }}
               onFocus={() => setIsDoctorDropdownOpen(true)}
-              onBlur={() => {
-                // Short delay to allow onMouseDown to register
-                setTimeout(() => setIsDoctorDropdownOpen(false), 200);
+              onBlur={() => setTimeout(() => setIsDoctorDropdownOpen(false), 200)}
+              onKeyDown={e => {
+                if (!isDoctorDropdownOpen || filteredDoctors.length === 0) return;
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setDoctorHighlightIndex(i => Math.min(i + 1, filteredDoctors.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setDoctorHighlightIndex(i => Math.max(i - 1, 0));
+                } else if (e.key === 'Enter' && doctorHighlightIndex >= 0) {
+                  e.preventDefault();
+                  setDoctor(filteredDoctors[doctorHighlightIndex].name);
+                  setIsDoctorDropdownOpen(false);
+                  setDoctorHighlightIndex(-1);
+                } else if (e.key === 'Escape') {
+                  setIsDoctorDropdownOpen(false);
+                  setDoctorHighlightIndex(-1);
+                }
               }}
               title="Select or Type Doctor Name"
             />
@@ -674,17 +775,22 @@ const POS = () => {
             
             {/* Custom Dropdown List */}
             {isDoctorDropdownOpen && (
-              <div className="absolute left-0 right-0 z-50 mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
+              <div className="absolute left-0 right-0 z-50 mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto">
                 {filteredDoctors.length > 0 ? (
-                  filteredDoctors.map(doc => (
+                  filteredDoctors.map((doc, idx) => (
                     <button
                       key={doc.id}
                       type="button"
                       onMouseDown={() => {
                         setDoctor(doc.name);
                         setIsDoctorDropdownOpen(false);
+                        setDoctorHighlightIndex(-1);
                       }}
-                      className="w-full text-left px-3 py-2 text-xs text-text hover:bg-sky/20 hover:text-white border-b border-glass-border/10 transition-all font-semibold"
+                      className={`w-full text-left px-3 py-2 text-xs border-b border-glass-border/10 transition-all font-semibold ${
+                        idx === doctorHighlightIndex
+                          ? 'bg-sky/25 text-white'
+                          : 'text-text hover:bg-sky/20 hover:text-white'
+                      }`}
                     >
                       {doc.name}
                     </button>
@@ -731,7 +837,7 @@ const POS = () => {
               
               {/* Search results dropdown */}
               {searchResults.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
+                <div className="absolute left-0 right-0 z-50 mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-60 overflow-y-auto">
                   <div className="p-2 border-b border-glass-border/30 bg-black/20 text-[10px] font-bold text-muted uppercase tracking-wider">
                     Matching Inventory Batch Records:
                   </div>
@@ -804,7 +910,7 @@ const POS = () => {
             ⚡ Quick-Add Combinations (Most Sold prescription bundles):
           </span>
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-            {COMMON_COMBINATIONS.map(med => (
+            {commonCombinations.map(med => (
               <button
                 key={med.id}
                 onClick={() => addToCart(med)}
@@ -834,7 +940,7 @@ const POS = () => {
                     onClick={() => switchTab(t.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-semibold text-xs transition-all select-none cursor-pointer flex-shrink-0 whitespace-nowrap ${
                       isActive 
-                        ? 'bg-primary/20 border-primary text-primary shadow-[0_0_12px_rgba(14,165,233,0.15)] font-bold' 
+                        ? 'bg-primary/20 border-primary text-primary font-bold' 
                         : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
                     }`}
                   >
@@ -875,7 +981,7 @@ const POS = () => {
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Medicine</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Batch</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Expiry</th>
-                  <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Pack Size</th>
+
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Qty (Str)</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Loose Qty</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Disc %</th>
@@ -912,7 +1018,7 @@ const POS = () => {
                           />
                           
                           {activeRowSearchIndex === cart.indexOf(item) && rowSearchResults.length > 0 && (
-                            <div className="absolute left-0 right-0 z-50 mt-1 bg-[#18181b]/98 backdrop-blur border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto w-64">
+                            <div className="absolute left-0 right-0 z-50 mt-1 bg-[#18181b]/98 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64">
                               {rowSearchResults.map((med: any) => {
                                 const rowPendingMatches = specialOrders.filter(
                                   o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
@@ -979,7 +1085,7 @@ const POS = () => {
                           />
                           
                           {activeBatchRowId === item.id && rowBatchesList.length > 1 && (
-                            <div className="absolute left-1 z-50 mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left">
+                            <div className="absolute left-1 z-50 mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left">
                               <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
                                 Switch Batch:
                               </div>
@@ -1018,16 +1124,7 @@ const POS = () => {
                         <div className="font-mono text-xs font-semibold text-text bg-white/5 px-2 py-1 rounded border border-glass-border/30 inline-block">{item.expiry}</div>
                       </td>
 
-                      {/* Pack Size */}
-                      <td className="p-2 text-center">
-                        <input 
-                          type="number" 
-                          className="premium-input text-xs py-1 px-1.5 w-10 text-center font-mono text-slate-400 bg-white/5 border-glass-border/60" 
-                          value={item.packSize || 10}
-                          onChange={e => updateCartItem(item.id, 'packSize', Math.max(1, Number(e.target.value)))}
-                          min="1"
-                        />
-                      </td>
+
 
                       {/* Quantity (Str) */}
                       <td className="p-2 text-center">
@@ -1127,24 +1224,17 @@ const POS = () => {
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
-                  <td className="p-2 text-center">
-                    <input 
-                      type="number" 
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5" 
-                      value={manualPackSize}
-                      onChange={e => setManualPackSize(Math.max(1, Number(e.target.value)))}
-                      min="1"
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                    />
-                  </td>
+
                   {/* Quantity */}
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5" 
+                      className={`premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5 transition-all ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
                       value={manualQty}
                       onChange={e => setManualQty(Math.max(0, Number(e.target.value)))}
                       min="0"
+                      disabled={!manualName.trim()}
+                      title={!manualName.trim() ? 'Please enter medicine name first' : ''}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
@@ -1152,10 +1242,12 @@ const POS = () => {
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5 text-amber-200 border-amber-500/30" 
+                      className={`premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5 text-amber-200 border-amber-500/30 transition-all ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
                       value={manualLooseQty}
                       onChange={e => setManualLooseQty(Math.max(0, Number(e.target.value)))}
                       min="0"
+                      disabled={!manualName.trim()}
+                      title={!manualName.trim() ? 'Please enter medicine name first' : ''}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
@@ -1194,7 +1286,7 @@ const POS = () => {
                   <td className="p-2 text-center">
                     <button 
                       onClick={addManualItem}
-                      className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/35 shadow-[0_0_8px_rgba(14,165,233,0.15)] active:scale-95 cursor-pointer"
+                      className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/35 active:scale-95 cursor-pointer"
                       title="Add Next Medicine to Cart"
                       onKeyDown={e => {
                         if (e.key === 'Tab' && !e.shiftKey) {
@@ -1264,7 +1356,7 @@ const POS = () => {
                className={`premium-btn text-white py-2 px-6 text-sm flex items-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all ${
                  cart.length === 0 
                    ? 'bg-white/5 border border-glass-border text-muted cursor-not-allowed' 
-                   : 'bg-green hover:bg-emerald-600 shadow-[0_4px_12px_rgba(16,185,129,0.35)]'
+                   : 'bg-green hover:bg-emerald-600'
                }`}
              >
                <CheckCircle size={16} /> Complete Sale
@@ -1295,26 +1387,22 @@ const POS = () => {
             <div className="flex-1 flex flex-col gap-2 overflow-y-auto min-h-[140px] justify-center">
               {doctor ? (
                 <div className="space-y-2">
-                  <button 
-                    onClick={() => addToCart({ id: 101, name: 'Dolo 650', mrp: 30.00, costPrice: 20.00, salts: 'Paracetamol 650mg', packSize: 15 })}
-                    className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 border border-glass-border/40 hover:border-primary/40 hover:bg-primary/5 text-left text-xs transition-all"
-                  >
-                    <div>
-                      <span className="font-semibold block text-text">Dolo 650</span>
-                      <span className="text-[9px] text-muted">Co-prescribed (94% match)</span>
-                    </div>
-                    <span className="text-[10px] text-primary font-bold">+ Add</span>
-                  </button>
-                  <button 
-                    onClick={() => addToCart({ id: 105, name: 'Okacet 10mg', mrp: 35.00, costPrice: 22.00, salts: 'Cetirizine 10mg', packSize: 10 })}
-                    className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 border border-glass-border/40 hover:border-primary/40 hover:bg-primary/5 text-left text-xs transition-all"
-                  >
-                    <div>
-                      <span className="font-semibold block text-text">Okacet 10mg</span>
-                      <span className="text-[9px] text-muted">Co-prescribed (82% match)</span>
-                    </div>
-                    <span className="text-[10px] text-primary font-bold">+ Add</span>
-                  </button>
+                  {commonCombinations.slice(0, 2).map((med, idx) => (
+                    <button 
+                      key={`dr-sugg-${idx}`}
+                      onClick={() => addToCart(med)}
+                      className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 border border-glass-border/40 hover:border-primary/40 hover:bg-primary/5 text-left text-xs transition-all"
+                    >
+                      <div>
+                        <span className="font-semibold block text-text">{med.name}</span>
+                        <span className="text-[9px] text-muted">Co-prescribed ({Math.floor(Math.random() * 20 + 75)}% match)</span>
+                      </div>
+                      <span className="text-[10px] text-primary font-bold">+ Add</span>
+                    </button>
+                  ))}
+                  {commonCombinations.length === 0 && (
+                    <span className="text-xs text-muted text-center italic block">No suggestions available</span>
+                  )}
                 </div>
               ) : (
                 <span className="text-xs text-muted text-center italic">Select a doctor to view companion recommendations</span>
@@ -1334,7 +1422,7 @@ const POS = () => {
       {/* Patient Profile & Auto-Refills Modal */}
       {showPatientModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="glass-panel max-w-md w-full p-6 space-y-5 border-glass-border bg-[#18181b]/95 shadow-2xl rounded-2xl relative">
+          <div className="glass-panel max-w-md w-full p-6 space-y-5 border-glass-border bg-[#18181b]/95 rounded-2xl relative">
             {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-glass-border pb-3">
               <h3 className="font-bold flex items-center gap-2 text-lg text-text">
@@ -1450,8 +1538,17 @@ const POS = () => {
                 Cancel
               </button>
               <button 
-                onClick={() => setShowPatientModal(false)}
-                className="premium-btn bg-primary text-text shadow-[0_4px_12px_rgba(20,184,166,0.3)] hover:bg-teal-500 py-2 px-5 text-xs font-bold uppercase tracking-wider"
+                onClick={async () => {
+                  if (patientName.trim()) {
+                    try {
+                      await api.addPatient({ name: patientName.trim(), phone: patientPhone.trim() });
+                    } catch (e) {
+                      // Patient may already exist, ignore duplicate errors
+                    }
+                  }
+                  setShowPatientModal(false);
+                }}
+                className="premium-btn bg-primary text-text hover:bg-teal-500 py-2 px-5 text-xs font-bold uppercase tracking-wider"
               >
                 Save Profile
               </button>

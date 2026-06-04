@@ -50,7 +50,7 @@ router.post('/', async (req, res) => {
   let db;
   try {
     db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    const { items = [], patient_id, doctor_id, discount = 0, patient_name, patient_phone, patient_address, paymentMedium = 'CASH', paymentStatus = 'PAID', sendWhatsApp = false } = req.body;
+    const { items = [], patient_id, doctor_id, doctor_name, discount = 0, patient_name, patient_phone, patient_address, paymentMedium = 'CASH', paymentStatus = 'PAID', sendWhatsApp = false, sale_date, refillEnabled = false, refillDays = 30 } = req.body;
 
     // Basic validation
     if (!Array.isArray(items) || items.length === 0) {
@@ -89,9 +89,10 @@ router.post('/', async (req, res) => {
     const invoice_no = await generateInvoiceNo(db);
 
     // Insert invoice
+    const invoiceDateValue = sale_date ? new Date(sale_date).toISOString() : new Date().toISOString();
     const result = await db.run(
-      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status) VALUES (?, ?, ?, ?, ?, ?)',
-      [invoice_no, customerId, total, tax, paymentMedium, paymentStatus]
+      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [invoice_no, customerId, total, tax, paymentMedium, paymentStatus, invoiceDateValue]
     );
     const invoiceId = result.lastID;
 
@@ -104,6 +105,20 @@ router.post('/', async (req, res) => {
       );
       // Decrement stock
       await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
+
+      // Handle refill logic if enabled
+      if (refillEnabled && inventory_id) {
+        const invRecord = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', [inventory_id]);
+        if (invRecord && invRecord.medicine_id) {
+          const nextDate = new Date();
+          nextDate.setDate(nextDate.getDate() + Number(refillDays));
+          
+          await db.run(
+            'INSERT INTO patient_refills (patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status) VALUES (?, ?, ?, ?, ?, ?)',
+            [patient_name || 'Walk-in Customer', patient_phone || '', invRecord.medicine_id, refillDays, nextDate.toISOString(), 'pending']
+          );
+        }
+      }
     }
 
     await db.close();
