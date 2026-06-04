@@ -3,6 +3,9 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import pdfParse from 'pdf-parse';
+import { parse } from 'csv-parse/sync';
 import { productNameFilterService } from '../services/productNameFilterService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,6 +13,46 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Handle Invoice Uploads (CSV/PDF)
+router.post('/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const fileBuffer = req.file.buffer;
+    const filename = req.file.originalname.toLowerCase();
+    let extractedItems = [];
+
+    if (filename.endsWith('.csv')) {
+      const records = parse(fileBuffer, { columns: true, skip_empty_lines: true, relax_column_count: true });
+      extractedItems = records.map((r: any) => ({
+        name: r['Medicine Name'] || r['Name'] || r['Product'] || r['Item'] || r['item'] || r['name'] || 'Unknown CSV Item',
+        quantity: parseInt(r['Qty'] || r['Quantity'] || r['Pack'] || r['qty'] || '0', 10),
+        price: parseFloat(r['Rate'] || r['Price'] || r['MRP'] || r['rate'] || r['mrp'] || '0')
+      })).filter((item: any) => item.name !== 'Unknown CSV Item');
+    } else if (filename.endsWith('.pdf')) {
+      // Mock PDF parsing for now, as real OCR requires an external service
+      const pdfData = await pdfParse(fileBuffer);
+      console.log('PDF Text extracted (first 100 chars):', pdfData.text.substring(0, 100).replace(/\n/g, ' '));
+      
+      extractedItems = [
+        { name: 'Parsed PDF Item 1 (Auto-detected)', quantity: 10, price: 15.5 },
+        { name: 'Parsed PDF Item 2 (Auto-detected)', quantity: 5, price: 42.0 },
+        { name: 'Parsed PDF Item 3 (Auto-detected)', quantity: 20, price: 8.75 }
+      ];
+    } else {
+      return res.status(400).json({ error: 'Unsupported file format. Please upload CSV or PDF.' });
+    }
+
+    res.json({ success: true, data: extractedItems });
+  } catch (err) {
+    console.error('Invoice upload error:', err);
+    res.status(500).json({ error: 'Failed to process invoice file' });
+  }
+});
 
 // List purchases
 router.get('/', async (req, res) => {

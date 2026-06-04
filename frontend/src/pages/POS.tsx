@@ -12,6 +12,10 @@ const COMMON_COMBINATIONS = [
   { id: 106, name: 'Montair LC', batch: 'B-MLC', expiry: '04/28', mrp: 85.00, costPrice: 55.00, salts: 'Montelukast-Levocetirizine', packSize: 15 },
   { id: 107, name: 'Ascoril LS', batch: 'B-ALS', expiry: '11/27', mrp: 95.00, costPrice: 65.00, salts: 'Ambroxol-Levosalbutamol', packSize: 1 },
   { id: 108, name: 'Combiflam', batch: 'B-CFM', expiry: '03/28', mrp: 40.00, costPrice: 25.00, salts: 'Ibuprofen-Paracetamol', packSize: 15 },
+  { id: 109, name: 'Azithral 500', batch: 'B-AZI', expiry: '01/27', mrp: 119.00, costPrice: 90.00, salts: 'Azithromycin 500mg', packSize: 5 },
+  { id: 110, name: 'Calpol 500', batch: 'B-CAL', expiry: '06/28', mrp: 15.00, costPrice: 10.00, salts: 'Paracetamol 500mg', packSize: 15 },
+  { id: 111, name: 'Ecosprin 75', batch: 'B-ECO', expiry: '11/27', mrp: 5.00, costPrice: 3.00, salts: 'Aspirin 75mg', packSize: 14 },
+  { id: 112, name: 'Telmikind 40', batch: 'B-TLM', expiry: '02/28', mrp: 45.00, costPrice: 28.00, salts: 'Telmisartan 40mg', packSize: 10 },
 ];
 
 const POS = () => {
@@ -24,12 +28,16 @@ const POS = () => {
   const [refillDays, setRefillDays] = useState(30);
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [doctor, setDoctor] = useState('');
+  const [isDoctorDropdownOpen, setIsDoctorDropdownOpen] = useState(false);
+  const [isManualDoctor, setIsManualDoctor] = useState(false);
   const [discount, setDiscount] = useState(0);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [cart, setCart] = useState<any[]>([]);
   const [sendWhatsApp, setSendWhatsApp] = useState(false); // DEFAULT: OFF
   const [paymentMedium, setPaymentMedium] = useState<string>('CASH'); // DEFAULT: CASH
   const [specialOrders, setSpecialOrders] = useState<any[]>([]);
+  const [rowBatchesList, setRowBatchesList] = useState<any[]>([]);
+  const [activeBatchRowId, setActiveBatchRowId] = useState<number | null>(null);
 
   // Multi-cart tab states
   const [tabs, setTabs] = useState<any[]>([
@@ -42,6 +50,7 @@ const POS = () => {
       refillEnabled: false,
       refillDays: 30,
       doctor: '',
+      isManualDoctor: false,
       discount: 0,
       sendWhatsApp: false,
       paymentMedium: 'CASH'
@@ -81,6 +90,7 @@ const POS = () => {
         setRefillEnabled(target.refillEnabled);
         setRefillDays(target.refillDays);
         setDoctor(target.doctor);
+        setIsManualDoctor(target.isManualDoctor || false);
         setDiscount(target.discount);
         setSendWhatsApp(target.sendWhatsApp);
         setPaymentMedium(target.paymentMedium || 'CASH');
@@ -103,6 +113,7 @@ const POS = () => {
             refillEnabled,
             refillDays,
             doctor,
+            isManualDoctor,
             discount,
             sendWhatsApp,
             paymentMedium
@@ -122,6 +133,7 @@ const POS = () => {
         refillEnabled: false,
         refillDays: 30,
         doctor: '',
+        isManualDoctor: false,
         discount: 0,
         sendWhatsApp: false,
         paymentMedium: 'CASH'
@@ -133,6 +145,7 @@ const POS = () => {
       setRefillEnabled(false);
       setRefillDays(30);
       setDoctor('');
+      setIsManualDoctor(false);
       setDiscount(0);
       setSendWhatsApp(false);
       setPaymentMedium('CASH');
@@ -156,6 +169,7 @@ const POS = () => {
         setRefillEnabled(fallback.refillEnabled);
         setRefillDays(fallback.refillDays);
         setDoctor(fallback.doctor);
+        setIsManualDoctor(fallback.isManualDoctor || false);
         setDiscount(fallback.discount);
         setSendWhatsApp(fallback.sendWhatsApp);
         setPaymentMedium(fallback.paymentMedium || 'CASH');
@@ -270,8 +284,8 @@ const POS = () => {
   const [manualExpiry, setManualExpiry] = useState('');
   const [manualQty, setManualQty] = useState(1);
   const [manualLooseQty, setManualLooseQty] = useState(0);
+  const [manualDiscount, setManualDiscount] = useState(0);
   const [manualPackSize, setManualPackSize] = useState(10);
-  const [manualReturn, setManualReturn] = useState(0);
   const [manualMrp, setManualMrp] = useState(0);
   const [manualCostPrice, setManualCostPrice] = useState(0);
 
@@ -299,8 +313,8 @@ const POS = () => {
         expiry: med.expiry || '12/28', 
         qty: 1, 
         looseQty: 0,
+        discount: 0,
         packSize: med.packSize || 10,
-        returnQty: 0, 
         mrp: med.mrp, 
         costPrice: med.costPrice || (med.mrp * 0.7),
         salts: med.salts || '' 
@@ -309,7 +323,12 @@ const POS = () => {
   };
 
   const addManualItem = () => {
-    if (!manualName.trim()) return;
+    if (!manualName.trim()) {
+      // Focus input if empty
+      const inputEl = document.querySelector('input[placeholder*="Add Next Medicine"]') as HTMLInputElement;
+      if (inputEl) inputEl.focus();
+      return;
+    }
     
     // Check manual item
     const pendingMatches = specialOrders.filter(
@@ -327,8 +346,8 @@ const POS = () => {
       expiry: manualExpiry.trim() || '12/28',
       qty: manualQty,
       looseQty: manualLooseQty,
+      discount: manualDiscount,
       packSize: manualPackSize,
-      returnQty: manualReturn,
       mrp: manualMrp,
       costPrice: manualCostPrice || (manualMrp * 0.7),
       salts: 'Custom Manual Entry'
@@ -342,10 +361,15 @@ const POS = () => {
     setManualExpiry('');
     setManualQty(1);
     setManualLooseQty(0);
+    setManualDiscount(0);
     setManualPackSize(10);
-    setManualReturn(0);
     setManualMrp(0);
     setManualCostPrice(0);
+    
+    // Focus back on the manualName input for fast continuous entry
+    setTimeout(() => {
+      document.getElementById('manual-medicine-name-input')?.focus();
+    }, 50);
   };
 
   const removeFromCart = (id: number) => {
@@ -440,7 +464,8 @@ const POS = () => {
   // Calculations
   const subtotal = cart.reduce((sum, item) => {
     const unitRate = item.packSize > 0 ? item.mrp / item.packSize : item.mrp;
-    return sum + (item.mrp * item.qty) + (unitRate * (item.looseQty || 0)) - (unitRate * (item.returnQty || 0));
+    const itemTotalBeforeDiscount = (item.mrp * item.qty) + (unitRate * (item.looseQty || 0));
+    return sum + itemTotalBeforeDiscount * (1 - (item.discount || 0) / 100);
   }, 0);
   
   const discountAmount = subtotal * (discount / 100);
@@ -449,7 +474,7 @@ const POS = () => {
   const totalCost = cart.reduce((sum, item) => {
     const itemCost = item.costPrice != null ? item.costPrice : (item.mrp * 0.7);
     const unitCostRate = item.packSize > 0 ? itemCost / item.packSize : itemCost;
-    return sum + (itemCost * item.qty) + (unitCostRate * (item.looseQty || 0)) - (unitCostRate * (item.returnQty || 0));
+    return sum + (itemCost * item.qty) + (unitCostRate * (item.looseQty || 0));
   }, 0);
 
   const profitOrLoss = grandTotal - totalCost;
@@ -465,15 +490,18 @@ const POS = () => {
     
     try {
       const salesItems = cart.map(item => {
+        const itemDiscount = item.discount || 0;
         const unitRate = item.packSize > 0 ? item.mrp / item.packSize : item.mrp;
+        const finalPrice = unitRate * (1 - itemDiscount / 100);
+        const totalQty = item.qty + ((item.looseQty || 0) / (item.packSize || 10));
         return {
           inventoryId: typeof item.id === 'number' && item.id < 1000000 ? item.id : undefined,
           medicineName: item.name,
           batchNo: item.batch,
           expiryDate: item.expiry,
           mrp: item.mrp,
-          quantity: item.qty + (item.looseQty / (item.packSize || 10)) - (item.returnQty / (item.packSize || 10)),
-          unitPrice: unitRate
+          quantity: totalQty,
+          unitPrice: finalPrice
         };
       });
 
@@ -521,74 +549,77 @@ const POS = () => {
     }
   };
 
+  const defaultDoctors = [
+    { id: 901, name: 'Dr. Priya Mehta (Cardiologist)' },
+    { id: 902, name: 'Dr. Raj Sharma (GP)' },
+    { id: 903, name: 'Dr. Anita Patel (Pediatrician)' }
+  ];
+
+  const allDoctors = [
+    ...defaultDoctors,
+    ...doctorsList.filter(d => !defaultDoctors.some(dd => dd.name === d.name))
+  ];
+
+  const filteredDoctors = allDoctors.filter(doc => 
+    doc.name.toLowerCase().includes(doctor.toLowerCase())
+  );
+
   return (
     <div className="h-full flex flex-col fade-in space-y-4 overflow-hidden pb-4">
+      {/* Brand & System Status Banner */}
+      <div className="flex items-center justify-between border-b border-glass-border/30 pb-2 bg-gradient-to-r from-sky/10 via-transparent to-transparent px-2">
+        <div className="flex items-center gap-2">
+          {/* Sleek Plus Logo */}
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-sky/10 border border-sky/30 shadow-[0_0_10px_rgba(14,165,233,0.2)]">
+            <svg className="w-4.5 h-4.5 text-sky" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
+              <circle cx="12" cy="12" r="1.5" className="fill-white animate-pulse" />
+            </svg>
+          </div>
+          <span className="font-black tracking-widest text-xs bg-gradient-to-r from-text to-sky bg-clip-text text-transparent">
+            NEXT MEDICIN OS
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-muted font-mono">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green/10 border border-green/20 text-[9px] font-bold text-green uppercase tracking-wide">
+            <span className="w-1.5 h-1.5 rounded-full bg-green animate-pulse"></span>
+            Online Counter
+          </div>
+        </div>
+      </div>
+
       {/* Patient & Transaction Bar (All in One Horizontal Line) */}
-      <div className="glass-panel p-3 flex flex-wrap items-center justify-between gap-3 bg-white/5 border-glass-border text-xs">
+      <div className="glass-panel p-3.5 flex flex-wrap items-center gap-4 bg-white/5 border-glass-border text-xs w-full relative z-20">
         {/* Patient Name Group */}
-        <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+        <div className="flex items-center gap-2 flex-1 min-w-[220px]">
           <span className="font-bold text-muted whitespace-nowrap">👤 Pt:</span>
-          <input 
-            type="text" 
-            className="premium-input text-xs py-1 px-2 w-full max-w-[130px]" 
-            placeholder="Walk-in Customer" 
-            value={patientName}
-            onChange={e => updatePatientName(e.target.value)}
-            aria-label="Patient Name"
-          />
-          <button 
-            onClick={() => setShowPatientModal(true)}
-            className="p-1 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary transition-all flex items-center justify-center"
-            title="Manage Patient Profile & Refills"
-          >
-            <Plus size={12} className="stroke-[3]" />
-          </button>
-        </div>
-
-        {/* Phone Number Group */}
-        <div className="flex items-center gap-1.5 min-w-[160px]">
-          <span className="font-bold text-muted whitespace-nowrap">📞 No:</span>
-          <input 
-            type="text" 
-            className="premium-input text-xs py-1 px-2 w-28 font-mono text-text" 
-            placeholder="9876543210"
-            value={patientPhone}
-            onChange={e => setPatientPhone(e.target.value)}
-            aria-label="Phone Number"
-          />
-        </div>
-
-        {/* Doctor Dropdown Group */}
-        <div className="flex items-center gap-1.5 min-w-[180px]">
-          <span className="font-bold text-muted whitespace-nowrap">🥼 Dr:</span>
-          <select 
-            className="premium-input text-xs py-1 px-2 bg-bg2 w-full max-w-[130px]" 
-            value={doctor}
-            onChange={e => setDoctor(e.target.value)}
-            title="Select Doctor"
-          >
-            <option value="">-- General --</option>
-            {doctorsList.length === 0 ? (
-              <>
-                <option value="Dr. Priya Mehta (Cardiologist)">Dr. Priya Mehta</option>
-                <option value="Dr. Raj Sharma (GP)">Dr. Raj Sharma</option>
-                <option value="Dr. Anita Patel (Pediatrician)">Dr. Anita Patel</option>
-              </>
-            ) : (
-              doctorsList.map(doc => (
-                <option key={doc.id} value={doc.id}>{doc.name}</option>
-              ))
-            )}
-          </select>
+          <div className="flex-1 flex gap-1 items-center w-full">
+            <input 
+              type="text" 
+              className="premium-input text-xs py-1.5 px-2 flex-1 w-full" 
+              placeholder="Walk-in Customer" 
+              value={patientName}
+              onChange={e => updatePatientName(e.target.value)}
+              aria-label="Patient Name"
+            />
+            <button 
+              onClick={() => setShowPatientModal(true)}
+              className="h-8 w-8 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary transition-all flex items-center justify-center shrink-0"
+              title="Manage Patient Profile & Refills"
+            >
+              <Plus size={13} className="stroke-[3]" />
+            </button>
+          </div>
         </div>
 
         {/* WhatsApp ON/OFF Switch */}
-        <div className="flex items-center gap-1.5 min-w-[90px]">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button 
             onClick={() => setSendWhatsApp(!sendWhatsApp)}
-            className={`h-7 px-2.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none ${
+            className={`h-8 px-3 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none ${
               sendWhatsApp 
-                ? 'bg-green/10 border-green/30 text-green hover:bg-green/20 shadow-[0_2px_8px_rgba(16,185,129,0.15)] font-extrabold' 
+                ? 'bg-green/15 border-green/40 text-green hover:bg-green/25 shadow-[0_2px_8px_rgba(16,185,129,0.2)]' 
                 : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
             }`}
             title={sendWhatsApp ? "WhatsApp Active" : "WhatsApp Inactive"}
@@ -604,12 +635,76 @@ const POS = () => {
           </button>
         </div>
 
+        {/* Phone Number Group */}
+        <div className="flex items-center gap-2 flex-1 min-w-[160px] max-w-[200px]">
+          <span className="font-bold text-muted whitespace-nowrap">📞 No:</span>
+          <input 
+            type="text" 
+            className="premium-input text-xs py-1.5 px-2 w-full font-mono text-text" 
+            placeholder="9876543210"
+            value={patientPhone}
+            onChange={e => setPatientPhone(e.target.value)}
+            aria-label="Phone Number"
+          />
+        </div>
+
+        {/* Doctor Dropdown Group */}
+        <div className="flex items-center gap-2 flex-1 min-w-[260px] relative">
+          <span className="font-bold text-muted whitespace-nowrap">🥼 Dr:</span>
+          <div className="relative flex-1">
+            <input 
+              type="text"
+              className="premium-input text-xs py-1.5 pl-2 pr-7 bg-bg2 w-full text-text focus:border-sky"
+              placeholder="Type or Select Doctor..."
+              value={doctor}
+              onChange={e => setDoctor(e.target.value)}
+              onFocus={() => setIsDoctorDropdownOpen(true)}
+              onBlur={() => {
+                // Short delay to allow onMouseDown to register
+                setTimeout(() => setIsDoctorDropdownOpen(false), 200);
+              }}
+              title="Select or Type Doctor Name"
+            />
+            {/* Custom chevron indicator */}
+            <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-muted">
+              <svg className="w-3 h-3 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </span>
+            
+            {/* Custom Dropdown List */}
+            {isDoctorDropdownOpen && (
+              <div className="absolute left-0 right-0 z-50 mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
+                {filteredDoctors.length > 0 ? (
+                  filteredDoctors.map(doc => (
+                    <button
+                      key={doc.id}
+                      type="button"
+                      onMouseDown={() => {
+                        setDoctor(doc.name);
+                        setIsDoctorDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs text-text hover:bg-sky/20 hover:text-white border-b border-glass-border/10 transition-all font-semibold"
+                    >
+                      {doc.name}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-xs text-muted italic">
+                    Press Enter to add custom: "{doctor}"
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Date Stamp Group */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 flex-1 min-w-[140px] max-w-[180px]">
           <span className="font-bold text-muted whitespace-nowrap">📅:</span>
           <input 
             type="date" 
-            className="premium-input text-xs py-1 px-2 text-text w-28" 
+            className="premium-input text-xs py-1.5 px-2 text-text w-full" 
             value={date}
             onChange={e => setDate(e.target.value)}
             aria-label="Transaction Date"
@@ -618,7 +713,7 @@ const POS = () => {
       </div>
 
       {/* Search Medicine Section */}
-      <div className="glass-panel p-4 flex flex-col gap-3.5 bg-white/5 border-glass-border">
+      <div className="glass-panel p-4 flex flex-col gap-3.5 bg-white/5 border-glass-border relative z-10">
         <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-4">
           <h3 className="font-bold flex items-center gap-2 text-base whitespace-nowrap">
             <Search size={18} className="text-primary" /> 
@@ -713,14 +808,10 @@ const POS = () => {
               <button
                 key={med.id}
                 onClick={() => addToCart(med)}
-                className="flex flex-col items-start bg-white/5 border border-glass-border/50 hover:border-primary/40 hover:bg-primary/5 p-2 rounded-xl transition-all min-w-[150px] text-left group"
+                className="flex items-center gap-3 bg-white/5 border border-glass-border/50 hover:border-primary/40 hover:bg-primary/5 px-3 py-1.5 rounded-full transition-all group whitespace-nowrap"
               >
-                <div className="text-xs font-bold text-text group-hover:text-primary transition-all flex items-center justify-between w-full">
-                  <span>{med.name}</span>
-                  <span className="text-[10px] text-primary opacity-60 group-hover:opacity-100 font-bold">+ Add</span>
-                </div>
-                <div className="text-[9px] text-muted truncate w-full mt-0.5">{med.salts}</div>
-                <div className="text-[9px] font-mono text-sky mt-1">₹{med.mrp.toFixed(2)}</div>
+                <span className="text-xs font-bold text-text group-hover:text-primary transition-all">{med.name}</span>
+                <span className="text-[10px] text-primary opacity-60 group-hover:opacity-100 font-bold">+</span>
               </button>
             ))}
           </div>
@@ -731,8 +822,8 @@ const POS = () => {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 overflow-hidden">
         {/* LEFT: CART TABLE (75% / 3/4 Column Width) */}
         <div className="lg:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border">
-          <div className="p-2 border-b border-glass-border flex flex-wrap items-center justify-between gap-3 bg-black/10">
-            <div className="flex items-center gap-2 overflow-x-auto max-w-full no-scrollbar py-0.5">
+          <div className="p-2 border-b border-glass-border flex items-center justify-between gap-3 bg-black/10 flex-nowrap">
+            <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 scrollbar-thin py-0.5">
               {tabs.map((t) => {
                 const isActive = t.id === activeTabId;
                 const count = getTabItemsCount(t);
@@ -741,7 +832,7 @@ const POS = () => {
                   <div
                     key={t.id}
                     onClick={() => switchTab(t.id)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-semibold text-xs transition-all select-none cursor-pointer ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-semibold text-xs transition-all select-none cursor-pointer flex-shrink-0 whitespace-nowrap ${
                       isActive 
                         ? 'bg-primary/20 border-primary text-primary shadow-[0_0_12px_rgba(14,165,233,0.15)] font-bold' 
                         : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
@@ -763,7 +854,7 @@ const POS = () => {
               })}
               <button
                 onClick={addNewTab}
-                className="flex items-center justify-center p-1.5 rounded-lg border border-dashed border-glass-border text-muted hover:text-text hover:border-text transition-all bg-white/5 hover:bg-white/10 h-[30px] w-[30px]"
+                className="flex items-center justify-center flex-shrink-0 p-1.5 rounded-lg border border-dashed border-glass-border text-muted hover:text-text hover:border-text transition-all bg-white/5 hover:bg-white/10 h-[30px] w-[30px]"
                 title="Add New Cart"
               >
                 <Plus size={14} />
@@ -786,9 +877,9 @@ const POS = () => {
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Expiry</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Pack Size</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Qty (Str)</th>
-                  <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Loose (Qty)</th>
-                  <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Return</th>
-                  <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right">MRP / Unit Price</th>
+                  <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Loose Qty</th>
+                  <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Disc %</th>
+                  <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right">MRP</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right">Total</th>
                   <th className="p-3 text-xs font-bold text-muted tracking-wider border-b border-glass-border"></th>
                 </tr>
@@ -796,7 +887,7 @@ const POS = () => {
               <tbody>
                 {cart.map(item => {
                   const unitRate = item.packSize > 0 ? item.mrp / item.packSize : item.mrp;
-                  const itemTotal = (item.mrp * item.qty) + (unitRate * (item.looseQty || 0)) - (unitRate * (item.returnQty || 0));
+                  const itemTotal = ((item.mrp * item.qty) + (unitRate * (item.looseQty || 0))) * (1 - (item.discount || 0) / 100);
                   return (
                     <tr key={item.id} className="border-b border-glass-border/20 hover:bg-white/5 transition-all">
                       {/* Medicine Name (Changeable Autocomplete Search) */}
@@ -858,8 +949,68 @@ const POS = () => {
                       </td>
 
                       {/* Batch */}
-                      <td className="p-2 select-none">
-                        <div className="font-mono text-xs font-semibold text-text ml-1 bg-white/5 px-2 py-1 rounded border border-glass-border/30 inline-block">{item.batch}</div>
+                      <td className="p-2 relative">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            className="premium-input font-mono text-xs font-semibold py-1 px-1.5 w-24 text-center bg-white/5 border-glass-border/60 ml-1 cursor-pointer"
+                            value={item.batch || ''}
+                            placeholder="Batch"
+                            onChange={e => updateCartItem(item.id, 'batch', e.target.value)}
+                            onFocus={() => {
+                              setActiveBatchRowId(item.id);
+                              api.searchMedicine(item.name)
+                                .then(data => {
+                                  if (Array.isArray(data)) {
+                                    // filter matching name exactly
+                                    const matches = data.filter(med => med.medicine_name.toLowerCase().trim() === item.name.toLowerCase().trim());
+                                    setRowBatchesList(matches.length > 0 ? matches : data);
+                                  }
+                                })
+                                .catch(err => console.error('Error fetching batches:', err));
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                if (activeBatchRowId === item.id) {
+                                  setActiveBatchRowId(null);
+                                }
+                              }, 250);
+                            }}
+                          />
+                          
+                          {activeBatchRowId === item.id && rowBatchesList.length > 1 && (
+                            <div className="absolute left-1 z-50 mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left">
+                              <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
+                                Switch Batch:
+                              </div>
+                              {rowBatchesList.map(b => (
+                                <button
+                                  key={b.inventory_id}
+                                  type="button"
+                                  onMouseDown={() => {
+                                    updateCart(prev => prev.map(cItem => {
+                                      if (cItem.id !== item.id) return cItem;
+                                      return {
+                                        ...cItem,
+                                        id: b.inventory_id,
+                                        batch: b.batch_no,
+                                        expiry: b.expiry_date,
+                                        mrp: b.mrp,
+                                        costPrice: b.cost_price,
+                                        packSize: b.pack_size || cItem.packSize
+                                      };
+                                    }));
+                                    setActiveBatchRowId(null);
+                                  }}
+                                  className={`w-full text-left px-2.5 py-1.5 hover:bg-sky/20 hover:text-text border-b border-glass-border/10 text-[10px] font-mono transition-all block ${b.batch_no === item.batch ? 'bg-sky/10 text-sky' : 'text-text'}`}
+                                >
+                                  <span className="font-bold block">{b.batch_no}</span>
+                                  <span className="text-muted block text-[8px]">Exp: {b.expiry_date} | Stock: {b.quantity} | MRP: ₹{b.mrp}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       
                       {/* Expiry */}
@@ -878,7 +1029,7 @@ const POS = () => {
                         />
                       </td>
 
-                      {/* Quantity - Full Strips */}
+                      {/* Quantity (Str) */}
                       <td className="p-2 text-center">
                         <input 
                           type="number" 
@@ -889,7 +1040,7 @@ const POS = () => {
                         />
                       </td>
 
-                      {/* Quantity - Loose Units */}
+                      {/* Loose Qty */}
                       <td className="p-2 text-center">
                         <input 
                           type="number" 
@@ -900,42 +1051,27 @@ const POS = () => {
                         />
                       </td>
 
-                      {/* Return Qty */}
+                      {/* Discount */}
                       <td className="p-2 text-center">
                         <input 
                           type="number" 
-                          className="premium-input text-xs py-1 px-1.5 w-10 text-center font-mono font-bold text-text bg-white/5 border-glass-border/60" 
-                          value={item.returnQty || 0}
-                          onChange={e => updateCartItem(item.id, 'returnQty', Math.max(0, Number(e.target.value)))}
+                          className="premium-input text-xs py-1 px-1.5 w-12 text-center font-mono font-bold text-sky bg-sky/5 border-sky/30 focus:border-sky" 
+                          value={item.discount || 0}
+                          onChange={e => updateCartItem(item.id, 'discount', Math.min(100, Math.max(0, Number(e.target.value))))}
                           min="0"
+                          max="100"
                         />
                       </td>
 
-                      {/* MRP / Unit Rate display */}
-                      <td className="p-2 text-right font-mono text-xs">
-                        <div className="flex flex-col gap-1 items-end">
-                          <div className="flex items-center gap-1 justify-end">
-                            <span className="text-[9px] text-muted">MRP:</span>
-                            <input 
-                              type="number" 
-                              className="premium-input text-xs font-mono py-0.5 px-1 w-14 text-right bg-white/5 border-glass-border/60 inline-block" 
-                              value={item.mrp || ''}
-                              placeholder="0.00"
-                              onChange={e => updateCartItem(item.id, 'mrp', Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                          <div className="flex items-center gap-1 justify-end">
-                            <span className="text-[9px] text-muted">Cost:</span>
-                            <input 
-                              type="number" 
-                              className="premium-input text-xs font-mono py-0.5 px-1 w-14 text-right bg-white/5 border-glass-border/60 inline-block text-slate-400" 
-                              value={item.costPrice != null ? item.costPrice : (item.mrp * 0.7)}
-                              placeholder="0.00"
-                              onChange={e => updateCartItem(item.id, 'costPrice', Math.max(0, Number(e.target.value)))}
-                            />
-                          </div>
-                          <div className="text-[9px] text-amber-500/80 mt-0.5">₹{unitRate.toFixed(2)}/Tab</div>
-                        </div>
+                      {/* MRP */}
+                      <td className="p-2 text-right">
+                        <input 
+                          type="number" 
+                          className="premium-input text-xs font-mono py-1 px-1.5 w-16 text-right bg-white/5 border-glass-border/60" 
+                          value={item.mrp || ''}
+                          placeholder="0.00"
+                          onChange={e => updateCartItem(item.id, 'mrp', Math.max(0, Number(e.target.value)))}
+                        />
                       </td>
 
                       <td className="p-2 text-right text-xs font-mono font-bold text-primary">
@@ -956,14 +1092,20 @@ const POS = () => {
                 {/* MANUAL BILLING ROW AT THE BOTTOM */}
                 <tr className="bg-white/5 border-t-2 border-primary/20 hover:bg-white/10 transition-all">
                   <td className="p-2">
-                    <input 
-                      type="text" 
-                      placeholder="Add New Medicine..." 
-                      className="premium-input text-xs py-1 px-2 w-full border-primary/30 text-text bg-white/5 font-semibold placeholder:text-muted" 
-                      value={manualName}
-                      onChange={e => setManualName(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                    />
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                        <Plus size={11} className="text-sky animate-pulse stroke-[3]" />
+                      </span>
+                      <input 
+                        id="manual-medicine-name-input"
+                        type="text" 
+                        placeholder="Add Next Medicine / Custom Entry..." 
+                        className="premium-input text-xs py-1 pl-7 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
+                        value={manualName}
+                        onChange={e => setManualName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
+                      />
+                    </div>
                   </td>
                   <td className="p-2">
                     <input 
@@ -995,6 +1137,7 @@ const POS = () => {
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
+                  {/* Quantity */}
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
@@ -1005,6 +1148,7 @@ const POS = () => {
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
+                  {/* Loose Quantity */}
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
@@ -1015,51 +1159,49 @@ const POS = () => {
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
+                  {/* Discount */}
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5" 
-                      value={manualReturn}
-                      onChange={e => setManualReturn(Math.max(0, Number(e.target.value)))}
+                      placeholder="%"
+                      className="premium-input text-xs font-mono py-1 px-1.5 w-12 text-center font-bold bg-sky/5 border-sky/30 focus:border-sky text-sky" 
+                      value={manualDiscount || ''}
+                      onChange={e => setManualDiscount(Math.min(100, Math.max(0, Number(e.target.value))))}
+                      min="0"
+                      max="100"
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
+                    />
+                  </td>
+                  {/* MRP */}
+                  <td className="p-2">
+                    <input 
+                      type="number" 
+                      placeholder="MRP"
+                      className="premium-input text-xs font-mono py-1 px-1.5 w-16 text-right bg-white/5" 
+                      value={manualMrp || ''}
+                      onChange={e => {
+                        const val = Math.max(0, Number(e.target.value));
+                        setManualMrp(val);
+                        setManualCostPrice(prev => prev === 0 || prev === manualMrp * 0.7 ? val * 0.7 : prev);
+                      }}
                       min="0"
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
-                  <td className="p-2">
-                    <div className="flex flex-col gap-1 items-end">
-                      <input 
-                        type="number" 
-                        placeholder="MRP"
-                        className="premium-input text-xs font-mono py-0.5 px-1 w-14 text-right bg-white/5" 
-                        value={manualMrp || ''}
-                        onChange={e => {
-                          const val = Math.max(0, Number(e.target.value));
-                          setManualMrp(val);
-                          setManualCostPrice(prev => prev === 0 || prev === manualMrp * 0.7 ? val * 0.7 : prev);
-                        }}
-                        min="0"
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                      <input 
-                        type="number" 
-                        placeholder="Cost"
-                        className="premium-input text-xs font-mono py-0.5 px-1 w-14 text-right bg-white/5 text-slate-400" 
-                        value={manualCostPrice || ''}
-                        onChange={e => setManualCostPrice(Math.max(0, Number(e.target.value)))}
-                        min="0"
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                    </div>
-                  </td>
                   <td className="p-2 text-right text-xs font-mono font-bold text-sky">
-                    ₹{((manualMrp * manualQty) + ((manualPackSize > 0 ? manualMrp / manualPackSize : manualMrp) * (manualLooseQty - manualReturn))).toFixed(2)}
+                    ₹{(((manualMrp * manualQty) + ((manualPackSize > 0 ? manualMrp / manualPackSize : manualMrp) * (manualLooseQty || 0))) * (1 - (manualDiscount || 0) / 100)).toFixed(2)}
                   </td>
                   <td className="p-2 text-center">
                     <button 
                       onClick={addManualItem}
-                      disabled={!manualName.trim()}
-                      className={`p-1.5 rounded-lg border flex items-center justify-center transition-all ${!manualName.trim() ? 'bg-white/5 border-glass-border text-muted cursor-not-allowed' : 'bg-primary/20 border-primary text-primary hover:bg-primary/30'}`}
-                      title="Add Custom Medicine Row"
+                      className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/35 shadow-[0_0_8px_rgba(14,165,233,0.15)] active:scale-95 cursor-pointer"
+                      title="Add Next Medicine to Cart"
+                      onKeyDown={e => {
+                        if (e.key === 'Tab' && !e.shiftKey) {
+                          e.preventDefault();
+                          document.getElementById('manual-medicine-name-input')?.focus();
+                        }
+                      }}
                     >
                       <Plus size={14} className="stroke-[3]" />
                     </button>
@@ -1113,37 +1255,16 @@ const POS = () => {
                   Grand Total: <span className="font-mono text-base ml-1">₹{grandTotal}</span>
                 </div>
 
-                {cart.length > 0 && (
-                  <div className={`px-2.5 py-1 rounded-lg border font-bold text-xs flex items-center gap-1.5 transition-all select-none ${
-                    isLoss 
-                      ? 'bg-red/10 border-red/30 text-red animate-pulse font-extrabold shadow-[0_0_12px_rgba(239,68,68,0.15)]' 
-                      : 'bg-green/10 border-green/30 text-green font-extrabold shadow-[0_0_12px_rgba(16,185,129,0.15)]'
-                  }`}>
-                    {isLoss ? (
-                      <>
-                        <span className="h-2 w-2 rounded-full bg-red animate-ping" />
-                        <span>⚠️ LOSS ALERT (-₹{Math.abs(profitOrLoss).toFixed(2)})</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="h-2 w-2 rounded-full bg-green animate-pulse" />
-                        <span>📈 PROFIT (+₹{profitOrLoss.toFixed(2)})</span>
-                      </>
-                    )}
-                  </div>
-                )}
              </div>
 
              {/* Action trigger button */}
              <button 
                onClick={handleCompleteSale}
-               disabled={cart.length === 0 || isLoss}
+               disabled={cart.length === 0}
                className={`premium-btn text-white py-2 px-6 text-sm flex items-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all ${
                  cart.length === 0 
                    ? 'bg-white/5 border border-glass-border text-muted cursor-not-allowed' 
-                   : isLoss
-                     ? 'bg-red/15 border border-red/30 text-red hover:bg-red/25 cursor-not-allowed shadow-[inset_0_0_10px_rgba(239,68,68,0.1)]'
-                     : 'bg-green hover:bg-emerald-600 shadow-[0_4px_12px_rgba(16,185,129,0.35)]'
+                   : 'bg-green hover:bg-emerald-600 shadow-[0_4px_12px_rgba(16,185,129,0.35)]'
                }`}
              >
                <CheckCircle size={16} /> Complete Sale

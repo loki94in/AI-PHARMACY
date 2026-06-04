@@ -88,9 +88,6 @@ const Inventory = () => {
             <button className="premium-btn btn-outline text-muted hover:text-white">
               <Filter size={16} /> Filters
             </button>
-            <button className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600">
-              <Plus size={16} /> Add Medicine
-            </button>
             <button className="premium-btn btn-sky" onClick={loadInventory} aria-label="Refresh inventory" title="Refresh inventory">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>

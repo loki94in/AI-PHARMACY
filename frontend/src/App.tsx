@@ -17,7 +17,9 @@ import {
   Check,
   AlertTriangle,
   Bell,
-  X
+  X,
+  Sun,
+  Moon
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { toastEvent, quickOrderEvent } from './services/events';
@@ -66,11 +68,26 @@ const Sidebar = () => {
 
   return (
     <div className="w-64 bg-glass-bg border-r border-glass-border backdrop-blur-xl flex flex-col h-full overflow-y-auto">
-      <div className="p-6 border-b border-glass-border">
-        <h1 className="text-xl font-extrabold bg-gradient-to-br from-blue-400 to-purple-400 bg-clip-text text-transparent tracking-tight">
-          AI PHARMACY
-        </h1>
-        <p className="text-xs text-muted mt-1 uppercase tracking-wider font-semibold">OS Version 2.0</p>
+      <div className="p-5 border-b border-glass-border flex flex-col gap-1 bg-white/[0.02]">
+        <div className="flex items-center gap-3">
+          {/* Futuristic plus icon logo */}
+          <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-sky/20 to-sky/5 border border-sky/30 shadow-[0_0_15px_rgba(14,165,233,0.2)] shrink-0 transition-all duration-300">
+            <svg className="w-5.5 h-5.5 text-sky drop-shadow-[0_0_6px_rgba(14,165,233,0.6)]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round"/>
+              <path d="M12 8.5V15.5M8.5 12H15.5" stroke="#fafafa" strokeWidth="2.5" strokeLinecap="round"/>
+            </svg>
+            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green"></span>
+            </span>
+          </div>
+          <div>
+            <h1 className="text-base font-black tracking-wider bg-gradient-to-r from-text to-sky bg-clip-text text-transparent leading-none">
+              NEXT MEDICIN
+            </h1>
+            <p className="text-[9px] text-muted tracking-widest uppercase font-bold mt-1 leading-none">OS Version 2.0</p>
+          </div>
+        </div>
       </div>
       
       <div className="py-4 flex-1">
@@ -111,6 +128,22 @@ const Sidebar = () => {
 
 const Topbar = () => {
   const location = useLocation();
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light');
+      document.body.classList.add('light');
+    } else {
+      document.documentElement.classList.remove('light');
+      document.body.classList.remove('light');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  };
   
   // Map paths to dynamic header titles
   const getPageTitle = (pathname: string) => {
@@ -181,7 +214,15 @@ const Topbar = () => {
           <div className="w-2 h-2 rounded-full bg-green animate-pulse"></div>
           <span className="text-xs font-bold text-green uppercase tracking-wide">Connected</span>
         </div>
-        <button className="p-2 text-muted hover:text-white transition-colors" aria-label="Log out" title="Log out">
+        <button 
+          onClick={toggleTheme} 
+          className="p-2 text-muted hover:text-white transition-colors flex items-center justify-center" 
+          aria-label="Toggle theme" 
+          title={theme === 'light' ? "Switch to Night Mode" : "Switch to Day Mode"}
+        >
+          {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+        </button>
+        <button className="p-2 text-muted hover:text-white transition-colors flex items-center justify-center" aria-label="Log out" title="Log out">
           <LogOut size={18} />
         </button>
       </div>

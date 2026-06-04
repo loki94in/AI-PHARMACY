@@ -7,12 +7,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: '#09090b',
-        bg2: '#18181b',
-        bg3: '#27272a',
-        border: '#3f3f46',
-        text: '#fafafa',
-        muted: '#a1a1aa',
+        bg: 'var(--bg)',
+        bg2: 'var(--bg2)',
+        bg3: 'var(--bg3)',
+        border: 'var(--border)',
+        text: 'var(--text)',
+        muted: 'var(--muted)',
         primary: {
           DEFAULT: '#3b82f6',
           glow: 'rgba(59, 130, 246, 0.4)',
@@ -36,8 +36,8 @@ export default {
           bg: 'rgba(245, 158, 11, 0.15)',
         },
         glass: {
-          bg: 'rgba(24, 24, 27, 0.7)',
-          border: 'rgba(255, 255, 255, 0.08)',
+          bg: 'var(--glass-bg)',
+          border: 'var(--glass-border)',
         }
       },
       fontFamily: {

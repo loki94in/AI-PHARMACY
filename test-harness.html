@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pharmacy - API Test Harness</title>
+    <style>
+        :root {
+            --bg: #09090b;
+            --panel: #18181b;
+            --text: #fafafa;
+            --muted: #a1a1aa;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --error: #ef4444;
+            --border: #27272a;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .card {
+            background-color: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 15px;
+        }
+        button {
+            background-color: var(--border);
+            color: var(--text);
+            border: 1px solid #3f3f46;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #3f3f46;
+        }
+        button.active {
+            background-color: var(--primary);
+            border-color: var(--primary);
+        }
+        .output-panel {
+            background-color: #000;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            height: 600px;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+            color: var(--success);
+            white-space: pre-wrap;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .status.ok { background-color: rgba(16, 185, 129, 0.2); color: var(--success); }
+        .status.err { background-color: rgba(239, 68, 68, 0.2); color: var(--error); }
+        .url-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        input {
+            flex: 1;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: monospace;
+        }
+        .btn-go {
+            background-color: var(--success);
+            color: #000;
+            font-weight: bold;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <div>
+            <h1 style="margin: 0; font-size: 24px;">🧪 API Test Harness</h1>
+            <p style="margin: 5px 0 0 0; color: var(--muted); font-size: 14px;">Mock frontend to test backend routes</p>
+        </div>
+        <div style="text-align: right;">
+            <p style="margin: 0; font-size: 12px; color: var(--muted);">Backend URL</p>
+            <strong style="color: var(--primary);">http://localhost:3000</strong>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- TEST MENU -->
+        <div class="sidebar">
+            <h3 style="margin-top: 0;">Endpoints</h3>
+            
+            <strong style="color: var(--muted); font-size: 12px; margin-top: 10px;">INVENTORY & POS</strong>
+            <button onclick="testRoute('GET', '/api/inventory', this)">GET /api/inventory</button>
+            <button onclick="testRoute('GET', '/api/pos/categories', this)">GET /api/pos/categories</button>
+            
+            <strong style="color: var(--muted); font-size: 12px; margin-top: 10px;">CRM & PATIENTS</strong>
+            <button onclick="testRoute('GET', '/api/crm/patients', this)">GET /api/crm/patients</button>
+            <button onclick="testRoute('GET', '/api/crm/refills', this)">GET /api/crm/refills</button>
+            
+            <strong style="color: var(--muted); font-size: 12px; margin-top: 10px;">SALES & ORDERS</strong>
+            <button onclick="testRoute('GET', '/api/sales', this)">GET /api/sales</button>
+            <button onclick="testRoute('GET', '/api/orders', this)">GET /api/orders</button>
+            
+            <strong style="color: var(--muted); font-size: 12px; margin-top: 10px;">MIGRATION & SYSTEM</strong>
+            <button onclick="testRoute('GET', '/api/migration/status', this)">GET /api/migration/status</button>
+            <button onclick="testRoute('GET', '/api/dashboard/stats', this)">GET /api/dashboard/stats</button>
+        </div>
+
+        <!-- OUTPUT PANEL -->
+        <div class="card">
+            <div class="url-bar">
+                <input type="text" id="customUrl" value="/api/inventory" placeholder="/api/...">
+                <button class="btn-go" onclick="testCustomRoute()">SEND</button>
+            </div>
+            
+            <div id="statusBadge" class="status" style="display: none;"></div>
+            
+            <div id="output" class="output-panel">
+// Select an endpoint from the left or enter a custom route.
+// Response data will appear here in JSON format.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const BASE_URL = 'http://localhost:3000';
+    const outputEl = document.getElementById('output');
+    const statusEl = document.getElementById('statusBadge');
+    const customUrlInput = document.getElementById('customUrl');
+
+    async function testRoute(method, path, btnElement) {
+        // Highlight button
+        document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+        if (btnElement) btnElement.classList.add('active');
+        
+        customUrlInput.value = path;
+        await executeRequest(method, path);
+    }
+
+    async function testCustomRoute() {
+        const path = customUrlInput.value;
+        if (!path) return;
+        await executeRequest('GET', path);
+    }
+
+    async function executeRequest(method, path) {
+        outputEl.innerHTML = `Loading ${method} ${path} ...\n<span style="color: var(--muted)">Waiting for backend response...</span>`;
+        statusEl.style.display = 'none';
+
+        try {
+            const startTime = performance.now();
+            const response = await fetch(`${BASE_URL}${path}`, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const endTime = performance.now();
+            const timeMs = (endTime - startTime).toFixed(0);
+
+            const isJson = response.headers.get('content-type')?.includes('application/json');
+            const data = isJson ? await response.json() : await response.text();
+
+            statusEl.style.display = 'inline-block';
+            statusEl.textContent = `${response.status} ${response.statusText} (${timeMs}ms)`;
+            statusEl.className = response.ok ? 'status ok' : 'status err';
+
+            if (isJson) {
+                outputEl.textContent = JSON.stringify(data, null, 2);
+            } else {
+                outputEl.textContent = data;
+            }
+
+        } catch (error) {
+            statusEl.style.display = 'inline-block';
+            statusEl.textContent = 'CONNECTION REFUSED / ERROR';
+            statusEl.className = 'status err';
+            outputEl.innerHTML = `<span style="color: var(--error)">Error: ${error.message}\n\nMake sure your backend server is running on ${BASE_URL}</span>`;
+        }
+    }
+</script>
+</body>
+</html>

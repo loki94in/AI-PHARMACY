@@ -21,6 +21,7 @@ interface EmailRecord {
   body: string;
   date?: string;
   attachments?: any[];
+  distributorName?: string;
 }
 
 interface AttachmentFile {
