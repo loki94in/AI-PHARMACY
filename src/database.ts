@@ -7,6 +7,7 @@ import { open } from 'sqlite';
  */
 export async function ensureSchema(dbPath: string) {
   const db = await open({ filename: dbPath, driver: sqlite3.Database });
+  await db.exec('PRAGMA journal_mode = WAL;');
   await db.exec(`
     CREATE TABLE IF NOT EXISTS medicines (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

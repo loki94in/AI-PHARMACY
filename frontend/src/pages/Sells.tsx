@@ -41,6 +41,8 @@ const Sells = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
+  const [minAmount, setMinAmount] = useState<string>('');
+  const [maxAmount, setMaxAmount] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
 
   // Edit modal state
@@ -64,7 +66,8 @@ const Sells = () => {
         date_to: dateTo || undefined,
         batch: batchFilter || undefined,
       });
-      setInvoices(data);
+      // STRICT RULE: Only show last 120
+      setInvoices(Array.isArray(data) ? data.slice(0, 120) : []);
     } catch (err) {
       console.error('Failed to load sales:', err);
       toastEvent.trigger('Failed to load sales', 'error');
@@ -238,9 +241,31 @@ const Sells = () => {
                 className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-40"
               />
             </div>
-            {(dateFrom || dateTo || batchFilter) && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-muted">Amount</label>
+              <input
+                type="number"
+                value={minAmount}
+                onChange={e => setMinAmount(e.target.value)}
+                placeholder="Min 0"
+                min="0"
+                max="100000000"
+                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
+              />
+              <span className="text-muted text-xs">-</span>
+              <input
+                type="number"
+                value={maxAmount}
+                onChange={e => setMaxAmount(e.target.value)}
+                placeholder="Max 100M"
+                min="0"
+                max="100000000"
+                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-28"
+              />
+            </div>
+            {(dateFrom || dateTo || batchFilter || minAmount || maxAmount) && (
               <button
-                onClick={() => { setDateFrom(''); setDateTo(''); setBatchFilter(''); }}
+                onClick={() => { setDateFrom(''); setDateTo(''); setBatchFilter(''); setMinAmount(''); setMaxAmount(''); }}
                 className="text-xs text-red hover:text-red/80 font-semibold flex items-center gap-1"
               >
                 <X size={12} /> Clear filters
@@ -278,7 +303,12 @@ const Sells = () => {
                 </tr>
               </thead>
               <tbody>
-                {invoices.map(inv => (
+                {invoices.filter(inv => {
+                  const total = Number(inv.total_amount) || 0;
+                  const min = minAmount ? Number(minAmount) : 0;
+                  const max = maxAmount ? Number(maxAmount) : 100000000;
+                  return total >= min && total <= max;
+                }).map(inv => (
                   <tr key={inv.id} className="hover:bg-white/5 transition-colors group">
                     <td className="p-4 border-b border-glass-border/50">
                       <span className="font-mono text-sm font-bold text-primary">{inv.invoice_no}</span>

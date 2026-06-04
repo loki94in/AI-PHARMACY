@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Calendar, UserCheck } from 'lucide-react';
 import AICamera from '../components/AICamera';
+import BrandBanner from '../components/POS/BrandBanner';
 import { api } from '../services/api';
 
 // We will fetch common combinations dynamically instead of using hardcoded constants
@@ -18,6 +19,14 @@ const POS = () => {
   const [isDoctorDropdownOpen, setIsDoctorDropdownOpen] = useState(false);
   const [doctorHighlightIndex, setDoctorHighlightIndex] = useState(-1);
   const [isManualDoctor, setIsManualDoctor] = useState(false);
+  
+  // Doctor Modal state
+  const [showDoctorModal, setShowDoctorModal] = useState(false);
+  const [newDoctorName, setNewDoctorName] = useState('');
+  const [newDoctorSpecialty, setNewDoctorSpecialty] = useState('');
+  const [newDoctorPhone, setNewDoctorPhone] = useState('');
+  const [newDoctorClinic, setNewDoctorClinic] = useState('');
+  const [newDoctorRegNo, setNewDoctorRegNo] = useState('');
   // Patient autocomplete
   const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
@@ -213,7 +222,7 @@ const POS = () => {
   const [rowSearchResults, setRowSearchResults] = useState<any[]>([]);
 
   useEffect(() => {
-    if (activeRowSearchIndex === null || rowSearchTerm.trim().length < 2) {
+    if (activeRowSearchIndex === null || rowSearchTerm.trim().length < 3) {
       setRowSearchResults([]);
       return;
     }
@@ -296,7 +305,7 @@ const POS = () => {
   }, []);
 
   useEffect(() => {
-    if (searchTerm.trim().length < 2) {
+    if (searchTerm.trim().length < 3) {
       setSearchResults([]);
       return;
     }
@@ -589,6 +598,33 @@ const POS = () => {
     }
   };
 
+  const handleRegisterDoctor = async () => {
+    try {
+      if (!newDoctorName) return;
+      const docName = newDoctorSpecialty ? `Dr. ${newDoctorName} (${newDoctorSpecialty})` : `Dr. ${newDoctorName}`;
+      await api.addDoctor({
+        name: docName,
+        specialization: newDoctorSpecialty || 'General',
+        phone: newDoctorPhone,
+        clinic_name: newDoctorClinic,
+        reg_no: newDoctorRegNo
+      });
+      // Refresh doctors list
+      const docs = await api.getDoctors();
+      if (Array.isArray(docs)) setDoctorsList(docs);
+      setDoctor(docName);
+      setShowDoctorModal(false);
+      setNewDoctorName('');
+      setNewDoctorSpecialty('');
+      setNewDoctorPhone('');
+      setNewDoctorClinic('');
+      setNewDoctorRegNo('');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to register doctor');
+    }
+  };
+
   const defaultDoctors = [
     { id: 901, name: 'Dr. Priya Mehta (Cardiologist)' },
     { id: 902, name: 'Dr. Raj Sharma (GP)' },
@@ -607,26 +643,7 @@ const POS = () => {
   return (
     <div className="h-full flex flex-col fade-in space-y-4 overflow-hidden pb-4">
       {/* Brand & System Status Banner */}
-      <div className="flex items-center justify-between border-b border-glass-border/30 pb-2 bg-gradient-to-r from-sky/10 via-transparent to-transparent px-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-sky/10 border border-sky/30">
-            <svg className="w-4.5 h-4.5 text-sky" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
-              <circle cx="12" cy="12" r="1.5" className="fill-white animate-pulse" />
-            </svg>
-          </div>
-          <span className="font-black tracking-widest text-xs bg-gradient-to-r from-text to-sky bg-clip-text text-transparent">
-            NEXT MEDICIN OS
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold text-muted font-mono">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green/10 border border-green/20 text-[9px] font-bold text-green uppercase tracking-wide">
-            <span className="w-1.5 h-1.5 rounded-full bg-green animate-pulse"></span>
-            Online Counter
-          </div>
-        </div>
-      </div>
+      <BrandBanner />
 
       {/* Patient & Transaction Bar (All in One Horizontal Line) */}
       <div className="glass-panel p-3.5 flex flex-wrap items-center gap-4 bg-white/5 border-glass-border text-xs w-full relative z-20">
@@ -666,7 +683,7 @@ const POS = () => {
             />
             {/* Patient suggestions dropdown */}
             {showPatientSuggestions && (
-              <div className="absolute left-0 top-full z-50 mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden w-full max-h-44 overflow-y-auto">
+              <div className="absolute left-0 top-full z-[99999] mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden w-full max-h-44 overflow-y-auto shadow-2xl">
                 {patientSuggestions.map((c, idx) => (
                   <button
                     key={c.id}
@@ -737,8 +754,9 @@ const POS = () => {
         {/* Doctor Dropdown Group */}
         <div className="flex items-center gap-2 flex-1 min-w-[260px] relative">
           <span className="font-bold text-muted whitespace-nowrap">🥼 Dr:</span>
-          <div className="relative flex-1">
-            <input 
+          <div className="relative flex-1 flex gap-1">
+            <div className="relative flex-1">
+              <input 
               type="text"
               className="premium-input text-xs py-1.5 pl-2 pr-7 bg-bg2 w-full text-text focus:border-sky"
               placeholder="Type or Select Doctor..."
@@ -775,7 +793,7 @@ const POS = () => {
             
             {/* Custom Dropdown List */}
             {isDoctorDropdownOpen && (
-              <div className="absolute left-0 right-0 z-50 mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+              <div className="absolute left-0 right-0 z-[99999] mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
                 {filteredDoctors.length > 0 ? (
                   filteredDoctors.map((doc, idx) => (
                     <button
@@ -803,7 +821,15 @@ const POS = () => {
               </div>
             )}
           </div>
+          <button 
+            onClick={() => setShowDoctorModal(true)}
+            className="h-8 w-8 rounded-lg bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky transition-all flex items-center justify-center shrink-0"
+            title="Register New Doctor"
+          >
+            <Plus size={13} className="stroke-[3]" />
+          </button>
         </div>
+      </div>
 
         {/* Date Stamp Group */}
         <div className="flex items-center gap-2 flex-1 min-w-[140px] max-w-[180px]">
@@ -837,7 +863,7 @@ const POS = () => {
               
               {/* Search results dropdown */}
               {searchResults.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                <div className="absolute left-0 right-0 z-[99999] mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-60 overflow-y-auto shadow-2xl">
                   <div className="p-2 border-b border-glass-border/30 bg-black/20 text-[10px] font-bold text-muted uppercase tracking-wider">
                     Matching Inventory Batch Records:
                   </div>
@@ -1018,7 +1044,7 @@ const POS = () => {
                           />
                           
                           {activeRowSearchIndex === cart.indexOf(item) && rowSearchResults.length > 0 && (
-                            <div className="absolute left-0 right-0 z-50 mt-1 bg-[#18181b]/98 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64">
+                            <div className="absolute left-0 right-0 z-[99999] mt-1 bg-[#18181b]/98 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64 shadow-2xl">
                               {rowSearchResults.map((med: any) => {
                                 const rowPendingMatches = specialOrders.filter(
                                   o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
@@ -1085,7 +1111,7 @@ const POS = () => {
                           />
                           
                           {activeBatchRowId === item.id && rowBatchesList.length > 1 && (
-                            <div className="absolute left-1 z-50 mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left">
+                            <div className="absolute left-1 z-[99999] mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
                               <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
                                 Switch Batch:
                               </div>
@@ -1421,7 +1447,7 @@ const POS = () => {
 
       {/* Patient Profile & Auto-Refills Modal */}
       {showPatientModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[99999] p-4 animate-fade-in">
           <div className="glass-panel max-w-md w-full p-6 space-y-5 border-glass-border bg-[#18181b]/95 rounded-2xl relative">
             {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-glass-border pb-3">
@@ -1551,6 +1577,99 @@ const POS = () => {
                 className="premium-btn bg-primary text-text hover:bg-teal-500 py-2 px-5 text-xs font-bold uppercase tracking-wider"
               >
                 Save Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Doctor Registration Modal */}
+      {showDoctorModal && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in">
+          <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-glass-border bg-white/5 flex items-center justify-between">
+              <h3 className="font-bold flex items-center gap-2 text-sky">
+                <Plus size={18} />
+                Register New Doctor
+              </h3>
+              <button onClick={() => setShowDoctorModal(false)} className="text-muted hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted uppercase tracking-wider">Doctor Name *</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm font-semibold">Dr.</span>
+                  <input
+                    type="text"
+                    className="premium-input w-full pl-9"
+                    placeholder="John Doe"
+                    value={newDoctorName}
+                    onChange={(e) => setNewDoctorName(e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted uppercase tracking-wider">Specialization</label>
+                <input
+                  type="text"
+                  className="premium-input w-full"
+                  placeholder="e.g. Cardiologist"
+                  value={newDoctorSpecialty}
+                  onChange={(e) => setNewDoctorSpecialty(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted uppercase tracking-wider">Phone</label>
+                <input
+                  type="text"
+                  className="premium-input w-full"
+                  placeholder="Contact Number"
+                  value={newDoctorPhone}
+                  onChange={(e) => setNewDoctorPhone(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted uppercase tracking-wider">Clinic Name</label>
+                <input
+                  type="text"
+                  className="premium-input w-full"
+                  placeholder="Clinic / Hospital Name"
+                  value={newDoctorClinic}
+                  onChange={(e) => setNewDoctorClinic(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted uppercase tracking-wider">Registration No.</label>
+                <input
+                  type="text"
+                  className="premium-input w-full"
+                  placeholder="e.g. MMC-12345"
+                  value={newDoctorRegNo}
+                  onChange={(e) => setNewDoctorRegNo(e.target.value)}
+                />
+              </div>
+            </div>
+            
+            <div className="px-5 py-4 border-t border-glass-border bg-black/20 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowDoctorModal(false)}
+                className="px-4 py-2 rounded-xl text-sm font-bold text-muted hover:text-white hover:bg-white/5 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleRegisterDoctor}
+                disabled={!newDoctorName}
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-sky text-white hover:bg-sky/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(14,165,233,0.3)]"
+              >
+                <CheckCircle size={16} /> Save Doctor
               </button>
             </div>
           </div>

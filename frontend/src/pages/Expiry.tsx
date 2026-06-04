@@ -34,6 +34,13 @@ const Expiry = () => {
   const [sendingAlerts, setSendingAlerts] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   
+  // Custom Filters
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [minQty, setMinQty] = useState('');
+  const [maxQty, setMaxQty] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  
   // Notification Toast State
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -41,8 +48,16 @@ const Expiry = () => {
     if (showRefresh) setRefreshing(true);
     try {
       const data = await api.getExpiryList(days);
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
       if (Array.isArray(data)) {
-        setItems(data);
+        // STRICT RULE: Only show present month
+        const filtered = data.filter((r: any) => {
+          if (!r.expiry_date) return true;
+          const d = new Date(r.expiry_date);
+          return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        });
+        setItems(filtered);
       }
     } catch (err) {
       console.error('Error fetching near-expiry items:', err);
@@ -147,10 +162,27 @@ const Expiry = () => {
     }
   };
 
-  const filteredItems = items.filter(item => 
-    item.medicine_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.batch_no.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredItems = items.filter(item => {
+    const matchesSearch = item.medicine_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          item.batch_no.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    let matchesDate = true;
+    if (dateFrom || dateTo) {
+      if (!item.expiry_date) {
+        matchesDate = false;
+      } else {
+        const itemDate = item.expiry_date.substring(0, 10);
+        const start = dateFrom || '0000-00-00';
+        const end = dateTo || '9999-99-99';
+        matchesDate = itemDate >= start && itemDate <= end;
+      }
+    }
+
+    const matchesMinQty = !minQty || item.quantity >= Number(minQty);
+    const matchesMaxQty = !maxQty || item.quantity <= Number(maxQty);
+
+    return matchesSearch && matchesDate && matchesMinQty && matchesMaxQty;
+  });
 
   return (
     <div className="h-full flex flex-col fade-in space-y-6">
@@ -313,10 +345,10 @@ const Expiry = () => {
         <div className="xl:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border">
           
           {/* Table Toolbar (Search, Days Filters) */}
-          <div className="p-4 border-b border-glass-border bg-black/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="p-4 border-b border-glass-border bg-black/10 flex flex-col gap-4">
             
             {/* Filter Tabs for Expiry Thresholds */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none select-none">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none">
               <span className="text-[10px] font-bold text-muted uppercase tracking-wider mr-1.5 hidden sm:inline">Scope Days:</span>
               {[30, 60, 90, 180].map(days => (
                 <button
@@ -332,19 +364,72 @@ const Expiry = () => {
                 </button>
               ))}
             </div>
-
-            {/* Search Input */}
-            <div className="relative max-w-sm w-full md:w-64">
-              <Search className="absolute left-3 top-2.5 text-muted" size={14} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search medicine, batch..."
-                className="premium-input pl-9 pr-4 py-1.5 text-xs w-full"
-              />
+            
+            <div className="flex items-center justify-between gap-4">
+              <div className="relative flex-1">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  type="text"
+                  placeholder="Search by medicine or batch..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-black/20 border border-glass-border rounded-lg text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                  showFilters ? 'bg-primary/20 border-primary/40 text-primary' : 'bg-white/5 border-glass-border text-muted hover:text-text'
+                }`}
+              >
+                Filters
+              </button>
             </div>
-
+            
+            {showFilters && (
+              <div className="pt-4 border-t border-glass-border flex flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-muted">From</label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={e => setDateFrom(e.target.value)}
+                    className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-muted">To</label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={e => setDateTo(e.target.value)}
+                    className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-muted">Qty</label>
+                  <input
+                    type="number"
+                    value={minQty}
+                    onChange={e => setMinQty(e.target.value)}
+                    placeholder="Min"
+                    min="0"
+                    max="100000000"
+                    className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
+                  />
+                  <span className="text-muted text-xs">-</span>
+                  <input
+                    type="number"
+                    value={maxQty}
+                    onChange={e => setMaxQty(e.target.value)}
+                    placeholder="Max"
+                    min="0"
+                    max="100000000"
+                    className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Table Container */}

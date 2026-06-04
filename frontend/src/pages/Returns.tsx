@@ -36,8 +36,14 @@ const Returns: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
-  const [showGroupedPreview, setShowGroupedPreview] = useState(false);
   const [groupedReturns, setGroupedReturns] = useState<GroupedReturn[]>([]);
+
+  // Filters
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
   function createEmptyItem(): ReturnItem {
     return {
@@ -77,7 +83,19 @@ const Returns: React.FC = () => {
     setLoading(true);
     try {
       const response = await api.getReturns();
-      setReturnHistory(response.data || []);
+      const returns = Array.isArray(response) ? response : (response.data || []);
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      // STRICT RULE: Only show present month
+      const filtered = returns.filter((r: any) => {
+        if (!r.return_date && !r.created_at) return true; // Fallback if no date
+        const dateStr = r.return_date || r.created_at;
+        const d = new Date(dateStr);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      });
+      
+      setReturnHistory(filtered);
     } catch (error) {
       console.error('Error fetching returns:', error);
     } finally {
@@ -496,7 +514,60 @@ const Returns: React.FC = () => {
 
       {/* Return History */}
       <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-        <h2 className="text-lg font-semibold text-white mb-4">Return History</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-white">Return History</h2>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="text-sm text-gray-300 hover:text-white flex items-center gap-2"
+          >
+            Filters
+          </button>
+        </div>
+
+        {showFilters && (
+          <div className="mb-4 pt-4 border-t border-white/10 flex flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-gray-400">From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="px-3 py-1.5 bg-black/20 border border-white/20 rounded-lg text-sm text-white focus:outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-gray-400">To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="px-3 py-1.5 bg-black/20 border border-white/20 rounded-lg text-sm text-white focus:outline-none"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-gray-400">Amount</label>
+              <input
+                type="number"
+                value={minAmount}
+                onChange={e => setMinAmount(e.target.value)}
+                placeholder="Min"
+                min="0"
+                max="100000000"
+                className="px-3 py-1.5 bg-black/20 border border-white/20 rounded-lg text-sm text-white focus:outline-none w-24"
+              />
+              <span className="text-gray-400 text-xs">-</span>
+              <input
+                type="number"
+                value={maxAmount}
+                onChange={e => setMaxAmount(e.target.value)}
+                placeholder="Max"
+                min="0"
+                max="100000000"
+                className="px-3 py-1.5 bg-black/20 border border-white/20 rounded-lg text-sm text-white focus:outline-none w-24"
+              />
+            </div>
+          </div>
+        )}
         
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -514,12 +585,34 @@ const Returns: React.FC = () => {
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-gray-400">Loading...</td>
                 </tr>
-              ) : returnHistory.length === 0 ? (
+              ) : returnHistory.filter(ret => {
+                  let matchesDate = true;
+                  if (dateFrom || dateTo) {
+                    const itemDate = ret.date ? ret.date.substring(0, 10) : '';
+                    const start = dateFrom || '0000-00-00';
+                    const end = dateTo || '9999-99-99';
+                    matchesDate = itemDate >= start && itemDate <= end;
+                  }
+                  const matchesMin = !minAmount || (ret.total_amount || 0) >= Number(minAmount);
+                  const matchesMax = !maxAmount || (ret.total_amount || 0) <= Number(maxAmount);
+                  return matchesDate && matchesMin && matchesMax;
+                }).length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-400">No returns recorded yet.</td>
+                  <td colSpan={5} className="py-8 text-center text-gray-400">No returns found.</td>
                 </tr>
               ) : (
-                returnHistory.slice(0, 10).map((ret) => (
+                returnHistory.filter(ret => {
+                  let matchesDate = true;
+                  if (dateFrom || dateTo) {
+                    const itemDate = ret.date ? ret.date.substring(0, 10) : '';
+                    const start = dateFrom || '0000-00-00';
+                    const end = dateTo || '9999-99-99';
+                    matchesDate = itemDate >= start && itemDate <= end;
+                  }
+                  const matchesMin = !minAmount || (ret.total_amount || 0) >= Number(minAmount);
+                  const matchesMax = !maxAmount || (ret.total_amount || 0) <= Number(maxAmount);
+                  return matchesDate && matchesMin && matchesMax;
+                }).slice(0, 10).map((ret) => (
                   <tr key={ret.id} className="border-b border-white/10 hover:bg-white/5">
                     <td className="py-3 text-gray-300">{ret.id}</td>
                     <td className="py-3 text-white font-medium">{ret.return_no}</td>

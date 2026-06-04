@@ -159,10 +159,10 @@ const Purchases: React.FC = () => {
 
   const fetchPurchaseHistory = async () => {
     try {
-      const response = await api.getPurchases();
-      const list = Array.isArray(response) ? response : (response.data || []);
-      setPurchaseHistory(list);
-    } catch (error) {
+      const list = await api.getPurchases();
+      // STRICT RULE: Only show last 100
+      setPurchaseHistory(Array.isArray(list) ? list.slice(0, 100) : []);
+    } catch (err) {
       console.error('Error fetching purchase history:', error);
     }
   };
@@ -633,7 +633,7 @@ const Purchases: React.FC = () => {
                   placeholder="Type to search distributor..."
                 />
                 {showDistributorDropdown && distributorSearch && (
-                  <div className="absolute z-20 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-[99999] w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {distributors
                       .filter((d) => d.name.toLowerCase().includes(distributorSearch.toLowerCase()))
                       .map((dist) => (
@@ -797,7 +797,7 @@ const Purchases: React.FC = () => {
                         </button>
                       </div>
                       {activeSearchIndex === index && searchResults.length > 0 && (
-                        <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        <div className="absolute z-[99999] w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                           {searchResults.map((medicine) => (
                             <button
                               key={medicine.id}
@@ -836,7 +836,7 @@ const Purchases: React.FC = () => {
                       className="w-28 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
                   </td>
-                  <td className="py-3 relative group">
+                  <td className="py-3 relative group/btn">
                     <input
                       type="number"
                       value={item.rate}
@@ -844,7 +844,7 @@ const Purchases: React.FC = () => {
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
                     {item.medicine_name && item.rate > 0 && (
-                      <div className="absolute z-20 bottom-full left-0 mb-2 hidden group-hover:block w-56">
+                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block w-56">
                         <div className="bg-gray-900 border border-blue-500 rounded-lg p-3 shadow-xl">
                           <p className="text-white font-semibold text-sm mb-2">{item.medicine_name}</p>
                           <div className="space-y-1 text-xs">
@@ -883,7 +883,7 @@ const Purchases: React.FC = () => {
                       </div>
                     )}
                   </td>
-                  <td className="py-3 relative group">
+                  <td className="py-3 relative group/btn">
                     <input
                       type="number"
                       value={item.mrp}
@@ -891,7 +891,7 @@ const Purchases: React.FC = () => {
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
                     {item.medicine_name && item.mrp > 0 && (
-                      <div className="absolute z-20 bottom-full left-0 mb-2 hidden group-hover:block w-56">
+                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block w-56">
                         <div className="bg-gray-900 border border-purple-500 rounded-lg p-3 shadow-xl">
                           <p className="text-white font-semibold text-sm mb-2">{item.medicine_name}</p>
                           <div className="space-y-1 text-xs">
@@ -1179,7 +1179,7 @@ const Purchases: React.FC = () => {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Upload Invoice</h3>
             <p className="text-gray-400 mb-4">Upload PDF or CSV file from distributor</p>
@@ -1212,7 +1212,7 @@ const Purchases: React.FC = () => {
 
       {/* Add Distributor Modal */}
       {showDistributorModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Add New Distributor</h3>
             
@@ -1295,7 +1295,7 @@ const Purchases: React.FC = () => {
 
       {/* Add Medicine Modal */}
       {showMedicineModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-lg">
             <h3 className="text-lg font-semibold text-white mb-4">Add New Medicine</h3>
             
@@ -1448,7 +1448,7 @@ const Purchases: React.FC = () => {
 
       {/* Price History Modal */}
       {showPriceHistoryModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-white mb-2">Price History</h3>
             <p className="text-gray-400 text-sm mb-4">Past purchase prices for: <span className="text-white">{priceHistoryMedicine}</span></p>
@@ -1504,7 +1504,7 @@ const Purchases: React.FC = () => {
 
       {/* Edit Purchase Modal */}
       {editingPurchase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Edit Purchase</h3>
             

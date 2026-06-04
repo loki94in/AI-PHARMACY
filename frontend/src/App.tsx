@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   PackageSearch, 
@@ -57,7 +57,7 @@ const Sidebar = () => {
     { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
     { path: '/doctors', label: 'Doctors', icon: <UserPlus size={18} /> },
     { path: '/catalog', label: 'Catalog Upload', icon: <Database size={18} /> },
-    { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { path: '/dispatch', label: 'Dispatch', icon: <Activity size={18} /> },
     { path: '/reports', label: 'Reports', icon: <LayoutDashboard size={18} /> },
     { path: '/learning', label: 'AI Learning', icon: <Activity size={18} /> },
@@ -129,6 +129,9 @@ const Sidebar = () => {
 const Topbar = () => {
   const location = useLocation();
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<{ id: number; message: string; type: string; time: Date; read: boolean }[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     if (theme === 'light') {
@@ -144,11 +147,22 @@ const Topbar = () => {
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
+
+  useEffect(() => {
+    return toastEvent.subscribe((detail) => {
+      setNotifications(prev => {
+        const newNotif = { id: Date.now(), message: detail.message, type: detail.type, time: new Date(), read: false };
+        const updated = [newNotif, ...prev].slice(0, 50); // Keep last 50
+        return updated;
+      });
+      setUnreadCount(prev => prev + 1);
+    });
+  }, []);
   
   // Map paths to dynamic header titles
   const getPageTitle = (pathname: string) => {
     switch (pathname) {
-      case '/':
+      case '/dashboard':
         return 'Dashboard';
       case '/pos':
         return 'Sales / POS';
@@ -214,6 +228,71 @@ const Topbar = () => {
           <div className="w-2 h-2 rounded-full bg-green animate-pulse"></div>
           <span className="text-xs font-bold text-green uppercase tracking-wide">Connected</span>
         </div>
+
+        {/* Notification Bell */}
+        <div className="relative">
+          <button 
+            onClick={() => {
+              setShowNotifications(!showNotifications);
+              if (!showNotifications) setUnreadCount(0);
+            }} 
+            className="p-2 text-muted hover:text-white transition-colors flex items-center justify-center relative" 
+            aria-label="Notifications" 
+            title="View Notifications"
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red text-white text-[9px] font-bold flex items-center justify-center animate-pulse">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+          
+          {showNotifications && (
+            <div className="absolute right-0 top-full mt-2 w-80 bg-glass-bg backdrop-blur-xl border border-glass-border rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col">
+              <div className="p-3 border-b border-glass-border/50 flex items-center justify-between bg-black/20">
+                <h3 className="font-bold text-sm">Notifications</h3>
+                {notifications.length > 0 && (
+                  <button 
+                    onClick={() => {
+                      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                      setUnreadCount(0);
+                    }}
+                    className="text-[10px] text-sky font-semibold hover:underline"
+                  >
+                    Mark all read
+                  </button>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="p-6 text-center text-muted text-xs">
+                    <Bell size={24} className="mx-auto mb-2 opacity-30" />
+                    No notifications yet
+                  </div>
+                ) : (
+                  notifications.map(notif => (
+                    <div 
+                      key={notif.id} 
+                      onClick={() => {
+                        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+                        if (!notif.read && unreadCount > 0) setUnreadCount(prev => prev - 1);
+                      }}
+                      className={`p-3 border-b border-glass-border/30 hover:bg-white/5 transition-colors cursor-pointer flex gap-3 ${!notif.read ? 'bg-primary/5' : ''}`}
+                    >
+                      <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${notif.type === 'error' ? 'bg-red' : notif.type === 'success' ? 'bg-green' : 'bg-sky'}`}></div>
+                      <div className="flex-1">
+                        <p className={`text-xs ${notif.read ? 'text-muted' : 'text-text font-semibold'}`}>{notif.message}</p>
+                        <p className="text-[9px] text-muted font-mono mt-1">{notif.time.toLocaleTimeString()}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         <button 
           onClick={toggleTheme} 
           className="p-2 text-muted hover:text-white transition-colors flex items-center justify-center" 
@@ -288,7 +367,8 @@ function App() {
     <BrowserRouter>
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Navigate to="/pos" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/returns" element={<Returns />} />
           <Route path="/expiry" element={<Expiry />} />

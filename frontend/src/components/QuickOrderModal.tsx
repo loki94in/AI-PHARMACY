@@ -186,7 +186,7 @@ export const QuickOrderModal: React.FC = () => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
       <div className="glass-panel max-w-md w-full p-6 relative border border-glass-border shadow-[0_0_50px_rgba(59,130,246,0.2)] bg-zinc-900/90 text-text animate-in fade-in zoom-in-95 duration-200">
         
         {/* Close Button */}

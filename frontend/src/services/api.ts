@@ -19,9 +19,50 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Interceptor to handle errors centrally
+// Utility for API Data Standardization (snake_case -> camelCase)
+// This is the implementation of the missing data standardizer layer
+// DO NOT globally enable this interceptor yet as it will break 432+ legacy UI elements.
+// Instead, new modules should use `apiClient.get('/path', { standardizeData: true })`
+export const toCamelCase = (str: string): string => {
+  return str.replace(/([-_][a-z])/ig, ($1) => {
+    return $1.toUpperCase()
+      .replace('-', '')
+      .replace('_', '');
+  });
+};
+
+export const objectToCamelCase = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => objectToCamelCase(item));
+  }
+  
+  return Object.keys(obj).reduce((result, key) => {
+    const camelKey = toCamelCase(key);
+    result[camelKey] = objectToCamelCase(obj[key]);
+    return result;
+  }, {} as Record<string, any>);
+};
+
+// Extend Axios request config to support standardization flag
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    standardizeData?: boolean;
+  }
+}
+
+// Interceptor to handle errors centrally and OPTIONAL data standardization
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Check if the caller opted into data standardization
+    if (response.config && response.config.standardizeData && response.data) {
+      response.data = objectToCamelCase(response.data);
+    }
+    return response;
+  },
   (error) => {
     // Basic global error handling
     if (error.response?.status === 401) {
@@ -166,6 +207,13 @@ export const api = {
   // License
   getLicenseStatus: () => apiClient.get('/license/status').then(res => res.data),
   activateLicense: (key: string) => apiClient.post('/license/activate', { key }).then(res => res.data),
+
+  // WhatsApp Custom UI
+  getWhatsappStatus: () => apiClient.get('/messaging/qr').then(res => res.data),
+  reconnectWhatsapp: () => apiClient.post('/messaging/reconnect').then(res => res.data),
+  getWhatsappChats: () => apiClient.get('/messaging/chats').then(res => res.data),
+  getWhatsappMessages: (chatId: string) => apiClient.get(`/messaging/chats/${encodeURIComponent(chatId)}/messages`).then(res => res.data),
+  sendWhatsappMessage: (number: string, message: string) => apiClient.post('/messaging/send', { number, message }).then(res => res.data),
   
   // Returns
   getReturns: () => apiClient.get('/returns').then(res => res.data),

@@ -380,7 +380,11 @@ const PORT = process.env.PORT || 3000;
 ensureSchema(DB_PATH).then(() => {
   app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}/test`);
-    // whatsappQueue.startWorker(); // Disabled for testing
+    // Pre-initialize WhatsApp Client in the background so the QR loads instantly in the app
+    import('./whatsappClient.js')
+      .then(m => m.initClient())
+      .catch(err => console.error('Background WhatsApp init failed:', err));
+      
     // NOTE: Enable below line in production to send WhatsApp refill reminders via queue
     whatsappQueue.startWorker();
     startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));

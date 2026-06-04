@@ -100,10 +100,15 @@ export async function initClient(): Promise<WAClient> {
       clientInstance = null;
       initializing = false;
       if (qrTimeout) clearTimeout(qrTimeout);
-      client.destroy().then(() => {
-        console.log('Re-initializing WhatsApp client after disconnect...');
-        initClient();
-      }).catch(console.error);
+      // Gracefully destroy, then wait before reinitializing to avoid detached frame errors
+      client.destroy().catch(() => {}).finally(() => {
+        console.log('WhatsApp client destroyed. Will re-initialize in 3 seconds...');
+        setTimeout(() => {
+          initClient().catch(err => {
+            console.error('WhatsApp re-initialization failed (non-fatal):', err.message);
+          });
+        }, 3000);
+      });
     });
 
     client.on('auth_failure', (msg: string) => {
@@ -152,3 +157,68 @@ export async function sendMessage(to: string, mediaPath?: string, caption?: stri
   }
 }
 
+/** Get all chats from the initialized client */
+export async function getChats(): Promise<any[]> {
+  if (!clientInstance) {
+    throw new Error('Client not initialized. Call initClient() first.');
+  }
+  return await clientInstance.getChats();
+}
+
+/** Get messages for a specific chat */
+export async function getChatMessages(chatId: string, limit: number = 50): Promise<any[]> {
+  if (!clientInstance) {
+    throw new Error('Client not initialized. Call initClient() first.');
+  }
+  
+  // Format the phone number properly
+  let cleanId = String(chatId);
+  if (!cleanId.includes('@')) {
+    let cleanPhone = cleanId.replace(/\D/g, '');
+    if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
+    cleanId = `${cleanPhone}@c.us`;
+  }
+
+  const chat = await clientInstance.getChatById(cleanId);
+  if (!chat) return [];
+  
+  return await chat.fetchMessages({ limit });
+}
+
+/** Force disconnect, clear saved session, and reinitialize for a fresh QR code */
+export async function forceReconnect(): Promise<void> {
+  console.log('[WhatsApp] Force reconnect requested. Destroying client and clearing session...');
+  
+  // 1. Reset state immediately
+  isReady = false;
+  currentQr = null;
+  initializing = false;
+  if (qrTimeout) clearTimeout(qrTimeout);
+  
+  // 2. Destroy the existing client if any
+  if (clientInstance) {
+    try {
+      await clientInstance.destroy();
+    } catch (err) {
+      console.error('[WhatsApp] Error destroying client (non-fatal):', err);
+    }
+    clientInstance = null;
+  }
+
+  // 3. Delete the stored auth session so a fresh QR is required
+  const authPath = '.wwebjs_auth';
+  try {
+    if (fs.existsSync(authPath)) {
+      fs.rmSync(authPath, { recursive: true, force: true });
+      console.log('[WhatsApp] Old session data cleared from', authPath);
+    }
+  } catch (err) {
+    console.error('[WhatsApp] Failed to clear session folder (non-fatal):', err);
+  }
+
+  // 4. Wait a moment then reinitialize — a fresh QR will be emitted
+  await new Promise(r => setTimeout(r, 2000));
+  initClient().catch(err => {
+    console.error('[WhatsApp] Re-initialization after reconnect failed (non-fatal):', err.message);
+  });
+}

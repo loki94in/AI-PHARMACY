@@ -6,6 +6,11 @@ const Inventory = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [minQty, setMinQty] = useState('');
+  const [maxQty, setMaxQty] = useState('');
+  const [minMRP, setMinMRP] = useState('');
+  const [maxMRP, setMaxMRP] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
   // Enriched Details Drawer states
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -30,12 +35,9 @@ const Inventory = () => {
     setLoading(true);
     api.getInventory()
       .then(data => {
-        // If the backend returns paginated object like { data, totalPages, ... }
-        if (data && (data as any).data) {
-          setItems((data as any).data);
-        } else {
-          setItems(data);
-        }
+        let fetchedItems = data && (data as any).data ? (data as any).data : data;
+        // STRICT RULE: Only show last 200
+        setItems(Array.isArray(fetchedItems) ? fetchedItems.slice(0, 200) : []);
         setLoading(false);
       })
       .catch(err => {
@@ -64,10 +66,17 @@ const Inventory = () => {
       });
   };
 
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.batch_number && item.batch_number.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredItems = items.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.batch_number && item.batch_number.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+    const matchesMinQty = !minQty || item.stock_quantity >= Number(minQty);
+    const matchesMaxQty = !maxQty || item.stock_quantity <= Number(maxQty);
+    const matchesMinMRP = !minMRP || (item.mrp || 0) >= Number(minMRP);
+    const matchesMaxMRP = !maxMRP || (item.mrp || 0) <= Number(maxMRP);
+    
+    return matchesSearch && matchesMinQty && matchesMaxQty && matchesMinMRP && matchesMaxMRP;
+  });
 
   return (
     <div className="h-full flex flex-col fade-in relative">
@@ -85,7 +94,7 @@ const Inventory = () => {
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
-            <button className="premium-btn btn-outline text-muted hover:text-white">
+            <button onClick={() => setShowFilters(!showFilters)} className="premium-btn btn-outline text-muted hover:text-white">
               <Filter size={16} /> Filters
             </button>
             <button className="premium-btn btn-sky" onClick={loadInventory} aria-label="Refresh inventory" title="Refresh inventory">
@@ -93,6 +102,47 @@ const Inventory = () => {
             </button>
           </div>
         </div>
+
+        {showFilters && (
+          <div className="bg-black/40 p-4 border-b border-glass-border flex flex-wrap gap-4 items-center">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-muted">Stock Qty</label>
+              <input
+                type="number"
+                value={minQty}
+                onChange={e => setMinQty(e.target.value)}
+                placeholder="Min"
+                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
+              />
+              <span className="text-muted text-xs">-</span>
+              <input
+                type="number"
+                value={maxQty}
+                onChange={e => setMaxQty(e.target.value)}
+                placeholder="Max"
+                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-muted">MRP</label>
+              <input
+                type="number"
+                value={minMRP}
+                onChange={e => setMinMRP(e.target.value)}
+                placeholder="Min ₹"
+                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
+              />
+              <span className="text-muted text-xs">-</span>
+              <input
+                type="number"
+                value={maxMRP}
+                onChange={e => setMaxMRP(e.target.value)}
+                placeholder="Max ₹"
+                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-auto bg-black/20 relative">
           <table className="w-full text-left border-collapse">

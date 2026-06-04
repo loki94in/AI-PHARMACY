@@ -136,7 +136,7 @@ const Dashboard = () => {
             </span>
           </div>
           <div className="divide-y divide-glass-border/30">
-            {stats.alerts.map(alert => (
+            {stats.alerts.slice(0, 50).map(alert => (
               <div key={alert.id} className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
                 <div className="flex flex-col gap-1">
                   <p className="text-sm font-semibold text-text">{alert.description}</p>

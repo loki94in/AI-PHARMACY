@@ -21,6 +21,8 @@ const Orders = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   
   // Alert/Notification State
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -39,7 +41,8 @@ const Orders = () => {
     if (showRefresh) setRefreshing(true);
     try {
       const data = await api.getOrders();
-      setOrders(data);
+      // STRICT RULE: Only show last 100
+      setOrders(Array.isArray(data) ? data.slice(0, 100) : []);
     } catch (err) {
       console.error('Failed to fetch special orders:', err);
       showNotification('Failed to load orders. Please check your connection.', 'error');
@@ -189,7 +192,19 @@ const Orders = () => {
       
     const matchesStatus = statusFilter === 'All' || o.status === statusFilter;
     
-    return matchesSearch && matchesStatus;
+    let matchesDate = true;
+    if (dateFrom || dateTo) {
+      if (!o.created_at) {
+        matchesDate = false;
+      } else {
+        const itemDate = o.created_at.substring(0, 10);
+        const start = dateFrom || '0000-00-00';
+        const end = dateTo || '9999-99-99';
+        matchesDate = itemDate >= start && itemDate <= end;
+      }
+    }
+    
+    return matchesSearch && matchesStatus && matchesDate;
   });
 
   const getPriorityBadgeColor = (p: string) => {
@@ -402,6 +417,23 @@ const Orders = () => {
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search product, name, phone..."
                 className="premium-input pl-9 pr-4 py-1.5 text-xs w-full"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-muted">From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text focus:outline-none focus:border-primary/50"
+              />
+              <label className="text-xs font-semibold text-muted ml-2">To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text focus:outline-none focus:border-primary/50"
               />
             </div>
 

@@ -73,7 +73,8 @@ const Mail = () => {
     api
       .getEmailInbox()
       .then((data: any) => {
-        if (Array.isArray(data)) setEmails(data);
+        // STRICT RULE: Only show last 100
+        if (Array.isArray(data)) setEmails(data.slice(0, 100));
       })
       .catch((err: any) => console.error('Error fetching email inbox:', err))
       .finally(() => setLoading(false));
