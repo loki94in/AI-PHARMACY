@@ -136,4 +136,24 @@ router.post('/upload-signature', async (req, res) => {
   }
 });
 
+// Create a new distributor
+router.post('/distributors', async (req, res) => {
+  const { name, phone, email, address, state_code } = req.body;
+  if (!name) return res.status(400).json({ error: 'Distributor name is required' });
+  try {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const result = await db.run(
+      `INSERT INTO distributors (name, phone, email, address, state_code) VALUES (?, ?, ?, ?, ?)`,
+      [name, phone || '', email || '', address || '', state_code || '']
+    );
+    const id = result.lastID;
+    const saved = await db.get('SELECT * FROM distributors WHERE id = ?', [id]);
+    await db.close();
+    res.json({ success: true, data: saved });
+  } catch (error) {
+    console.error('Failed to create distributor:', error);
+    res.status(500).json({ error: 'Failed to create distributor' });
+  }
+});
+
 export default router;

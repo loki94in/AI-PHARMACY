@@ -259,10 +259,10 @@ const POS = () => {
             name: med.name,
             batch: med.batch_number || 'B-GEN',
             expiry: med.expiry_date || '12/28',
-            mrp: med.mrp,
-            costPrice: med.purchase_price || (med.mrp * 0.7),
-            salts: med.salts || med.hsn || 'Generic',
-            packSize: parseInt(med.pack_size, 10) || 10
+            mrp: med.mrp || 0,
+            costPrice: med.purchase_price || ((med.mrp || 0) * 0.7),
+            salts: med.hsn || 'Generic',
+            packSize: parseInt(med.pack_size || '10', 10) || 10
           }));
           setCommonCombinations(topItems);
         }
@@ -535,19 +535,17 @@ const POS = () => {
     
     try {
       const salesItems = cart.map(item => {
-        const itemDiscount = item.discount || 0;
-        const unitRate = item.packSize > 0 ? item.mrp / item.packSize : item.mrp;
-        const finalPrice = unitRate * (1 - itemDiscount / 100);
-        const totalQty = item.qty + ((item.looseQty || 0) / (item.packSize || 10));
+        const itemDiscount = item.discount || item.discountPer || 0;
         return {
           inventory_id: typeof item.id === 'number' && item.id < 1000000 ? item.id : undefined,
           medicine_name: item.name,
           batch_no: item.batch,
           expiry_date: item.expiry,
           mrp: item.mrp,
-          quantity: totalQty,
-          unit_price: finalPrice,
-          loose_qty: item.looseQty || 0
+          quantity: item.qty || 0,
+          unit_price: item.unitPrice || item.mrp,
+          loose_qty: item.looseQty || 0,
+          discount_per: itemDiscount
         };
       });
 
@@ -907,7 +905,7 @@ const POS = () => {
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <div className="font-mono text-sky font-bold">MRP: ₹{med.mrp.toFixed(2)}</div>
+                              <div className="font-mono text-sky font-bold">MRP: ₹{Math.round(med.mrp)}</div>
                               <div className="text-[9px] text-muted">Stock: {med.quantity} units</div>
                             </div>
                             <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
@@ -1070,7 +1068,7 @@ const POS = () => {
                                       )}
                                     </div>
                                     <span className="text-[9px] text-muted font-mono mt-0.5">Batch: {med.batch_no} | Exp: {med.expiry_date}</span>
-                                    <span className="text-[9px] text-sky font-bold font-mono mt-0.5">MRP: ₹{med.mrp.toFixed(2)} | Stock: {med.quantity}</span>
+                                    <span className="text-[9px] text-sky font-bold font-mono mt-0.5">MRP: ₹{Math.round(med.mrp)} | Stock: {med.quantity}</span>
                                   </button>
                                 );
                               })}
@@ -1198,7 +1196,9 @@ const POS = () => {
                       </td>
 
                       <td className="p-2 text-right text-xs font-mono font-bold text-primary">
-                        ₹{itemTotal.toFixed(2)}
+                        <div className="font-mono text-sm text-green font-bold">
+                          ₹{Math.round(itemTotal)}
+                        </div>
                       </td>
                       <td className="p-2 text-center">
                         <button 
@@ -1306,8 +1306,10 @@ const POS = () => {
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
-                  <td className="p-2 text-right text-xs font-mono font-bold text-sky">
-                    ₹{(((manualMrp * manualQty) + ((manualPackSize > 0 ? manualMrp / manualPackSize : manualMrp) * (manualLooseQty || 0))) * (1 - (manualDiscount || 0) / 100)).toFixed(2)}
+                  <td className="p-2 text-right">
+                    <div className="font-mono text-sm text-green font-bold bg-green/10 border border-green/20 rounded-md px-2 py-1 w-full text-right shadow-inner">
+                      ₹{Math.round(((manualMrp * manualQty) + ((manualPackSize > 0 ? manualMrp / manualPackSize : manualMrp) * (manualLooseQty || 0))) * (1 - (manualDiscount || 0) / 100))}
+                    </div>
                   </td>
                   <td className="p-2 text-center">
                     <button 
@@ -1333,8 +1335,14 @@ const POS = () => {
              {/* Calculations readout */}
              <div className="flex flex-wrap items-center gap-5 text-xs font-semibold text-muted">
                 <div>
-                  Subtotal: <span className="font-mono text-sm text-text ml-1">₹{subtotal.toFixed(2)}</span>
+                  Subtotal: <span className="font-mono text-sm text-text ml-1">₹{Math.round(subtotal)}</span>
                 </div>
+                
+                {discountAmount > 0 && (
+                  <div className="text-amber-500 font-mono text-sm font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                    Saved: -₹{Math.round(discountAmount)}
+                  </div>
+                )}
                 
                 <div className="flex items-center gap-1.5">
                   <span>Disc %:</span>
@@ -1345,16 +1353,9 @@ const POS = () => {
                     onChange={e => setDiscount(Number(e.target.value))}
                     min="0"
                     max="100"
-                    aria-label="Discount Percentage"
                   />
                 </div>
                 
-                {discount > 0 && (
-                  <div className="text-green font-bold">
-                    Saved: -₹{discountAmount.toFixed(2)}
-                  </div>
-                )}
-
                 <div className="flex items-center gap-1.5">
                   <span>Pay Via:</span>
                   <select 

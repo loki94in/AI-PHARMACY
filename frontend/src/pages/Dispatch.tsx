@@ -109,7 +109,7 @@ const Dispatch = () => {
     <div className="h-full flex flex-col fade-in space-y-6 overflow-y-auto pb-8">
       {/* Toast */}
       {notification && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-semibold
+        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-semibold
           ${notification.type === 'success' ? 'bg-green/15 border-green/30 text-green-200' : 'bg-red/15 border-red/30 text-red-200'}`}>
           {notification.msg}
         </div>

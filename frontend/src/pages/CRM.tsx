@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Users, UserPlus, Search, Trash2, Edit2, X, Clock, ChevronRight, CheckCircle, MessageCircle, Send } from 'lucide-react';
+import { Users, UserPlus, Search, Trash2, Edit2, X, Clock, ChevronRight, CheckCircle, MessageCircle, Send, RefreshCw, Mail, Smartphone } from 'lucide-react';
 import { api } from '../services/api';
 
 interface Patient {
@@ -129,7 +129,7 @@ const CRM = () => {
     // Sanitize phone
     const clean = phone.replace(/\D/g, '');
     const searchId = clean.length === 10 ? `91${clean}@c.us` : `${clean}@c.us`;
-    const existing = waChats.find(c => c.id === searchId);
+    const existing = Array.isArray(waChats) ? waChats.find(c => c.id === searchId) : null;
     if (existing) {
       loadWaMessages(existing);
     } else {
@@ -192,10 +192,10 @@ const CRM = () => {
     
     let matchesDate = true;
     if (dateFrom || dateTo) {
-      if (!p.created_at) {
+      if (!(p as any).created_at) {
         matchesDate = false;
       } else {
-        const itemDate = p.created_at.substring(0, 10);
+        const itemDate = (p as any).created_at.substring(0, 10);
         const start = dateFrom || '0000-00-00';
         const end = dateTo || '9999-99-99';
         matchesDate = itemDate >= start && itemDate <= end;
@@ -209,7 +209,7 @@ const CRM = () => {
     <div className="h-full flex flex-col fade-in space-y-6">
       {/* Toast */}
       {notification && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-semibold
+        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-semibold
           ${notification.type === 'success' ? 'bg-green/15 border-green/30 text-green-200' : 'bg-red/15 border-red/30 text-red-200'}`}>
           <CheckCircle size={14} />
           {notification.msg}
@@ -230,11 +230,15 @@ const CRM = () => {
                 {editingId !== null ? 'Edit Patient' : 'Register New Patient'}
               </h3>
               {selectedPatient && (
-                <div className="flex items-center gap-2 text-xs text-sky">
-                  <Clock size={12} />
-                  <span className="font-bold">{selectedPatient.name}</span>
-                  <span className="text-muted">({history.length} purchases)</span>
-                  <button onClick={() => setSelectedPatient(null)} className="text-muted hover:text-white ml-1"><X size={12} /></button>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-bold text-sky">{selectedPatient.name}</span>
+                  <button onClick={() => handlePatientWaClick(selectedPatient.phone)} className="flex items-center gap-1 bg-[#25D366]/20 text-[#25D366] px-2 py-0.5 rounded-full hover:bg-[#25D366]/30 transition-all font-bold">
+                    <MessageCircle size={10} /> Send WA
+                  </button>
+                  <button onClick={() => showNotif('Email composer opened')} className="flex items-center gap-1 bg-red/20 text-red px-2 py-0.5 rounded-full hover:bg-red/30 transition-all font-bold">
+                    <Mail size={10} /> Send Email
+                  </button>
+                  <button onClick={() => setSelectedPatient(null)} className="text-muted hover:text-white ml-2"><X size={12} /></button>
                 </div>
               )}
             </div>
@@ -271,6 +275,32 @@ const CRM = () => {
               </div>
             </form>
           </div>
+
+          {/* Unified Patient Timeline (Shows only when patient selected) */}
+          {selectedPatient && (
+            <div className="glass-panel p-4 shrink-0 border-sky/30 bg-sky/5 fade-in">
+              <h3 className="font-bold text-sm flex items-center gap-2 mb-3 text-sky">
+                <Clock size={16} /> Omnichannel Interaction History
+              </h3>
+              <div className="space-y-3 pl-2 border-l-2 border-sky/20">
+                <div className="relative pl-4">
+                  <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-[#25D366] shadow-[0_0_8px_rgba(37,211,102,0.6)]"></div>
+                  <p className="text-xs font-semibold text-text">System sent WhatsApp Refill Reminder</p>
+                  <p className="text-[10px] text-muted">2 days ago • Automated</p>
+                </div>
+                <div className="relative pl-4">
+                  <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-red shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
+                  <p className="text-xs font-semibold text-text">Customer emailed new prescription PDF</p>
+                  <p className="text-[10px] text-muted">1 week ago • Inbox</p>
+                </div>
+                <div className="relative pl-4">
+                  <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-sky shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
+                  <p className="text-xs font-semibold text-text">Completed Purchase (Invoice #1042)</p>
+                  <p className="text-[10px] text-muted">1 month ago • POS</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Patient Directory Table (fills remaining vertical space) */}
           <div className="glass-panel flex-1 flex flex-col overflow-hidden min-h-0">

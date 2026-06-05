@@ -12,6 +12,9 @@ export interface InvoiceItem {
   mrp?: number;
   quantity: number;
   unitPrice: number;
+  loose_qty?: number;
+  packSize?: number;
+  discount_per?: number;
 }
 
 export interface InvoiceData {
@@ -62,9 +65,17 @@ export class InvoiceService {
     tax: number;
     total: number;
   } {
-    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-    const tax = subtotal * config.taxRate;
-    const total = subtotal + tax - discount;
+    const subtotal = items.reduce((sum, item) => {
+      const q = Number(item.quantity || 0);
+      const l = Number(item.loose_qty || 0);
+      const pSize = Number(item.packSize || 10);
+      const d = Number(item.discount_per || 0);
+      const uPrice = Number(item.unitPrice || 0);
+      const dPrice = uPrice * (1 - d / 100);
+      return sum + (q * dPrice) + (l * (dPrice / pSize));
+    }, 0);
+    const tax = subtotal * (config.taxRate || 0.05);
+    const total = Math.round(subtotal + tax - Number(discount || 0));
     return { subtotal, tax, total };
   }
 
@@ -72,6 +83,19 @@ export class InvoiceService {
    * Create a complete invoice with transaction safety
    */
   async createInvoice(data: InvoiceData): Promise<InvoiceResult> {
+    // Strict verification of values before beginning the transaction
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      throw new Error('Cart items required');
+    }
+    for (const item of data.items) {
+      if (Number(item.quantity || 0) <= 0 || Number(item.unitPrice || 0) <= 0) {
+        throw new Error('Invalid items data. Quantity and unit price must be valid positive numbers.');
+      }
+    }
+    if (isNaN(Number(data.discount || 0)) || Number(data.discount || 0) < 0) {
+      throw new Error('Discount must be a valid non-negative number.');
+    }
+
     return await dbManager.transaction(async (db) => {
       // Resolve or create customer/patient
       let customerId = data.patientId;
@@ -95,8 +119,11 @@ export class InvoiceService {
       // Generate invoice number
       const invoiceNo = await this.generateInvoiceNo(db);
 
-      // Calculate totals
+      // Calculate totals and check that they are valid numbers
       const { subtotal, tax, total } = this.calculateTotals(data.items, data.discount || 0);
+      if (isNaN(subtotal) || isNaN(tax) || isNaN(total)) {
+        throw new Error('Calculated invoice totals contain NaN values.');
+      }
 
       // Resolve paymentMedium and status
       const paymentMedium = data.paymentMedium || 'CASH';
@@ -172,15 +199,25 @@ export class InvoiceService {
           )).lastID;
         }
 
+        // Verify stock is sufficient for the transaction
+        const currentStock = await db.get('SELECT quantity FROM inventory_master WHERE id = ?', [invId]);
+        if (!currentStock || currentStock.quantity < Number(item.quantity)) {
+          throw new Error(`Insufficient stock for inventory item ID ${invId}. Available: ${currentStock ? currentStock.quantity : 0}, Requested: ${item.quantity}`);
+        }
+
         await db.run(
-          'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price) VALUES (?, ?, ?, ?)',
-          [invoiceId, invId, item.quantity, item.unitPrice]
+          'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty, discount_per) VALUES (?, ?, ?, ?, ?, ?)',
+          [invoiceId, invId, Number(item.quantity), Number(item.unitPrice), item.loose_qty || 0, item.discount_per || 0]
         );
-        // Decrement stock
-        await db.run(
+        
+        // Decrement stock in transaction
+        const decrementResult = await db.run(
           'UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?',
-          [item.quantity, invId]
+          [Number(item.quantity), invId]
         );
+        if (decrementResult.changes === 0) {
+          throw new Error(`Failed to decrement stock for inventory ID ${invId}`);
+        }
 
         // Check for compliance logging
         const medData = await db.get(`

@@ -195,4 +195,130 @@ router.post('/attachments/parse', async (req, res) => {
   }
 });
 
+// Initiate Google OAuth for Gmail
+router.get('/auth/google', async (req, res) => {
+  try {
+    const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+    const clientIdRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_id'");
+    await db.close();
+
+    const clientId = clientIdRow?.value;
+    if (!clientId) {
+      return res.status(400).send('Please configure Google Client ID in settings first.');
+    }
+
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/email/auth/google/callback`;
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent('https://mail.google.com/')}` +
+      `&access_type=offline` +
+      `&prompt=consent`;
+
+    res.redirect(googleAuthUrl);
+  } catch (error: any) {
+    console.error('Google Auth Redirect error:', error);
+    res.status(500).send('Failed to initiate Gmail authentication: ' + error.message);
+  }
+});
+
+// Google OAuth Callback Handler
+router.get('/auth/google/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) {
+    return res.status(400).send('Authorization code not provided');
+  }
+
+  try {
+    const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+    const clientIdRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_id'");
+    const clientSecretRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_secret'");
+    const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
+    
+    const clientId = clientIdRow?.value;
+    const clientSecret = clientSecretRow?.value;
+    const emailUser = userRow?.value;
+
+    if (!clientId || !clientSecret) {
+      await db.close();
+      return res.status(400).send('Google OAuth configuration incomplete on backend');
+    }
+
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/email/auth/google/callback`;
+
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        code: code as string,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }).toString(),
+    });
+
+    const tokenData = await response.json() as any;
+    if (tokenData.error) {
+      await db.close();
+      throw new Error(tokenData.error_description || tokenData.error);
+    }
+
+    const { access_token, refresh_token, expires_in } = tokenData;
+    const expiryTimestamp = Date.now() + (expires_in * 1000);
+
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_oauth_access_token', ?)", [access_token]);
+    if (refresh_token) {
+      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_oauth_refresh_token', ?)", [refresh_token]);
+    }
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_oauth_token_expiry', ?)", [expiryTimestamp.toString()]);
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_auth_method', 'oauth2')");
+
+    let detectedEmail = emailUser;
+    if (access_token) {
+      try {
+        const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${access_token}` },
+        });
+        const profileData = await profileRes.json() as any;
+        if (profileData && profileData.email) {
+          detectedEmail = profileData.email;
+          await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_user', ?)", [detectedEmail]);
+        }
+      } catch (profileErr) {
+        console.warn('Failed to fetch user profile email:', profileErr);
+      }
+    }
+
+    await db.close();
+
+    res.send(`
+      <html>
+        <head>
+          <title>Authentication Successful</title>
+          <style>
+            body { font-family: -apple-system, sans-serif; text-align: center; padding: 50px; background-color: #121212; color: #fff; }
+            .card { background: #1e1e1e; padding: 40px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+            h1 { color: #4CAF50; }
+            p { font-size: 16px; color: #ccc; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>Gmail Connected Successfully!</h1>
+            <p>Email: <strong>${detectedEmail || 'Associated Account'}</strong></p>
+            <p>You can close this tab now and go back to the app.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err: any) {
+    console.error('OAuth Callback Error:', err);
+    res.status(500).send('Authentication Callback Failed: ' + err.message);
+  }
+});
+
 export default router;

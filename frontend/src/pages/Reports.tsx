@@ -48,8 +48,28 @@ const Reports = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-extrabold tracking-tight mb-1">Reports &amp; Analytics</h2>
-          <p className="text-muted text-sm">Generate and view business intelligence reports.</p>
+          <h2 className="text-2xl font-extrabold tracking-tight mb-1 flex items-center gap-2">
+            <BarChart3 size={24} className="text-primary" />
+            Reports &amp; Analytics
+          </h2>
+          <p className="text-muted text-sm mt-1">Generate and view business intelligence reports</p>
+          
+          {/* Feature Badges */}
+          <div className="flex gap-2 text-[10px] flex-wrap mt-3 max-w-4xl">
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Sales Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Purchase Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Inventory Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GST Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Profit Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Customer Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Supplier Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Expiry Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Return Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Custom Reports</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ PDF Export</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Excel Export</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Scheduled Reports</span>
+          </div>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
           <div className="space-y-0">

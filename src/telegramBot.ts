@@ -50,21 +50,23 @@ class TelegramBotService {
     if (!this.bot) return;
 
     // Handle /start command
-    this.bot.onText(/\/start/, (msg) => {
+    this.bot.onText(/^\/?start/i, (msg) => {
       const chatId = msg.chat.id;
       this.bot?.sendMessage(chatId,
         'Welcome to AI Pharmacy Bot!\n\n' +
         'You can check medicine availability in two ways:\n' +
         '1. Use command: /check <medicine>\n' +
         '2. Just type the medicine name directly (e.g., paracetamol)\n\n' +
-        'Other commands:\n' +
-        '/help - Show this help message\n' +
-        '/status - Check application status'
+        'Other commands (you can type them with or without the /):\n' +
+        'report - Get sales report\n' +
+        'away summary - See what happened while you were away\n' +
+        'help - Show help message\n' +
+        'status - Check application status'
       );
     });
 
     // Handle /help command
-    this.bot.onText(/\/help/, (msg) => {
+    this.bot.onText(/^\/?help/i, (msg) => {
       const chatId = msg.chat.id;
       this.bot?.sendMessage(chatId,
         'AI Pharmacy Bot Usage:\n\n' +
@@ -72,27 +74,29 @@ class TelegramBotService {
         '2. Command format: Use /check <medicine> (e.g., /check paracetamol)\n' +
         '3. Send prescription image: Upload a photo of medicine prescription\n\n' +
         'Prescription commands:\n' +
-        '/viewcart - View your current cart\n' +
-        '/clearcart - Clear your cart\n' +
-        '/bill - Generate bill from cart\n\n' +
+        'viewcart - View your current cart\n' +
+        'clearcart - Clear your cart\n' +
+        'bill - Generate bill from cart\n\n' +
         'Both methods will show:\n' +
         '• Availability status\n' +
         '• MRP (price per unit)\n' +
         '• Quantity in stock\n' +
         '• Alternative medicine (if out of stock)\n\n' +
         'Other commands:\n' +
-        '/help - Show this help message\n' +
-        '/status - Check application status'
+        'report weekly/monthly - Get business reports\n' +
+        'away summary - See latest activity\n' +
+        'help - Show this help message\n' +
+        'status - Check application status'
       );
     });
 
     // Handle /check command for medicine availability
-    this.bot.onText(/\/check (.+)/, async (msg, match) => {
+    this.bot.onText(/^\/?check (.+)/i, async (msg, match) => {
       const chatId = msg.chat.id;
       const medicineName = match ? match[1]?.toLowerCase().trim() : '';
 
       if (!medicineName) {
-        this.bot?.sendMessage(chatId, 'Please provide a medicine name to check. Example: /check paracetamol');
+        this.bot?.sendMessage(chatId, 'Please provide a medicine name to check. Example: check paracetamol');
         return;
       }
 
@@ -100,7 +104,7 @@ class TelegramBotService {
     });
 
     // Handle /status command
-    this.bot.onText(/\/status/, async (msg) => {
+    this.bot.onText(/^\/?status/i, async (msg) => {
       const chatId = msg.chat.id;
       try {
         const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
@@ -145,6 +149,70 @@ class TelegramBotService {
       } catch (error) {
         console.error('Error toggling stock alerts:', error);
         this.bot?.sendMessage(chatId, '❌ Error toggling stock alerts settings.');
+      }
+    });
+
+    // Handle /report command
+    this.bot.onText(/^\/?report(?:\s+(weekly|monthly))?/i, async (msg, match) => {
+      const chatId = msg.chat.id;
+      const type = (match && match[1]) ? match[1].toLowerCase() : 'weekly';
+      const days = type === 'monthly' ? 30 : 7;
+      
+      try {
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        
+        const dateLimit = new Date();
+        dateLimit.setDate(dateLimit.getDate() - days);
+        const dateStr = dateLimit.toISOString();
+
+        const sales = await db.get(`SELECT SUM(total_amount) as total FROM sells WHERE date >= ?`, [dateStr]);
+        const purchases = await db.get(`SELECT SUM(total_amount) as total FROM purchases WHERE date >= ?`, [dateStr]);
+        
+        await db.close();
+
+        const salesTotal = (sales?.total || 0).toFixed(2);
+        const purchasesTotal = (purchases?.total || 0).toFixed(2);
+        
+        this.bot?.sendMessage(chatId,
+          `📊 *${type.toUpperCase()} REPORT (Last ${days} days)*\n\n` +
+          `📈 Total Sales: ₹${salesTotal}\n` +
+          `📉 Total Purchases: ₹${purchasesTotal}\n\n` +
+          `💡 *Net Difference:* ₹${(parseFloat(salesTotal) - parseFloat(purchasesTotal)).toFixed(2)}`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error) {
+        console.error('Error generating report:', error);
+        this.bot?.sendMessage(chatId, '❌ Error generating report.');
+      }
+    });
+
+    // Handle /away_summary command
+    this.bot.onText(/^\/?(away_summary|away summary)/i, async (msg) => {
+      const chatId = msg.chat.id;
+      try {
+        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        
+        const dateLimit = new Date();
+        dateLimit.setDate(dateLimit.getDate() - 1);
+        const dateStr = dateLimit.toISOString();
+
+        const salesCount = await db.get(`SELECT COUNT(*) as count FROM sells WHERE date >= ?`, [dateStr]);
+        const purchasesCount = await db.get(`SELECT COUNT(*) as count FROM purchases WHERE date >= ?`, [dateStr]);
+        const lowStockCount = await db.get(`SELECT COUNT(*) as count FROM inventory_master WHERE quantity <= reorder_level`);
+        
+        await db.close();
+        
+        this.bot?.sendMessage(chatId,
+          `📝 *"While You Were Away" Summary (Last 24h)*\n\n` +
+          `✅ Sales made: ${salesCount?.count || 0}\n` +
+          `📦 Purchase orders: ${purchasesCount?.count || 0}\n` +
+          `⚠️ Low stock alerts: ${lowStockCount?.count || 0} items currently below reorder level.\n\n` +
+          `Welcome back!`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error) {
+        console.error('Error generating away summary:', error);
+        this.bot?.sendMessage(chatId, '❌ Error generating away summary.');
       }
     });
 
@@ -252,6 +320,11 @@ class TelegramBotService {
       // If message starts with '/', treat as command (handled by onText handlers)
       if (messageText.startsWith('/')) {
         // Let the onText handlers process commands
+        return;
+      }
+
+      // Ignore known commands so they don't trigger medicine search
+      if (messageText.match(/^(report|away_summary|away summary|viewcart|clearcart|bill|help|status|check|start)/i)) {
         return;
       }
 
@@ -471,6 +544,12 @@ class TelegramBotService {
     return false;
   }
 
+  // Email Notification Bridge
+  public async sendEmailAlertToTelegram(emailSubject: string, emailSender: string, emailPreview: string): Promise<boolean> {
+    const message = `📧 *New Important Email*\n\n*From:* ${emailSender}\n*Subject:* ${emailSubject}\n\n*Preview:* ${emailPreview}\n\nPlease check your email dashboard for details.`;
+    return this.sendDefaultNotification(message);
+  }
+
   // Method to send a photo to the default chat
   public async sendPhotoToDefaultChat(photoBuffer: Buffer, caption: string): Promise<boolean> {
     const defaultChatId = process.env.TELEGRAM_CHAT_ID;
@@ -511,32 +590,59 @@ class TelegramBotService {
     try {
       const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
       const medicine = await db.get(
-        `SELECT m.name, im.quantity FROM medicines m
+        `SELECT m.id, m.name, m.item_type, m.mrp as m_mrp, im.quantity, im.mrp as i_mrp 
+         FROM medicines m
          LEFT JOIN inventory_master im ON im.medicine_id = m.id
          WHERE LOWER(m.name) LIKE ?
          ORDER BY im.quantity DESC LIMIT 1`,
         [`%${medicineName.toLowerCase()}%`]
       );
-      await db.close();
 
       if (!medicine) {
         this.bot?.sendMessage(chatId, `❌ Medicine "${medicineName}" not found in our system.`);
-      } else if ((medicine.quantity ?? 0) > 0) {
+        await db.close();
+        return;
+      }
+
+      const mrp = medicine.i_mrp || medicine.m_mrp || 'N/A';
+      const category = medicine.item_type || 'General';
+
+      if ((medicine.quantity ?? 0) > 0) {
         this.bot?.sendMessage(
           chatId,
-          `✅ *${medicine.name}*\n📦 Stock: ${medicine.quantity} units\n\nAvailable at the pharmacy.`,
+          `✅ *${medicine.name}*\n🏷️ Category: ${category}\n📦 Stock: ${medicine.quantity} units\n💰 MRP: ₹${mrp}\n\nAvailable at the pharmacy.`,
           { parse_mode: 'Markdown' }
         );
       } else {
-        this.bot?.sendMessage(
-          chatId,
-          `⚠️ *${medicine.name}* is currently OUT OF STOCK.\n\nPlease check back later or ask our pharmacist.`,
-          { parse_mode: 'Markdown' }
-        );
+        let msg = `⚠️ *${medicine.name}* is currently OUT OF STOCK.\n🏷️ Category: ${category}\n💰 MRP: ₹${mrp}\n\n`;
+        
+        // Find alternatives based on item_type/category
+        if (medicine.item_type) {
+          const alternatives = await db.all(
+            `SELECT m.name, im.quantity, im.mrp 
+             FROM medicines m
+             JOIN inventory_master im ON im.medicine_id = m.id
+             WHERE m.item_type = ? AND m.id != ? AND im.quantity > 0
+             ORDER BY im.quantity DESC LIMIT 2`,
+            [medicine.item_type, medicine.id]
+          );
+
+          if (alternatives && alternatives.length > 0) {
+            msg += `*Recommended Alternatives (In Stock):*\n`;
+            for (const alt of alternatives) {
+              msg += `• *${alt.name}* (Stock: ${alt.quantity} units) - MRP: ₹${alt.mrp}\n`;
+            }
+          } else {
+            msg += `No in-stock alternatives found for category ${category}.`;
+          }
+        }
+        
+        this.bot?.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
       }
+      await db.close();
     } catch (error) {
       console.error('handleMedicineQuery error:', error);
-      this.bot?.sendMessage(chatId, '\u274C Error looking up medicine. Please try again.');
+      this.bot?.sendMessage(chatId, '❌ Error looking up medicine. Please try again.');
     }
   }
 

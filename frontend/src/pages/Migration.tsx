@@ -302,8 +302,26 @@ const Migration = () => {
 
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-extrabold tracking-tight mb-1">Data Migration Wizard</h2>
-        <p className="text-muted text-sm">Import your old pharmacy data — CSV, Excel, ZIP, or SQL dumps.</p>
+        <h2 className="text-3xl font-extrabold tracking-tight mb-1 flex items-center gap-2">
+          <Database size={28} className="text-primary" />
+          Data Migration Wizard
+        </h2>
+        <p className="text-muted text-sm mt-1">Import your old pharmacy data — CSV, Excel, ZIP, or SQL dumps.</p>
+        
+        {/* Feature Badges */}
+        <div className="flex gap-2 text-[10px] flex-wrap mt-3 max-w-4xl">
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Product Import</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Customer Import</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Supplier Import</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Purchase Import</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Sales Import</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Inventory Import</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Data Validation</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Error Detection</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Duplicate Detection</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Migration Progress Tracking</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Migration Reports</span>
+        </div>
       </div>
 
       {/* Progress Steps */}

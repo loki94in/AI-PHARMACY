@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { PackageSearch, Filter, Plus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory } from 'lucide-react';
+import { PackageSearch, Filter, Plus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown } from 'lucide-react';
 import { api, type InventoryItem } from '../services/api';
 
 const Inventory = () => {
@@ -20,6 +20,21 @@ const Inventory = () => {
 
   const [specialOrders, setSpecialOrders] = useState<any[]>([]);
 
+  const loadInventory = () => {
+    setLoading(true);
+    api.getInventory()
+      .then(data => {
+        const fetchedItems = data && (data as any).data ? (data as any).data : data;
+        // STRICT RULE: Only show last 200
+        setItems(Array.isArray(fetchedItems) ? fetchedItems.slice(0, 200) : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  };
+
   useEffect(() => {
     loadInventory();
     api.getOrders()
@@ -30,21 +45,6 @@ const Inventory = () => {
       })
       .catch(err => console.error('Error loading special orders for inventory:', err));
   }, []);
-
-  const loadInventory = () => {
-    setLoading(true);
-    api.getInventory()
-      .then(data => {
-        let fetchedItems = data && (data as any).data ? (data as any).data : data;
-        // STRICT RULE: Only show last 200
-        setItems(Array.isArray(fetchedItems) ? fetchedItems.slice(0, 200) : []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  };
 
   const handleRowClick = (item: InventoryItem) => {
     setSelectedItem(item);
@@ -67,8 +67,12 @@ const Inventory = () => {
   };
 
   const filteredItems = items.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.batch_number && item.batch_number.toLowerCase().includes(searchTerm.toLowerCase()));
+    const itemName = item.name || '';
+    const itemBatch = item.batch_number || '';
+    const searchLower = searchTerm.toLowerCase();
+
+    const matchesSearch = itemName.toLowerCase().includes(searchLower) ||
+      itemBatch.toLowerCase().includes(searchLower);
       
     const matchesMinQty = !minQty || item.stock_quantity >= Number(minQty);
     const matchesMaxQty = !maxQty || item.stock_quantity <= Number(maxQty);
@@ -81,25 +85,52 @@ const Inventory = () => {
   return (
     <div className="h-full flex flex-col fade-in relative">
       <div className="glass-panel flex-1 flex flex-col overflow-hidden">
-        <div className="p-5 border-b border-glass-border flex flex-wrap justify-between items-center gap-4 bg-white/5">
-          <h3 className="font-bold flex items-center gap-2 text-lg">
-            <PackageSearch size={20} className="text-primary" /> 
-            Inventory Master
-          </h3>
-          <div className="flex items-center gap-3">
-            <input 
-              type="text" 
-              placeholder="Search inventory..." 
-              className="premium-input w-64"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-            <button onClick={() => setShowFilters(!showFilters)} className="premium-btn btn-outline text-muted hover:text-white">
-              <Filter size={16} /> Filters
-            </button>
-            <button className="premium-btn btn-sky" onClick={loadInventory} aria-label="Refresh inventory" title="Refresh inventory">
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            </button>
+        <div className="p-5 border-b border-glass-border flex flex-col gap-3 bg-white/5">
+          <div className="flex flex-wrap justify-between items-start gap-4">
+            <div>
+              <h3 className="font-bold flex items-center gap-2 text-lg">
+                <PackageSearch size={20} className="text-primary" /> 
+                Inventory Management
+              </h3>
+              <div className="group relative mt-2 inline-block">
+                <button className="premium-btn bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 flex items-center gap-2 text-xs py-1.5 px-4 rounded-lg font-bold transition-all shadow-[0_0_15px_rgba(59,130,246,0.15)]">
+                  Inventory Actions <ChevronDown size={14} />
+                </button>
+                <div className="absolute left-0 mt-2 w-64 bg-[#18181b]/95 backdrop-blur-xl border border-glass-border rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all z-50 py-2 origin-top-left max-h-[70vh] overflow-y-auto">
+                  <div className="px-3 pb-1 pt-2 text-[10px] font-bold text-muted uppercase tracking-widest border-b border-glass-border/50 mb-1">Core Actions</div>
+                  <button onClick={loadInventory} className="w-full text-left px-4 py-2 text-xs font-semibold text-muted hover:bg-white/10 hover:text-white transition-colors">✓ Live Stock Tracking</button>
+                  <button onClick={() => { setMinQty(''); setMaxQty(''); setSearchTerm(''); setShowFilters(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-muted hover:bg-white/10 hover:text-white transition-colors">✓ Clear All Filters</button>
+                  <button onClick={() => { const el = document.querySelector('input[placeholder="Search inventory..."]'); if (el) (el as HTMLElement).focus(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-muted hover:bg-white/10 hover:text-white transition-colors">✓ Product Search</button>
+                  
+                  <div className="px-3 pb-1 pt-3 text-[10px] font-bold text-muted uppercase tracking-widest border-b border-glass-border/50 mb-1 mt-1">Audits & Reports</div>
+                  <button onClick={() => {
+                    const totalVal = items.reduce((sum, item) => sum + ((item.mrp || 0) * item.stock_quantity), 0);
+                    alert(`Current Total Inventory Valuation (by MRP): ₹${totalVal.toFixed(2)}`);
+                  }} className="w-full text-left px-4 py-2 text-xs font-semibold text-muted hover:bg-white/10 hover:text-white transition-colors">✓ Inventory Valuation</button>
+                  <button onClick={() => { setMinQty('50'); setMaxQty(''); setShowFilters(true); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-green hover:bg-green/10 transition-colors">📈 Fast Moving Products (&gt; 50 units)</button>
+                  <button onClick={() => { setMinQty('1'); setMaxQty('5'); setShowFilters(true); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-amber-500 hover:bg-amber-500/10 transition-colors">📉 Slow Moving Products (1 - 5 units)</button>
+                  
+                  <div className="px-3 pb-1 pt-3 text-[10px] font-bold text-red uppercase tracking-widest border-b border-glass-border/50 mb-1 mt-1">Alerts</div>
+                  <button onClick={() => { setMinQty('1'); setMaxQty('20'); setShowFilters(true); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-amber-500 hover:bg-amber-500/10 transition-colors">⚠️ Low Stock Alerts (1 - 20 units)</button>
+                  <button onClick={() => { setMinQty('0'); setMaxQty('0'); setShowFilters(true); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-red hover:bg-red/10 transition-colors">🚨 Dead Stock Alerts (0 units)</button>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-1">
+              <input 
+                type="text" 
+                placeholder="Search inventory..." 
+                className="premium-input w-64"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+              <button onClick={() => setShowFilters(!showFilters)} className="premium-btn btn-outline text-muted hover:text-white">
+                <Filter size={16} /> Filters
+              </button>
+              <button className="premium-btn btn-sky" onClick={loadInventory} aria-label="Refresh inventory" title="Refresh inventory">
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -203,7 +234,7 @@ const Inventory = () => {
       </div>
 
       {/* Sliding Details Drawer */}
-      <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-50 flex flex-col ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-[999999] flex flex-col ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedItem && (
           <>
             {/* Header */}

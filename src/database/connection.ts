@@ -29,10 +29,8 @@ class DatabaseManager {
   }
 
   public async close(): Promise<void> {
-    if (this.connection) {
-      await this.connection.close();
-      this.connection = null;
-    }
+    // Keep connection open for the lifetime of the application
+    // to prevent SQLITE_MISUSE during concurrent route access.
   }
 
   public async transaction<T>(callback: (db: Database) => Promise<T>): Promise<T> {

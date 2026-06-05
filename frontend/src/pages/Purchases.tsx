@@ -1,8 +1,9 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Download, Edit } from 'lucide-react';
+import { Download, Edit, Camera } from 'lucide-react';
 import { api, apiClient } from '../services/api';
+import AICamera from '../components/AICamera';
 
 interface Medicine {
   id: number;
@@ -65,6 +66,7 @@ const Purchases: React.FC = () => {
   const [distributorSearch, setDistributorSearch] = useState('');
   const [showDistributorDropdown, setShowDistributorDropdown] = useState(false);
   const [invoiceNo, setInvoiceNo] = useState('');
+  const [grnNo, setGrnNo] = useState(`GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [globalCdPer, setGlobalCdPer] = useState(0);
   const [extraCredit, setExtraCredit] = useState(0);
@@ -120,6 +122,53 @@ const Purchases: React.FC = () => {
   });
   const [savingMedicine, setSavingMedicine] = useState(false);
   const [activeMedicineIndex, setActiveMedicineIndex] = useState<number | null>(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraTargetIndex, setCameraTargetIndex] = useState<number | null>(null);
+
+  const handleCameraScanResult = (result: any) => {
+    if (cameraTargetIndex === null) return;
+    const info = result.medicineInfo || {};
+    const newItems = [...items];
+    const item = newItems[cameraTargetIndex];
+
+    if (info.potentialName) {
+      item.medicine_name = info.potentialName;
+    }
+    if (info.batchNumber) {
+      item.batch_no = info.batchNumber;
+    }
+    if (info.expiryDate) {
+      // Map formatting from DD/MM/YYYY or similar if needed, default copy
+      item.expiry_date = info.expiryDate;
+    }
+    if (info.mrp) {
+      item.mrp = info.mrp;
+    }
+    
+    // Check if there is a matching medicine in catalog to load rate/gst defaults
+    const resolveScannedDetails = async () => {
+      try {
+        const res = await api.catalogSearch(item.medicine_name);
+        const list = res || [];
+        const match = list.find((m: any) => m.name.toLowerCase() === item.medicine_name.toLowerCase());
+        if (match) {
+          item.medicine_id = match.id;
+          item.mrp = match.mrp || item.mrp || 0;
+          item.rate = match.rate || item.rate || 0;
+          item.cgst_per = match.cgst_per || 0;
+          item.sgst_per = match.sgst_per || 0;
+        }
+        item.amount = calculateItemAmount(item);
+        setItems(newItems);
+      } catch (err) {
+        console.error('Failed to match scanned medicine to database:', err);
+      }
+    };
+    
+    resolveScannedDetails();
+    setShowCamera(false);
+    setCameraTargetIndex(null);
+  };
 
   function createEmptyItem(): BillItem {
     return {
@@ -127,7 +176,7 @@ const Purchases: React.FC = () => {
       medicine_id: null,
       medicine_name: '',
       batch_no: '',
-      expiry_date: '',
+      expiry_date: '01/12',
       qty: 0,
       free_qty: 0,
       rate: 0,
@@ -175,7 +224,7 @@ const Purchases: React.FC = () => {
 
     setSavingDistributor(true);
     try {
-      const response = await apiClient.post('/api/settings/distributors', newDistributor);
+      const response = await apiClient.post('/settings/distributors', newDistributor);
       const saved = response.data.data;
       
       setDistributors([...distributors, saved]);
@@ -200,7 +249,7 @@ const Purchases: React.FC = () => {
 
     setSavingMedicine(true);
     try {
-      const response = await apiClient.post('/api/medicines', newMedicine);
+      const response = await apiClient.post('/medicines', newMedicine);
       const saved = response.data.data;
       
       // Auto-select in the current row
@@ -252,7 +301,7 @@ const Purchases: React.FC = () => {
 
   const fetchPriceHistory = async (medicineName: string) => {
     try {
-      const response = await apiClient.get(`/api/purchases/price-history?name=${encodeURIComponent(medicineName)}`);
+      const response = await apiClient.get(`/purchases/price-history?name=${encodeURIComponent(medicineName)}`);
       setPriceHistory(response.data.data || []);
       setPriceHistoryMedicine(medicineName);
       setShowPriceHistoryModal(true);
@@ -426,7 +475,15 @@ const Purchases: React.FC = () => {
 
     if (field === 'qty' || field === 'free_qty' || field === 'rate' || field === 'mrp' || 
         field === 'cgst_per' || field === 'sgst_per' || field === 'cd_rs' || field === 'cd_per') {
-      (item as any)[field] = parseFloat(value) || 0;
+      const parsedVal = parseFloat(value);
+      (item as any)[field] = isNaN(parsedVal) ? 0 : parsedVal;
+      
+      // Auto match SGST and CGST
+      if (field === 'sgst_per') {
+        item.cgst_per = item.sgst_per;
+      } else if (field === 'cgst_per') {
+        item.sgst_per = item.cgst_per;
+      }
     } else {
       (item as any)[field] = value;
     }
@@ -555,7 +612,7 @@ const Purchases: React.FC = () => {
     formData.append('file', uploadedFile);
 
     try {
-      const response = await apiClient.post('/api/purchases/upload', formData, {
+      const response = await apiClient.post('/purchases/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -563,11 +620,73 @@ const Purchases: React.FC = () => {
       const newItems = parsedItems.map((item: any) => ({
         ...createEmptyItem(),
         medicine_name: item.name,
-        qty: item.quantity || 0,
-        rate: item.price || 0,
+        qty: item.qty || item.quantity || 0,
+        rate: item.price || item.rate || 0,
+        batch_no: item.batch_no || '',
+        expiry_date: item.expiry_date || '01/12',
+        mrp: item.mrp || 0,
+        cgst_per: item.cgst_per || 0,
+        sgst_per: item.sgst_per || 0,
+        hsn_code: item.hsn_code || '',
+        cd_per: item.cd_per || 0,
+        cd_rs: item.cd_rs || 0,
       }));
 
       setItems(newItems);
+
+      if (response.data.invoice_no) {
+        setInvoiceNo(response.data.invoice_no);
+      } else {
+        const fileDigits = uploadedFile.name.replace(/\.[^/.]+$/, "").match(/\d+/);
+        if (fileDigits) {
+          setInvoiceNo(fileDigits[0]);
+        }
+      }
+
+      if (response.data.invoice_date) {
+        setInvoiceDate(response.data.invoice_date);
+      }
+
+      if (response.data.global_cd_per !== undefined) {
+        setGlobalCdPer(response.data.global_cd_per);
+      }
+
+      if (response.data.distributor_name) {
+        setDistributorSearch(response.data.distributor_name);
+        const match = distributors.find((d: any) => d.name.toLowerCase() === response.data.distributor_name.toLowerCase());
+        if (match) {
+          setSelectedDistributor(match.id);
+        } else {
+          setSelectedDistributor(null);
+        }
+      }
+
+      if (response.data.total_amount !== undefined && response.data.total_amount > 0) {
+        // Calculate dynamic grand total to adjust extraCredit to match bill total exactly
+        let subtotal = 0;
+        let totalCgst = 0;
+        let totalSgst = 0;
+        newItems.forEach((item: any) => {
+          const baseAmount = item.qty * item.rate;
+          const discountAmount = item.cd_rs + (baseAmount * item.cd_per / 100);
+          const taxableAmount = baseAmount - discountAmount;
+          const cgstAmount = taxableAmount * item.cgst_per / 100;
+          const sgstAmount = taxableAmount * item.sgst_per / 100;
+
+          subtotal += taxableAmount;
+          totalCgst += cgstAmount;
+          totalSgst += sgstAmount;
+        });
+
+        const globalCdPerVal = response.data.global_cd_per || 0;
+        const globalDiscount = subtotal * globalCdPerVal / 100;
+        const calculatedGrandTotal = subtotal + totalCgst + totalSgst - globalDiscount;
+        const diff = calculatedGrandTotal - response.data.total_amount;
+        setExtraCredit(parseFloat(diff.toFixed(2)));
+      } else {
+        setExtraCredit(0);
+      }
+
       setShowUploadModal(false);
       setUploadedFile(null);
     } catch (error) {
@@ -604,9 +723,19 @@ const Purchases: React.FC = () => {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Purchase Management</h1>
-        <p className="text-gray-400">Track distributor invoices and manual entries</p>
+      <div className="mb-6 flex flex-col md:flex-row justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Record Supplier Purchases</h1>
+          <p className="text-gray-400">Manage invoices, GRN creation, and inventory incoming</p>
+        </div>
+        <div className="flex gap-2 text-xs flex-wrap max-w-lg">
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Purchase entry</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GRN creation</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Batch management</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Expiry capture</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Cost tracking</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GST input tracking</span>
+        </div>
       </div>
 
       {/* Header Section */}
@@ -668,14 +797,26 @@ const Purchases: React.FC = () => {
           </div>
 
           {/* Invoice No */}
-          <div className="w-44">
+          <div className="w-36">
             <label className="block text-sm font-medium text-gray-300 mb-1">Invoice No *</label>
             <input
               type="text"
               value={invoiceNo}
               onChange={(e) => setInvoiceNo(e.target.value)}
               className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="INV-2026-001"
+              placeholder="INV-001"
+            />
+          </div>
+
+          {/* GRN No */}
+          <div className="w-40">
+            <label className="block text-sm font-medium text-gray-300 mb-1">GRN No</label>
+            <input
+              type="text"
+              value={grnNo}
+              onChange={(e) => setGrnNo(e.target.value)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+              title="Goods Receipt Note"
             />
           </div>
 
@@ -751,8 +892,8 @@ const Purchases: React.FC = () => {
                 <th className="pb-3">MRP</th>
                 <th className="pb-3">Qty</th>
                 <th className="pb-3">Free</th>
-                <th className="pb-3">CGST%</th>
-                <th className="pb-3">SGST%</th>
+                <th className="pb-3" title="Input CGST">CGST%</th>
+                <th className="pb-3" title="Input SGST">SGST%</th>
                 <th className="pb-3">CD ₹</th>
                 <th className="pb-3">CD %</th>
                 <th className="pb-3">Amount</th>
@@ -785,6 +926,16 @@ const Purchases: React.FC = () => {
                             📊
                           </button>
                         )}
+                        <button
+                          onClick={() => {
+                            setCameraTargetIndex(index);
+                            setShowCamera(true);
+                          }}
+                          className="bg-sky/20 hover:bg-sky/40 border border-sky/30 text-sky w-7 h-7 rounded text-sm flex-shrink-0 flex items-center justify-center"
+                          title="Scan drug package using AI Camera"
+                        >
+                          <Camera size={14} />
+                        </button>
                         <button
                           onClick={() => {
                             setActiveMedicineIndex(index);
@@ -830,16 +981,17 @@ const Purchases: React.FC = () => {
                   </td>
                   <td className="py-3">
                     <input
-                      type="date"
+                      type="text"
+                      placeholder="MM/YY"
                       value={item.expiry_date}
                       onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
-                      className="w-28 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-20 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
                   </td>
                   <td className="py-3 relative group/btn">
                     <input
                       type="number"
-                      value={item.rate}
+                      value={item.rate === 0 ? '' : item.rate}
                       onChange={(e) => updateItem(index, 'rate', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -886,7 +1038,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3 relative group/btn">
                     <input
                       type="number"
-                      value={item.mrp}
+                      value={item.mrp === 0 ? '' : item.mrp}
                       onChange={(e) => updateItem(index, 'mrp', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -933,7 +1085,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.qty}
+                      value={item.qty === 0 ? '' : item.qty}
                       onChange={(e) => updateItem(index, 'qty', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -941,7 +1093,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.free_qty}
+                      value={item.free_qty === 0 ? '' : item.free_qty}
                       onChange={(e) => updateItem(index, 'free_qty', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -949,7 +1101,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.cgst_per}
+                      value={item.cgst_per === 0 ? '' : item.cgst_per}
                       onChange={(e) => updateItem(index, 'cgst_per', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -957,7 +1109,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.sgst_per}
+                      value={item.sgst_per === 0 ? '' : item.sgst_per}
                       onChange={(e) => updateItem(index, 'sgst_per', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -965,7 +1117,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.cd_rs}
+                      value={item.cd_rs === 0 ? '' : item.cd_rs}
                       onChange={(e) => updateItem(index, 'cd_rs', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -973,7 +1125,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.cd_per}
+                      value={item.cd_per === 0 ? '' : item.cd_per}
                       onChange={(e) => updateItem(index, 'cd_per', e.target.value)}
                       className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
@@ -996,184 +1148,59 @@ const Purchases: React.FC = () => {
         </div>
       </div>
 
-      {/* Bill Summary */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
-        <h2 className="text-lg font-semibold text-white mb-4">Bill Summary</h2>
-        
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Subtotal</label>
-            <p className="text-xl font-bold text-white">₹{totals.subtotal.toFixed(2)}</p>
+      {/* ── Auto-updating Bill Summary ── */}
+      <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 mb-6 overflow-hidden">
+        {/* Summary rows */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-white/10">
+          {/* Subtotal */}
+          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Subtotal</span>
+            <span className="text-lg font-bold text-white">₹{totals.subtotal.toFixed(2)}</span>
           </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">CGST</label>
-            <p className="text-xl font-bold text-white">₹{totals.totalCgst.toFixed(2)}</p>
+          {/* CGST */}
+          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+            <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">CGST</span>
+            <span className="text-lg font-bold text-white">₹{totals.totalCgst.toFixed(2)}</span>
           </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">SGST</label>
-            <p className="text-xl font-bold text-white">₹{totals.totalSgst.toFixed(2)}</p>
+          {/* SGST */}
+          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+            <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">SGST</span>
+            <span className="text-lg font-bold text-white">₹{totals.totalSgst.toFixed(2)}</span>
           </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Global CD</label>
-            <p className="text-xl font-bold text-red-400">-₹{totals.globalDiscount.toFixed(2)}</p>
+          {/* Item CD */}
+          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+            <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">Item CD</span>
+            <span className="text-lg font-bold text-red-400">-₹{totals.totalCd.toFixed(2)}</span>
           </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Extra Credit</label>
-            <p className="text-xl font-bold text-red-400">-₹{extraCredit.toFixed(2)}</p>
+          {/* Global CD */}
+          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+            <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">
+              Global CD {globalCdPer > 0 ? `(${globalCdPer}%)` : ''}
+            </span>
+            <span className="text-lg font-bold text-red-400">-₹{totals.globalDiscount.toFixed(2)}</span>
+          </div>
+          {/* Extra Credit */}
+          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+            <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Extra Credit</span>
+            <span className="text-lg font-bold text-red-400">-₹{extraCredit.toFixed(2)}</span>
           </div>
         </div>
 
-        <div className="mt-6 pt-4 border-t border-white/20 flex justify-between items-center">
+        {/* Grand Total + Save */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-white/20 bg-white/5">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Grand Total</label>
-            <p className="text-3xl font-bold text-white">₹{totals.grandTotal.toFixed(2)}</p>
+            <p className="text-xs text-gray-400 mb-0.5">Grand Total (incl. GST)</p>
+            <p className="text-3xl font-extrabold text-white tracking-tight">
+              ₹{totals.grandTotal.toFixed(2)}
+            </p>
           </div>
           <button
             onClick={savePurchase}
             disabled={saving}
-            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-semibold disabled:opacity-50"
+            className="bg-green-600 hover:bg-green-500 active:scale-95 text-white px-10 py-3 rounded-xl font-bold text-base shadow-lg shadow-green-900/30 disabled:opacity-50 transition-all"
           >
-            {saving ? 'Saving...' : 'Save Purchase'}
+            {saving ? '⏳ Saving...' : '💾 Save Purchase'}
           </button>
-        </div>
-      </div>
-
-      {/* Purchase History */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <h2 className="text-lg font-semibold text-white">Purchase History</h2>
-          {purchaseHistory.length > 0 && (
-            <span className="text-xs text-slate-400">
-              Showing {filteredHistory.length} of {purchaseHistory.length} invoices
-            </span>
-          )}
-        </div>
-        
-        {/* Filters Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3.5 mb-6 text-xs">
-          <div>
-            <label className="block text-gray-400 mb-1">Distributor</label>
-            <input 
-              type="text"
-              value={filterDistributor}
-              onChange={e => setFilterDistributor(e.target.value)}
-              placeholder="Filter distributor..."
-              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 mb-1">Invoice Number</label>
-            <input 
-              type="text"
-              value={filterInvoice}
-              onChange={e => setFilterInvoice(e.target.value)}
-              placeholder="Filter invoice..."
-              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 mb-1">From Date</label>
-            <input 
-              type="date"
-              value={filterStartDate}
-              onChange={e => setFilterStartDate(e.target.value)}
-              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 mb-1">To Date</label>
-            <input 
-              type="date"
-              value={filterEndDate}
-              onChange={e => setFilterEndDate(e.target.value)}
-              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 mb-1">Min Amount (₹)</label>
-            <input 
-              type="number"
-              value={filterMinAmount}
-              onChange={e => setFilterMinAmount(e.target.value)}
-              placeholder="Min amount"
-              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              min="0"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 mb-1">Max Amount (₹)</label>
-            <input 
-              type="number"
-              value={filterMaxAmount}
-              onChange={e => setFilterMaxAmount(e.target.value)}
-              placeholder="Max amount"
-              className="w-full bg-white/5 border border-white/20 rounded px-2.5 py-1.5 text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              min="0"
-            />
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-300 border-b border-white/20">
-                <th className="pb-3">ID</th>
-                <th className="pb-3">Invoice</th>
-                <th className="pb-3">Date</th>
-                <th className="pb-3">Distributor</th>
-                <th className="pb-3">Total</th>
-                <th className="pb-3 text-center">PDF</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredHistory.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-400">
-                    No matching invoices found.
-                  </td>
-                </tr>
-              ) : (
-                filteredHistory.map((purchase) => (
-                  <tr key={purchase.id} className="border-b border-white/10">
-                    <td className="py-3 text-gray-300">{purchase.id}</td>
-                    <td className="py-3 text-white">{purchase.invoice_no}</td>
-                    <td className="py-3 text-gray-300">{purchase.date}</td>
-                    <td className="py-3 text-white">{purchase.distributor_name}</td>
-                    <td className="py-3 text-white font-medium">₹{purchase.total_amount.toFixed(2)}</td>
-                    <td className="py-3 text-center">
-                      <button
-                        onClick={async () => {
-                          try {
-                            const pdfBlob = await api.getPurchasePDF(purchase.id);
-                            const url = window.URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `purchase-invoice-${purchase.invoice_no || purchase.id}.pdf`;
-                            document.body.appendChild(a);
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-                          } catch (error) {
-                            alert('Failed to generate PDF');
-                          }
-                        }}
-                        className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
-                        title="Download PDF Invoice"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setEditingPurchase(purchase)}
-                        className="p-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white ml-2"
-                        title="Edit Purchase"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -1182,11 +1209,11 @@ const Purchases: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Upload Invoice</h3>
-            <p className="text-gray-400 mb-4">Upload PDF or CSV file from distributor</p>
+            <p className="text-gray-400 mb-4">Upload PDF, CSV, Excel, ZIP, DAV, or Image scans from distributor</p>
             
             <input
               type="file"
-              accept=".pdf,.csv"
+              accept=".pdf,.csv,.xlsx,.xls,.zip,.dav,image/*"
               onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
               className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white mb-4"
             />
@@ -1569,6 +1596,13 @@ const Purchases: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {showCamera && (
+        <AICamera 
+          onClose={() => { setShowCamera(false); setCameraTargetIndex(null); }}
+          onScanResult={handleCameraScanResult}
+        />
       )}
     </div>
   );

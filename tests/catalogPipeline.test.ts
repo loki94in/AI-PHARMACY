@@ -11,11 +11,15 @@ import { processJob } from '../src/worker/catalogWorker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_PATH = path.resolve(__dirname, '..', 'data', 'app.db');
+const DB_PATH = path.resolve(__dirname, '..', 'data', 'app.test.db');
 
 describe('Catalog pipeline', () => {
-  beforeAll(() => {
-    if (fs.existsSync('data/app.db')) fs.unlinkSync('data/app.db');
+  beforeAll(async () => {
+    if (fs.existsSync(DB_PATH)) fs.unlinkSync(DB_PATH);
+    // Initialize schema for the test database
+    process.env.DB_PATH = DB_PATH;
+    const { ensureSchema } = await import('../src/database.js');
+    await ensureSchema();
   });
 
   test('enqueue adds a job', () => {

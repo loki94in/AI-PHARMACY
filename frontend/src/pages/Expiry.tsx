@@ -189,7 +189,7 @@ const Expiry = () => {
       
       {/* Toast Notification */}
       {notification && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl animate-slide-in ${
+        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl animate-slide-in ${
           notification.type === 'success' 
             ? 'bg-green/15 border-green/30 text-green-200' 
             : notification.type === 'error'

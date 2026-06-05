@@ -10,7 +10,10 @@ import {
   Clock, 
   Search, 
   AlertCircle, 
-  RefreshCw 
+  RefreshCw,
+  Mail,
+  MessageCircle,
+  User
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { SpecialOrder } from '../services/api';
@@ -194,10 +197,10 @@ const Orders = () => {
     
     let matchesDate = true;
     if (dateFrom || dateTo) {
-      if (!o.created_at) {
+      if (!(o as any).created_at) {
         matchesDate = false;
       } else {
-        const itemDate = o.created_at.substring(0, 10);
+        const itemDate = (o as any).created_at.substring(0, 10);
         const start = dateFrom || '0000-00-00';
         const end = dateTo || '9999-99-99';
         matchesDate = itemDate >= start && itemDate <= end;
@@ -240,7 +243,7 @@ const Orders = () => {
       
       {/* Toast Notification */}
       {notification && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl animate-slide-in ${
+        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl animate-slide-in ${
           notification.type === 'success' 
             ? 'bg-green/15 border-green/30 text-green-200' 
             : notification.type === 'error'
@@ -473,8 +476,19 @@ const Orders = () => {
                   filteredOrders.map(order => (
                     <tr key={order.id} className="hover:bg-white/5 border-b border-glass-border/20 transition-all">
                       {/* Product Name */}
-                      <td className="p-4 font-semibold text-text max-w-[200px] truncate">
-                        {order.product}
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          {(order as any).source === 'whatsapp' ? (
+                            <span title="via WhatsApp"><MessageCircle size={14} className="text-[#25D366]" /></span>
+                          ) : (order as any).source === 'email' ? (
+                            <span title="via Email"><Mail size={14} className="text-red" /></span>
+                          ) : (
+                            <span title="Walk-in / Manual"><User size={14} className="text-muted" /></span>
+                          )}
+                          <span className="font-semibold text-text max-w-[160px] truncate">
+                            {order.product}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Requester Contact */}
@@ -538,7 +552,10 @@ const Orders = () => {
 
                       {/* Date */}
                       <td className="p-4 text-right text-muted font-mono select-none">
-                        {new Date(order.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        {new Date(order.date).toLocaleDateString()}
+                        <div className="text-[10px] mt-0.5">
+                          {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
                       </td>
 
                       {/* Actions */}

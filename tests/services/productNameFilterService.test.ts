@@ -16,6 +16,11 @@ describe('ProductNameFilterService', () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS ocr_corrections (
+        ocr TEXT PRIMARY KEY,
+        correct TEXT NOT NULL,
+        count INTEGER DEFAULT 1
+      );
       DELETE FROM medicines;
       INSERT INTO medicines (name) VALUES
         ('Paracetamol 500mg'),
@@ -80,6 +85,11 @@ describe('ProductNameFilterService', () => {
       CREATE TABLE IF NOT EXISTS medicines (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS ocr_corrections (
+        ocr TEXT PRIMARY KEY,
+        correct TEXT NOT NULL,
+        count INTEGER DEFAULT 1
       );
       DELETE FROM medicines;
     `);

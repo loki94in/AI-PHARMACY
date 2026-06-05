@@ -1,6 +1,7 @@
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import fs from 'fs';
+import { eventService } from './services/eventService.js';
 
 // whatsapp-web.js uses CommonJS default export, so Client is a value not a type.
 // Use InstanceType<typeof Client> to get the correct instance type.
@@ -74,12 +75,8 @@ export async function initClient(): Promise<WAClient> {
       // 30-second timeout to reload QR
       qrTimeout = setTimeout(() => {
         if (!isReady) {
-          console.log('QR Code expired (30s). Destroying and reinitializing client...');
-          client.destroy().then(() => {
-            initializing = false;
-            clientInstance = null;
-            initClient();
-          }).catch(console.error);
+          console.log('QR Code expired (30s). Destroying client to prevent leak. Standing by.');
+          client.destroy().catch(err => console.error('Error destroying WA client:', err));
         }
       }, 30000);
     });
@@ -100,20 +97,27 @@ export async function initClient(): Promise<WAClient> {
       clientInstance = null;
       initializing = false;
       if (qrTimeout) clearTimeout(qrTimeout);
-      // Gracefully destroy, then wait before reinitializing to avoid detached frame errors
+      
+      eventService.broadcast('auth_failure', {
+        message: 'WhatsApp Web disconnected. Please scan the QR code in Settings to reconnect.',
+        service: 'whatsapp'
+      });
+
+      // Gracefully destroy, then wait for explicit reconnect to avoid detached frame errors
       client.destroy().catch(() => {}).finally(() => {
-        console.log('WhatsApp client destroyed. Will re-initialize in 3 seconds...');
-        setTimeout(() => {
-          initClient().catch(err => {
-            console.error('WhatsApp re-initialization failed (non-fatal):', err.message);
-          });
-        }, 3000);
+        console.log('WhatsApp client destroyed. Waiting for manual or API-triggered reconnect.');
       });
     });
 
     client.on('auth_failure', (msg: string) => {
       initializing = false;
       isReady = false;
+      
+      eventService.broadcast('auth_failure', {
+        message: `WhatsApp authentication failed: ${msg}. Please reconnect in Settings.`,
+        service: 'whatsapp'
+      });
+
       reject(new Error(msg));
     });
     

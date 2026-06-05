@@ -23,6 +23,12 @@ const Settings = () => {
   const [gstin, setGstin] = useState('');
   const [drugLicense, setDrugLicense] = useState('');
   const [email, setEmail] = useState('');
+  const [gmailUser, setGmailUser] = useState('');
+  const [gmailPass, setGmailPass] = useState('');
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
+  const [gmailAuthMethod, setGmailAuthMethod] = useState('password');
+
 
   // Billing Preferences
   const [defaultTaxRate, setDefaultTaxRate] = useState<number>(18);
@@ -45,7 +51,49 @@ const Settings = () => {
   const [waStatus, setWaStatus] = useState({ isReady: false, qrUrl: null as string | null, message: '' });
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    const fetchSettings = async () => {
+      try {
+        const { data } = await apiClient.get('/settings');
+        if (data) {
+          setPharmacyName(data.shop_name || '');
+          setAddress(data.shop_address || '');
+          setPhone(data.shop_phone || '');
+          setGstin(data.gstin || '');
+          setDrugLicense(data.shop_licence || '');
+          setEmail(data.email || '');
+          
+          setGmailUser(data.gmail_user || '');
+          setGmailPass(data.gmail_pass || '');
+          setGoogleClientId(data.google_client_id || '');
+          setGoogleClientSecret(data.google_client_secret || '');
+          setGmailAuthMethod(data.gmail_auth_method || 'password');
+
+
+          setDefaultTaxRate(Number(data.default_tax_rate) || 18);
+          setInvoicePrefix(data.invoice_prefix || 'INV-');
+          setAutoPrint(data.auto_print === 'true');
+          setDefaultPaymentMode(data.default_payment_mode || 'Cash');
+
+          setWhatsappNotif(data.whatsapp_notif === 'true');
+          setEmailAlerts(data.email_alerts === 'true');
+          setLowStockThreshold(Number(data.low_stock_threshold) || 10);
+          setExpiryAlertDays(Number(data.expiry_alert_days) || 90);
+
+          setTelegramEnabled(data.telegram_enabled === 'true');
+          setTelegramToken(data.telegram_token || '');
+          setTelegramChatId(data.telegram_chat_id || '');
+          
+          setWhatsappEnabled(data.whatsapp_enabled === 'true');
+        }
+      } catch (error) {
+        console.error('Failed to load settings', error);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  useEffect(() => {
+    let timer: any;
     if (whatsappEnabled && !waStatus.isReady) {
       const fetchQR = async () => {
         try {
@@ -56,19 +104,61 @@ const Settings = () => {
         }
       };
       fetchQR(); // Initial fetch
-      interval = setInterval(fetchQR, 5000); // Poll every 5s
+      timer = setInterval(fetchQR, 5000); // Poll every 5s
     }
-    return () => clearInterval(interval);
+    return () => clearInterval(timer);
   }, [whatsappEnabled, waStatus.isReady]);
+
+  const handleSaveSettings = async () => {
+    const payload = {
+      shop_name: pharmacyName,
+      shop_address: address,
+      shop_phone: phone,
+      gstin: gstin,
+      shop_licence: drugLicense,
+      email: email,
+      
+      gmail_user: gmailUser,
+      gmail_pass: gmailPass,
+      google_client_id: googleClientId,
+      google_client_secret: googleClientSecret,
+      gmail_auth_method: gmailAuthMethod,
+
+
+      default_tax_rate: defaultTaxRate.toString(),
+      invoice_prefix: invoicePrefix,
+      auto_print: autoPrint.toString(),
+      default_payment_mode: defaultPaymentMode,
+
+      whatsapp_notif: whatsappNotif.toString(),
+      email_alerts: emailAlerts.toString(),
+      low_stock_threshold: lowStockThreshold.toString(),
+      expiry_alert_days: expiryAlertDays.toString(),
+
+      telegram_enabled: telegramEnabled.toString(),
+      telegram_token: telegramToken,
+      telegram_chat_id: telegramChatId,
+      
+      whatsapp_enabled: whatsappEnabled.toString(),
+    };
+
+    try {
+      await apiClient.post('/settings/save', payload);
+      toastEvent.trigger('Settings saved successfully', 'success');
+    } catch (error) {
+      console.error('Failed to save settings', error);
+      toastEvent.trigger('Failed to save settings', 'error');
+    }
+  };
 
   const handleReconnect = async () => {
     try {
       setWaStatus({ isReady: false, qrUrl: null, message: 'Reconnecting...' });
       await apiClient.post('/messaging/reconnect');
-      toastEvent.trigger({ message: 'WhatsApp reconnecting...', type: 'info' });
+      toastEvent.trigger('WhatsApp reconnecting...', 'info');
     } catch (error) {
       console.error('Failed to reconnect', error);
-      toastEvent.trigger({ message: 'Failed to reconnect WhatsApp', type: 'error' });
+      toastEvent.trigger('Failed to reconnect WhatsApp', 'error');
     }
   };
 
@@ -80,7 +170,23 @@ const Settings = () => {
           <SettingsIcon size={22} className="text-muted" />
           Settings
         </h2>
-        <p className="text-muted text-sm">Configure your pharmacy application.</p>
+        <p className="text-muted text-sm mt-1">Configure your pharmacy application.</p>
+        
+        {/* Feature Badges */}
+        <div className="flex gap-2 text-[10px] flex-wrap mt-3 max-w-4xl">
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ User Management</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Role Management</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Permission Management</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Store Information</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GST Settings</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Billing Settings</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Notification Settings</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Printer Settings</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Backup Settings</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Security Settings</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Theme Settings</span>
+          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Language Settings</span>
+        </div>
       </div>
 
       {/* ─── Pharmacy Details ─── */}
@@ -177,7 +283,10 @@ const Settings = () => {
         </div>
 
         <div className="mt-6 flex justify-end">
-          <button className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
             <Save size={16} />
             Save Details
           </button>
@@ -306,6 +415,137 @@ const Settings = () => {
             </label>
           </div>
 
+          {emailAlerts && (
+            <>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+                  Gmail Authentication Method
+                </label>
+                <div className="flex gap-4">
+                  <label className="inline-flex items-center text-sm text-zinc-300 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="gmailAuthMethod"
+                      value="password"
+                      checked={gmailAuthMethod === 'password'}
+                      onChange={() => setGmailAuthMethod('password')}
+                      className="mr-2 accent-green"
+                    />
+                    App Password
+                  </label>
+                  <label className="inline-flex items-center text-sm text-zinc-300 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="gmailAuthMethod"
+                      value="oauth2"
+                      checked={gmailAuthMethod === 'oauth2'}
+                      onChange={() => setGmailAuthMethod('oauth2')}
+                      className="mr-2 accent-green"
+                    />
+                    Google OAuth2
+                  </label>
+                </div>
+              </div>
+
+              {gmailAuthMethod === 'password' ? (
+                <>
+                  <div className="space-y-2">
+                    <label htmlFor="gmailUser" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Gmail Login ID
+                    </label>
+                    <input
+                      id="gmailUser"
+                      type="email"
+                      className="premium-input w-full"
+                      placeholder="e.g. pharmacy@gmail.com"
+                      value={gmailUser}
+                      onChange={(e) => setGmailUser(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="gmailPass" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Gmail App Password
+                    </label>
+                    <input
+                      id="gmailPass"
+                      type="password"
+                      className="premium-input w-full"
+                      placeholder="e.g. abcd efgh ijkl mnop"
+                      value={gmailPass}
+                      onChange={(e) => setGmailPass(e.target.value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label htmlFor="gmailUser" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Gmail Login ID / Account (Will auto-populate after linking)
+                    </label>
+                    <input
+                      id="gmailUser"
+                      type="email"
+                      className="premium-input w-full"
+                      placeholder="e.g. pharmacy@gmail.com"
+                      value={gmailUser}
+                      onChange={(e) => setGmailUser(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="googleClientId" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Google Client ID
+                    </label>
+                    <input
+                      id="googleClientId"
+                      type="text"
+                      className="premium-input w-full"
+                      placeholder="Google OAuth2 Client ID"
+                      value={googleClientId}
+                      onChange={(e) => setGoogleClientId(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="googleClientSecret" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Google Client Secret
+                    </label>
+                    <input
+                      id="googleClientSecret"
+                      type="password"
+                      className="premium-input w-full"
+                      placeholder="Google OAuth2 Client Secret"
+                      value={googleClientSecret}
+                      onChange={(e) => setGoogleClientSecret(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleSaveSettings();
+                        const backendUrl = apiClient.defaults.baseURL || window.location.origin;
+                        window.open(`${backendUrl}/api/email/auth/google`, '_blank');
+                      }}
+                      className="premium-button text-sm font-bold flex items-center gap-2"
+                      disabled={!googleClientId || !googleClientSecret}
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path fill="currentColor" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.483 0-6.312-2.829-6.312-6.312 0-3.483 2.829-6.312 6.312-6.312 1.624 0 3.099.619 4.228 1.628l3.143-3.143C19.123 2.115 15.903 1 12.24 1 6.033 1 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.236 0 11.667-4.488 11.667-11.24 0-.762-.067-1.495-.19-2.205H12.24z"/>
+                      </svg>
+                      Link Gmail Account
+                    </button>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Note: Add <strong>{window.location.origin}/api/email/auth/google/callback</strong> to your Google Cloud Console Authorized Redirect URIs.
+                    </p>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
           <div className="space-y-2">
             <label htmlFor="lowStockThreshold" className="text-xs font-bold text-muted uppercase tracking-wider">
               Low Stock Threshold
@@ -335,6 +575,16 @@ const Settings = () => {
               onChange={(e) => setExpiryAlertDays(Number(e.target.value))}
             />
           </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Preferences
+          </button>
         </div>
       </div>
 
@@ -460,6 +710,16 @@ const Settings = () => {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Integrations
+          </button>
         </div>
       </div>
 

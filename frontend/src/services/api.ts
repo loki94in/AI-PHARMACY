@@ -12,9 +12,13 @@ export const apiClient = axios.create({
 
 // Interceptor to attach the session token if available
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('session_token') || localStorage.getItem('api_key');
-  if (token) {
-    config.headers['x-session-token'] = token;
+  try {
+    const token = localStorage.getItem('session_token') || localStorage.getItem('api_key');
+    if (token) {
+      config.headers['x-session-token'] = token;
+    }
+  } catch (err) {
+    console.warn('localStorage access denied. Token not attached.');
   }
   return config;
 });

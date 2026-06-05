@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api, apiClient } from '../services/api';
-import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers } from 'lucide-react';
+import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera } from 'lucide-react';
+import AICamera from '../components/AICamera';
 
 interface ReturnItem {
   id: string;
@@ -44,6 +45,58 @@ const Returns: React.FC = () => {
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showGroupedPreview, setShowGroupedPreview] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraTargetIndex, setCameraTargetIndex] = useState<number | null>(null);
+
+  const handleCameraScanResult = (result: any) => {
+    if (cameraTargetIndex === null) return;
+    const info = result.medicineInfo || {};
+    const newItems = [...items];
+    const item = newItems[cameraTargetIndex];
+
+    if (info.potentialName) {
+      item.medicine_name = info.potentialName;
+    }
+    if (info.batchNumber) {
+      item.batch_no = info.batchNumber;
+    }
+    if (info.expiryDate) {
+      item.expiry_date = info.expiryDate;
+    }
+    if (info.mrp) {
+      item.mrp = info.mrp;
+    }
+    
+    // Attempt auto-reconciliation/fetching distributor details from purchase history
+    const resolveDetails = async () => {
+      try {
+        const res = await api.lookupPurchases(item.medicine_name, item.batch_no || undefined);
+        const list = res.data || [];
+        if (list.length > 0) {
+          const purchase = list[0];
+          item.medicine_id = purchase.medicine_id;
+          item.medicine_name = purchase.medicine_name;
+          item.batch_no = purchase.batch_no;
+          item.expiry_date = purchase.expiry_date;
+          item.cost_price = purchase.cost_price;
+          item.mrp = purchase.mrp;
+          item.purchase_item_id = purchase.purchase_item_id;
+          item.invoice_no = purchase.invoice_no;
+          item.purchase_date = purchase.purchase_date;
+          item.distributor_name = purchase.distributor_name;
+          item.distributor_id = purchase.distributor_id;
+        }
+        setItems(newItems);
+      } catch (err) {
+        console.error('Failed to look up matching purchases for returns scan:', err);
+      }
+    };
+    
+    resolveDetails();
+    setShowCamera(false);
+    setCameraTargetIndex(null);
+  };
 
   function createEmptyItem(): ReturnItem {
     return {
@@ -87,13 +140,18 @@ const Returns: React.FC = () => {
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       
-      // STRICT RULE: Only show present month
-      const filtered = returns.filter((r: any) => {
-        if (!r.return_date && !r.created_at) return true; // Fallback if no date
-        const dateStr = r.return_date || r.created_at;
+      // Filter for current month/year
+      let filtered = returns.filter((r: any) => {
+        const dateStr = r.date || r.return_date || r.created_at;
+        if (!dateStr) return true;
         const d = new Date(dateStr);
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       });
+
+      // If no returns in the current month, show all returns in history as a fallback instead of an empty page
+      if (filtered.length === 0) {
+        filtered = returns;
+      }
       
       setReturnHistory(filtered);
     } catch (error) {
@@ -303,16 +361,28 @@ const Returns: React.FC = () => {
                   <td className="py-3 text-gray-300">{index + 1}</td>
                   <td className="py-3">
                     <div className="relative">
-                      <input
-                        type="text"
-                        value={item.medicine_name}
-                        onChange={(e) => {
-                          updateItem(index, 'medicine_name', e.target.value);
-                          searchMedicines(e.target.value, index);
-                        }}
-                        className="w-48 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
-                        placeholder="Search medicine..."
-                      />
+                      <div className="flex gap-1 items-center">
+                        <input
+                          type="text"
+                          value={item.medicine_name}
+                          onChange={(e) => {
+                            updateItem(index, 'medicine_name', e.target.value);
+                            searchMedicines(e.target.value, index);
+                          }}
+                          className="w-48 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                          placeholder="Search medicine..."
+                        />
+                        <button
+                          onClick={() => {
+                            setCameraTargetIndex(index);
+                            setShowCamera(true);
+                          }}
+                          className="bg-sky/20 hover:bg-sky/40 border border-sky/30 text-sky w-7 h-7 rounded text-sm flex-shrink-0 flex items-center justify-center"
+                          title="Scan drug package using AI Camera"
+                        >
+                          <Camera size={14} />
+                        </button>
+                      </div>
                       {activeSearchIndex === index && searchResults.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                           {searchResults.map((result) => (
@@ -434,7 +504,7 @@ const Returns: React.FC = () => {
 
       {/* Grouped Preview Modal */}
       {showGroupedPreview && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-5xl max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-white">
@@ -630,6 +700,12 @@ const Returns: React.FC = () => {
           </table>
         </div>
       </div>
+      {showCamera && (
+        <AICamera 
+          onClose={() => { setShowCamera(false); setCameraTargetIndex(null); }}
+          onScanResult={handleCameraScanResult}
+        />
+      )}
     </div>
   );
 };

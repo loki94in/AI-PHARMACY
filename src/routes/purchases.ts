@@ -6,7 +6,11 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { parse } from 'csv-parse/sync';
+import * as XLSX from 'xlsx';
+import AdmZip from 'adm-zip';
+import { aiCameraService } from '../services/aiCameraService.js';
 import { productNameFilterService } from '../services/productNameFilterService.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,7 +19,473 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Handle Invoice Uploads (CSV/PDF)
+function normalizeDateToYYYYMMDD(dateStr: string): string {
+  if (!dateStr) return '';
+  const match = dateStr.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (match) {
+    let day = match[1].padStart(2, '0');
+    let month = match[2].padStart(2, '0');
+    let year = match[3];
+    if (year.length === 2) {
+      year = '20' + year;
+    }
+    return `${year}-${month}-${day}`;
+  }
+  return '';
+}
+
+function extractDiscountAndTotalFromText(text: string) {
+  const cleanLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let global_cd_per = 0;
+  let total_amount = 0;
+  
+  for (const line of cleanLines) {
+    const pctMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
+    if (pctMatch) {
+      const val = parseFloat(pctMatch[1]);
+      if (val > 0 && val <= 10) {
+        global_cd_per = val;
+      }
+    }
+  }
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line = cleanLines[i];
+    if (line.toLowerCase() === 'net' || line.toLowerCase().includes('net amount') || line.toLowerCase().includes('grand total') || line.toLowerCase().includes('net value')) {
+      for (let j = Math.max(0, i - 3); j <= Math.min(cleanLines.length - 1, i + 3); j++) {
+        const numMatch = cleanLines[j].match(/^\s*(\d+(?:\.\d{2})?)\s*$/);
+        if (numMatch) {
+          const val = parseFloat(numMatch[1]);
+          if (val > 100) {
+            total_amount = val;
+          }
+        }
+      }
+    }
+  }
+
+  if (!total_amount) {
+    for (let i = cleanLines.length - 1; i >= 0; i--) {
+      const line = cleanLines[i];
+      const match = line.match(/(?:net|total|debit|grand)\s*(?:amount|amt|val)?\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+      if (match) {
+        total_amount = parseFloat(match[1]);
+        break;
+      }
+    }
+  }
+  
+  if (!total_amount) {
+    for (let i = cleanLines.length - 1; i >= Math.max(0, cleanLines.length - 15); i--) {
+      const line = cleanLines[i];
+      const match = line.match(/^\s*(\d+(?:\.\d{2})?)\s*$/);
+      if (match) {
+        const val = parseFloat(match[1]);
+        if (val > 100) {
+          total_amount = val;
+          break;
+        }
+      }
+    }
+  }
+
+  return { global_cd_per, total_amount };
+}
+
+function parseTextInvoice(text: string, filename: string) {
+  const cleanLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let distributorName = '';
+  let invoiceNo = '';
+  let invoiceDate = '';
+  let extractedItems = [];
+
+  for (let i = 0; i < Math.min(cleanLines.length, 10); i++) {
+    const line = cleanLines[i];
+    if (line.toLowerCase().includes('tax invoice')) {
+      if (cleanLines[i + 1]) {
+        distributorName = cleanLines[i + 1];
+        break;
+      }
+    }
+  }
+  if (!distributorName && cleanLines.length > 1) {
+    distributorName = cleanLines[1];
+  }
+  if (!distributorName) {
+    distributorName = 'Unknown Distributor';
+  }
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line = cleanLines[i];
+    if (line.toLowerCase().includes('date:')) {
+      const nextLine = cleanLines[i + 1];
+      if (nextLine && /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/.test(nextLine)) {
+        invoiceDate = normalizeDateToYYYYMMDD(nextLine);
+        break;
+      }
+    }
+  }
+  if (!invoiceDate) {
+    for (const line of cleanLines) {
+      const dateMatch = line.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if (dateMatch) {
+        invoiceDate = normalizeDateToYYYYMMDD(line);
+        break;
+      }
+    }
+  }
+
+  for (const line of cleanLines) {
+    const invMatch = line.match(/(?:inv(?:oice)?|bill|vou(?:cher)?)\s*(?:no|num)?\.?\s*[:\-]?\s*([a-zA-Z0-9\-]+)/i);
+    if (invMatch && invMatch[1] && invMatch[1].length > 2) {
+      invoiceNo = invMatch[1];
+      break;
+    }
+    const csbMatch = line.match(/\d+[A-Z]+\d+/);
+    if (csbMatch) {
+      invoiceNo = csbMatch[0];
+      break;
+    }
+  }
+  if (!invoiceNo) {
+    const fileDigits = filename.replace(/\.[^/.]+$/, "").match(/\d+/);
+    if (fileDigits) {
+      invoiceNo = fileDigits[0];
+    }
+  }
+
+  const { global_cd_per, total_amount } = extractDiscountAndTotalFromText(text);
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line = cleanLines[i];
+    if (/^\d+[a-zA-Z]+$/.test(line) && i >= 7) {
+      const qtyStr = cleanLines[i - 1];
+      const qty = parseInt(qtyStr, 10);
+      const pricesLine = cleanLines[i - 2];
+      const pricesTokens = pricesLine ? pricesLine.split(/\s+/) : [];
+      const batchExpHsnLine = cleanLines[i - 3];
+      const gstAmtLine = cleanLines[i - 4];
+      const gstPerLine = cleanLines[i - 5];
+      const productNameLine = cleanLines[i - 7];
+      
+      if (!isNaN(qty) && qty > 0 && pricesTokens.length >= 3 && productNameLine && productNameLine.length > 2) {
+        const rate = parseFloat(pricesTokens[0]);
+        const mrp = parseFloat(pricesTokens[2]);
+        
+        let hsn_code = '';
+        let batch_no = '';
+        let expiry_date = '01/12';
+        
+        if (batchExpHsnLine && batchExpHsnLine.length > 9) {
+          hsn_code = batchExpHsnLine.substring(0, 4);
+          expiry_date = batchExpHsnLine.substring(batchExpHsnLine.length - 5);
+          batch_no = batchExpHsnLine.substring(4, batchExpHsnLine.length - 5);
+        }
+        
+        let cgst_per = 0;
+        let sgst_per = 0;
+        if (gstPerLine) {
+          const totalGst = parseFloat(gstPerLine);
+          if (!isNaN(totalGst)) {
+            cgst_per = totalGst / 2;
+            sgst_per = totalGst / 2;
+          }
+        }
+        
+        if (!isNaN(rate)) {
+          extractedItems.push({
+            name: productNameLine,
+            quantity: qty,
+            price: rate,
+            mrp: !isNaN(mrp) ? mrp : 0,
+            batch_no: batch_no,
+            expiry_date: expiry_date,
+            hsn_code: hsn_code,
+            cgst_per: cgst_per,
+            sgst_per: sgst_per,
+            cd_per: global_cd_per
+          });
+        }
+      }
+    }
+  }
+
+  if (extractedItems.length === 0) {
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      
+      const match = trimmed.match(/^([a-zA-Z0-9\s().&/\-]+)\s+(\d+)\s+(\d+(?:\.\d+)?)$/);
+      if (match) {
+        extractedItems.push({
+          name: match[1].trim(),
+          quantity: parseInt(match[2], 10),
+          price: parseFloat(match[3]),
+          mrp: parseFloat(match[3]),
+          batch_no: '',
+          expiry_date: '01/12',
+          hsn_code: '',
+          cgst_per: 0,
+          sgst_per: 0,
+          cd_per: global_cd_per
+        });
+      }
+    }
+  }
+  
+  if (extractedItems.length === 0) {
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length > 5 && /\d+/.test(trimmed)) {
+        const tokens = trimmed.split(/\s+/);
+        if (tokens.length >= 3) {
+          const priceVal = parseFloat(tokens[tokens.length - 1]);
+          const qtyVal = parseInt(tokens[tokens.length - 2], 10);
+          
+          if (!isNaN(priceVal) && !isNaN(qtyVal) && priceVal > 0 && qtyVal > 0) {
+            const namePart = tokens.slice(0, tokens.length - 2).join(' ');
+            if (namePart.length > 2) {
+              extractedItems.push({
+                name: namePart,
+                quantity: qtyVal,
+                price: priceVal,
+                mrp: priceVal,
+                batch_no: '',
+                expiry_date: '01/12',
+                hsn_code: '',
+                cgst_per: 0,
+                sgst_per: 0,
+                cd_per: global_cd_per
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    distributor_name: distributorName,
+    invoice_no: invoiceNo,
+    invoice_date: invoiceDate,
+    total_amount,
+    global_cd_per,
+    data: extractedItems
+  };
+}
+
+async function parseInvoiceBuffer(fileBuffer: Buffer, filename: string): Promise<any> {
+  const nameLower = filename.toLowerCase();
+  
+  if (nameLower.endsWith('.zip')) {
+    const zip = new AdmZip(fileBuffer);
+    const zipEntries = zip.getEntries();
+    for (const entry of zipEntries) {
+      if (entry.isDirectory) continue;
+      const entryName = entry.entryName.toLowerCase();
+      if (entryName.includes('__macosx') || entryName.startsWith('.') || entryName.includes('desktop.ini')) continue;
+      
+      try {
+        const entryBuffer = entry.getData();
+        const result = await parseInvoiceBuffer(entryBuffer, entry.entryName);
+        if (result && result.data && result.data.length > 0) {
+          return result;
+        }
+      } catch (err) {
+        console.warn(`Failed to parse zipped file ${entry.entryName}:`, err);
+      }
+    }
+    throw new Error('No valid invoice file found inside ZIP archive');
+  }
+
+  if (nameLower.endsWith('.dav')) {
+    const text = fileBuffer.toString('utf8');
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    let distributorName = 'Unknown Distributor';
+    let invoiceNo = '';
+    let invoiceDate = '';
+    let total_amount = 0;
+    let extractedItems = [];
+    
+    const headerLine = lines.find(l => l.startsWith('H,'));
+    if (headerLine) {
+      const parts = headerLine.split(',');
+      if (parts[19]) distributorName = parts[19].trim();
+      if (parts[18]) invoiceNo = parts[18].trim();
+      if (parts[16]) total_amount = parseFloat(parts[16]);
+      
+      const rawDate = parts[3];
+      if (rawDate && rawDate.length === 8) {
+        const d = rawDate.substring(0, 2);
+        const m = rawDate.substring(2, 4);
+        const y = rawDate.substring(4, 8);
+        invoiceDate = `${y}-${m}-${d}`;
+      }
+    }
+    
+    for (const line of lines) {
+      if (line.startsWith('H,') || line.split(',').length < 10) continue;
+      const parts = line.split(',');
+      const name = parts[4];
+      if (name && name.trim()) {
+        const qty = parseInt(parts[19], 10) || 0;
+        const rate = parseFloat(parts[13]) || 0;
+        const mrp = parseFloat(parts[15]) || 0;
+        const batch = parts[7] || '';
+        const rawExp = parts[8] || '';
+        let expiry = '01/12';
+        if (rawExp && rawExp.length === 8) {
+          const m = rawExp.substring(2, 4);
+          const y = rawExp.substring(6, 8);
+          expiry = `${m}/${y}`;
+        }
+        const hsn = parts[25] || '';
+        const gst = parseFloat(parts[11]) || 0;
+        
+        extractedItems.push({
+          name: name.trim(),
+          quantity: qty,
+          price: rate,
+          mrp: mrp,
+          batch_no: batch,
+          expiry_date: expiry,
+          hsn_code: hsn,
+          cgst_per: gst / 2,
+          sgst_per: gst / 2,
+          cd_per: 0,
+          cd_rs: 0
+        });
+      }
+    }
+    
+    return {
+      distributor_name: distributorName,
+      invoice_no: invoiceNo,
+      invoice_date: invoiceDate,
+      total_amount,
+      global_cd_per: 0,
+      data: extractedItems
+    };
+  }
+
+  if (nameLower.endsWith('.csv')) {
+    const records = parse(fileBuffer, { columns: true, skip_empty_lines: true, relax_column_count: true });
+    let distributorName = '';
+    let invoiceNo = '';
+    let invoiceDate = '';
+    let global_cd_per = 0;
+    let total_amount = 0;
+
+    if (records.length > 0) {
+      distributorName = records[0]['name'] || records[0]['distributor'] || '';
+      invoiceNo = records[0]['vou_no'] || records[0]['invoice_no'] || records[0]['bill_no'] || '';
+      const rawDate = records[0]['tr_date'] || records[0]['date'] || records[0]['invoice_date'] || '';
+      invoiceDate = normalizeDateToYYYYMMDD(rawDate);
+      global_cd_per = parseFloat(records[0]['disc_per'] || records[0]['cd_per'] || records[0]['global_cd_per'] || '0');
+      total_amount = parseFloat(records[0]['debit'] || records[0]['net_amt'] || records[0]['total_amount'] || records[0]['grand_total'] || '0');
+    }
+    
+    let extractedItems = records.map((r: any) => {
+      const cgst = parseFloat(r['sgst'] || '0'); // Note: CSV files can sometimes invert or group. Use SGST/CGST as available
+      const sgst = parseFloat(r['cgst'] || '0');
+      const igst = parseFloat(r['igst'] || '0');
+      const cgst_per = cgst || (igst / 2);
+      const sgst_per = sgst || (igst / 2);
+      const rowCdPer = parseFloat(r['discount'] || r['disc_per'] || r['cd_per'] || '0');
+      const rowCdRs = parseFloat(r['disc_amt'] || r['cd_amt'] || r['cd_value'] || '0');
+      
+      return {
+        name: r['prod_name'] || r['product_name'] || r['Medicine Name'] || r['Product'] || r['Item'] || r['item'] || r['Name'] || r['name'] || 'Unknown CSV Item',
+        quantity: parseInt(r['Qty'] || r['Quantity'] || r['Pack'] || r['qty'] || '0', 10),
+        price: parseFloat(r['Rate'] || r['Price'] || r['rate'] || '0'),
+        mrp: parseFloat(r['MRP'] || r['mrp'] || '0'),
+        batch_no: r['pr_batchno'] || r['batch_no'] || r['Batch'] || '',
+        expiry_date: r['expiry'] || r['expiry_date'] || r['Expiry'] || '01/12',
+        hsn_code: r['hsncode'] || r['hsn_code'] || r['hsn'] || '',
+        cgst_per: cgst_per,
+        sgst_per: sgst_per,
+        cd_per: rowCdPer,
+        cd_rs: rowCdRs
+      };
+    }).filter((item: any) => item.name !== 'Unknown CSV Item' && item.name !== distributorName);
+    
+    return { distributor_name: distributorName, invoice_no: invoiceNo, invoice_date: invoiceDate, total_amount, global_cd_per, data: extractedItems };
+  }
+
+  if (nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls')) {
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const records = XLSX.utils.sheet_to_json(sheet);
+    let distributorName = '';
+    let invoiceNo = '';
+    let invoiceDate = '';
+    let global_cd_per = 0;
+    let total_amount = 0;
+
+    if (records.length > 0) {
+      const firstRow: any = records[0];
+      distributorName = firstRow['name'] || firstRow['distributor'] || firstRow['party_name'] || '';
+      invoiceNo = firstRow['vou_no'] || firstRow['invoice_no'] || firstRow['bill_no'] || '';
+      const rawDate = firstRow['tr_date'] || firstRow['date'] || firstRow['invoice_date'] || '';
+      invoiceDate = normalizeDateToYYYYMMDD(rawDate);
+      global_cd_per = parseFloat(firstRow['disc_per'] || firstRow['cd_per'] || firstRow['global_cd_per'] || '0');
+      total_amount = parseFloat(firstRow['debit'] || firstRow['net_amt'] || firstRow['total_amount'] || firstRow['grand_total'] || '0');
+    }
+
+    let extractedItems = records.map((r: any) => {
+      const cgst = parseFloat(r['sgst'] || '0');
+      const sgst = parseFloat(r['cgst'] || '0');
+      const igst = parseFloat(r['igst'] || '0');
+      const cgst_per = cgst || (igst / 2);
+      const sgst_per = sgst || (igst / 2);
+      const rowCdPer = parseFloat(r['discount'] || r['disc_per'] || r['cd_per'] || '0');
+      const rowCdRs = parseFloat(r['disc_amt'] || r['cd_amt'] || r['cd_value'] || '0');
+      
+      return {
+        name: r['prod_name'] || r['product_name'] || r['Medicine Name'] || r['Product'] || r['Item'] || r['item'] || r['Name'] || r['name'] || 'Unknown Excel Item',
+        quantity: parseInt(r['Qty'] || r['Quantity'] || r['Pack'] || r['qty'] || '0', 10),
+        price: parseFloat(r['Rate'] || r['Price'] || r['rate'] || '0'),
+        mrp: parseFloat(r['MRP'] || r['mrp'] || '0'),
+        batch_no: r['pr_batchno'] || r['batch_no'] || r['Batch'] || '',
+        expiry_date: r['expiry'] || r['expiry_date'] || r['Expiry'] || '01/12',
+        hsn_code: r['hsncode'] || r['hsn_code'] || r['hsn'] || '',
+        cgst_per: cgst_per,
+        sgst_per: sgst_per,
+        cd_per: rowCdPer,
+        cd_rs: rowCdRs
+      };
+    }).filter((item: any) => item.name !== 'Unknown Excel Item' && item.name !== distributorName);
+
+    return { distributor_name: distributorName, invoice_no: invoiceNo, invoice_date: invoiceDate, total_amount, global_cd_per, data: extractedItems };
+  }
+
+  if (nameLower.endsWith('.pdf')) {
+    const pdfData = await pdfParse(fileBuffer);
+    return parseTextInvoice(pdfData.text, filename);
+  }
+
+  try {
+    const ocrResult = await aiCameraService.processImage(fileBuffer);
+    if (ocrResult && ocrResult.text) {
+      return parseTextInvoice(ocrResult.text, filename);
+    }
+  } catch (ocrErr) {
+    console.warn('OCR processing failed for format, trying fallback:', ocrErr);
+  }
+
+  const rawText = fileBuffer.toString('utf8');
+  if (/^[a-zA-Z0-9\s,.\-*#\/]+$/.test(rawText.substring(0, 100))) {
+    return parseTextInvoice(rawText, filename);
+  }
+
+  throw new Error('Unsupported or unreadable file format');
+}
+
+// Handle Invoice Uploads
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -23,34 +493,21 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
 
     const fileBuffer = req.file.buffer;
-    const filename = req.file.originalname.toLowerCase();
-    let extractedItems = [];
-
-    if (filename.endsWith('.csv')) {
-      const records = parse(fileBuffer, { columns: true, skip_empty_lines: true, relax_column_count: true });
-      extractedItems = records.map((r: any) => ({
-        name: r['Medicine Name'] || r['Name'] || r['Product'] || r['Item'] || r['item'] || r['name'] || 'Unknown CSV Item',
-        quantity: parseInt(r['Qty'] || r['Quantity'] || r['Pack'] || r['qty'] || '0', 10),
-        price: parseFloat(r['Rate'] || r['Price'] || r['MRP'] || r['rate'] || r['mrp'] || '0')
-      })).filter((item: any) => item.name !== 'Unknown CSV Item');
-    } else if (filename.endsWith('.pdf')) {
-      // Mock PDF parsing for now, as real OCR requires an external service
-      const pdfData = await pdfParse(fileBuffer);
-      console.log('PDF Text extracted (first 100 chars):', pdfData.text.substring(0, 100).replace(/\n/g, ' '));
-      
-      extractedItems = [
-        { name: 'Parsed PDF Item 1 (Auto-detected)', quantity: 10, price: 15.5 },
-        { name: 'Parsed PDF Item 2 (Auto-detected)', quantity: 5, price: 42.0 },
-        { name: 'Parsed PDF Item 3 (Auto-detected)', quantity: 20, price: 8.75 }
-      ];
-    } else {
-      return res.status(400).json({ error: 'Unsupported file format. Please upload CSV or PDF.' });
-    }
-
-    res.json({ success: true, data: extractedItems });
+    const filename = req.file.originalname;
+    
+    const result = await parseInvoiceBuffer(fileBuffer, filename);
+    res.json({
+      success: true,
+      distributor_name: result.distributor_name,
+      invoice_no: result.invoice_no,
+      invoice_date: result.invoice_date,
+      total_amount: result.total_amount,
+      global_cd_per: result.global_cd_per,
+      data: result.data
+    });
   } catch (err) {
     console.error('Invoice upload error:', err);
-    res.status(500).json({ error: 'Failed to process invoice file' });
+    res.status(500).json({ error: 'Failed to process invoice file: ' + (err as Error).message });
   }
 });
 

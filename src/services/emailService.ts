@@ -79,6 +79,66 @@ export class EmailService {
   }
 
   /**
+   * Retrieves the current Gmail OAuth access token, refreshing it if expired.
+   */
+  public async getGmailAccessToken(): Promise<string | null> {
+    try {
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const authMethodRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_auth_method'");
+      if (!authMethodRow || authMethodRow.value !== 'oauth2') {
+        await db.close();
+        return null;
+      }
+
+      const accessTokenRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_oauth_access_token'");
+      const refreshTokenRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_oauth_refresh_token'");
+      const expiryRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_oauth_token_expiry'");
+      const clientIdRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_id'");
+      const clientSecretRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_secret'");
+      
+      if (!accessTokenRow || !accessTokenRow.value) {
+        await db.close();
+        return null;
+      }
+
+      const expiry = expiryRow ? parseInt(expiryRow.value, 10) : 0;
+      // If token is expired or expires in the next 60 seconds, refresh it using refresh_token
+      if (Date.now() + 60000 >= expiry && refreshTokenRow && refreshTokenRow.value && clientIdRow && clientIdRow.value && clientSecretRow && clientSecretRow.value) {
+        console.log('Gmail OAuth access token expired/expiring, refreshing...');
+        const response = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            client_id: clientIdRow.value,
+            client_secret: clientSecretRow.value,
+            refresh_token: refreshTokenRow.value,
+            grant_type: 'refresh_token',
+          }).toString(),
+        });
+
+        const data = await response.json() as any;
+        if (data.access_token) {
+          const newExpiry = Date.now() + (data.expires_in * 1000);
+          await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_oauth_access_token', ?)", [data.access_token]);
+          await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_oauth_token_expiry', ?)", [newExpiry.toString()]);
+          await db.close();
+          return data.access_token;
+        } else {
+          console.warn('Failed to refresh Gmail OAuth token:', data);
+        }
+      }
+
+      await db.close();
+      return accessTokenRow.value;
+    } catch (err) {
+      console.error('Error getting Gmail access token:', err);
+      return null;
+    }
+  }
+
+  /**
    * Polls the IMAP inbox for unseen emails and processes them
    */
   public async pollInbox(): Promise<void> {
@@ -95,6 +155,7 @@ export class EmailService {
 
       let user = this.imapConfig.user;
       let password = this.imapConfig.password;
+      let xoauth2: string | undefined = undefined;
 
       try {
         const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
@@ -105,17 +166,31 @@ export class EmailService {
         if (passRow && passRow.value) password = passRow.value;
       } catch (_) {}
 
-      if (!user || !password || !this.imapConfig.host) {
+      const accessToken = await this.getGmailAccessToken();
+      if (accessToken && user) {
+        const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
+        xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
+      }
+
+      if ((!user || !password || !this.imapConfig.host) && !xoauth2) {
         console.warn('IMAP configuration incomplete, skipping email poll');
         return;
       }
 
+      const imapConfig: any = {
+        ...this.imapConfig,
+        user,
+      };
+
+      if (xoauth2) {
+        imapConfig.xoauth2 = xoauth2;
+        delete imapConfig.password;
+      } else {
+        imapConfig.password = password;
+      }
+
       const config = {
-        imap: {
-          ...this.imapConfig,
-          user,
-          password
-        },
+        imap: imapConfig,
       };
 
       connection = await imap.connect(config);
@@ -162,8 +237,15 @@ export class EmailService {
       }
 
       await connection.end();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Email poller error:', err);
+      const errMsg = err.message || '';
+      if (errMsg.includes('AUTHENTICATIONFAILED') || errMsg.includes('Invalid credentials') || errMsg.includes('login') || errMsg.includes('auth')) {
+        eventService.broadcast('auth_failure', {
+          message: 'Gmail authentication failed. Please update your login credentials or link your Google account in Settings.',
+          service: 'gmail'
+        });
+      }
     } finally {
       this.isPolling = false;
       if (connection) {
@@ -892,7 +974,26 @@ export class EmailService {
    * Fetches recent emails (both seen and unseen) from Gmail IMAP
    */
   public async fetchInbox(limit: number = 50): Promise<Array<any>> {
-    if (!this.imapConfig.user || !this.imapConfig.password || !this.imapConfig.host) {
+    let user = this.imapConfig.user;
+    let password = this.imapConfig.password;
+    let xoauth2: string | undefined = undefined;
+
+    try {
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
+      const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
+      await db.close();
+      if (userRow && userRow.value) user = userRow.value;
+      if (passRow && passRow.value) password = passRow.value;
+    } catch (_) {}
+
+    const accessToken = await this.getGmailAccessToken();
+    if (accessToken && user) {
+      const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
+      xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
+    }
+
+    if ((!user || !password || !this.imapConfig.host) && !xoauth2) {
       return this.getMockInbox();
     }
 
@@ -900,7 +1001,20 @@ export class EmailService {
     const emails: Array<any> = [];
 
     try {
-      const config = { imap: this.imapConfig, authTimeout: 5000 };
+      const imapConfig: any = {
+        ...this.imapConfig,
+        user,
+        authTimeout: 5000
+      };
+
+      if (xoauth2) {
+        imapConfig.xoauth2 = xoauth2;
+        delete imapConfig.password;
+      } else {
+        imapConfig.password = password;
+      }
+
+      const config = { imap: imapConfig };
       connection = await imap.connect(config);
       await connection.openBox('INBOX');
 
@@ -951,8 +1065,15 @@ export class EmailService {
           console.error('Error parsing email for inbox view:', emailError);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('fetchInbox error: fallback to mock data', err);
+      const errMsg = err.message || '';
+      if (errMsg.includes('AUTHENTICATIONFAILED') || errMsg.includes('Invalid credentials') || errMsg.includes('login') || errMsg.includes('auth')) {
+        eventService.broadcast('auth_failure', {
+          message: 'Gmail authentication failed. Please update your login credentials or link your Google account in Settings.',
+          service: 'gmail'
+        });
+      }
       return this.getMockInbox();
     } finally {
       if (connection) {

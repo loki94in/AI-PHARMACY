@@ -126,10 +126,10 @@ export async function extractFromPdf(filePath: string, onProgress?: (percent: nu
 export async function extractFromCsv(filePath: string, onProgress?: (percent: number) => void): Promise<ExtractedMedicine[]> {
   const content = await fs.promises.readFile(filePath, 'utf-8');
   
-  // Detect where the CSV headers start by scanning the first 10 lines for known catalog keys
+  // Detect where the CSV headers start by scanning the first 30 lines for known catalog keys
   const lines = content.split(/\r?\n/);
   let headerLineIndex = 0;
-  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+  for (let i = 0; i < Math.min(lines.length, 30); i++) {
     const line = lines[i];
     if (line.toLowerCase().includes('medicine') || 
         line.toLowerCase().includes('brand') || 

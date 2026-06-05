@@ -236,7 +236,7 @@ export const QuickOrderModal: React.FC = () => {
             </div>
             
             {showSuggestions && suggestions.length > 0 && (
-              <ul className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-zinc-950/95 border border-glass-border backdrop-blur-xl rounded-xl shadow-2xl divide-y divide-glass-border py-1">
+              <ul className="absolute z-[999999] left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-zinc-950/95 border border-glass-border backdrop-blur-xl rounded-xl shadow-2xl divide-y divide-glass-border py-1">
                 {suggestions.map((med, index) => (
                   <li
                     key={index}

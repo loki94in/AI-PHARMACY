@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -27,7 +28,7 @@ import crmRouter from './routes/crm.js';
 import utilitiesRouter from './routes/utilities.js';
 import securityRouter from './routes/security.js';
 // Agent 1 (Core) Routers
-import salesRouter from './routes/v1/sales.js';
+import salesRouter from './routes/sales.js';
 import inventoryRouter from './routes/inventory.js';
 import dashboardRouter from './routes/dashboard.js';
 import purchasesRouter from './routes/purchases.js';
@@ -50,6 +51,13 @@ import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
 import { checkAllRefills } from './services/refillService.js';
 import { checkOverdueCreditNotes, reconcileCreditNote } from './services/creditNoteService.js';
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('CRITICAL: Uncaught Exception:', error);
+});
 
 const app = express();
 
@@ -74,7 +82,7 @@ const storage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, Date.now() + '-' + sanitized);
+    cb(null, Date.now() + '-' + crypto.randomBytes(4).toString('hex') + '-' + sanitized);
   }
 });
 const upload = multer({
@@ -233,6 +241,27 @@ app.get('/api/medicines', async (req, res) => {
   } catch (error) {
     await dbManager.close();
     console.error('Failed to fetch medicines:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/medicines', async (req, res) => {
+  const { name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code } = req.body;
+  if (!name) return res.status(400).json({ error: 'Medicine name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    const result = await db.run(
+      `INSERT INTO medicines (name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name, generic_name || '', manufacturer || '', marketed_by || '', pack_unit || '', strength || '', parseFloat(cgst_per) || 0, parseFloat(sgst_per) || 0, hsn_code || '']
+    );
+    const id = result.lastID;
+    const savedMed = await db.get('SELECT * FROM medicines WHERE id = ?', [id]);
+    await dbManager.close();
+    res.json({ success: true, data: savedMed });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to create medicine:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

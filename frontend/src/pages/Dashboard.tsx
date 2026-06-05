@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IndianRupee, PackageOpen, ListTodo, Server, ArrowUpRight, AlertTriangle, Clock, CheckCircle, Activity } from 'lucide-react';
+import { IndianRupee, PackageOpen, ListTodo, Server, ArrowUpRight, AlertTriangle, Clock, CheckCircle, Activity, MessageCircle, Mail, Send } from 'lucide-react';
 import { api } from '../services/api';
 import type { DashboardStats } from '../services/api';
 
@@ -155,6 +155,65 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Omnichannel Communications Feed */}
+      <div className="glass-panel border-sky/20 bg-sky/5 overflow-hidden mb-6">
+        <div className="p-5 border-b border-sky/20 flex justify-between items-center bg-sky/10">
+          <h3 className="font-bold flex items-center gap-2 text-sky">
+            <MessageCircle size={18} /> 
+            Live Communications Feed
+          </h3>
+          <span className="text-[10px] font-bold bg-sky/20 border border-sky/30 text-sky px-2 py-0.5 rounded-full uppercase">
+            Real-time
+          </span>
+        </div>
+        <div className="divide-y divide-glass-border/30">
+          <div className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-[#0088cc]/20 text-[#0088cc]">
+                <Send size={16} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-semibold text-text">Admin alert - Paracetamol stock is critical.</p>
+                <span className="text-[10px] text-muted font-mono">Telegram • 2 mins ago</span>
+              </div>
+            </div>
+            <button className="px-3 py-1 bg-white/5 hover:bg-white/10 text-muted hover:text-text text-[10px] font-bold border border-glass-border rounded-lg transition-all">
+              Acknowledge
+            </button>
+          </div>
+          
+          <div className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-[#25D366]/20 text-[#25D366]">
+                <MessageCircle size={16} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-semibold text-text">Patient John Doe confirmed their refill order.</p>
+                <span className="text-[10px] text-muted font-mono">WhatsApp • 15 mins ago</span>
+              </div>
+            </div>
+            <button className="px-3 py-1 bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] text-[10px] font-bold border border-[#25D366]/30 rounded-lg transition-all">
+              Process Refill
+            </button>
+          </div>
+
+          <div className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-red/20 text-red">
+                <Mail size={16} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-semibold text-text">New bulk order received from City Clinic.</p>
+                <span className="text-[10px] text-muted font-mono">Email • 1 hour ago</span>
+              </div>
+            </div>
+            <button className="px-3 py-1 bg-red/20 hover:bg-red/30 text-red text-[10px] font-bold border border-red/30 rounded-lg transition-all">
+              Review Order
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Recent Sales Table Placeholder (Would be populated by another API call) */}
       <div className="glass-panel overflow-hidden">

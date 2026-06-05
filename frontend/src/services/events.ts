@@ -2,13 +2,14 @@
 export interface ToastEventDetail {
   message: string;
   type: 'success' | 'error' | 'info';
+  link?: string; // optional route to navigate to
 }
 
 export const toastEvent = {
-  trigger: (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  trigger: (message: string, type: 'success' | 'error' | 'info' = 'info', link?: string) => {
     window.dispatchEvent(
       new CustomEvent<ToastEventDetail>('app-show-toast', {
-        detail: { message, type },
+        detail: { message, type, link },
       })
     );
   },

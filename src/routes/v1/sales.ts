@@ -91,9 +91,22 @@ router.post('/', asyncHandler(async (req: express.Request, res: express.Response
     return res.status(400).json({ error: 'Cart items required' });
   }
 
-  // Delegate all business logic to service
+  // Delegate all business logic to service after normalizing fields to camelCase
+  const normalizedItems = items.map((item: any) => ({
+    inventoryId: item.inventory_id || item.inventoryId,
+    medicineName: item.medicine_name || item.medicineName,
+    batchNo: item.batch_no || item.batchNo,
+    expiryDate: item.expiry_date || item.expiryDate,
+    mrp: item.mrp,
+    quantity: item.quantity || item.qty,
+    unitPrice: item.unit_price || item.unitPrice,
+    loose_qty: item.loose_qty || item.looseQty,
+    packSize: item.pack_size || item.packSize,
+    discount_per: item.discount_per || item.discountPer || 0
+  }));
+
   const result = await invoiceService.createInvoice({
-    items,
+    items: normalizedItems,
     patientId: patient_id,
     doctorId: doctor_id,
     discount,
@@ -270,10 +283,16 @@ router.get('/invoice/:id/pdf', asyncHandler(async (req: express.Request, res: ex
     const stream = fs.createReadStream(tempPath);
     stream.pipe(res);
     
-    stream.on('end', () => {
-      try {
-        fs.unlinkSync(tempPath);
-      } catch (err) {}
+    stream.on('close', () => {
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(tempPath)) {
+            fs.unlinkSync(tempPath);
+          }
+        } catch (err) {
+          console.error(`CRITICAL: Failed to delete temp PDF ${tempPath}. Disk leak possible:`, err);
+        }
+      }, 1000);
     });
   } catch (error) {
     console.error('Failed to generate invoice PDF:', error);
@@ -382,6 +401,17 @@ router.get('/:id', asyncHandler(async (req: express.Request, res: express.Respon
     [id]
   );
 
+  let subtotal = 0;
+  for (const item of invoice.items) {
+    const pSize = item.pack_size || 10;
+    const discounted_price = item.unit_price * (1 - (item.discount_per || 0) / 100);
+    subtotal += (item.quantity * discounted_price) + ((item.loose_qty || 0) * (discounted_price / pSize));
+  }
+  const taxRate = 0.05;
+  const tax = subtotal * taxRate;
+  const calculatedTotal = subtotal + tax;
+  invoice.discount = Math.max(0, Math.round(calculatedTotal - invoice.total_amount));
+
   await dbManager.close();
   res.json(invoice);
 }));
@@ -425,10 +455,13 @@ router.put('/:id', asyncHandler(async (req: express.Request, res: express.Respon
     // Compute new totals
     let subtotal = 0;
     for (const item of items) {
-      const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0 } = item;
-      await db.run('INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)', [id, inventory_id, quantity, unit_price, loose_qty]);
+      const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0, discount_per = 0 } = item;
+      const discounted_price = unit_price * (1 - discount_per / 100);
+      await db.run('INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty, discount_per) VALUES (?, ?, ?, ?, ?, ?)', [id, inventory_id, quantity, unit_price, loose_qty, discount_per]);
       await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
-      subtotal += quantity * unit_price;
+      
+      const pSize = 10; // Assuming pack size 10
+      subtotal += (quantity * discounted_price) + (loose_qty * (discounted_price / pSize));
     }
 
     const taxRate = 0.05;

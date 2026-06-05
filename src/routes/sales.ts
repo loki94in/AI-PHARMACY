@@ -49,14 +49,28 @@ router.get('/next-invoice', async (req, res) => {
 router.post('/', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
     const { items = [], patient_id, doctor_id, doctor_name, discount = 0, patient_name, patient_phone, patient_address, paymentMedium = 'CASH', paymentStatus = 'PAID', sendWhatsApp = false, sale_date, refillEnabled = false, refillDays = 30 } = req.body;
 
-    // Basic validation
+    // Strict validation: check items parameters to prevent null values
     if (!Array.isArray(items) || items.length === 0) {
-      await db.close();
       return res.status(400).json({ error: 'Cart items required' });
     }
+
+    for (const item of items) {
+      const { inventory_id, quantity = 0, unit_price = 0 } = item;
+      if (!inventory_id || Number(quantity) <= 0 || Number(unit_price) <= 0 || isNaN(Number(quantity)) || isNaN(Number(unit_price))) {
+        return res.status(400).json({ error: 'Invalid items data. ID, quantity, and unit price must be valid positive numbers.' });
+      }
+    }
+
+    if (isNaN(Number(discount)) || Number(discount) < 0) {
+      return res.status(400).json({ error: 'Discount must be a valid non-negative number.' });
+    }
+
+    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    
+    // Start transaction to enforce atomicity
+    await db.run('BEGIN TRANSACTION');
 
     // Resolve or auto-create customer/patient
     let customerId = patient_id || null;
@@ -74,16 +88,20 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Compute totals
+    // Compute subtotal, tax, and total strictly checking values to prevent null/NaN
     let subtotal = 0;
     for (const item of items) {
-      const { quantity = 0, unit_price = 0 } = item;
-      subtotal += quantity * unit_price;
+      const { quantity, unit_price } = item;
+      subtotal += (Number(quantity) * Number(unit_price));
     }
 
     const taxRate = 0.05; // 5% tax
-    const tax = subtotal * taxRate;
-    const total = Math.round(subtotal + tax - discount);
+    const tax = Number((subtotal * taxRate).toFixed(2));
+    const total = Math.round(subtotal + tax - Number(discount));
+
+    if (isNaN(subtotal) || isNaN(tax) || isNaN(total)) {
+      throw new Error('Calculated totals resulted in NaN value.');
+    }
 
     // Generate invoice number
     const invoice_no = await generateInvoiceNo(db);
@@ -98,13 +116,24 @@ router.post('/', async (req, res) => {
 
     // Insert line items and update inventory
     for (const item of items) {
-      const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0 } = item;
+      const { inventory_id, quantity, unit_price, loose_qty = 0 } = item;
+      
+      // Stock Level Verification before processing decrement
+      const currentStock = await db.get('SELECT quantity FROM inventory_master WHERE id = ?', [inventory_id]);
+      if (!currentStock || currentStock.quantity < Number(quantity)) {
+        throw new Error(`Insufficient stock for inventory item ID ${inventory_id}. Available: ${currentStock ? currentStock.quantity : 0}, Requested: ${quantity}`);
+      }
+
       await db.run(
         'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)',
-        [invoiceId, inventory_id, quantity, unit_price, loose_qty]
+        [invoiceId, inventory_id, Number(quantity), Number(unit_price), Number(loose_qty)]
       );
-      // Decrement stock
-      await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
+      
+      // Decrement stock in inventory_master.
+      const decrementResult = await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [Number(quantity), inventory_id]);
+      if (decrementResult.changes === 0) {
+        throw new Error(`Failed to decrement stock for inventory ID ${inventory_id}`);
+      }
 
       // Handle refill logic if enabled
       if (refillEnabled && inventory_id) {
@@ -121,6 +150,8 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // Commit transaction
+    await db.run('COMMIT');
     await db.close();
 
     // Trigger WhatsApp invoice sending if requested
@@ -136,15 +167,22 @@ router.post('/', async (req, res) => {
 
     res.json({ success: true, invoice_no, total, tax });
   } catch (error) {
-    if (db) await db.close();
+    if (db) {
+      try {
+        await db.run('ROLLBACK');
+      } catch (rbErr) {
+        console.error('Rollback failed:', rbErr);
+      }
+      await db.close();
+    }
     const err = error as Error;
     console.error(JSON.stringify({
-      message: 'Failed to create sale',
+      message: 'Failed to create sale (rolled back)',
       error: err.message,
       stack: err.stack,
       timestamp: new Date().toISOString()
     }));
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
@@ -332,11 +370,11 @@ router.get('/list', async (req, res) => {
       const filtered = [];
       for (const inv of invoices) {
         const items = await db.all(
-          `SELECT si.*, im.batch_number, m.name as medicine_name
+          `SELECT si.*, im.batch_no as batch_number, m.name as medicine_name
            FROM sale_items si
            JOIN inventory_master im ON si.inventory_id = im.id
            JOIN medicines m ON im.medicine_id = m.id
-           WHERE si.invoice_id = ? AND (im.batch_number LIKE ? OR m.name LIKE ?)`,
+           WHERE si.invoice_id = ? AND (im.batch_no LIKE ? OR m.name LIKE ?)`,
           [inv.id, batchLower, batchLower]
         );
         if (items.length > 0) {
@@ -351,7 +389,7 @@ router.get('/list', async (req, res) => {
     // Attach items for each invoice
     for (const inv of invoices) {
       inv.items = await db.all(
-        `SELECT si.*, im.batch_number, im.expiry_date, m.name as medicine_name, m.mrp, im.pack_size
+        `SELECT si.*, im.batch_no as batch_number, im.expiry_date, m.name as medicine_name, m.mrp, 10 as pack_size
          FROM sale_items si
          JOIN inventory_master im ON si.inventory_id = im.id
          JOIN medicines m ON im.medicine_id = m.id
@@ -391,7 +429,7 @@ router.get('/:id', async (req, res) => {
     }
 
     invoice.items = await db.all(
-      `SELECT si.*, im.batch_number, im.expiry_date, im.mrp as item_mrp, im.pack_size,
+      `SELECT si.*, im.batch_no as batch_number, im.expiry_date, im.mrp as item_mrp, 10 as pack_size,
               m.name as medicine_name, m.mrp as medicine_mrp
        FROM sale_items si
        JOIN inventory_master im ON si.inventory_id = im.id

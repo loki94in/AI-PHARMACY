@@ -218,6 +218,206 @@ html.light body {
 }
 
 /* ═══════════════════════════════════════════
+   LIGHT MODE — MODAL / POPUP CARD BACKGROUNDS
+   (bg-gray-800, bg-gray-900, etc.)
+   ═══════════════════════════════════════════ */
+.light .bg-gray-800,
+.light .bg-gray-800\/90,
+.light .bg-gray-800\/95 {
+  background-color: #ffffff !important;
+  border-color: rgba(34, 197, 94, 0.2) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+  color: var(--text) !important;
+}
+.light .bg-gray-900,
+.light .bg-gray-900\/90,
+.light .bg-gray-900\/95 {
+  background-color: #f9fafb !important;
+  border-color: rgba(34, 197, 94, 0.2) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08) !important;
+  color: var(--text) !important;
+}
+/* Cancel / neutral gray buttons inside modals */
+.light .bg-gray-600,
+.light .bg-gray-700 {
+  background-color: #e5e7eb !important;
+  color: #374151 !important;
+}
+.light .hover\:bg-gray-700:hover,
+.light .hover\:bg-gray-600:hover {
+  background-color: #d1d5db !important;
+  color: #111827 !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — AUTOCOMPLETE / DROPDOWN POPUPS
+   bg-[#18181b]/95  bg-[#18181b]/98  bg-zinc-950/95  bg-zinc-900/90
+   ═══════════════════════════════════════════ */
+.light .bg-\[\#18181b\]\/95,
+.light .bg-\[\#18181b\]\/98 {
+  background-color: rgba(255, 255, 255, 0.99) !important;
+  border-color: rgba(34, 197, 94, 0.25) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+}
+/* Dropdown hover rows */
+.light .bg-\[\#18181b\]\/95 > *:hover,
+.light .bg-\[\#18181b\]\/98 > *:hover {
+  background-color: rgba(34, 197, 94, 0.08) !important;
+}
+/* zinc-950 dropdown */
+.light .bg-zinc-950\/95 {
+  background-color: rgba(255, 255, 255, 0.99) !important;
+  border-color: rgba(34, 197, 94, 0.25) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+}
+/* zinc-900/90 — QuickOrderModal panel */
+.light .bg-zinc-900\/90 {
+  background-color: rgba(255, 255, 255, 0.99) !important;
+  border-color: rgba(34, 197, 94, 0.2) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — STICKY TABLE HEADERS
+   bg-[#18181b]/95  used in many pages
+   ═══════════════════════════════════════════ */
+.light thead.sticky,
+.light thead .sticky,
+.light thead[class*="sticky"] {
+  background-color: rgba(243, 244, 246, 0.98) !important;
+  border-bottom-color: rgba(34, 197, 94, 0.2) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — INVENTORY SIDE PANEL
+   bg-[#121214]/95
+   ═══════════════════════════════════════════ */
+.light .bg-\[\#121214\]\/95 {
+  background-color: rgba(255, 255, 255, 0.99) !important;
+  border-color: rgba(34, 197, 94, 0.25) !important;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — TOGGLE / SWITCH TRACK
+   bg-zinc-700  (unchecked state)
+   ═══════════════════════════════════════════ */
+.light .bg-zinc-700 {
+  background-color: #d1d5db !important;
+}
+.light .bg-zinc-700.peer-checked\:bg-green,
+.light .peer:checked ~ .bg-zinc-700 {
+  background-color: #16a34a !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — FILE INPUT BUTTON (Settings)
+   file:bg-zinc-700  file:text-zinc-300
+   ═══════════════════════════════════════════ */
+.light input[type="file"]::file-selector-button {
+  background-color: #e5e7eb !important;
+  color: #374151 !important;
+  border-color: transparent !important;
+}
+.light input[type="file"]:hover::file-selector-button {
+  background-color: #d1d5db !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — DROPDOWN <option> with bg-[#18181b]
+   ═══════════════════════════════════════════ */
+.light option.bg-\[\#18181b\],
+.light select option.bg-\[\#18181b\] {
+  background-color: #ffffff !important;
+  color: var(--text) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — EXPIRY STAT CARDS
+   bg-[#18181b]/50
+   ═══════════════════════════════════════════ */
+.light .bg-\[\#18181b\]\/50 {
+  background-color: rgba(249, 250, 251, 0.9) !important;
+  border-color: rgba(34, 197, 94, 0.2) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — GRAY TEXT INSIDE POPUPS/MODALS
+   text-gray-400, text-gray-300 → use muted var
+   ═══════════════════════════════════════════ */
+.light .text-gray-400 { color: var(--muted) !important; }
+.light .text-gray-300 { color: #4b5563 !important; }
+.light .text-gray-500 { color: var(--muted) !important; }
+.light .text-slate-400 { color: var(--muted) !important; }
+.light .text-slate-500 { color: var(--muted) !important; }
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — MODAL OVERLAY BACKDROP
+   bg-black/50, bg-black/60, bg-black/80
+   Slightly softer in light mode
+   ═══════════════════════════════════════════ */
+.light .bg-black\/80 {
+  background-color: rgba(0, 0, 0, 0.35) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — BORDER OVERRIDES FOR POPUPS
+   border-white/20  border-white/10 in popups
+   ═══════════════════════════════════════════ */
+.light .border-white\/20 {
+  border-color: rgba(34, 197, 94, 0.25) !important;
+}
+.light .border-white\/10 {
+  border-color: rgba(34, 197, 94, 0.15) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — PURCHASES INLINE POPUPS
+   bg-gray-900 with blue/purple borders
+   ═══════════════════════════════════════════ */
+.light .border-blue-500 {
+  border-color: #3b82f6 !important;
+}
+.light .border-purple-500 {
+  border-color: #a855f7 !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — CRM WhatsApp CHAT PANEL
+   bg-[#0b141a]  (custom dark teal-green)
+   ═══════════════════════════════════════════ */
+.light .bg-\[\#0b141a\] {
+  background-color: #f0fdf4 !important;
+  border-color: rgba(34, 197, 94, 0.2) !important;
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — TABLE / CART SCROLL CONTAINERS
+   bg-black/10  bg-black/20  bg-black/40  bg-black/50
+   Used as scrollable region backgrounds in POS, Orders, Reports
+   ═══════════════════════════════════════════ */
+.light .bg-black\/10 { background-color: rgba(0, 0, 0, 0.015) !important; }
+.light .bg-black\/20 { background-color: rgba(0, 0, 0, 0.02)  !important; }
+.light .bg-black\/40 { background-color: rgba(0, 0, 0, 0.03)  !important; }
+.light .bg-black\/50 { background-color: rgba(0, 0, 0, 0.04)  !important; }
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — QUICKORDERMODAL PRIORITY BADGE
+   bg-zinc-700 text-zinc-300 (inactive low priority)
+   ═══════════════════════════════════════════ */
+.light .bg-zinc-700    { background-color: #e5e7eb !important; }
+.light .text-zinc-300  { color: #6b7280 !important; }
+.light .text-zinc-700  { color: #374151 !important; }
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE — PLACEHOLDER TEXT
+   ═══════════════════════════════════════════ */
+.light ::placeholder {
+  color: #9ca3af !important;
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════
    BASE LAYER
    ═══════════════════════════════════════════ */
 @layer base {
