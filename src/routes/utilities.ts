@@ -12,6 +12,7 @@ const router = express.Router();
 
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 // Trigger backup
 router.post('/backup', async (req, res) => {
@@ -51,20 +52,49 @@ router.post('/barcode', async (req, res) => {
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
-    const doc = new PDFDocument();
+    const doc = new PDFDocument({ margin: 30 });
     const pdfPath = path.join(uploadsDir, `barcodes_${Date.now()}.pdf`);
     const stream = fs.createWriteStream(pdfPath);
     
     doc.pipe(stream);
     
-    doc.fontSize(16).text('Barcode Labels', { underline: true });
-    doc.moveDown();
+    doc.fontSize(18).text('Medicine QR Code Labels', { align: 'center', underline: true });
+    doc.moveDown(1.5);
     
-    items.forEach(item => {
-      doc.fontSize(12).text(`Item: ${item.name || 'Unknown'}`);
-      doc.fontSize(10).text(`Batch: ${item.batch || 'N/A'}`);
-      doc.moveDown();
-    });
+    // Grid layout for labels: 3 labels per row
+    let x = 40;
+    let y = 100;
+    const labelWidth = 160;
+    const labelHeight = 150;
+    const padding = 15;
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const qrText = `PRODUCT:${item.name || 'Unknown'}|BATCH:${item.batch || 'N/A'}`;
+      const qrBuffer = await QRCode.toBuffer(qrText, { width: 120, margin: 1 });
+      
+      // Draw a boundary box for the label
+      doc.rect(x, y, labelWidth, labelHeight).strokeColor('#e2e8f0').stroke();
+      
+      // Add text inside label
+      doc.fillColor('#1e293b').fontSize(10).text(item.name || 'Unknown', x + 10, y + 10, { width: labelWidth - 20, height: 25, ellipsis: true });
+      doc.fillColor('#64748b').fontSize(8).text(`Batch: ${item.batch || 'N/A'}`, x + 10, y + 35);
+      
+      // Embed QR image
+      doc.image(qrBuffer, x + (labelWidth - 90) / 2, y + 50, { width: 90, height: 90 });
+      
+      // Advance to next position
+      x += labelWidth + padding;
+      if (x + labelWidth > doc.page.width - 40) {
+        x = 40;
+        y += labelHeight + padding;
+        if (y + labelHeight > doc.page.height - 40) {
+          doc.addPage();
+          x = 40;
+          y = 50;
+        }
+      }
+    }
     
     doc.end();
     
@@ -89,7 +119,20 @@ router.get('/barcode/:code', async (req, res) => {
     const pdfPath = path.join(uploadsDir, `barcode_${code}_${Date.now()}.pdf`);
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
-    doc.fontSize(20).text(`Barcode: ${code}`, { align: 'center' });
+    
+    const qrBuffer = await QRCode.toBuffer(code, { width: 200, margin: 1 });
+    
+    doc.fontSize(20).text('Invoice / Bill Barcode Label', { align: 'center', underline: true });
+    doc.moveDown();
+    
+    doc.fontSize(14).text(`Bill Reference: ${code}`, { align: 'center' });
+    doc.moveDown();
+    
+    // Embed single large QR Code representing the bill ID
+    const imageWidth = 180;
+    const xPos = (doc.page.width - imageWidth) / 2;
+    doc.image(qrBuffer, xPos, doc.y, { width: imageWidth, height: imageWidth });
+    
     doc.end();
     stream.on('finish', () => {
       res.json({ success: true, pdfUrl: `/uploads/${path.basename(pdfPath)}` });

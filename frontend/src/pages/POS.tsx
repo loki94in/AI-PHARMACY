@@ -16,6 +16,9 @@ const POS = () => {
   const [refillEnabled, setRefillEnabled] = useState(false);
   const [refillDays, setRefillDays] = useState(30);
   const [showPatientModal, setShowPatientModal] = useState(false);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [lastSavedInvoiceNo, setLastSavedInvoiceNo] = useState('');
+  const [lastSavedItems, setLastSavedItems] = useState<any[]>([]);
   const [doctor, setDoctor] = useState('');
   const [isDoctorDropdownOpen, setIsDoctorDropdownOpen] = useState(false);
   const [doctorHighlightIndex, setDoctorHighlightIndex] = useState(-1);
@@ -695,7 +698,14 @@ const POS = () => {
       };
 
       const result = await api.createSale(payload);
-      alert(`Sale completed! Invoice ${result.invoice_no || result.invoiceNo || 'SAVED'} logged. Grand Total: ₹${grandTotal}`);
+      const invoiceNo = result.invoice_no || result.invoiceNo || 'SAVED';
+      
+      setLastSavedInvoiceNo(invoiceNo);
+      setLastSavedItems(cart.map(item => ({
+        name: item.name || item.medicine_name,
+        batch: item.batch_number || item.batch_no || 'N/A'
+      })));
+      setShowBarcodeModal(true);
       
       // Clear cart and states
       updateCart([]);
@@ -1850,6 +1860,80 @@ const POS = () => {
                 className="px-4 py-2 rounded-xl text-sm font-bold bg-sky text-white hover:bg-sky/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(14,165,233,0.3)]"
               >
                 <CheckCircle size={16} /> Save Doctor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Barcode Print Prompt Modal */}
+      {showBarcodeModal && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/70 backdrop-blur-md fade-in">
+          <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
+            <div className="text-center space-y-2">
+              <div className="inline-flex p-3 rounded-full bg-green/10 border border-green/20 text-green mb-2">
+                <CheckCircle size={32} className="animate-bounce" />
+              </div>
+              <h3 className="text-lg font-bold text-text">Sale Saved Successfully!</h3>
+              <p className="text-xs text-muted">Invoice No: <span className="font-mono text-sky font-semibold">{lastSavedInvoiceNo}</span></p>
+            </div>
+
+            <div className="bg-white/5 border border-glass-border/40 p-4 rounded-xl space-y-3">
+              <p className="text-xs text-center text-text font-medium leading-relaxed">
+                Would you like to print unique barcode/QR code labels for the medicines in this bill, or generate a single barcode for the bill itself?
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await api.generateMedicineBarcodes(lastSavedItems);
+                    if (res && res.success && res.pdfUrl) {
+                      const backendUrl = apiClient.defaults.baseURL || window.location.origin;
+                      window.open(`${backendUrl}${res.pdfUrl}`, '_blank');
+                    } else {
+                      alert('Failed to generate barcodes');
+                    }
+                  } catch (err) {
+                    console.error(err);
+                    alert('Error generating medicine barcodes');
+                  }
+                  setShowBarcodeModal(false);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-green text-text hover:bg-green/90 transition-all shadow-[0_4px_12px_rgba(16,185,129,0.2)] flex items-center justify-center gap-2"
+              >
+                Create Medicine Barcodes
+              </button>
+
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await api.generateBillBarcode(lastSavedInvoiceNo);
+                    if (res && res.success && res.pdfUrl) {
+                      const backendUrl = apiClient.defaults.baseURL || window.location.origin;
+                      window.open(`${backendUrl}${res.pdfUrl}`, '_blank');
+                    } else {
+                      alert('Failed to generate bill barcode');
+                    }
+                  } catch (err) {
+                    console.error(err);
+                    alert('Error generating bill barcode');
+                  }
+                  setShowBarcodeModal(false);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-sky text-white hover:bg-sky/90 transition-all shadow-[0_4px_12px_rgba(14,165,233,0.2)] flex items-center justify-center gap-2"
+              >
+                Create Bill Barcode
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowBarcodeModal(false);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 border border-glass-border/60 text-muted hover:text-white hover:bg-white/10 transition-all"
+              >
+                No / Skip
               </button>
             </div>
           </div>

@@ -17,6 +17,7 @@ import {
   XCircle,
   Globe,
   Copy,
+  Mail,
 } from 'lucide-react';
 import { toastEvent } from '../services/events';
 
@@ -464,136 +465,7 @@ const Settings = () => {
             </label>
           </div>
 
-          {emailAlerts && (
-            <>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-muted uppercase tracking-wider block">
-                  Gmail Authentication Method
-                </label>
-                <div className="flex gap-4">
-                  <label className="inline-flex items-center text-sm text-zinc-300 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="gmailAuthMethod"
-                      value="password"
-                      checked={gmailAuthMethod === 'password'}
-                      onChange={() => setGmailAuthMethod('password')}
-                      className="mr-2 accent-green"
-                    />
-                    App Password
-                  </label>
-                  <label className="inline-flex items-center text-sm text-zinc-300 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="gmailAuthMethod"
-                      value="oauth2"
-                      checked={gmailAuthMethod === 'oauth2'}
-                      onChange={() => setGmailAuthMethod('oauth2')}
-                      className="mr-2 accent-green"
-                    />
-                    Google OAuth2
-                  </label>
-                </div>
-              </div>
 
-              {gmailAuthMethod === 'password' ? (
-                <>
-                  <div className="space-y-2">
-                    <label htmlFor="gmailUser" className="text-xs font-bold text-muted uppercase tracking-wider">
-                      Gmail Login ID
-                    </label>
-                    <input
-                      id="gmailUser"
-                      type="email"
-                      className="premium-input w-full"
-                      placeholder="e.g. pharmacy@gmail.com"
-                      value={gmailUser}
-                      onChange={(e) => setGmailUser(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="gmailPass" className="text-xs font-bold text-muted uppercase tracking-wider">
-                      Gmail App Password
-                    </label>
-                    <input
-                      id="gmailPass"
-                      type="password"
-                      className="premium-input w-full"
-                      placeholder="e.g. abcd efgh ijkl mnop"
-                      value={gmailPass}
-                      onChange={(e) => setGmailPass(e.target.value)}
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    <label htmlFor="gmailUser" className="text-xs font-bold text-muted uppercase tracking-wider">
-                      Gmail Login ID / Account (Will auto-populate after linking)
-                    </label>
-                    <input
-                      id="gmailUser"
-                      type="email"
-                      className="premium-input w-full"
-                      placeholder="e.g. pharmacy@gmail.com"
-                      value={gmailUser}
-                      onChange={(e) => setGmailUser(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="googleClientId" className="text-xs font-bold text-muted uppercase tracking-wider">
-                      Google Client ID
-                    </label>
-                    <input
-                      id="googleClientId"
-                      type="text"
-                      className="premium-input w-full"
-                      placeholder="Google OAuth2 Client ID"
-                      value={googleClientId}
-                      onChange={(e) => setGoogleClientId(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="googleClientSecret" className="text-xs font-bold text-muted uppercase tracking-wider">
-                      Google Client Secret
-                    </label>
-                    <input
-                      id="googleClientSecret"
-                      type="password"
-                      className="premium-input w-full"
-                      placeholder="Google OAuth2 Client Secret"
-                      value={googleClientSecret}
-                      onChange={(e) => setGoogleClientSecret(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await handleSaveSettings();
-                        const backendUrl = apiClient.defaults.baseURL || window.location.origin;
-                        window.open(`${backendUrl}/api/email/auth/google`, '_blank');
-                      }}
-                      className="premium-button text-sm font-bold flex items-center gap-2"
-                      disabled={!googleClientId || !googleClientSecret}
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
-                        <path fill="currentColor" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.483 0-6.312-2.829-6.312-6.312 0-3.483 2.829-6.312 6.312-6.312 1.624 0 3.099.619 4.228 1.628l3.143-3.143C19.123 2.115 15.903 1 12.24 1 6.033 1 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.236 0 11.667-4.488 11.667-11.24 0-.762-.067-1.495-.19-2.205H12.24z"/>
-                      </svg>
-                      Link Gmail Account
-                    </button>
-                    <p className="text-xs text-zinc-500 mt-1">
-                      Note: Add <strong>{window.location.origin}/api/email/auth/google/callback</strong> to your Google Cloud Console Authorized Redirect URIs.
-                    </p>
-                  </div>
-                </>
-              )}
-            </>
-          )}
 
           <div className="space-y-2">
             <label htmlFor="lowStockThreshold" className="text-xs font-bold text-muted uppercase tracking-wider">
@@ -882,6 +754,146 @@ const Settings = () => {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Gmail / Email Integration Config */}
+        <div className="border border-glass-border/40 p-5 rounded-xl bg-white/5 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-bold flex items-center gap-2 text-sky">
+              <Mail size={16} /> Gmail / Email Integration
+            </h4>
+          </div>
+
+          <div className="pt-2 space-y-5">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+                Gmail Authentication Method
+              </label>
+              <div className="flex gap-4">
+                <label className="inline-flex items-center text-sm text-zinc-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="gmailAuthMethod"
+                    value="password"
+                    checked={gmailAuthMethod === 'password'}
+                    onChange={() => setGmailAuthMethod('password')}
+                    className="mr-2 accent-green"
+                  />
+                  App Password
+                </label>
+                <label className="inline-flex items-center text-sm text-zinc-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="gmailAuthMethod"
+                    value="oauth2"
+                    checked={gmailAuthMethod === 'oauth2'}
+                    onChange={() => setGmailAuthMethod('oauth2')}
+                    className="mr-2 accent-green"
+                  />
+                  Google OAuth2
+                </label>
+              </div>
+            </div>
+
+            {gmailAuthMethod === 'password' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="gmailUser" className="text-xs font-bold text-muted uppercase tracking-wider">
+                    Gmail Login ID
+                  </label>
+                  <input
+                    id="gmailUser"
+                    type="email"
+                    className="premium-input w-full"
+                    placeholder="e.g. pharmacy@gmail.com"
+                    value={gmailUser}
+                    onChange={(e) => setGmailUser(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="gmailPass" className="text-xs font-bold text-muted uppercase tracking-wider">
+                    Gmail App Password
+                  </label>
+                  <input
+                    id="gmailPass"
+                    type="password"
+                    className="premium-input w-full"
+                    placeholder="e.g. abcd efgh ijkl mnop"
+                    value={gmailPass}
+                    onChange={(e) => setGmailPass(e.target.value)}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="gmailUser" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Gmail Login ID
+                    </label>
+                    <input
+                      id="gmailUser"
+                      type="email"
+                      className="premium-input w-full"
+                      placeholder="e.g. pharmacy@gmail.com"
+                      value={gmailUser}
+                      onChange={(e) => setGmailUser(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="googleClientId" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Google Client ID
+                    </label>
+                    <input
+                      id="googleClientId"
+                      type="text"
+                      className="premium-input w-full"
+                      placeholder="Google OAuth2 Client ID"
+                      value={googleClientId}
+                      onChange={(e) => setGoogleClientId(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="googleClientSecret" className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Google Client Secret
+                    </label>
+                    <input
+                      id="googleClientSecret"
+                      type="password"
+                      className="premium-input w-full"
+                      placeholder="Google OAuth2 Client Secret"
+                      value={googleClientSecret}
+                      onChange={(e) => setGoogleClientSecret(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleSaveSettings();
+                      const backendUrl = apiClient.defaults.baseURL || window.location.origin;
+                      window.open(`${backendUrl}/api/email/auth/google`, '_blank');
+                    }}
+                    className="premium-btn bg-primary text-white hover:bg-blue-600 font-bold text-sm flex items-center gap-2"
+                    disabled={!googleClientId || !googleClientSecret}
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path fill="currentColor" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.483 0-6.312-2.829-6.312-6.312 0-3.483 2.829-6.312 6.312-6.312 1.624 0 3.099.619 4.228 1.628l3.143-3.143C19.123 2.115 15.903 1 12.24 1 6.033 1 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.236 0 11.667-4.488 11.667-11.24 0-.762-.067-1.495-.19-2.205H12.24z"/>
+                    </svg>
+                    Link Gmail Account
+                  </button>
+                  <p className="text-[10px] text-zinc-500 mt-1">
+                    Note: Add <strong>{window.location.origin}/api/email/auth/google/callback</strong> to your Google Cloud Console Authorized Redirect URIs.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-6 flex justify-end">

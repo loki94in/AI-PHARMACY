@@ -68,13 +68,29 @@ router.post('/', async (req, res) => {
 
 // GET /api/email/inbox
 router.get('/inbox', async (req, res) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
   try {
     const inbox = await emailService.fetchInbox(limit);
     res.json(inbox);
   } catch (error) {
     console.error('Fetch inbox error:', error);
     res.status(500).json({ error: 'Failed to fetch email inbox' });
+  }
+});
+
+// POST /api/email/:id/seen
+router.post('/:id/seen', async (req, res) => {
+  const emailId = req.params.id;
+  const uid = parseInt(emailId);
+  if (isNaN(uid)) {
+    return res.status(400).json({ error: 'Invalid email UID (must be a number)' });
+  }
+  try {
+    const success = await emailService.markAsSeen(uid);
+    res.json({ success });
+  } catch (error) {
+    console.error('Mark as seen error:', error);
+    res.status(500).json({ error: 'Failed to mark email as seen' });
   }
 });
 
@@ -131,41 +147,12 @@ router.get('/attachments', async (req, res) => {
 router.get('/:id/attachments', async (req, res) => {
   try {
     const emailId = req.params.id;
-
-    if (!email) {
-      console.warn(`Email with ID ${emailId} not found in action_logs, listing available attachments anyway`);
+    const uid = parseInt(emailId);
+    if (isNaN(uid)) {
+      return res.status(400).json({ error: 'Invalid email UID (must be a number)' });
     }
 
-    // Read all files from uploads folder
-    const uploadsDir = getUploadsDir();
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
-    const files = fs.readdirSync(uploadsDir);
-    const attachments = files
-      .filter(file => file.match(/\.(csv|txt|xlsx?|ods|pdf)$/i))
-      .map(filename => {
-        const filePath = path.join(uploadsDir, filename);
-        const stats = fs.statSync(filePath);
-        const ext = path.extname(filename).toLowerCase();
-        const contentTypes: Record<string, string> = {
-          '.pdf': 'application/pdf',
-          '.csv': 'text/csv',
-          '.txt': 'text/plain',
-          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          '.xls': 'application/vnd.ms-excel',
-          '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
-        };
-        return {
-          filename,
-          size: stats.size,
-          contentType: contentTypes[ext] || 'application/octet-stream',
-          createdAt: stats.birthtime || stats.mtime,
-        };
-      })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
+    const attachments = await emailService.downloadAttachmentsForUid(uid);
     res.json(attachments);
   } catch (error) {
     console.error('Failed to read email attachments:', error);

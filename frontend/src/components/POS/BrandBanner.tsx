@@ -10,7 +10,7 @@ const BrandBanner = () => (
         </svg>
       </div>
       <span className="font-black tracking-widest text-xs bg-gradient-to-r from-text to-sky bg-clip-text text-transparent">
-        NEXT MEDICIN OS
+        AI PHARMACY OS
       </span>
     </div>
     <div className="flex items-center gap-3">

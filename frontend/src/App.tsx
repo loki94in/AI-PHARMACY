@@ -107,7 +107,7 @@ const Sidebar = () => {
           </div>
           <div>
             <h1 className="text-base font-black tracking-wider bg-gradient-to-r from-text to-sky bg-clip-text text-transparent leading-none">
-              NEXT MEDICIN
+              AI PHARMACY
             </h1>
             <p className="text-[9px] text-muted tracking-widest uppercase font-bold mt-1 leading-none">OS Version 2.0</p>
           </div>

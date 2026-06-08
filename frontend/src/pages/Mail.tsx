@@ -22,6 +22,7 @@ interface EmailRecord {
   date?: string;
   attachments?: any[];
   distributorName?: string;
+  isSeen?: boolean;
 }
 
 interface AttachmentFile {
@@ -89,6 +90,16 @@ const Mail = () => {
     setAttachments([]);
     setProcessResult(null);
     if (!email.id) return;
+
+    // Instantly mark as seen in local state
+    setEmails((prev) =>
+      prev.map((e) => (e.id === email.id ? { ...e, isSeen: true } : e))
+    );
+
+    // Call API to mark seen on server
+    api.markEmailSeen(email.id).catch((err: any) => {
+      console.error('Error marking email as seen:', err);
+    });
 
     setLoadingAttachments(true);
     api
@@ -242,7 +253,11 @@ const Mail = () => {
                       : 'border-l-2 border-transparent'
                   }`}
                 >
-                  <div className="p-2 rounded-xl bg-white/5 text-primary border border-glass-border flex-shrink-0 mt-0.5">
+                  <div className={`p-2 rounded-xl border flex-shrink-0 mt-0.5 transition-all ${
+                    email.isSeen
+                      ? 'bg-zinc-800/40 border-zinc-700/30 text-zinc-500'
+                      : 'bg-green/10 border-green/30 text-green shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                  }`}>
                     <MailIcon size={16} />
                   </div>
                   <div className="flex-1 min-w-0 space-y-1">
@@ -250,10 +265,17 @@ const Mail = () => {
                       <span className="text-xs font-bold text-text truncate flex items-center gap-1">
                         <User size={12} className="text-muted" /> {email.from}
                       </span>
-                      <span className="text-[10px] text-muted font-mono flex items-center gap-1 flex-shrink-0">
-                        <Calendar size={10} />
-                        {email.date ? new Date(email.date).toLocaleDateString() : 'Today'}
-                      </span>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {email.isSeen ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-zinc-800/60 border border-zinc-700 text-zinc-500 font-bold uppercase select-none">Processed</span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-green/10 border border-green/30 text-green font-bold uppercase select-none animate-pulse">New</span>
+                        )}
+                        <span className="text-[10px] text-muted font-mono flex items-center gap-1">
+                          <Calendar size={10} />
+                          {email.date ? new Date(email.date).toLocaleDateString() : 'Today'}
+                        </span>
+                      </div>
                     </div>
                     <h4 className="text-xs font-bold text-sky truncate">{email.subject}</h4>
                     <p className="text-[11px] text-muted truncate">

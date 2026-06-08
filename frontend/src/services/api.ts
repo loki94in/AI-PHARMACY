@@ -202,11 +202,16 @@ export const api = {
   addDoctor: (data: any) => apiClient.post('/crm/doctors', data).then(res => res.data),
   
   // Email / Mail Parser
-  getEmailInbox: () => apiClient.get('/email/inbox').then(res => res.data),
+  getEmailInbox: (limit: number = 10) => apiClient.get('/email/inbox', { params: { limit } }).then(res => res.data),
   getEmailAttachments: () => apiClient.get('/email/attachments').then(res => res.data),
   getEmailAttachmentsById: (emailId: number) => apiClient.get(`/email/${emailId}/attachments`).then(res => res.data),
   parseAttachment: (filename: string, importData: boolean = true) => apiClient.post('/email/attachments/parse', { filename, importData }).then(res => res.data),
   importManualEmail: (data: any) => apiClient.post('/email/import-manual', data).then(res => res.data),
+  markEmailSeen: (emailId: number) => apiClient.post(`/email/${emailId}/seen`).then(res => res.data),
+  
+  // Utilities (Barcode generation)
+  generateMedicineBarcodes: (items: Array<{ name: string; batch?: string }>) => apiClient.post('/utilities/barcode', { items }).then(res => res.data),
+  generateBillBarcode: (code: string) => apiClient.get(`/utilities/barcode/${encodeURIComponent(code)}`).then(res => res.data),
   
   // License
   getLicenseStatus: () => apiClient.get('/license/status').then(res => res.data),

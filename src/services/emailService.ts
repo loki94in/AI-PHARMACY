@@ -11,6 +11,7 @@ import { sendMessage } from '../whatsappClient.js';
 import { telegramBotService } from '../telegramBot.js';
 import { notificationManager } from '../utils/notifications.js';
 import { extractDateFromText } from '../utils/dateExtractor.js';
+import { eventService } from './eventService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -172,7 +173,17 @@ export class EmailService {
         xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
       }
 
-      if ((!user || !password || !this.imapConfig.host) && !xoauth2) {
+      let host = this.imapConfig.host;
+      let port = this.imapConfig.port;
+      let tls = this.imapConfig.tls;
+
+      if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
+        host = 'imap.gmail.com';
+        port = 993;
+        tls = true;
+      }
+
+      if ((!user || !password || !host) && !xoauth2) {
         console.warn('IMAP configuration incomplete, skipping email poll');
         return;
       }
@@ -180,6 +191,12 @@ export class EmailService {
       const imapConfig: any = {
         ...this.imapConfig,
         user,
+        host,
+        port,
+        tls,
+        tlsOptions: {
+          rejectUnauthorized: false
+        }
       };
 
       if (xoauth2) {
@@ -225,7 +242,7 @@ export class EmailService {
 
           // Handle attachments if any
           if (processedEmail.attachments.length > 0) {
-            await this.processAttachments(processedEmail.attachments);
+            await this.processAttachments(processedEmail.attachments, item.attributes.uid);
           }
 
           // Mark as seen
@@ -562,7 +579,7 @@ export class EmailService {
     filename: string;
     content: Buffer;
     contentType: string;
-  }>): Promise<void> {
+  }>, uid?: number): Promise<void> {
     try {
       for (const attachment of attachments) {
         // Check if attachment is a medicine list (CSV, Excel, etc.)
@@ -586,7 +603,8 @@ export class EmailService {
           fs.mkdirSync(uploadsDir, { recursive: true });
         }
         const sanitizedFilename = path.basename(attachment.filename).replace(/[^a-zA-Z0-9._-]/g, '_');
-        const filePath = path.join(uploadsDir, `${Date.now()}-${sanitizedFilename}`);
+        const prefix = uid ? `att-${uid}-` : `${Date.now()}-`;
+        const filePath = path.join(uploadsDir, `${prefix}${sanitizedFilename}`);
         fs.writeFileSync(filePath, attachment.content);
       }
     } catch (error) {
@@ -788,53 +806,6 @@ export class EmailService {
     }
   }
 
-  private getMockInbox(): Array<any> {
-    return [
-      {
-        id: 101,
-        uid: 101,
-        from: "bajaj.pharma@gmail.com",
-        subject: "Invoice for Paracetamol and Amoxicillin shipment - INV-2026-441",
-        body: "Attached is the invoice for recent shipment. Items: Paracetamol 500mg (100 units). Total amount: ₹4,500.00",
-        bodySnippet: "Attached is the invoice for recent shipment...",
-        date: new Date(),
-        isSeen: false,
-        isOrder: true,
-        distributorName: "BAJAJ PHARMA",
-        totalItems: 100,
-        hasAttachments: true
-      },
-      {
-        id: 102,
-        uid: 102,
-        from: "senior.agency@pharma.com",
-        subject: "Urgent: Delivery voucher Nitin Agency - VOU-8891",
-        body: "Delivery voucher for Nitin Agency. Items: Cetirizine 10mg (200 units).",
-        bodySnippet: "Delivery voucher for Nitin Agency...",
-        date: new Date(Date.now() - 3600000),
-        isSeen: true,
-        isOrder: true,
-        distributorName: "SENIOR AGENCY",
-        totalItems: 200,
-        hasAttachments: false
-      },
-      {
-        id: 103,
-        uid: 103,
-        from: "tapadiya.dist@gmail.com",
-        subject: "Monthly Statement & Bill - Tapadiya Distributors",
-        body: "Monthly summary bill. Items: Ibuprofen 400mg (120 units).",
-        bodySnippet: "Monthly summary bill...",
-        date: new Date(Date.now() - 7200000),
-        isSeen: true,
-        isOrder: true,
-        distributorName: "TAPADIYA DISTRIBUTORS",
-        totalItems: 120,
-        hasAttachments: true
-      }
-    ];
-  }
-
   /**
    * Parses an attachment file (CSV/txt) and imports its items into inventory/medicines.
    */
@@ -993,8 +964,18 @@ export class EmailService {
       xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
     }
 
-    if ((!user || !password || !this.imapConfig.host) && !xoauth2) {
-      return this.getMockInbox();
+    let host = this.imapConfig.host;
+    let port = this.imapConfig.port;
+    let tls = this.imapConfig.tls;
+
+    if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
+      host = 'imap.gmail.com';
+      port = 993;
+      tls = true;
+    }
+
+    if ((!user || !password || !host) && !xoauth2) {
+      return [];
     }
 
     let connection = null;
@@ -1004,7 +985,13 @@ export class EmailService {
       const imapConfig: any = {
         ...this.imapConfig,
         user,
-        authTimeout: 5000
+        host,
+        port,
+        tls,
+        authTimeout: 5000,
+        tlsOptions: {
+          rejectUnauthorized: false
+        }
       };
 
       if (xoauth2) {
@@ -1066,7 +1053,7 @@ export class EmailService {
         }
       }
     } catch (err: any) {
-      console.error('fetchInbox error: fallback to mock data', err);
+      console.error('fetchInbox error:', err);
       const errMsg = err.message || '';
       if (errMsg.includes('AUTHENTICATIONFAILED') || errMsg.includes('Invalid credentials') || errMsg.includes('login') || errMsg.includes('auth')) {
         eventService.broadcast('auth_failure', {
@@ -1074,7 +1061,7 @@ export class EmailService {
           service: 'gmail'
         });
       }
-      return this.getMockInbox();
+      throw err;
     } finally {
       if (connection) {
         try {
@@ -1084,6 +1071,239 @@ export class EmailService {
     }
 
     return emails;
+  }
+
+  /**
+   * Downloads email attachments dynamically from IMAP by UID, prefixes, and saves them
+   */
+  public async downloadAttachmentsForUid(uid: number): Promise<Array<{ filename: string; size: number; contentType: string }>> {
+    let user = this.imapConfig.user;
+    let password = this.imapConfig.password;
+    let xoauth2: string | undefined = undefined;
+
+    try {
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
+      const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
+      await db.close();
+      if (userRow && userRow.value) user = userRow.value;
+      if (passRow && passRow.value) password = passRow.value;
+    } catch (_) {}
+
+    const accessToken = await this.getGmailAccessToken();
+    if (accessToken && user) {
+      const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
+      xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
+    }
+
+    let host = this.imapConfig.host;
+    let port = this.imapConfig.port;
+    let tls = this.imapConfig.tls;
+
+    if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
+      host = 'imap.gmail.com';
+      port = 993;
+      tls = true;
+    }
+
+    if ((!user || !password || !host) && !xoauth2) {
+      return this.getLocalAttachmentsForUid(uid);
+    }
+
+    let connection = null;
+    try {
+      const imapConfig: any = {
+        ...this.imapConfig,
+        user,
+        host,
+        port,
+        tls,
+        authTimeout: 5000,
+        tlsOptions: {
+          rejectUnauthorized: false
+        }
+      };
+
+      if (xoauth2) {
+        imapConfig.xoauth2 = xoauth2;
+        delete imapConfig.password;
+      } else {
+        imapConfig.password = password;
+      }
+
+      const config = { imap: imapConfig };
+      connection = await imap.connect(config);
+      await connection.openBox('INBOX');
+
+      // Search specific UID
+      const searchCriteria = [['UID', uid]];
+      const fetchOptions = { bodies: [''], struct: true };
+      const results = await connection.search(searchCriteria, fetchOptions);
+
+      if (results.length === 0) {
+        return this.getLocalAttachmentsForUid(uid);
+      }
+
+      const item = results[0];
+      const bodyPart = item.parts.find((p: any) => p.which === '');
+      if (!bodyPart) return this.getLocalAttachmentsForUid(uid);
+
+      const parsed = await simpleParser(bodyPart.body);
+      const attachments = parsed.attachments || [];
+
+      const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+
+      const savedList = [];
+      for (const att of attachments) {
+        const sanitizedFilename = path.basename(att.filename || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const finalFilename = `att-${uid}-${sanitizedFilename}`;
+        const filePath = path.join(uploadsDir, finalFilename);
+        fs.writeFileSync(filePath, att.content);
+        
+        const ext = path.extname(sanitizedFilename).toLowerCase();
+        const contentTypes: Record<string, string> = {
+          '.pdf': 'application/pdf',
+          '.csv': 'text/csv',
+          '.txt': 'text/plain',
+          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          '.xls': 'application/vnd.ms-excel',
+          '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+        };
+        
+        savedList.push({
+          filename: finalFilename,
+          size: att.size,
+          contentType: contentTypes[ext] || att.contentType || 'application/octet-stream'
+        });
+      }
+
+      return savedList;
+    } catch (err) {
+      console.error('Error downloading attachments for UID:', err);
+      return this.getLocalAttachmentsForUid(uid);
+    } finally {
+      if (connection) {
+        try {
+          await connection.end();
+        } catch (e) {}
+      }
+    }
+  }
+
+  /**
+   * Fallback to load attachments from the local uploads folder matching uid prefix
+   */
+  private getLocalAttachmentsForUid(uid: number): Array<{ filename: string; size: number; contentType: string }> {
+    try {
+      const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        return [];
+      }
+      const files = fs.readdirSync(uploadsDir);
+      const prefix = `att-${uid}-`;
+      return files
+        .filter(file => file.startsWith(prefix) && file.match(/\.(csv|txt|xlsx?|ods|pdf)$/i))
+        .map(filename => {
+          const filePath = path.join(uploadsDir, filename);
+          const stats = fs.statSync(filePath);
+          const ext = path.extname(filename).toLowerCase();
+          const contentTypes: Record<string, string> = {
+            '.pdf': 'application/pdf',
+            '.csv': 'text/csv',
+            '.txt': 'text/plain',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.xls': 'application/vnd.ms-excel',
+            '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+          };
+          return {
+            filename: filename,
+            size: stats.size,
+            contentType: contentTypes[ext] || 'application/octet-stream'
+          };
+        });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * Marks a specific email as read/seen on Gmail IMAP by UID
+   */
+  public async markAsSeen(uid: number): Promise<boolean> {
+    let user = this.imapConfig.user;
+    let password = this.imapConfig.password;
+    let xoauth2: string | undefined = undefined;
+
+    try {
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
+      const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
+      await db.close();
+      if (userRow && userRow.value) user = userRow.value;
+      if (passRow && passRow.value) password = passRow.value;
+    } catch (_) {}
+
+    const accessToken = await this.getGmailAccessToken();
+    if (accessToken && user) {
+      const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
+      xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
+    }
+
+    let host = this.imapConfig.host;
+    let port = this.imapConfig.port;
+    let tls = this.imapConfig.tls;
+
+    if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
+      host = 'imap.gmail.com';
+      port = 993;
+      tls = true;
+    }
+
+    if ((!user || !password || !host) && !xoauth2) {
+      return true;
+    }
+
+    let connection = null;
+    try {
+      const imapConfig: any = {
+        ...this.imapConfig,
+        user,
+        host,
+        port,
+        tls,
+        authTimeout: 5000,
+        tlsOptions: {
+          rejectUnauthorized: false
+        }
+      };
+
+      if (xoauth2) {
+        imapConfig.xoauth2 = xoauth2;
+        delete imapConfig.password;
+      } else {
+        imapConfig.password = password;
+      }
+
+      const config = { imap: imapConfig };
+      connection = await imap.connect(config);
+      await connection.openBox('INBOX');
+
+      // Mark as seen
+      await connection.addFlags(uid, '\\Seen');
+      return true;
+    } catch (err) {
+      console.error('markAsSeen error:', err);
+      return false;
+    } finally {
+      if (connection) {
+        try {
+          await connection.end();
+        } catch (e) {}
+      }
+    }
   }
 }
 

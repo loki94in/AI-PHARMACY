@@ -32,6 +32,22 @@ export class WhatsappQueue {
 
   async processQueue(): Promise<void> {
     if (this.isProcessing) return;
+    
+    // Check if WhatsApp is enabled in settings
+    let dbCheck;
+    try {
+      dbCheck = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const row = await dbCheck.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
+      await dbCheck.close();
+      if (!row || row.value !== 'true') {
+        // Silent return if disabled to prevent background spam logs
+        return;
+      }
+    } catch (dbErr) {
+      if (dbCheck) await dbCheck.close();
+      console.error('Failed to check if WhatsApp is enabled in queue worker:', dbErr);
+    }
+
     if (!isReady) {
       console.log('WhatsApp client not ready. Delaying queue processing.');
       return;

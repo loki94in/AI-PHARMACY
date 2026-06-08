@@ -1,6 +1,6 @@
 # AI Pharmacy — Database & Performance Architecture
 
-This document provides a comprehensive overview of how the Next Medicin OS database storage, performance optimization, and lightweight execution patterns are managed to ensure high-speed processing and offline resilience.
+This document provides a comprehensive overview of how the AI PHARMACY OS database storage, performance optimization, and lightweight execution patterns are managed to ensure high-speed processing and offline resilience.
 
 ---
 

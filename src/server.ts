@@ -16,6 +16,7 @@ import { extractFromPdf, extractFromCsv } from './extractor.js';
 import { startWorker as startCatalogWorker } from './worker/catalogWorker.js';
 import { ensureSchema } from './database.js';
 import { eventService } from './services/eventService.js';
+import { startEmailPoller } from './worker/emailPoller.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -407,14 +408,29 @@ const PORT = process.env.PORT || 3000;
 ensureSchema(DB_PATH).then(() => {
   app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}/test`);
-    // Pre-initialize WhatsApp Client in the background so the QR loads instantly in the app
-    import('./whatsappClient.js')
-      .then(m => m.initClient())
-      .catch(err => console.error('Background WhatsApp init failed:', err));
+    // Pre-initialize WhatsApp Client in the background only if enabled in settings
+    dbManager.getConnection()
+      .then(async (db) => {
+        const row = await db.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
+        await dbManager.close();
+        if (row && row.value === 'true') {
+          console.log('WhatsApp is enabled, pre-initializing client in the background...');
+          const { initClient } = await import('./whatsappClient.js');
+          await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
+        } else {
+          console.log('WhatsApp is disabled in settings. Skipping background initialization.');
+        }
+      })
+      .catch(err => console.error('Background WhatsApp init check failed:', err));
       
     // NOTE: Enable below line in production to send WhatsApp refill reminders via queue
     whatsappQueue.startWorker();
     startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));
+    try {
+      startEmailPoller();
+    } catch (err) {
+      console.error('Failed to start email poller:', err);
+    }
 
     // Run startup catch-up check for the 15-day expiry scan (handles PC downtime/off times)
     import('./services/expiryAlertService.js')
