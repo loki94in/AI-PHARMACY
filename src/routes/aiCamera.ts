@@ -163,4 +163,19 @@ router.post('/analyze', async (req, res) => {
   }
 });
 
+// Submit a pharmacist correction dynamically
+router.post('/learn', async (req, res) => {
+  const { ocrText, correctName } = req.body;
+  if (!ocrText || !correctName) {
+    return res.status(400).json({ error: 'ocrText and correctName are required' });
+  }
+  try {
+    productNameFilterService.learnFromCorrection(ocrText.trim(), correctName.trim());
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Failed to register scan correction:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

@@ -1,9 +1,10 @@
 import { sendMessage } from '../whatsappClient.js';
 import { telegramBotService } from '../telegramBot.js';
+import { whatsappBusinessService } from './whatsappBusinessService.js';
 import { config } from '../config';
 
 export interface NotificationData {
-  type: 'whatsapp' | 'telegram' | 'email';
+  type: 'whatsapp' | 'whatsapp_business' | 'telegram' | 'email';
   recipient: string; // phone number for WhatsApp, chatId for Telegram, email for Email
   message: string;
   mediaPath?: string; // for WhatsApp media messages
@@ -71,6 +72,8 @@ export class NotificationService {
         );
       case 'telegram':
         return await this.sendTelegram(data.recipient, data.message);
+      case 'whatsapp_business':
+        return await this.sendWhatsAppBusiness(data.recipient, data.message);
       case 'email':
         // Email implementation would go here
         // For now, return not implemented
@@ -83,6 +86,29 @@ export class NotificationService {
           success: false,
           error: `Unknown notification type: ${data.type}`
         };
+    }
+  }
+
+  /**
+   * Send a WhatsApp message via the Official Business API
+   */
+  async sendWhatsAppBusiness(
+    phoneNumber: string,
+    message: string
+  ): Promise<NotificationResult> {
+    try {
+      const result = await whatsappBusinessService.sendTextMessage(phoneNumber, message);
+      return {
+        success: result.success,
+        messageId: result.messageId,
+        error: result.error,
+      };
+    } catch (error) {
+      console.error('Failed to send WhatsApp Business message:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 

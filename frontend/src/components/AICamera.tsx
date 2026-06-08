@@ -62,7 +62,7 @@ const AICamera: React.FC<AICameraProps> = ({ onScanResult, onClose }) => {
       // Endpoint from the backend: POST /api/aicamera/analyze
       const response = await apiClient.post('/aicamera/analyze', { image: base64Image });
       if (response.data) {
-        onScanResult(response.data);
+        onScanResult({ ...response.data, capturedImage: base64Image });
       }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to process image');

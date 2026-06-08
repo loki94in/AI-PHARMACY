@@ -12,6 +12,11 @@ import {
   MessageCircle,
   Send,
   RefreshCw,
+  Zap,
+  CheckCircle2,
+  XCircle,
+  Globe,
+  Copy,
 } from 'lucide-react';
 import { toastEvent } from '../services/events';
 
@@ -50,6 +55,15 @@ const Settings = () => {
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
   const [waStatus, setWaStatus] = useState({ isReady: false, qrUrl: null as string | null, message: '' });
 
+  // WhatsApp Business API
+  const [waBusinessEnabled, setWaBusinessEnabled] = useState(false);
+  const [waBusinessPhoneNumberId, setWaBusinessPhoneNumberId] = useState('');
+  const [waBusinessAccessToken, setWaBusinessAccessToken] = useState('');
+  const [waBusinessWabaId, setWaBusinessWabaId] = useState('');
+  const [waBusinessWebhookVerifyToken, setWaBusinessWebhookVerifyToken] = useState('');
+  const [waBusinessTestResult, setWaBusinessTestResult] = useState<{ success?: boolean; phone?: string; name?: string; error?: string } | null>(null);
+  const [waBusinessTesting, setWaBusinessTesting] = useState(false);
+
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -84,6 +98,13 @@ const Settings = () => {
           setTelegramChatId(data.telegram_chat_id || '');
           
           setWhatsappEnabled(data.whatsapp_enabled === 'true');
+
+          // WhatsApp Business API
+          setWaBusinessEnabled(data.wa_business_enabled === 'true');
+          setWaBusinessPhoneNumberId(data.wa_business_phone_number_id || '');
+          setWaBusinessAccessToken(data.wa_business_access_token || '');
+          setWaBusinessWabaId(data.wa_business_waba_id || '');
+          setWaBusinessWebhookVerifyToken(data.wa_business_webhook_verify_token || '');
         }
       } catch (error) {
         console.error('Failed to load settings', error);
@@ -140,6 +161,13 @@ const Settings = () => {
       telegram_chat_id: telegramChatId,
       
       whatsapp_enabled: whatsappEnabled.toString(),
+
+      // WhatsApp Business API
+      wa_business_enabled: waBusinessEnabled.toString(),
+      wa_business_phone_number_id: waBusinessPhoneNumberId,
+      wa_business_access_token: waBusinessAccessToken,
+      wa_business_waba_id: waBusinessWabaId,
+      wa_business_webhook_verify_token: waBusinessWebhookVerifyToken,
     };
 
     try {
@@ -160,6 +188,27 @@ const Settings = () => {
       console.error('Failed to reconnect', error);
       toastEvent.trigger('Failed to reconnect WhatsApp', 'error');
     }
+  };
+
+  const handleTestWaBusiness = async () => {
+    setWaBusinessTesting(true);
+    setWaBusinessTestResult(null);
+    try {
+      // Save credentials first so the test endpoint can read them
+      await handleSaveSettings();
+      const { data } = await apiClient.post('/wa-business/test');
+      setWaBusinessTestResult(data);
+    } catch (err: any) {
+      setWaBusinessTestResult({ success: false, error: err?.response?.data?.error || 'Connection failed' });
+    } finally {
+      setWaBusinessTesting(false);
+    }
+  };
+
+  const copyWebhookUrl = () => {
+    const url = `${window.location.origin}/api/wa-business/webhook`;
+    navigator.clipboard.writeText(url);
+    toastEvent.trigger('Webhook URL copied!', 'success');
   };
 
   return (
@@ -708,6 +757,129 @@ const Settings = () => {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* WhatsApp Business API (Official) Config */}
+        <div className="border border-glass-border/40 p-5 rounded-xl bg-white/5 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-bold flex items-center gap-2 text-green">
+              <Zap size={16} /> WhatsApp Business API (Official)
+            </h4>
+            <label className="flex items-center gap-3 cursor-pointer select-none group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={waBusinessEnabled}
+                  onChange={(e) => setWaBusinessEnabled(e.target.checked)}
+                />
+                <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+              </div>
+              <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                {waBusinessEnabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </label>
+          </div>
+
+          {waBusinessEnabled && (
+            <div className="pt-2 border-t border-glass-border/30 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider">Phone Number ID</label>
+                  <input
+                    type="text"
+                    className="premium-input w-full"
+                    placeholder="e.g. 123456789012345"
+                    value={waBusinessPhoneNumberId}
+                    onChange={(e) => setWaBusinessPhoneNumberId(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider">Access Token</label>
+                  <input
+                    type="password"
+                    className="premium-input w-full"
+                    placeholder="EAAxxxxxxx..."
+                    value={waBusinessAccessToken}
+                    onChange={(e) => setWaBusinessAccessToken(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider">WhatsApp Business Account ID</label>
+                  <input
+                    type="text"
+                    className="premium-input w-full"
+                    placeholder="e.g. 109876543210"
+                    value={waBusinessWabaId}
+                    onChange={(e) => setWaBusinessWabaId(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted uppercase tracking-wider">Webhook Verify Token</label>
+                  <input
+                    type="text"
+                    className="premium-input w-full"
+                    placeholder="Any secret phrase you choose"
+                    value={waBusinessWebhookVerifyToken}
+                    onChange={(e) => setWaBusinessWebhookVerifyToken(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Webhook URL display */}
+              <div className="glass-panel p-3 flex items-center justify-between bg-black/20 border border-glass-border/30 rounded-lg">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Globe size={14} className="text-sky flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-muted uppercase font-bold tracking-wider">Webhook URL (register in Meta Developer Console)</p>
+                    <p className="text-xs text-sky font-mono truncate">{window.location.origin}/api/wa-business/webhook</p>
+                  </div>
+                </div>
+                <button
+                  onClick={copyWebhookUrl}
+                  className="text-xs font-bold bg-sky/20 text-sky px-3 py-1.5 rounded-full hover:bg-sky/30 transition-all flex items-center gap-1 flex-shrink-0"
+                  title="Copy webhook URL"
+                >
+                  <Copy size={12} /> Copy
+                </button>
+              </div>
+
+              {/* Test Connection + Result */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={handleTestWaBusiness}
+                  disabled={waBusinessTesting || !waBusinessPhoneNumberId || !waBusinessAccessToken}
+                  className="text-xs font-bold bg-green/20 text-green px-4 py-2 rounded-full hover:bg-green/30 transition-all flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {waBusinessTesting ? (
+                    <><div className="w-3 h-3 border-2 border-green/30 border-t-green rounded-full animate-spin" /> Testing...</>
+                  ) : (
+                    <><Zap size={12} /> Test Connection</>
+                  )}
+                </button>
+
+                {waBusinessTestResult && (
+                  <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full ${
+                    waBusinessTestResult.success
+                      ? 'bg-green/10 text-green border border-green/20'
+                      : 'bg-red/10 text-red border border-red/20'
+                  }`}>
+                    {waBusinessTestResult.success ? (
+                      <><CheckCircle2 size={14} /> Connected: {waBusinessTestResult.name} ({waBusinessTestResult.phone})</>
+                    ) : (
+                      <><XCircle size={14} /> {waBusinessTestResult.error}</>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[10px] text-zinc-500">
+                Get credentials from <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-sky underline">Meta Developer Console</a>.
+                First 1,000 business-initiated conversations/month are free (India).
+              </p>
             </div>
           )}
         </div>

@@ -47,6 +47,7 @@ import messagingRouter from './routes/messaging.js';
 import aiCameraRouter from './routes/aiCamera.js';
 import telegramPrescriptionRouter from './routes/telegramPrescription.js';
 import refillsRouter from './routes/refills.js';
+import waBusinessRouter from './routes/whatsappBusiness.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
 import { checkAllRefills } from './services/refillService.js';
@@ -122,6 +123,10 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads')));
 
 // Old test console routes have been removed. This server now acts purely as an API backend.
+
+// WhatsApp Business webhook endpoints must be public (Meta sends requests without our API key)
+// Only the GET and POST /webhook paths are public; other endpoints go through normal auth below.
+app.use('/api/wa-business/webhook', waBusinessRouter);
 
 // Session token auth for all other API routes
 app.use('/api', authenticateApiKey);
@@ -341,6 +346,7 @@ app.use('/api/messaging', messagingRouter);
 app.use('/api/aicamera', aiCameraRouter);
 app.use('/api/telegram-prescription', telegramPrescriptionRouter);
 app.use('/api/refills', refillsRouter);
+app.use('/api/wa-business', waBusinessRouter);
 // Core API routes
 app.use('/api/sales', salesRouter);
 app.use('/api/inventory', inventoryRouter);

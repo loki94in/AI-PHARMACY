@@ -384,6 +384,13 @@ export async function ensureSchema(dbPath: string) {
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('connection_mode', 'hybrid')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('bluetooth_com_port', 'COM1')");
 
+  // WhatsApp Business API defaults
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wa_business_enabled', 'false')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wa_business_phone_number_id', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wa_business_access_token', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wa_business_waba_id', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wa_business_webhook_verify_token', '')");
+
   // Safely add legacy_id/speciality to doctors if the table already existed without them
   const doctorAlters = [
     `ALTER TABLE doctors ADD COLUMN legacy_id TEXT`,

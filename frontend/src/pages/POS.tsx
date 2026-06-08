@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Calendar, UserCheck } from 'lucide-react';
 import AICamera from '../components/AICamera';
 import BrandBanner from '../components/POS/BrandBanner';
-import { api } from '../services/api';
+import { api, apiClient } from '../services/api';
 
 // We will fetch common combinations dynamically instead of using hardcoded constants
 
 const POS = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCamera, setShowCamera] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [patientName, setPatientName] = useState('');
   const [patientPhone, setPatientPhone] = useState('');
   const [patientId] = useState('P-' + Math.floor(100000 + Math.random() * 900000));
@@ -251,7 +252,7 @@ const POS = () => {
       
     // Fetch quick-add common combinations from inventory
     api.getInventory()
-      .then(data => {
+      .then(async data => {
         if (Array.isArray(data)) {
           // Take top 12 active inventory items as quick adds
           const topItems = data.slice(0, 12).map(med => ({
@@ -262,9 +263,37 @@ const POS = () => {
             mrp: med.mrp || 0,
             costPrice: med.purchase_price || ((med.mrp || 0) * 0.7),
             salts: med.hsn || 'Generic',
-            packSize: parseInt(med.pack_size || '10', 10) || 10
+            packSize: parseInt(med.pack_size || '10', 10) || 10,
+            recommendedQty: 1,
+            recommendedLooseQty: 0,
+            recommendationMsg: ''
           }));
-          setCommonCombinations(topItems);
+
+          // Batch enrich with recommended quantities from sales history
+          try {
+            const enriched = await Promise.all(
+              topItems.map(async med => {
+                try {
+                  const rec = await apiClient.get('/sales/recommend-quantity', { params: { medicineName: med.name } });
+                  if (rec.data) {
+                    return {
+                      ...med,
+                      recommendedQty: rec.data.type === 'strip' ? (rec.data.recommendedQty || 1) : 0,
+                      recommendedLooseQty: rec.data.type === 'loose' ? (rec.data.recommendedQty || 1) : 0,
+                      recommendationMsg: rec.data.message || ''
+                    };
+                  }
+                } catch (e) {
+                  console.warn(`Failed to fetch recommended quantity for ${med.name}:`, e);
+                }
+                return med;
+              })
+            );
+            setCommonCombinations(enriched);
+          } catch (err) {
+            console.error('Batch quantity enrichment failed:', err);
+            setCommonCombinations(topItems);
+          }
         }
       })
       .catch(err => console.error('Error fetching common combinations:', err));
@@ -302,6 +331,26 @@ const POS = () => {
         }
       })
       .catch(err => console.error('Error fetching special orders:', err));
+  }, []);
+
+  // Keyboard shortcut listener for Walk-In Patients ('X' key starts AI Camera)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && (
+        active.tagName === 'INPUT' || 
+        active.tagName === 'SELECT' || 
+        active.tagName === 'TEXTAREA' || 
+        active.isContentEditable
+      )) return;
+
+      if (e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        setShowCamera(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -346,9 +395,15 @@ const POS = () => {
 
     updateCart(prevCart => {
       const existing = prevCart.find(item => item.id === med.id);
+      const incQty = med.recommendedQty !== undefined ? med.recommendedQty : 1;
+      const incLooseQty = med.recommendedLooseQty || 0;
       if (existing) {
         return prevCart.map(item => 
-          item.id === med.id ? { ...item, qty: item.qty + 1 } : item
+          item.id === med.id ? { 
+            ...item, 
+            qty: item.qty + incQty,
+            looseQty: (item.looseQty || 0) + incLooseQty
+          } : item
         );
       }
       return [...prevCart, { 
@@ -356,8 +411,8 @@ const POS = () => {
         name: med.name, 
         batch: med.batch || 'B-GEN', 
         expiry: med.expiry || '12/28', 
-        qty: 1, 
-        looseQty: 0,
+        qty: incQty, 
+        looseQty: incLooseQty,
         discount: 0,
         packSize: med.packSize || 10,
         mrp: med.mrp, 
@@ -422,6 +477,13 @@ const POS = () => {
   };
 
   const changeRowMedicine = (index: number, med: any) => {
+    const originalItem = cart[index];
+    if (originalItem && originalItem.rawOcrText && originalItem.name.toLowerCase().trim() !== med.medicine_name.toLowerCase().trim()) {
+      apiClient.post('/aicamera/learn', {
+        ocrText: originalItem.rawOcrText,
+        correctName: med.medicine_name
+      }).catch(err => console.error('Failed to post correction learning:', err));
+    }
     updateCart(prev => prev.map((item, idx) => {
       if (idx !== index) return item;
       return {
@@ -495,15 +557,84 @@ const POS = () => {
   };
 
   const handleScanResult = (result: any) => {
-    // Populate the search bar with the best guess name
-    if (result.medicineInfo && result.medicineInfo.potentialName) {
-      setSearchTerm(result.medicineInfo.potentialName);
-    } else if (result.text) {
-      // Fallback to first line of raw text
-      const firstLine = result.text.split('\n')[0];
-      setSearchTerm(firstLine || '');
-    }
     setShowCamera(false);
+    if (!result) return;
+
+    const info = result.medicineInfo || {};
+    const batchQuery = info.batchNumber;
+    const nameQuery = info.potentialName || (result.text ? result.text.split('\n')[0] : '');
+    const mrpQuery = info.mrp ? String(info.mrp) : '';
+
+    // Helper to perform the search chain
+    const executeSearchChain = async () => {
+      // Step 1: Search by batch number (highest precision)
+      if (batchQuery && batchQuery.trim().length > 1) {
+        try {
+          const data = await api.searchMedicine(batchQuery.trim());
+          if (Array.isArray(data) && data.length > 0) {
+            // Find an exact batch match if possible
+            const exactBatch = data.find(m => m.batch_no?.toLowerCase().trim() === batchQuery.toLowerCase().trim());
+            return exactBatch || data[0];
+          }
+        } catch (e) { console.warn('Batch search failed:', e); }
+      }
+
+      // Step 2: Search by medicine name (standard lookup)
+      if (nameQuery && nameQuery.trim().length > 1) {
+        try {
+          const data = await api.searchMedicine(nameQuery.trim());
+          if (Array.isArray(data) && data.length > 0) {
+            // Prefer exact name match, otherwise first result
+            return data.find(m => m.medicine_name.toLowerCase().trim() === nameQuery.toLowerCase().trim()) || data[0];
+          }
+        } catch (e) { console.warn('Name search failed:', e); }
+      }
+
+      // Step 3: Search by MRP (fallback lookup)
+      if (mrpQuery && mrpQuery.trim().length > 0) {
+        try {
+          const data = await api.searchMedicine(mrpQuery.trim());
+          if (Array.isArray(data) && data.length > 0) {
+            return data[0];
+          }
+        } catch (e) { console.warn('MRP search failed:', e); }
+      }
+
+      return null; // No database match
+    };
+
+    executeSearchChain().then(matched => {
+      if (matched) {
+        addToCart({
+          id: matched.inventory_id,
+          name: matched.medicine_name,
+          batch: matched.batch_no || info.batchNumber || 'B-GEN',
+          expiry: matched.expiry_date || info.expiryDate || '12/28',
+          mrp: matched.mrp || info.mrp || 0,
+          costPrice: matched.cost_price || (matched.mrp * 0.7),
+          salts: matched.salts || matched.hsn_code || 'Generic',
+          packSize: matched.pack_size || 10,
+          scanImage: result.capturedImage,
+          rawOcrText: result.text
+        });
+      } else {
+        // Add as custom manual entry from scan details
+        addToCart({
+          id: Date.now(),
+          name: nameQuery.trim() || 'Scanned Item',
+          batch: info.batchNumber || 'MANUAL',
+          expiry: info.expiryDate || '12/28',
+          mrp: info.mrp || 0,
+          costPrice: info.mrp ? info.mrp * 0.7 : 0,
+          salts: 'OCR Scan Entry',
+          packSize: 10,
+          scanImage: result.capturedImage,
+          rawOcrText: result.text
+        });
+      }
+    }).catch(err => {
+      console.error('Scan resolution failed:', err);
+    });
   };
   
   // Calculations
@@ -940,7 +1071,14 @@ const POS = () => {
                 onClick={() => addToCart(med)}
                 className="flex items-center gap-3 bg-white/5 border border-glass-border/50 hover:border-primary/40 hover:bg-primary/5 px-3 py-1.5 rounded-full transition-all group whitespace-nowrap"
               >
-                <span className="text-xs font-bold text-text group-hover:text-primary transition-all">{med.name}</span>
+                <span className="text-xs font-bold text-text group-hover:text-primary transition-all">
+                  {med.name}
+                  {med.recommendationMsg && (
+                    <span className="text-[10px] text-sky ml-1.5 font-mono">
+                      ({med.recommendedQty > 0 ? `${med.recommendedQty} Str` : `${med.recommendedLooseQty} Tab`})
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] text-primary opacity-60 group-hover:opacity-100 font-bold">+</span>
               </button>
             ))}
@@ -1022,11 +1160,26 @@ const POS = () => {
                     <tr key={item.id} className="border-b border-glass-border/20 hover:bg-white/5 transition-all">
                       {/* Medicine Name (Changeable Autocomplete Search) */}
                       <td className="p-2 min-w-[150px] relative">
-                        <div className="relative">
-                          <input 
-                            type="text" 
-                            className="w-full bg-transparent border-0 border-b border-transparent hover:border-glass-border/30 focus:border-primary/40 focus:ring-0 text-xs font-semibold text-text ml-1.5 py-0.5"
-                            value={activeRowSearchIndex === cart.indexOf(item) ? rowSearchTerm : item.name}
+                        <div className="flex items-center">
+                          {item.scanImage && (
+                            <div className="relative group/thumb shrink-0 mr-2 select-none animate-in fade-in slide-in-from-left-2 duration-200">
+                              <img 
+                                src={item.scanImage} 
+                                alt="Scan thumbnail" 
+                                className="w-8 h-8 object-cover rounded-md border border-glass-border/60 hover:border-primary/60 transition-all cursor-zoom-in shadow-md"
+                                onClick={() => setZoomedImage(item.scanImage)}
+                              />
+                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover/thumb:block z-[99999] bg-[#18181b]/98 border border-glass-border rounded-xl p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-48 animate-in fade-in zoom-in-95 duration-150">
+                                <img src={item.scanImage} alt="Scan preview" className="w-full h-auto rounded-lg object-contain" />
+                                <div className="text-[8px] text-muted text-center mt-1 font-semibold">Click to enlarge</div>
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex-1 relative">
+                            <input 
+                              type="text" 
+                              className="w-full bg-transparent border-0 border-b border-transparent hover:border-glass-border/30 focus:border-primary/40 focus:ring-0 text-xs font-semibold text-text ml-1.5 py-0.5"
+                              value={activeRowSearchIndex === cart.indexOf(item) ? rowSearchTerm : item.name}
                             onChange={e => {
                               const val = e.target.value;
                               const idx = cart.indexOf(item);
@@ -1075,8 +1228,9 @@ const POS = () => {
                             </div>
                           )}
                         </div>
-                        <div className="text-[9px] text-muted ml-1.5 mt-0.5 truncate max-w-[160px]">{item.salts || 'Generic Salts'}</div>
-                      </td>
+                      </div>
+                      <div className="text-[9px] text-muted ml-1.5 mt-0.5 truncate max-w-[160px]">{item.salts || 'Generic Salts'}</div>
+                    </td>
 
                       {/* Batch */}
                       <td className="p-2 relative">
@@ -1421,7 +1575,14 @@ const POS = () => {
                       className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 border border-glass-border/40 hover:border-primary/40 hover:bg-primary/5 text-left text-xs transition-all"
                     >
                       <div>
-                        <span className="font-semibold block text-text">{med.name}</span>
+                        <span className="font-semibold block text-text">
+                          {med.name}
+                          {med.recommendationMsg && (
+                            <span className="text-[10px] text-sky ml-1.5 font-mono">
+                              ({med.recommendedQty > 0 ? `${med.recommendedQty} Str` : `${med.recommendedLooseQty} Tab`})
+                            </span>
+                          )}
+                        </span>
                         <span className="text-[9px] text-muted">Co-prescribed ({Math.floor(Math.random() * 20 + 75)}% match)</span>
                       </div>
                       <span className="text-[10px] text-primary font-bold">+ Add</span>
@@ -1444,6 +1605,24 @@ const POS = () => {
           onClose={() => setShowCamera(false)} 
           onScanResult={handleScanResult} 
         />
+      )}
+
+      {zoomedImage && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999999] flex items-center justify-center p-4 cursor-pointer animate-in fade-in duration-200"
+          onClick={() => setZoomedImage(null)}
+        >
+          <div className="relative max-w-3xl max-h-[85vh] bg-bg2 border border-glass-border rounded-2xl overflow-hidden p-2 shadow-2xl animate-in zoom-in-95 duration-200">
+            <img src={zoomedImage} alt="Zoomed medicine scan" className="max-w-full max-h-[80vh] object-contain rounded-lg" />
+            <button 
+              className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all"
+              onClick={() => setZoomedImage(null)}
+              aria-label="Close zoomed image"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Patient Profile & Auto-Refills Modal */}

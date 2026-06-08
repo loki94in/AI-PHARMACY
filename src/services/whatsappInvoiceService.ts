@@ -64,7 +64,24 @@ export class WhatsappInvoiceService {
 
       // Dispatch via WhatsApp (if WhatsApp client is active and logged in)
       if (!isReady) {
-        console.warn(`WhatsApp client is not logged in / ready. Queueing invoice ${invoice.invoice_no} for retry.`);
+        console.warn(`WhatsApp Web client is not logged in / ready. Trying WhatsApp Business API...`);
+        
+        // Try WhatsApp Business API as fallback
+        try {
+          const { whatsappBusinessService } = await import('./whatsappBusinessService.js');
+          const config = await whatsappBusinessService.getConfig();
+          if (config.enabled && config.phoneNumberId && config.accessToken) {
+            const bizResult = await whatsappBusinessService.sendDocument(phone, pdfPath, caption, `Invoice_${invoice.invoice_no}.pdf`);
+            if (bizResult.success) {
+              console.log(`Successfully dispatched invoice ${invoice.invoice_no} to ${phone} via WhatsApp Business API`);
+              return true;
+            }
+            console.warn(`WhatsApp Business API send also failed: ${bizResult.error}. Queueing for retry.`);
+          }
+        } catch (bizErr) {
+          console.warn('WhatsApp Business API fallback failed:', bizErr);
+        }
+        
         const { whatsappQueue } = await import('./whatsappQueue.js');
         await whatsappQueue.queueJob(invoiceId, phone, pdfPath, caption);
         return false;
@@ -75,7 +92,23 @@ export class WhatsappInvoiceService {
         console.log(`Successfully dispatched invoice ${invoice.invoice_no} to ${phone} via WhatsApp`);
         return true;
       } catch (sendErr) {
-        console.error(`Failed to send invoice ${invoice.invoice_no} via WhatsApp. Queueing for retry.`, sendErr);
+        console.error(`Failed to send invoice ${invoice.invoice_no} via WhatsApp Web. Trying Business API...`, sendErr);
+        
+        // Try WhatsApp Business API as fallback before queueing
+        try {
+          const { whatsappBusinessService } = await import('./whatsappBusinessService.js');
+          const config = await whatsappBusinessService.getConfig();
+          if (config.enabled && config.phoneNumberId && config.accessToken) {
+            const bizResult = await whatsappBusinessService.sendDocument(phone, pdfPath, caption, `Invoice_${invoice.invoice_no}.pdf`);
+            if (bizResult.success) {
+              console.log(`Successfully dispatched invoice ${invoice.invoice_no} to ${phone} via WhatsApp Business API (fallback)`);
+              return true;
+            }
+          }
+        } catch (bizErr) {
+          console.warn('WhatsApp Business API fallback failed:', bizErr);
+        }
+
         const { whatsappQueue } = await import('./whatsappQueue.js');
         await whatsappQueue.queueJob(invoiceId, phone, pdfPath, caption);
         return false;
