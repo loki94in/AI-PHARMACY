@@ -483,12 +483,12 @@ const Topbar = ({
       '/inventory': 'Inventory Master',
       '/purchases': 'Purchases',
       '/purchase-history': 'Purchase History',
+      '/manual-purchase': 'Create Purchase Bill',
       '/returns': 'Returns & Expiry',
       '/expiry': 'Expiry Monitor',
       '/crm': 'CRM / Patients',
       '/orders': 'Orders & Requests',
       '/migration': 'Data Migration',
-
       '/mail': 'Distributor Mail',
       '/doctors': 'Doctors',
       '/catalog': 'Catalog Upload',
@@ -727,6 +727,7 @@ function App() {
           <Route path="/pos" element={<POS />} />
           <Route path="/sells" element={<Sells />} />
           <Route path="/purchases" element={<Purchases />} />
+          <Route path="/manual-purchase" element={<Purchases />} />
           <Route path="/purchase-history" element={<PurchaseHistory />} />
           <Route path="/crm" element={<CRM />} />
           <Route path="/orders" element={<Orders />} />

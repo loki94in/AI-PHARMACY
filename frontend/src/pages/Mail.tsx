@@ -296,6 +296,14 @@ const Mail = () => {
               batch_no: item.batch_no || '',
               expiry_date: item.expiry_date || '',
             }))
+          },
+          emailSource: {
+            from: selectedEmail.from,
+            subject: selectedEmail.subject,
+            date: selectedEmail.date,
+            distributorName: selectedEmail.distributorName || '',
+            medicineNames: allItems.map(item => item.name || '').filter(Boolean),
+            attachmentCount: selectedFiles.length,
           }
         }
       });

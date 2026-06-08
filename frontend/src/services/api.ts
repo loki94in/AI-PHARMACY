@@ -211,6 +211,7 @@ export const api = {
   markEmailSaved: (uid: number) => apiClient.post(`/email/${uid}/saved`).then(res => res.data),
   triggerEmailSync: () => apiClient.post('/email/sync').then(res => res.data),
   clearAttachmentsCache: () => apiClient.delete('/email/attachments/cache').then(res => res.data),
+  getMedicinePriceHistory: (name: string) => apiClient.get('/purchases/price-history', { params: { name } }).then(res => res.data),
   
   // Utilities (Barcode generation)
   generateMedicineBarcodes: (items: Array<{ name: string; batch?: string }>) => apiClient.post('/utilities/barcode', { items }).then(res => res.data),

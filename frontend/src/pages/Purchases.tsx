@@ -1,9 +1,10 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Download, Edit, Camera, CheckCircle } from 'lucide-react';
+import { Download, Edit, Camera, CheckCircle, Mail, Package, TrendingDown, X } from 'lucide-react';
 import { api, apiClient } from '../services/api';
 import AICamera from '../components/AICamera';
+import { PriceIntelPanel } from '../components/PriceIntelPanel';
 
 interface Medicine {
   id: number;
@@ -72,7 +73,11 @@ const Purchases: React.FC = () => {
   const [extraCredit, setExtraCredit] = useState(0);
   const [items, setItems] = useState<BillItem[]>([createEmptyItem()]);
   const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistory[]>([]);
-  
+  // emailSource: set when navigating from Mail page
+  const emailSource = location.state?.emailSource || null;
+  // Track which row has the price intel panel open (by item id)
+  const [openIntelPanels, setOpenIntelPanels] = useState<Record<string, boolean>>({});
+
   // Helper to get date N days ago in YYYY-MM-DD format
   const getNDaysAgo = (n: number) => {
     const d = new Date();
@@ -787,6 +792,47 @@ const Purchases: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Email Source Banner ── */}
+      {emailSource && (
+        <div className="mb-4 rounded-xl border border-sky/30 bg-sky/5 px-4 py-3 flex flex-wrap items-start gap-4 relative">
+          <div className="p-2 rounded-lg bg-sky/10 border border-sky/20 text-sky flex-shrink-0">
+            <Mail size={18} />
+          </div>
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-sky uppercase tracking-wider">📧 Imported from Distributor Email</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-green/15 border border-green/25 text-green font-bold">
+                {emailSource.attachmentCount} file{emailSource.attachmentCount !== 1 ? 's' : ''} processed
+              </span>
+            </div>
+            <div className="text-xs text-muted">
+              <span className="font-semibold text-text/80">{emailSource.from}</span>
+              {emailSource.subject && <span className="ml-2 text-muted/70">— {emailSource.subject}</span>}
+            </div>
+            {emailSource.medicineNames && emailSource.medicineNames.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                <span className="text-[10px] text-muted font-bold uppercase mr-1">Detected medicines:</span>
+                {emailSource.medicineNames.slice(0, 12).map((name: string, i: number) => (
+                  <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary font-semibold">
+                    <Package size={8} className="inline mr-1" />{name}
+                  </span>
+                ))}
+                {emailSource.medicineNames.length > 12 && (
+                  <span className="text-[10px] text-muted">+{emailSource.medicineNames.length - 12} more</span>
+                )}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => navigate(location.pathname, { replace: true, state: {} })}
+            className="absolute top-2 right-2 p-1 rounded text-muted hover:text-text hover:bg-white/5"
+            title="Dismiss"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       {/* Header Section */}
       <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
         <div className="flex items-center gap-3">
@@ -1018,6 +1064,15 @@ const Purchases: React.FC = () => {
                     )}
                     {schemeMatchStatus[item.id] && (
                       <p className="text-yellow-400 text-xs mt-1">{schemeMatchStatus[item.id]}</p>
+                    )}
+                    {/* Inline Price Intelligence Panel */}
+                    {item.medicine_name && item.medicine_name.length >= 2 && (
+                      <PriceIntelPanel
+                        medicineName={item.medicine_name}
+                        currentRate={item.rate > 0 ? item.rate : undefined}
+                        currentDistributorId={selectedDistributor}
+                        defaultExpanded={!!emailSource && (openIntelPanels[item.id] !== false)}
+                      />
                     )}
                   </td>
                   <td className="py-3">
