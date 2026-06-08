@@ -202,12 +202,15 @@ export const api = {
   addDoctor: (data: any) => apiClient.post('/crm/doctors', data).then(res => res.data),
   
   // Email / Mail Parser
-  getEmailInbox: (limit: number = 10) => apiClient.get('/email/inbox', { params: { limit } }).then(res => res.data),
+  getEmailInbox: (limit: number = 50) => apiClient.get('/email/inbox', { params: { limit } }).then(res => res.data),
   getEmailAttachments: () => apiClient.get('/email/attachments').then(res => res.data),
   getEmailAttachmentsById: (emailId: number) => apiClient.get(`/email/${emailId}/attachments`).then(res => res.data),
   parseAttachment: (filename: string, importData: boolean = true) => apiClient.post('/email/attachments/parse', { filename, importData }).then(res => res.data),
   importManualEmail: (data: any) => apiClient.post('/email/import-manual', data).then(res => res.data),
   markEmailSeen: (emailId: number) => apiClient.post(`/email/${emailId}/seen`).then(res => res.data),
+  markEmailSaved: (uid: number) => apiClient.post(`/email/${uid}/saved`).then(res => res.data),
+  triggerEmailSync: () => apiClient.post('/email/sync').then(res => res.data),
+  clearAttachmentsCache: () => apiClient.delete('/email/attachments/cache').then(res => res.data),
   
   // Utilities (Barcode generation)
   generateMedicineBarcodes: (items: Array<{ name: string; batch?: string }>) => apiClient.post('/utilities/barcode', { items }).then(res => res.data),

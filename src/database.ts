@@ -327,6 +327,36 @@ export async function ensureSchema(dbPath: string) {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS processed_emails (
+      uid INTEGER PRIMARY KEY,
+      processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Persistent local email store (offline-first inbox)
+    CREATE TABLE IF NOT EXISTS emails (
+      uid             INTEGER PRIMARY KEY,
+      from_addr       TEXT,
+      subject         TEXT,
+      body            TEXT,
+      date            DATETIME,
+      is_seen         INTEGER DEFAULT 0,
+      is_order        INTEGER DEFAULT 0,
+      is_saved        INTEGER DEFAULT 0,
+      distributor_name TEXT,
+      has_attachments INTEGER DEFAULT 0,
+      synced_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Attachment records per email UID (offline-first)
+    CREATE TABLE IF NOT EXISTS email_attachments (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid          INTEGER NOT NULL,
+      filename     TEXT NOT NULL,
+      size         INTEGER DEFAULT 0,
+      content_type TEXT,
+      local_path   TEXT,
+      FOREIGN KEY(uid) REFERENCES emails(uid)
+    );
 
     -- Resilient WhatsApp transmission queue
     CREATE TABLE IF NOT EXISTS pending_whatsapp_jobs (
@@ -383,6 +413,8 @@ export async function ensureSchema(dbPath: string) {
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('master_password', 'master999')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('connection_mode', 'hybrid')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('bluetooth_com_port', 'COM1')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('email_autodelete_enabled', 'true')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('email_autodelete_limit', '10')");
 
   // WhatsApp Business API defaults
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wa_business_enabled', 'false')");

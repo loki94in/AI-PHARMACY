@@ -66,9 +66,10 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /api/email/inbox
+// GET /api/email/inbox — serves from local SQLite DB (offline-capable)
+// Also triggers a background IMAP delta sync for new emails
 router.get('/inbox', async (req, res) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
   try {
     const inbox = await emailService.fetchInbox(limit);
     res.json(inbox);
@@ -86,6 +87,9 @@ router.post('/:id/seen', async (req, res) => {
     return res.status(400).json({ error: 'Invalid email UID (must be a number)' });
   }
   try {
+    // Mark as seen in local DB first
+    await emailService.markEmailSeen(uid);
+    // Also push to IMAP (best-effort)
     const success = await emailService.markAsSeen(uid);
     res.json({ success });
   } catch (error) {
@@ -93,6 +97,33 @@ router.post('/:id/seen', async (req, res) => {
     res.status(500).json({ error: 'Failed to mark email as seen' });
   }
 });
+
+// POST /api/email/sync — trigger a manual IMAP delta sync
+router.post('/sync', async (req, res) => {
+  try {
+    const synced = await emailService.syncNewEmailsFromIMAP();
+    res.json({ success: true, synced, message: `Synced ${synced} new email(s) from Gmail` });
+  } catch (error: any) {
+    console.error('Manual sync error:', error);
+    res.status(500).json({ error: error.message || 'Failed to sync emails' });
+  }
+});
+
+// POST /api/email/:uid/saved — mark an email as saved/processed (turns Grey in UI)
+router.post('/:uid/saved', async (req, res) => {
+  const uid = parseInt(req.params.uid);
+  if (isNaN(uid)) {
+    return res.status(400).json({ error: 'Invalid email UID' });
+  }
+  try {
+    const success = await emailService.markEmailSaved(uid);
+    res.json({ success });
+  } catch (error) {
+    console.error('Mark email saved error:', error);
+    res.status(500).json({ error: 'Failed to mark email as saved' });
+  }
+});
+
 
 // POST /api/email/import-manual
 router.post('/import-manual', async (req, res) => {
@@ -179,6 +210,30 @@ router.post('/attachments/parse', async (req, res) => {
     console.error('Failed to parse attachment:', error);
     eventService.broadcast('email_update', { success: false, error: error.message || 'Failed to parse attachment' });
     res.status(500).json({ error: 'Failed to parse attachment' });
+  }
+});
+
+// DELETE /api/email/attachments/cache
+router.delete('/attachments/cache', async (req, res) => {
+  try {
+    const uploadsDir = getUploadsDir();
+    if (!fs.existsSync(uploadsDir)) {
+      return res.json({ success: true, count: 0, message: 'Uploads directory does not exist' });
+    }
+    const files = fs.readdirSync(uploadsDir);
+    let count = 0;
+    for (const filename of files) {
+      if (filename.startsWith('att-')) {
+        const filePath = path.join(uploadsDir, filename);
+        fs.unlinkSync(filePath);
+        count++;
+      }
+    }
+    console.log(`Deleted ${count} files from attachments cache.`);
+    res.json({ success: true, count, message: `Successfully deleted ${count} files from attachments cache` });
+  } catch (error: any) {
+    console.error('Failed to clear attachments cache:', error);
+    res.status(500).json({ error: error.message || 'Failed to clear attachments cache' });
   }
 });
 

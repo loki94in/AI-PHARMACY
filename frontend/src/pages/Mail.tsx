@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Mail as MailIcon,
@@ -11,11 +11,16 @@ import {
   Loader,
   File,
   FileSpreadsheet,
+  Eye,
+  Trash2,
+  CloudOff,
+  CloudLightning,
 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface EmailRecord {
   id?: number;
+  uid?: number;
   from: string;
   subject: string;
   body: string;
@@ -23,6 +28,8 @@ interface EmailRecord {
   attachments?: any[];
   distributorName?: string;
   isSeen?: boolean;
+  isSaved?: boolean;
+  hasAttachments?: boolean;
 }
 
 interface AttachmentFile {
@@ -59,31 +66,137 @@ function formatBytes(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+function getEmailStatus(email: EmailRecord): 'new' | 'opened' | 'saved' {
+  if (email.isSaved) return 'saved';
+  if (email.isSeen) return 'opened';
+  return 'new';
+}
+
+const STATUS_BADGE: Record<string, { label: string; badgeCls: string; iconCls: string }> = {
+  new: {
+    label: 'New',
+    badgeCls: 'bg-green/10 border-green/30 text-green animate-pulse',
+    iconCls: 'bg-green/10 border-green/30 text-green shadow-[0_0_8px_rgba(16,185,129,0.15)]',
+  },
+  opened: {
+    label: 'Opened',
+    badgeCls: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
+    iconCls: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
+  },
+  saved: {
+    label: 'Saved',
+    badgeCls: 'bg-zinc-800/60 border-zinc-700 text-zinc-500',
+    iconCls: 'bg-zinc-800/40 border-zinc-700/30 text-zinc-500',
+  },
+};
+
 const Mail = () => {
   const navigate = useNavigate();
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<EmailRecord | null>(null);
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<any>(null);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const syncInProgress = useRef(false);
 
-  const fetchInbox = useCallback(() => {
+  // Listen for online/offline events
+  useEffect(() => {
+    const onOnline = () => setIsOffline(false);
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  // Load inbox from local DB (instant, works offline)
+  const loadLocalInbox = useCallback(() => {
     setLoading(true);
     api
-      .getEmailInbox()
+      .getEmailInbox(50)
       .then((data: any) => {
-        // STRICT RULE: Only show last 100
-        if (Array.isArray(data)) setEmails(data.slice(0, 100));
+        if (Array.isArray(data)) setEmails(data);
       })
-      .catch((err: any) => console.error('Error fetching email inbox:', err))
+      .catch((err: any) => console.error('Error loading inbox:', err))
       .finally(() => setLoading(false));
   }, []);
 
+  // Trigger a background IMAP delta sync
+  const triggerSync = useCallback(async () => {
+    if (syncInProgress.current || isOffline) return;
+    syncInProgress.current = true;
+    setSyncing(true);
+    try {
+      const res = await api.triggerEmailSync();
+      if (res && res.synced > 0) {
+        // New emails downloaded — refresh the inbox view from local DB
+        const data = await api.getEmailInbox(50);
+        if (Array.isArray(data)) setEmails(data);
+      }
+      setLastSyncedAt(new Date());
+    } catch (err: any) {
+      if (!isOffline) console.error('IMAP sync error:', err);
+    } finally {
+      setSyncing(false);
+      syncInProgress.current = false;
+    }
+  }, [isOffline]);
+
+  // Silent background refresh from local DB (no loading indicator)
+  const silentRefreshLocal = useCallback(() => {
+    api
+      .getEmailInbox(50)
+      .then((data: any) => {
+        if (Array.isArray(data)) setEmails(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  // On mount: load local DB instantly, then trigger IMAP sync in background
   useEffect(() => {
-    fetchInbox();
-  }, [fetchInbox]);
+    loadLocalInbox();
+    // Small delay so local DB load completes first before IMAP connection
+    const syncDelay = setTimeout(() => triggerSync(), 1500);
+
+    // Periodic background refresh: re-read local DB every 10s
+    const refreshInterval = setInterval(() => silentRefreshLocal(), 10000);
+
+    // Periodic IMAP sync every 2 minutes
+    const syncInterval = setInterval(() => triggerSync(), 120000);
+
+    return () => {
+      clearTimeout(syncDelay);
+      clearInterval(refreshInterval);
+      clearInterval(syncInterval);
+    };
+  }, [loadLocalInbox, triggerSync, silentRefreshLocal]);
+
+  const handleManualRefresh = () => {
+    loadLocalInbox();
+    triggerSync();
+  };
+
+  const handleClearCache = async () => {
+    if (!confirm('Are you sure you want to delete all cached email attachments? This cannot be undone.')) {
+      return;
+    }
+    try {
+      const res = await api.clearAttachmentsCache();
+      alert(res.message || 'Attachments cache cleared successfully.');
+      setSelectedEmail(null);
+      setAttachments([]);
+      setProcessResult(null);
+    } catch (err: any) {
+      alert('Failed to clear cache: ' + (err.response?.data?.error || err.message));
+    }
+  };
 
   const handleSelectEmail = (email: EmailRecord) => {
     setSelectedEmail(email);
@@ -91,12 +204,12 @@ const Mail = () => {
     setProcessResult(null);
     if (!email.id) return;
 
-    // Instantly mark as seen in local state
+    // Instantly mark as opened in local state (Amber)
     setEmails((prev) =>
       prev.map((e) => (e.id === email.id ? { ...e, isSeen: true } : e))
     );
 
-    // Call API to mark seen on server
+    // Mark as seen on backend (local DB + IMAP best-effort)
     api.markEmailSeen(email.id).catch((err: any) => {
       console.error('Error marking email as seen:', err);
     });
@@ -124,12 +237,10 @@ const Mail = () => {
   const selectPdfOnly = () =>
     setAttachments((prev) => prev.map((a) => ({ ...a, isSelected: getFileExt(a.filename) === 'pdf' })));
   const selectCsvOnly = () =>
-    setAttachments((prev) =>
-      prev.map((a) => {
-        const ext = getFileExt(a.filename);
-        return { ...a, isSelected: ext === 'csv' || ext === 'xlsx' || ext === 'xls' };
-      })
-    );
+    setAttachments((prev) => {
+      const ext = (a: AttachmentFile) => getFileExt(a.filename);
+      return prev.map((a) => ({ ...a, isSelected: ext(a) === 'csv' || ext(a) === 'xlsx' || ext(a) === 'xls' }));
+    });
 
   const selectedCount = attachments.filter((a) => a.isSelected).length;
 
@@ -143,7 +254,6 @@ const Mail = () => {
       const results: any[] = [];
 
       for (const file of selectedFiles) {
-        // Parse the attachment but do NOT directly commit/import it to the database inventory
         const res = await api.parseAttachment(file.filename, false);
         results.push({ filename: file.filename, ...res });
         if (res && res.success && Array.isArray(res.items)) {
@@ -158,10 +268,19 @@ const Mail = () => {
         return;
       }
 
-      // Extract invoice no if match found
+      // Mark email as saved (turns Grey) BEFORE navigating away
+      if (selectedEmail.id) {
+        api.markEmailSaved(selectedEmail.id).then(() => {
+          // Update local state immediately to Grey
+          setEmails((prev) =>
+            prev.map((e) => (e.id === selectedEmail.id ? { ...e, isSaved: true, isSeen: true } : e))
+          );
+          setSelectedEmail((prev) => prev ? { ...prev, isSaved: true, isSeen: true } : null);
+        }).catch(console.error);
+      }
+
       const invoiceNoMatch = selectedEmail.subject.match(/INV-\d+-\d+/i) || selectedEmail.subject.match(/\b([A-Z0-9_\-\/]{4,15})\b/);
 
-      // Navigate to Purchases (Manual Entry) and pass the prefilled data
       navigate('/manual-purchase', {
         state: {
           prefilledPurchase: {
@@ -188,6 +307,16 @@ const Mail = () => {
     }
   };
 
+  // Relative time string
+  const relTime = lastSyncedAt
+    ? (() => {
+        const secs = Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000);
+        if (secs < 5) return 'just now';
+        if (secs < 60) return `${secs}s ago`;
+        return `${Math.floor(secs / 60)}m ago`;
+      })()
+    : null;
+
   return (
     <div className="h-full flex flex-col fade-in space-y-4 overflow-hidden pb-4">
       {/* Header */}
@@ -198,21 +327,67 @@ const Mail = () => {
             Distributor Mail Inbox
           </h3>
           <p className="text-xs text-muted">
-            Select an email to view attachments, then pick files to create a purchase bill.
+            Emails stored locally — available offline. Background sync fetches only new messages.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green/10 border border-green/20 text-xs text-green font-bold select-none">
-            <span className="h-2 w-2 bg-green rounded-full animate-ping" />
-            IMAP: ONLINE
-          </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Connectivity indicator */}
+          {isOffline ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 font-bold select-none">
+              <CloudOff size={12} />
+              OFFLINE
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green/10 border border-green/20 text-xs text-green font-bold select-none">
+              <span className="h-2 w-2 bg-green rounded-full animate-ping" />
+              ONLINE
+            </div>
+          )}
+
+          {/* Sync status */}
+          {syncing && (
+            <div className="flex items-center gap-1.5 text-[11px] text-primary font-semibold animate-pulse">
+              <CloudLightning size={12} className="animate-bounce" />
+              Syncing IMAP...
+            </div>
+          )}
+          {!syncing && relTime && (
+            <span className="text-[10px] text-muted font-mono">Synced {relTime}</span>
+          )}
+
           <button
-            onClick={fetchInbox}
+            onClick={handleManualRefresh}
             className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-glass-border/60 text-text transition-all flex items-center gap-2 text-xs font-semibold"
           >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={loading || syncing ? 'animate-spin' : ''} />
             Refresh
           </button>
+          <button
+            onClick={handleClearCache}
+            className="p-2 rounded-lg bg-red/10 hover:bg-red/20 border border-red/30 text-red hover:text-red-400 transition-all flex items-center gap-2 text-xs font-semibold"
+          >
+            <Trash2 size={14} />
+            Clear Cache
+          </button>
+        </div>
+      </div>
+
+      {/* Status Legend */}
+      <div className="flex items-center gap-4 px-1 text-[10px] text-muted">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-green" />
+          New (unread)
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-amber-400" />
+          Opened (not saved)
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-zinc-600" />
+          Saved (bill created)
+        </div>
+        <div className="ml-auto text-muted font-mono">
+          {emails.length} email{emails.length !== 1 ? 's' : ''} stored locally
         </div>
       </div>
 
@@ -221,7 +396,15 @@ const Mail = () => {
         {/* LEFT: Email List */}
         <div className="lg:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border">
           <div className="p-3 border-b border-glass-border bg-black/10 text-xs font-bold text-muted uppercase tracking-wider select-none flex items-center justify-between">
-            <span>Inbox Emails ({emails.length})</span>
+            <div className="flex items-center gap-2">
+              <span>Inbox ({emails.length})</span>
+              {(loading || syncing) && emails.length > 0 && (
+                <span className="text-[10px] text-primary font-bold uppercase tracking-widest flex items-center gap-1.5 animate-pulse ml-2">
+                  <Loader size={10} className="animate-spin" />
+                  {syncing ? 'Syncing...' : 'Loading...'}
+                </span>
+              )}
+            </div>
             {selectedEmail && (
               <button
                 onClick={() => { setSelectedEmail(null); setAttachments([]); setProcessResult(null); }}
@@ -231,59 +414,73 @@ const Mail = () => {
               </button>
             )}
           </div>
+
+          {/* Slim progress bar during sync/load */}
+          <div className="relative">
+            {(loading || syncing) && emails.length > 0 && (
+              <div className="h-0.5 w-full bg-primary/20 overflow-hidden absolute top-0 left-0 z-50">
+                <div className="h-full bg-primary animate-pulse w-full" style={{ animationDuration: '1s' }} />
+              </div>
+            )}
+          </div>
+
           <div className="flex-1 overflow-y-auto bg-black/10 divide-y divide-glass-border/20">
-            {loading ? (
+            {loading && emails.length === 0 ? (
               <div className="p-12 text-center text-muted flex flex-col items-center gap-3">
                 <Loader className="animate-spin text-primary" size={24} />
-                <span className="text-xs uppercase font-semibold animate-pulse">Syncing mailbox...</span>
+                <span className="text-xs uppercase font-semibold animate-pulse">Loading local inbox...</span>
               </div>
             ) : emails.length === 0 ? (
               <div className="p-16 text-center text-muted flex flex-col items-center gap-2 italic text-xs">
-                <CheckCircle size={28} className="text-green opacity-80" />
-                No emails in inbox. IMAP poller is synced!
+                <MailIcon size={28} className="opacity-50" />
+                {isOffline
+                  ? 'No emails stored locally. Connect to internet and refresh to sync.'
+                  : 'No emails yet. Syncing from Gmail...'}
+                {syncing && <Loader size={16} className="animate-spin text-primary mt-2" />}
               </div>
             ) : (
-              emails.map((email, idx) => (
-                <button
-                  key={email.id || idx}
-                  onClick={() => handleSelectEmail(email)}
-                  className={`w-full text-left p-4 hover:bg-white/5 transition-all flex items-start gap-3 ${
-                    selectedEmail?.id === email.id
-                      ? 'bg-primary/5 border-l-2 border-primary'
-                      : 'border-l-2 border-transparent'
-                  }`}
-                >
-                  <div className={`p-2 rounded-xl border flex-shrink-0 mt-0.5 transition-all ${
-                    email.isSeen
-                      ? 'bg-zinc-800/40 border-zinc-700/30 text-zinc-500'
-                      : 'bg-green/10 border-green/30 text-green shadow-[0_0_8px_rgba(16,185,129,0.15)]'
-                  }`}>
-                    <MailIcon size={16} />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-text truncate flex items-center gap-1">
-                        <User size={12} className="text-muted" /> {email.from}
-                      </span>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {email.isSeen ? (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-zinc-800/60 border border-zinc-700 text-zinc-500 font-bold uppercase select-none">Processed</span>
-                        ) : (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-green/10 border border-green/30 text-green font-bold uppercase select-none animate-pulse">New</span>
-                        )}
-                        <span className="text-[10px] text-muted font-mono flex items-center gap-1">
-                          <Calendar size={10} />
-                          {email.date ? new Date(email.date).toLocaleDateString() : 'Today'}
-                        </span>
-                      </div>
+              emails.map((email, idx) => {
+                const status = getEmailStatus(email);
+                const s = STATUS_BADGE[status];
+                return (
+                  <button
+                    key={email.id || idx}
+                    onClick={() => handleSelectEmail(email)}
+                    className={`w-full text-left p-4 hover:bg-white/5 transition-all flex items-start gap-3 ${
+                      selectedEmail?.id === email.id
+                        ? 'bg-primary/5 border-l-2 border-primary'
+                        : 'border-l-2 border-transparent'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl border flex-shrink-0 mt-0.5 transition-all ${s.iconCls}`}>
+                      <MailIcon size={16} />
                     </div>
-                    <h4 className="text-xs font-bold text-sky truncate">{email.subject}</h4>
-                    <p className="text-[11px] text-muted truncate">
-                      {email.body || '(No preview)'}
-                    </p>
-                  </div>
-                </button>
-              ))
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-text truncate flex items-center gap-1">
+                          <User size={12} className="text-muted flex-shrink-0" /> {email.from}
+                        </span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-md border font-bold uppercase select-none ${s.badgeCls}`}>
+                            {s.label}
+                          </span>
+                          {email.hasAttachments && (
+                            <Paperclip size={10} className="text-muted flex-shrink-0" />
+                          )}
+                          <span className="text-[10px] text-muted font-mono flex items-center gap-1">
+                            <Calendar size={10} />
+                            {email.date ? new Date(email.date).toLocaleDateString() : 'Today'}
+                          </span>
+                        </div>
+                      </div>
+                      <h4 className="text-xs font-bold text-sky truncate">{email.subject}</h4>
+                      <p className="text-[11px] text-muted truncate">
+                        {email.body || '(No preview)'}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
@@ -318,6 +515,16 @@ const Mail = () => {
                       {selectedEmail.date ? new Date(selectedEmail.date).toLocaleString() : 'N/A'}
                     </span>
                   </div>
+                  <div className="pt-1">
+                    {(() => {
+                      const s = STATUS_BADGE[getEmailStatus(selectedEmail)];
+                      return (
+                        <span className={`text-[9px] px-2 py-0.5 rounded-md border font-bold uppercase ${s.badgeCls}`}>
+                          Status: {s.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
 
@@ -330,21 +537,13 @@ const Mail = () => {
                   </h4>
                   {attachments.length > 0 && (
                     <div className="flex gap-2">
-                      <button onClick={selectAll} className="text-[10px] font-bold text-primary hover:text-blue-400">
-                        All
-                      </button>
+                      <button onClick={selectAll} className="text-[10px] font-bold text-primary hover:text-blue-400">All</button>
                       <span className="text-[10px] text-muted">|</span>
-                      <button onClick={selectPdfOnly} className="text-[10px] font-bold text-red hover:text-red/80">
-                        PDF
-                      </button>
+                      <button onClick={selectPdfOnly} className="text-[10px] font-bold text-red hover:text-red/80">PDF</button>
                       <span className="text-[10px] text-muted">|</span>
-                      <button onClick={selectCsvOnly} className="text-[10px] font-bold text-green hover:text-green/80">
-                        CSV/Excel
-                      </button>
+                      <button onClick={selectCsvOnly} className="text-[10px] font-bold text-green hover:text-green/80">CSV/Excel</button>
                       <span className="text-[10px] text-muted">|</span>
-                      <button onClick={clearAll} className="text-[10px] font-bold text-muted hover:text-text">
-                        Clear
-                      </button>
+                      <button onClick={clearAll} className="text-[10px] font-bold text-muted hover:text-text">Clear</button>
                     </div>
                   )}
                 </div>
@@ -357,7 +556,7 @@ const Mail = () => {
                 ) : attachments.length === 0 ? (
                   <div className="p-8 text-center text-muted flex flex-col items-center gap-2 italic text-xs">
                     <FileText size={24} className="opacity-50" />
-                    No attachments found in this email
+                    No attachments found for this email
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -393,9 +592,16 @@ const Mail = () => {
                                 {att.contentType && <> &middot; {att.contentType}</>}
                               </div>
                             </div>
-                            {att.isSelected && (
-                              <CheckCircle size={16} className="text-primary flex-shrink-0" />
-                            )}
+                            <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => window.open(`/uploads/${encodeURIComponent(att.filename)}`, '_blank')}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-muted hover:text-text border border-glass-border/60 transition-all"
+                                title="View file"
+                              >
+                                <Eye size={14} />
+                              </button>
+                              {att.isSelected && <CheckCircle size={16} className="text-primary flex-shrink-0" />}
+                            </div>
                           </div>
                         </div>
                       );
@@ -411,7 +617,7 @@ const Mail = () => {
                     </div>
                     {processResult.map((r: any, i: number) => (
                       <div key={i} className="text-green/80">
-                        {r.filename}: {r.medicines?.length || 0} items imported
+                        {r.filename}: {r.items?.length || 0} items parsed
                       </div>
                     ))}
                   </div>
@@ -442,7 +648,7 @@ const Mail = () => {
                   ) : (
                     <>
                       <FileSpreadsheet size={14} />
-                      Process & Create Purchase Bill
+                      Process &amp; Create Purchase Bill
                     </>
                   )}
                 </button>
@@ -460,16 +666,10 @@ const Mail = () => {
                   Click any email from the list to view its attachments, then select files to create a purchase bill.
                 </p>
               </div>
-              <div className="flex items-center gap-6 text-[10px] text-muted mt-4">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-red" /> PDF
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-green" /> CSV
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-green" /> Excel
-                </div>
+              <div className="flex items-center gap-4 text-[10px] text-muted mt-4">
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green" /> New</div>
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-400" /> Opened</div>
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-zinc-600" /> Saved</div>
               </div>
             </div>
           )}

@@ -34,6 +34,8 @@ const Settings = () => {
   const [googleClientId, setGoogleClientId] = useState('');
   const [googleClientSecret, setGoogleClientSecret] = useState('');
   const [gmailAuthMethod, setGmailAuthMethod] = useState('password');
+  const [emailAutodeleteEnabled, setEmailAutodeleteEnabled] = useState(true);
+  const [emailAutodeleteLimit, setEmailAutodeleteLimit] = useState<number>(10);
 
 
   // Billing Preferences
@@ -82,6 +84,8 @@ const Settings = () => {
           setGoogleClientId(data.google_client_id || '');
           setGoogleClientSecret(data.google_client_secret || '');
           setGmailAuthMethod(data.gmail_auth_method || 'password');
+          setEmailAutodeleteEnabled(data.email_autodelete_enabled !== 'false');
+          setEmailAutodeleteLimit(Number(data.email_autodelete_limit) || 10);
 
 
           setDefaultTaxRate(Number(data.default_tax_rate) || 18);
@@ -145,6 +149,8 @@ const Settings = () => {
       google_client_id: googleClientId,
       google_client_secret: googleClientSecret,
       gmail_auth_method: gmailAuthMethod,
+      email_autodelete_enabled: emailAutodeleteEnabled.toString(),
+      email_autodelete_limit: emailAutodeleteLimit.toString(),
 
 
       default_tax_rate: defaultTaxRate.toString(),
@@ -893,6 +899,51 @@ const Settings = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Auto-delete / Retention controls */}
+          <div className="pt-4 border-t border-glass-border/30 space-y-4 mt-6">
+            <h5 className="text-xs font-bold text-sky uppercase tracking-wider">Attachment Auto-cleanup</h5>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              <div className="flex items-center">
+                <label className="flex items-center gap-3 cursor-pointer select-none group">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={emailAutodeleteEnabled}
+                      onChange={(e) => setEmailAutodeleteEnabled(e.target.checked)}
+                      aria-label="Enable Email Attachment Auto-delete"
+                    />
+                    <div className="w-11 h-6 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                    <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+                  </div>
+                  <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                    Auto-delete Older Attachments (Keep last N emails)
+                  </span>
+                </label>
+              </div>
+
+              {emailAutodeleteEnabled && (
+                <div className="space-y-2">
+                  <label htmlFor="emailAutodeleteLimit" className="text-xs font-bold text-muted uppercase tracking-wider block">
+                    Retention Limit (emails count)
+                  </label>
+                  <input
+                    id="emailAutodeleteLimit"
+                    type="number"
+                    min={1}
+                    className="premium-input w-full"
+                    placeholder="10"
+                    value={emailAutodeleteLimit}
+                    onChange={(e) => setEmailAutodeleteLimit(Number(e.target.value))}
+                  />
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] text-zinc-500 italic">
+              Note: Older attachments will only be deleted if the corresponding bill has already been saved/imported, ensuring no data loss.
+            </p>
           </div>
         </div>
 

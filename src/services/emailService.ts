@@ -212,16 +212,34 @@ export class EmailService {
 
       connection = await imap.connect(config);
       await connection.openBox('INBOX');
-      const searchCriteria = ['UNSEEN'];
-      const fetchOptions = { bodies: [''], struct: true };
-      const results = await connection.search(searchCriteria, fetchOptions);
 
-      console.log(`Found ${results.length} unseen emails`);
+      // Fetch all email UIDs by searching ALL (which fetches attributes very quickly without bodies)
+      const results = await connection.search(['ALL'], { struct: true });
+      results.sort((a: any, b: any) => b.attributes.uid - a.attributes.uid);
+      
+      // Process the latest 50 emails
+      const latestResults = results.slice(0, 50);
+      
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      
+      // Get the set of already processed UIDs
+      const processedRows = await db.all('SELECT uid FROM processed_emails');
+      const processedUids = new Set<number>(processedRows.map((r: any) => r.uid));
 
-      for (const item of results) {
+      // Filter to only non-processed email results
+      const newEmailsToProcess = latestResults.filter((item: any) => !processedUids.has(item.attributes.uid));
+      
+      console.log(`IMAP Poller: Found ${newEmailsToProcess.length} unprocessed emails among the latest 50.`);
+
+      for (const item of newEmailsToProcess) {
         try {
-          const bodyPart = item.parts.find((p: any) => p.which === '');
+          // Fetch the full message content for this specific UID
+          const fetchResult = await connection.search([['UID', item.attributes.uid]], { bodies: [''], struct: true });
+          if (!fetchResult || fetchResult.length === 0) continue;
+          
+          const bodyPart = fetchResult[0].parts.find((p: any) => p.which === '');
           if (!bodyPart) continue;
+          
           const parsed = await simpleParser(bodyPart.body);
           const processedEmail: ProcessedEmail = {
             from: parsed.from?.text || '',
@@ -245,12 +263,31 @@ export class EmailService {
             await this.processAttachments(processedEmail.attachments, item.attributes.uid);
           }
 
-          // Mark as seen
-          await connection.addFlags(item.attributes.uid, '\\Seen');
+          // Mark email as processed in SQLite
+          await db.run('INSERT OR IGNORE INTO processed_emails (uid) VALUES (?)', [item.attributes.uid]);
+
+          // Keep seen/unseen flag on server, or mark seen if it was unseen
+          const isSeen = item.attributes.flags.includes('\\Seen');
+          if (!isSeen) {
+            await new Promise<void>((resolve, reject) => {
+              connection.imap.uid.addFlags(item.attributes.uid, '\\Seen', (err: any) => {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
+          }
         } catch (emailError) {
-          console.error('Error processing individual email:', emailError);
-          // Continue processing other emails
+          console.error(`Error processing email UID ${item.attributes.uid}:`, emailError);
         }
+      }
+
+      await db.close();
+
+      // Background sync and clean attachments for the latest emails
+      try {
+        await this.syncAndCleanAttachments();
+      } catch (cleanErr) {
+        console.error('Error during auto attachment sync/cleanup:', cleanErr);
       }
 
       await connection.end();
@@ -543,8 +580,8 @@ export class EmailService {
         // Notify delivery boys
         await this.notifyDeliveryBoys(orderInfo);
 
-        // Implement actual order processing logic here
-        await this.processMedicineOrder(email);
+        // No automatic background import of purchase bills (should be manually processed by user on frontend)
+        // await this.processMedicineOrder(email);
         console.log('Potential medicine order detected, delivery boys notified:', logMsg);
       }
 
@@ -826,8 +863,19 @@ export class EmailService {
     }>;
   }> {
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const lines = content.split(/\r?\n/);
+      let content = '';
+      const isPdf = filePath.toLowerCase().endsWith('.pdf');
+      
+      if (isPdf) {
+        const { default: pdfParse } = await import('pdf-parse');
+        const fileBuffer = fs.readFileSync(filePath);
+        const pdfData = await pdfParse(fileBuffer);
+        content = pdfData.text || '';
+      } else {
+        content = fs.readFileSync(filePath, 'utf-8');
+      }
+
+      const lines = content.split(/\r?\n|\n/);
       const items: Array<{
         name: string;
         quantity: number;
@@ -877,7 +925,7 @@ export class EmailService {
           }
         }
       } else {
-        // Plain text parsing line by line
+        // Plain text parsing line by line (TXT or PDF text extraction)
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
@@ -887,6 +935,19 @@ export class EmailService {
             let name = trimmed.replace(qtyMatch[0], '').replace(/[:\-\t\r\n]/g, ' ').trim();
             if (name && name.length > 3 && isNaN(Number(name))) {
               items.push({ name, quantity: qty });
+            }
+          } else {
+            // Match space-separated line items (e.g. "Paracetamol 500mg 10 12.50")
+            const tokens = trimmed.split(/\s+/);
+            if (tokens.length >= 3) {
+              const lastVal = parseFloat(tokens[tokens.length - 1]);
+              const prevVal = parseInt(tokens[tokens.length - 2]);
+              if (!isNaN(lastVal) && !isNaN(prevVal) && prevVal > 0 && lastVal > 0) {
+                const namePart = tokens.slice(0, tokens.length - 2).join(' ');
+                if (namePart && namePart.length > 3 && isNaN(Number(namePart))) {
+                  items.push({ name: namePart, quantity: prevVal, rate: lastVal });
+                }
+              }
             }
           }
         }
@@ -942,9 +1003,258 @@ export class EmailService {
   }
 
   /**
-   * Fetches recent emails (both seen and unseen) from Gmail IMAP
+   * Syncs attachments for the latest N emails in background and cleans up older ones if they are saved.
+   */
+  public async syncAndCleanAttachments(): Promise<void> {
+    let connection: any = null;
+    try {
+      let user = this.imapConfig.user;
+      let password = this.imapConfig.password;
+      let xoauth2: string | undefined = undefined;
+
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      
+      // Check if auto-delete/cleanup is enabled
+      const autodeleteRow = await db.get("SELECT value FROM app_settings WHERE key = 'email_autodelete_enabled'");
+      const autodeleteEnabled = autodeleteRow ? autodeleteRow.value === 'true' : true;
+
+      const limitRow = await db.get("SELECT value FROM app_settings WHERE key = 'email_autodelete_limit'");
+      const autodeleteLimit = limitRow ? parseInt(limitRow.value, 10) || 10 : 10;
+
+      // Read Gmail configurations
+      const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
+      const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
+      if (userRow && userRow.value) user = userRow.value;
+      if (passRow && passRow.value) password = passRow.value;
+
+      const accessToken = await this.getGmailAccessToken();
+      if (accessToken && user) {
+        const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
+        xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
+      }
+
+      let host = this.imapConfig.host;
+      let port = this.imapConfig.port;
+      let tls = this.imapConfig.tls;
+
+      if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
+        host = 'imap.gmail.com';
+        port = 993;
+        tls = true;
+      }
+
+      if ((!user || !password || !host) && !xoauth2) {
+        await db.close();
+        return;
+      }
+
+      const imapConfig: any = {
+        ...this.imapConfig,
+        user,
+        host,
+        port,
+        tls,
+        authTimeout: 5000,
+        tlsOptions: { rejectUnauthorized: false }
+      };
+
+      if (xoauth2) {
+        imapConfig.xoauth2 = xoauth2;
+        delete imapConfig.password;
+      } else {
+        imapConfig.password = password;
+      }
+
+      const config = { imap: imapConfig };
+      connection = await imap.connect(config);
+      await connection.openBox('INBOX');
+
+      // Fetch ALL messages to find the latest UIDs
+      const searchCriteria = ['ALL'];
+      const fetchOptions = { bodies: [''], struct: true };
+      const results = await connection.search(searchCriteria, fetchOptions);
+
+      // Sort by UID descending (newest first)
+      results.sort((a: any, b: any) => b.attributes.uid - a.attributes.uid);
+      const latestResults = results.slice(0, autodeleteLimit);
+      const latestUids = latestResults.map((item: any) => item.attributes.uid);
+
+      console.log(`[Sync] Syncing attachments for latest ${latestUids.length} UIDs:`, latestUids);
+
+      const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+
+      const cachedFiles = fs.readdirSync(uploadsDir);
+
+      // 1. Auto-download attachments for the latest emails in background if not already cached
+      for (const item of latestResults) {
+        const uid = item.attributes.uid;
+        const prefix = `att-${uid}-`;
+        const hasCached = cachedFiles.some(f => f.startsWith(prefix));
+
+        if (!hasCached) {
+          const bodyPart = item.parts.find((p: any) => p.which === '');
+          if (bodyPart) {
+            const parsed = await simpleParser(bodyPart.body);
+            if (parsed.attachments && parsed.attachments.length > 0) {
+              console.log(`[Sync] Auto-downloading attachments in background for UID ${uid}`);
+              await this.processAttachments(parsed.attachments.map((a: any) => ({
+                filename: a.filename || 'unknown',
+                content: a.content,
+                contentType: a.contentType || 'application/octet-stream'
+              })), uid);
+            }
+          }
+        }
+      }
+
+      // 2. Clean up / Auto-delete older attachments if enabled
+      if (autodeleteEnabled) {
+        const cachedUids = new Set<number>();
+        for (const file of cachedFiles) {
+          if (file.startsWith('att-')) {
+            const match = file.match(/^att-(\d+)-/);
+            if (match) {
+              cachedUids.add(parseInt(match[1]));
+            }
+          }
+        }
+
+        for (const cachedUid of cachedUids) {
+          // If the cached UID is in the latest UIDs, we KEEP it (retention limit)
+          if (latestUids.includes(cachedUid)) {
+            continue;
+          }
+
+          // Otherwise, it is older. Check if the bill is saved.
+          const emailItem = results.find((r: any) => r.attributes.uid === cachedUid);
+          if (emailItem) {
+            const bodyPart = emailItem.parts.find((p: any) => p.which === '');
+            if (bodyPart) {
+              const parsed = await simpleParser(bodyPart.body);
+              const processedEmail: ProcessedEmail = {
+                from: parsed.from?.text || '',
+                subject: parsed.subject || '',
+                body: parsed.text || '',
+                attachments: []
+              };
+              const orderInfo = this.extractOrderInfo(processedEmail);
+              const invoiceNo = orderInfo.invoiceNumber;
+
+              if (invoiceNo && invoiceNo !== 'N/A') {
+                const purchase = await db.get('SELECT id FROM purchases WHERE invoice_no = ? LIMIT 1', [invoiceNo]);
+                if (purchase) {
+                  console.log(`[Cleanup] Auto-deleting attachments for UID ${cachedUid} since bill ${invoiceNo} is saved.`);
+                  const filesToDelete = cachedFiles.filter(f => f.startsWith(`att-${cachedUid}-`));
+                  for (const file of filesToDelete) {
+                    try {
+                      fs.unlinkSync(path.join(uploadsDir, file));
+                    } catch (err) {
+                      console.error(`Failed to delete cached file ${file}:`, err);
+                    }
+                  }
+                } else {
+                  console.log(`[Cleanup] Keeping attachments for UID ${cachedUid} because bill ${invoiceNo} is not saved yet.`);
+                }
+              } else {
+                console.log(`[Cleanup] Auto-deleting attachments for UID ${cachedUid} because it is not an order email.`);
+                const filesToDelete = cachedFiles.filter(f => f.startsWith(`att-${cachedUid}-`));
+                for (const file of filesToDelete) {
+                  try {
+                    fs.unlinkSync(path.join(uploadsDir, file));
+                  } catch (err) {
+                    console.error(`Failed to delete cached file ${file}:`, err);
+                  }
+                }
+              }
+            }
+          } else {
+            console.log(`[Cleanup] Auto-deleting attachments for UID ${cachedUid} because email is not in the IMAP folder.`);
+            const filesToDelete = cachedFiles.filter(f => f.startsWith(`att-${cachedUid}-`));
+            for (const file of filesToDelete) {
+              try {
+                fs.unlinkSync(path.join(uploadsDir, file));
+              } catch (err) {
+                console.error(`Failed to delete cached file ${file}:`, err);
+              }
+            }
+          }
+        }
+      }
+
+      await db.close();
+    } catch (err) {
+      console.error('[Sync] Error during syncAndCleanAttachments:', err);
+    } finally {
+      if (connection) {
+        try {
+          await connection.end();
+        } catch (e) {}
+      }
+    }
+  }
+
+  /**
+   * Returns emails from the LOCAL database (offline-first, instant).
+   * Also triggers a background IMAP delta sync so new emails appear automatically.
    */
   public async fetchInbox(limit: number = 50): Promise<Array<any>> {
+    // 1. Serve from local DB immediately (works offline)
+    const localEmails = await this.getLocalInbox(limit);
+
+    // 2. Trigger background IMAP delta sync (non-blocking, only new UIDs)
+    this.syncNewEmailsFromIMAP().catch(err => {
+      console.error('[Mail] Background IMAP sync failed:', err);
+    });
+
+    return localEmails;
+  }
+
+  /**
+   * Reads the local `emails` table and returns the latest N emails (offline-capable).
+   */
+  public async getLocalInbox(limit: number = 50): Promise<Array<any>> {
+    try {
+      await ensureSchema(getDbPath());
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const rows = await db.all(
+        `SELECT e.*, GROUP_CONCAT(ea.filename) as attachment_filenames
+         FROM emails e
+         LEFT JOIN email_attachments ea ON ea.uid = e.uid
+         GROUP BY e.uid
+         ORDER BY e.uid DESC
+         LIMIT ?`,
+        [limit]
+      );
+      await db.close();
+
+      return rows.map((row: any) => ({
+        id: row.uid,
+        uid: row.uid,
+        from: row.from_addr,
+        subject: row.subject,
+        body: row.body || '',
+        bodySnippet: (row.body || '').substring(0, 100) + '...',
+        date: row.date,
+        isSeen: row.is_seen === 1,
+        isSaved: row.is_saved === 1,
+        isOrder: row.is_order === 1,
+        distributorName: row.distributor_name,
+        hasAttachments: row.has_attachments === 1,
+        attachmentFilenames: row.attachment_filenames ? row.attachment_filenames.split(',') : []
+      }));
+    } catch (err) {
+      console.error('[Mail] getLocalInbox error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Helper to build IMAP config object (avoids code duplication).
+   */
+  private async buildImapConfig(): Promise<{ imapConfig: any; isConfigured: boolean }> {
     let user = this.imapConfig.user;
     let password = this.imapConfig.password;
     let xoauth2: string | undefined = undefined;
@@ -975,52 +1285,89 @@ export class EmailService {
     }
 
     if ((!user || !password || !host) && !xoauth2) {
-      return [];
+      return { imapConfig: null, isConfigured: false };
     }
 
-    let connection = null;
-    const emails: Array<any> = [];
+    const imapConfig: any = {
+      ...this.imapConfig,
+      user,
+      host,
+      port,
+      tls,
+      authTimeout: 5000,
+      tlsOptions: { rejectUnauthorized: false }
+    };
+
+    if (xoauth2) {
+      imapConfig.xoauth2 = xoauth2;
+      delete imapConfig.password;
+    } else {
+      imapConfig.password = password;
+    }
+
+    return { imapConfig, isConfigured: true };
+  }
+
+  /**
+   * Delta sync: fetch only emails with UID > last stored UID from IMAP.
+   * Stores new emails + attachments in the local SQLite database.
+   * Returns the count of newly synced emails.
+   */
+  public async syncNewEmailsFromIMAP(): Promise<number> {
+    const { imapConfig, isConfigured } = await this.buildImapConfig();
+    if (!isConfigured) {
+      console.log('[Sync] IMAP not configured, skipping sync.');
+      return 0;
+    }
+
+    let connection: any = null;
+    let syncedCount = 0;
 
     try {
-      const imapConfig: any = {
-        ...this.imapConfig,
-        user,
-        host,
-        port,
-        tls,
-        authTimeout: 5000,
-        tlsOptions: {
-          rejectUnauthorized: false
-        }
-      };
+      await ensureSchema(getDbPath());
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
 
-      if (xoauth2) {
-        imapConfig.xoauth2 = xoauth2;
-        delete imapConfig.password;
-      } else {
-        imapConfig.password = password;
-      }
+      // Find the highest UID already stored
+      const maxRow = await db.get('SELECT MAX(uid) as maxUid FROM emails');
+      const lastStoredUid: number = maxRow?.maxUid || 0;
 
-      const config = { imap: imapConfig };
-      connection = await imap.connect(config);
+      console.log(`[Sync] Last stored UID: ${lastStoredUid}. Connecting to IMAP for delta sync...`);
+
+      connection = await imap.connect({ imap: imapConfig });
       await connection.openBox('INBOX');
 
-      const searchCriteria = ['ALL'];
-      const fetchOptions = { bodies: [''], struct: true };
-      const results = await connection.search(searchCriteria, fetchOptions);
+      // Build search criteria: if we have stored emails, only fetch UID > lastStoredUid
+      // Otherwise fetch all (first run)
+      const searchCriteria = lastStoredUid > 0
+        ? [['UID', `${lastStoredUid + 1}:*`]]
+        : ['ALL'];
 
-      // Sort by UID descending (newest first)
-      results.sort((a: any, b: any) => b.attributes.uid - a.attributes.uid);
-      
-      const limitedResults = results.slice(0, limit);
+      const results = await connection.search(searchCriteria, { struct: true });
 
-      for (const item of limitedResults) {
+      // Filter strictly: only new UIDs (IMAP UID range can return boundary message)
+      const newResults = results.filter((item: any) => item.attributes.uid > lastStoredUid);
+
+      // Sort ascending (oldest first) so we insert in order
+      newResults.sort((a: any, b: any) => a.attributes.uid - b.attributes.uid);
+
+      console.log(`[Sync] Found ${newResults.length} new email(s) to download.`);
+
+      const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+      for (const item of newResults) {
+        const uid: number = item.attributes.uid;
         try {
-          const bodyPart = item.parts.find((p: any) => p.which === '');
+          const fetchResult = await connection.search([['UID', uid]], { bodies: [''], struct: true });
+          if (!fetchResult || fetchResult.length === 0) continue;
+
+          const msg = fetchResult[0];
+          const bodyPart = msg.parts.find((p: any) => p.which === '');
           if (!bodyPart) continue;
+
           const parsed = await simpleParser(bodyPart.body);
-          const isSeen = item.attributes.flags.includes('\\Seen');
-          
+          const isSeen = item.attributes.flags.includes('\\Seen') ? 1 : 0;
+
           const processedEmail: ProcessedEmail = {
             from: parsed.from?.text || '',
             subject: parsed.subject || '',
@@ -1033,50 +1380,125 @@ export class EmailService {
           };
 
           const orderInfo = this.extractOrderInfo(processedEmail);
+          const isOrder = this.isOrderRelatedEmail(processedEmail) ? 1 : 0;
+          const hasAttachments = processedEmail.attachments.length > 0 ? 1 : 0;
 
-          emails.push({
-            id: item.attributes.uid,
-            uid: item.attributes.uid,
-            from: processedEmail.from,
-            subject: processedEmail.subject,
-            body: processedEmail.body,
-            bodySnippet: processedEmail.body.substring(0, 100) + '...',
-            date: parsed.date || item.attributes.date || new Date(),
-            isSeen,
-            isOrder: this.isOrderRelatedEmail(processedEmail),
-            distributorName: orderInfo.distributorName,
-            totalItems: orderInfo.totalItems,
-            hasAttachments: processedEmail.attachments.length > 0
-          });
+          // Upsert email record into local DB
+          await db.run(
+            `INSERT OR IGNORE INTO emails
+             (uid, from_addr, subject, body, date, is_seen, is_order, is_saved, distributor_name, has_attachments)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+            [
+              uid,
+              processedEmail.from,
+              processedEmail.subject,
+              processedEmail.body,
+              parsed.date ? parsed.date.toISOString() : new Date().toISOString(),
+              isSeen,
+              isOrder,
+              orderInfo.distributorName,
+              hasAttachments
+            ]
+          );
+
+          // Save attachments to disk + DB
+          if (processedEmail.attachments.length > 0) {
+            const contentTypes: Record<string, string> = {
+              '.pdf': 'application/pdf',
+              '.csv': 'text/csv',
+              '.txt': 'text/plain',
+              '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              '.xls': 'application/vnd.ms-excel',
+              '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+            };
+
+            for (const att of processedEmail.attachments) {
+              const sanitized = path.basename(att.filename || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
+              const finalFilename = `att-${uid}-${sanitized}`;
+              const filePath = path.join(uploadsDir, finalFilename);
+
+              // Only write if file doesn't already exist
+              if (!fs.existsSync(filePath)) {
+                fs.writeFileSync(filePath, att.content);
+              }
+
+              const ext = path.extname(sanitized).toLowerCase();
+              const contentType = contentTypes[ext] || att.contentType || 'application/octet-stream';
+              const size = att.content ? att.content.length : 0;
+
+              await db.run(
+                `INSERT OR IGNORE INTO email_attachments (uid, filename, size, content_type, local_path)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [uid, finalFilename, size, contentType, filePath]
+              );
+            }
+          }
+
+          // Also mark as processed
+          await db.run('INSERT OR IGNORE INTO processed_emails (uid) VALUES (?)', [uid]);
+
+          // Notify delivery boys if order-related
+          if (isOrder) {
+            this.notifyDeliveryBoys(orderInfo).catch(err => {
+              console.error('[Sync] Error notifying delivery boys:', err);
+            });
+          }
+
+          syncedCount++;
         } catch (emailError) {
-          console.error('Error parsing email for inbox view:', emailError);
+          console.error(`[Sync] Error processing UID ${uid}:`, emailError);
         }
       }
+
+      await db.close();
+      console.log(`[Sync] Delta sync complete. Stored ${syncedCount} new email(s).`);
     } catch (err: any) {
-      console.error('fetchInbox error:', err);
       const errMsg = err.message || '';
       if (errMsg.includes('AUTHENTICATIONFAILED') || errMsg.includes('Invalid credentials') || errMsg.includes('login') || errMsg.includes('auth')) {
         eventService.broadcast('auth_failure', {
-          message: 'Gmail authentication failed. Please update your login credentials or link your Google account in Settings.',
+          message: 'Gmail authentication failed. Please update your credentials in Settings.',
           service: 'gmail'
         });
       }
-      throw err;
+      console.error('[Sync] syncNewEmailsFromIMAP error:', err);
     } finally {
       if (connection) {
-        try {
-          await connection.end();
-        } catch (e) {}
+        try { await connection.end(); } catch (e) {}
       }
     }
 
-    return emails;
+    return syncedCount;
   }
+
+  /**
+   * Marks an email as saved (purchase bill processed) in the local DB.
+   * This changes the UI color to Grey.
+   */
+  public async markEmailSaved(uid: number): Promise<boolean> {
+    try {
+      await ensureSchema(getDbPath());
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      await db.run('UPDATE emails SET is_saved = 1, is_seen = 1 WHERE uid = ?', [uid]);
+      await db.close();
+      return true;
+    } catch (err) {
+      console.error('[Mail] markEmailSaved error:', err);
+      return false;
+    }
+  }
+
 
   /**
    * Downloads email attachments dynamically from IMAP by UID, prefixes, and saves them
    */
   public async downloadAttachmentsForUid(uid: number): Promise<Array<{ filename: string; size: number; contentType: string }>> {
+    // Check local cache first
+    const cached = this.getLocalAttachmentsForUid(uid);
+    if (cached && cached.length > 0) {
+      console.log(`[Cache-Hit] Serving ${cached.length} cached attachments for UID ${uid}`);
+      return cached;
+    }
+
     let user = this.imapConfig.user;
     let password = this.imapConfig.password;
     let xoauth2: string | undefined = undefined;
@@ -1194,32 +1616,34 @@ export class EmailService {
   }
 
   /**
-   * Fallback to load attachments from the local uploads folder matching uid prefix
+   * Load attachments from the local `email_attachments` DB table.
+   * Falls back to scanning the uploads/ filesystem if DB has no records.
    */
   private getLocalAttachmentsForUid(uid: number): Array<{ filename: string; size: number; contentType: string }> {
     try {
       const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        return [];
-      }
+      if (!fs.existsSync(uploadsDir)) return [];
+
+      // Scan filesystem for files matching att-{uid}-* pattern
       const files = fs.readdirSync(uploadsDir);
       const prefix = `att-${uid}-`;
+      const contentTypes: Record<string, string> = {
+        '.pdf': 'application/pdf',
+        '.csv': 'text/csv',
+        '.txt': 'text/plain',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.xls': 'application/vnd.ms-excel',
+        '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+      };
+
       return files
         .filter(file => file.startsWith(prefix) && file.match(/\.(csv|txt|xlsx?|ods|pdf)$/i))
         .map(filename => {
           const filePath = path.join(uploadsDir, filename);
           const stats = fs.statSync(filePath);
           const ext = path.extname(filename).toLowerCase();
-          const contentTypes: Record<string, string> = {
-            '.pdf': 'application/pdf',
-            '.csv': 'text/csv',
-            '.txt': 'text/plain',
-            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            '.xls': 'application/vnd.ms-excel',
-            '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
-          };
           return {
-            filename: filename,
+            filename,
             size: stats.size,
             contentType: contentTypes[ext] || 'application/octet-stream'
           };
@@ -1230,9 +1654,24 @@ export class EmailService {
   }
 
   /**
+   * Marks an email as seen in the local database (instant, offline-capable).
+   */
+  public async markEmailSeen(uid: number): Promise<void> {
+    try {
+      await ensureSchema(getDbPath());
+      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      await db.run('UPDATE emails SET is_seen = 1 WHERE uid = ?', [uid]);
+      await db.close();
+    } catch (err) {
+      console.error('[Mail] markEmailSeen error:', err);
+    }
+  }
+
+  /**
    * Marks a specific email as read/seen on Gmail IMAP by UID
    */
   public async markAsSeen(uid: number): Promise<boolean> {
+
     let user = this.imapConfig.user;
     let password = this.imapConfig.password;
     let xoauth2: string | undefined = undefined;
@@ -1266,7 +1705,7 @@ export class EmailService {
       return true;
     }
 
-    let connection = null;
+    let connection: any = null;
     try {
       const imapConfig: any = {
         ...this.imapConfig,
@@ -1292,7 +1731,12 @@ export class EmailService {
       await connection.openBox('INBOX');
 
       // Mark as seen
-      await connection.addFlags(uid, '\\Seen');
+      await new Promise<void>((resolve, reject) => {
+        connection.imap.uid.addFlags(uid, '\\Seen', (err: any) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
       return true;
     } catch (err) {
       console.error('markAsSeen error:', err);
