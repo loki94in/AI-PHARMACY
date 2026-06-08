@@ -300,7 +300,7 @@ async function parseInvoiceBuffer(fileBuffer: Buffer, filename: string): Promise
     throw new Error('No valid invoice file found inside ZIP archive');
   }
 
-  if (nameLower.endsWith('.dav')) {
+  if (nameLower.endsWith('.dav') || nameLower.endsWith('.dac')) {
     const text = fileBuffer.toString('utf8');
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     
@@ -327,27 +327,49 @@ async function parseInvoiceBuffer(fileBuffer: Buffer, filename: string): Promise
     }
     
     for (const line of lines) {
-      if (line.startsWith('H,') || line.split(',').length < 10) continue;
       const parts = line.split(',');
-      const name = parts[4];
+      if (parts.length < 10) continue;
+      
+      // Marg format uses 'I' or 'T' for item rows
+      if (parts[0] !== 'I' && parts[0] !== 'T') continue;
+      
+      const offset = parts[0] === 'T' ? 1 : 0;
+      let name = parts[4 + offset] || '';
+      const pack = parts[5 + offset] || '';
+      if (pack.trim() && name.trim()) {
+        name = name.trim() + ' ' + pack.trim();
+      }
+      
       if (name && name.trim()) {
-        const qty = parseInt(parts[19], 10) || 0;
-        const rate = parseFloat(parts[13]) || 0;
-        const mrp = parseFloat(parts[15]) || 0;
-        const batch = parts[7] || '';
-        const rawExp = parts[8] || '';
+        const qty = parseInt(parts[19 + offset], 10) || 0;
+        const free_qty = parseInt(parts[14 + offset], 10) || 0;
+        const rate = parseFloat(parts[13 + offset]) || 0;
+        const mrp = parseFloat(parts[15 + offset]) || 0;
+        const batch = parts[7 + offset] || '';
+        const rawExp = parts[8 + offset] || '';
         let expiry = '01/12';
-        if (rawExp && rawExp.length === 8) {
-          const m = rawExp.substring(2, 4);
-          const y = rawExp.substring(6, 8);
-          expiry = `${m}/${y}`;
+        
+        if (rawExp && rawExp.length >= 6) {
+          if (rawExp.length === 8) {
+            // DDMMYYYY -> MM/YY
+            const m = rawExp.substring(2, 4);
+            const y = rawExp.substring(6, 8);
+            expiry = `${m}/${y}`;
+          } else if (rawExp.length === 6) {
+            // MMYYYY -> MM/YY
+            const m = rawExp.substring(0, 2);
+            const y = rawExp.substring(4, 6);
+            expiry = `${m}/${y}`;
+          }
         }
-        const hsn = parts[25] || '';
-        const gst = parseFloat(parts[11]) || 0;
+        
+        const hsn = parts[25 + offset] || '';
+        const gst = parseFloat(parts[11 + offset]) || 0;
         
         extractedItems.push({
           name: name.trim(),
           quantity: qty,
+          free_qty: free_qty,
           price: rate,
           mrp: mrp,
           batch_no: batch,

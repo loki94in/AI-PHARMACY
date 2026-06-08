@@ -411,16 +411,9 @@ const Sells = () => {
                       </span>
                     </td>
                     <td className="p-4 border-b border-glass-border/50">
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openEdit(inv); }}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-primary hover:text-white border border-glass-border hover:border-primary shadow-sm hover:shadow-[0_0_15px_rgba(37,99,235,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
-                          title="Edit invoice"
-                        >
-                          <Edit3 size={14} />
-                        </button>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 min-w-[140px]">
                         {deleteConfirm === inv.id ? (
-                          <div className="flex items-center gap-2 p-1 rounded-lg bg-red/10 border border-red/20">
+                          <div className="flex items-center gap-2 p-1 rounded-lg bg-red/10 border border-red/20 w-full justify-center">
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDelete(inv.id); }}
                               className="px-3 py-1.5 bg-red text-white rounded-md text-[10px] font-bold hover:bg-red/80 shadow-md transform hover:scale-105 transition-all"
@@ -435,13 +428,22 @@ const Sells = () => {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setDeleteConfirm(inv.id); }}
-                            className="p-2 rounded-lg bg-white/5 hover:bg-red hover:text-white border border-glass-border hover:border-red shadow-sm hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
-                            title="Delete invoice"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEdit(inv); }}
+                              className="p-2 rounded-lg bg-white/5 hover:bg-primary hover:text-white border border-glass-border hover:border-primary shadow-sm hover:shadow-[0_0_15px_rgba(37,99,235,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
+                              title="Edit invoice"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setDeleteConfirm(inv.id); }}
+                              className="p-2 rounded-lg bg-white/5 hover:bg-red hover:text-white border border-glass-border hover:border-red shadow-sm hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
+                              title="Delete invoice"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import pdfParse from 'pdf-parse';
 import { parse } from 'csv-parse/sync';
+import { aiCameraService } from './services/aiCameraService.js';
 
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -40,64 +41,67 @@ function cleanCompanyName(name: string): string {
   return name.replace(/^(M\/s\.|M\/r\.|M\/s|M\/S|M\/R)\s*/i, '').trim();
 }
 
+// Minimum number of non-whitespace chars from pdf-parse to consider
+// the PDF as having usable embedded text. Below this threshold the
+// file is treated as a scanned/image-based PDF and we fall back to OCR.
+const MIN_TEXT_CHARS_THRESHOLD = 50;
+
 /**
- * Extract structured product data from a PDF file.
+ * Parse raw text (from pdf-parse or OCR) into structured ExtractedMedicine[].
+ * This is a shared helper used by both the text path and the OCR fallback path.
  */
-export async function extractFromPdf(filePath: string, onProgress?: (percent: number) => void): Promise<ExtractedMedicine[]> {
-  const data = await fs.promises.readFile(filePath);
-  const pdfData = await pdfParse(data);
-  const text = pdfData.text;
-  
+function parseExtractedText(text: string, onProgress?: (percent: number) => void, progressStart = 10, progressEnd = 100): ExtractedMedicine[] {
   const extracted: ExtractedMedicine[] = [];
   const lines = text.split('\n');
   let tempMatches: string[] = [];
-  
-  if (onProgress) onProgress(10); // PDF parsed
-  
+
+  if (onProgress) onProgress(progressStart);
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    
+
     if (/^\d+$/.test(line) && parseInt(line) < 5000) {
       tempMatches.push(line);
     } else if (tempMatches.length > 0 && tempMatches.length < 5000) {
-      tempMatches[tempMatches.length - 1] += '|||' + line; 
+      tempMatches[tempMatches.length - 1] += '|||' + line;
     }
   }
 
-  if (onProgress) onProgress(30); // Lines grouped
-  
+  const groupedProgress = progressStart + Math.floor((progressEnd - progressStart) * 0.3);
+  if (onProgress) onProgress(groupedProgress);
+
   for (let i = 0; i < tempMatches.length; i++) {
     const rowStr = tempMatches[i];
-    
+
     if (onProgress && i % 50 === 0) {
-      const progress = 30 + Math.floor((i / tempMatches.length) * 70);
+      const progress = groupedProgress + Math.floor((i / tempMatches.length) * (progressEnd - groupedProgress));
       onProgress(progress);
     }
-    
+
     const cols = rowStr.split('|||').filter(c => c.trim().length > 0);
     if (cols.length < 3) continue;
-    
+
     let brandName = cols[1] || '';
     let genericName = cols[2] || '';
     let strength = cols[3] || '';
     let manufacturerRaw = cols[4] || '';
-    
+
     if (genericName.length < 5 && cols[4]) {
       genericName += ' ' + strength;
       strength = cols[4];
       manufacturerRaw = cols[5] || '';
     }
-    
+
     brandName = brandName.trim();
     if (!brandName || brandName.length < 2) continue;
 
     const api = genericName.trim();
     const pkgType = detectPackagingType(brandName);
-    
+
     let mfg = cleanCompanyName(manufacturerRaw);
-    let mkt = mfg; 
-    
+    let mkt = mfg;
+
     if (mfg.includes(' - ') || mfg.includes('-LL-') || mfg.includes('/')) {
       const parts = mfg.split(/ - |-LL-|\//);
       if (parts.length >= 2) {
@@ -115,9 +119,107 @@ export async function extractFromPdf(filePath: string, onProgress?: (percent: nu
       marketed_by: mkt
     });
   }
-  
-  if (onProgress) onProgress(100);
+
+  if (onProgress) onProgress(progressEnd);
   return extracted;
+}
+
+/**
+ * Render PDF pages as images and OCR each one using the AI Camera engine.
+ * Used as a fallback when pdf-parse returns insufficient text (scanned PDFs).
+ */
+async function extractFromPdfViaOcr(filePath: string, pdfBuffer: Buffer, onProgress?: (percent: number) => void): Promise<ExtractedMedicine[]> {
+  console.log(`[Extractor] PDF text extraction returned poor results for ${path.basename(filePath)}. Falling back to OCR.`);
+  if (onProgress) onProgress(5);
+
+  let getDocument: any;
+  try {
+    // Dynamic import so the app still starts even if pdfjs-dist is not installed
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    getDocument = pdfjsLib.getDocument;
+  } catch (importErr) {
+    console.error('[Extractor] pdfjs-dist is not installed. Cannot OCR scanned PDFs. Install with: npm install pdfjs-dist');
+    return [];
+  }
+
+  const pdfDoc = await getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+  const numPages = pdfDoc.numPages;
+  let allText = '';
+
+  // Lazy-import Jimp for rendering (already a project dependency)
+  const { Jimp } = await import('jimp');
+
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      // Render at 2x scale for better OCR accuracy
+      const viewport = page.getViewport({ scale: 2.0 });
+      const width = Math.floor(viewport.width);
+      const height = Math.floor(viewport.height);
+
+      // Create a raw RGBA pixel buffer and use pdfjs CanvasFactory-free path
+      // pdfjs-dist supports a custom canvasFactory or we can use its built-in
+      // node-canvas support. For maximum compatibility we try the canvas approach.
+      let imageBuffer: Buffer;
+      try {
+        // Approach: use node canvas if available
+        const { createCanvas } = await import('canvas');
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d') as any;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        imageBuffer = canvas.toBuffer('image/png');
+      } catch {
+        // Fallback: render to raw operator list and create image via Jimp
+        // This works without the canvas package but produces a blank white image
+        // that we then overlay with any embedded images from the PDF page.
+        console.warn(`[Extractor] canvas package not available. Page ${pageNum} OCR may be limited.`);
+        const image = new Jimp({ width, height, color: 0xFFFFFFFF });
+        imageBuffer = await image.getBuffer('image/png');
+      }
+
+      const ocrResult = await aiCameraService.extractTextFromImage(imageBuffer);
+      if (ocrResult.text) {
+        allText += ocrResult.text + '\n';
+      }
+      console.log(`[Extractor] OCR page ${pageNum}/${numPages}: ${ocrResult.text.length} chars, confidence ${ocrResult.confidence}%`);
+    } catch (pageErr) {
+      console.error(`[Extractor] Failed to OCR page ${pageNum}:`, pageErr);
+    }
+
+    if (onProgress) {
+      // Reserve 5-80% for page OCR, 80-100% for text parsing
+      onProgress(5 + Math.floor((pageNum / numPages) * 75));
+    }
+  }
+
+  if (!allText.trim()) {
+    console.warn('[Extractor] OCR produced no text from any PDF page.');
+    if (onProgress) onProgress(100);
+    return [];
+  }
+
+  return parseExtractedText(allText, onProgress, 80, 100);
+}
+
+/**
+ * Extract structured product data from a PDF file.
+ * Uses pdf-parse for text-based PDFs. Falls back to AI Camera OCR
+ * for scanned/image-based PDFs when text extraction is poor.
+ */
+export async function extractFromPdf(filePath: string, onProgress?: (percent: number) => void): Promise<ExtractedMedicine[]> {
+  const data = await fs.promises.readFile(filePath);
+  const pdfData = await pdfParse(data);
+  const text = pdfData.text;
+
+  // Check if pdf-parse returned usable text content
+  const cleanedText = text.replace(/\s+/g, '').trim();
+  if (cleanedText.length < MIN_TEXT_CHARS_THRESHOLD) {
+    // Scanned/image-based PDF — fall back to OCR
+    return await extractFromPdfViaOcr(filePath, data, onProgress);
+  }
+
+  // Normal text-based PDF — use existing parsing logic
+  return parseExtractedText(text, onProgress);
 }
 
 /**

@@ -422,20 +422,20 @@ html.light body {
    ═══════════════════════════════════════════ */
 @layer base {
   body {
-    @apply bg-bg text-text min-h-screen font-sans transition-colors duration-300;
+    @apply bg-bg text-text min-h-screen font-sans transition-all duration-500 ease-in-out;
     background-image:
-      radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.06), transparent 25%),
-      radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.06), transparent 25%);
+      radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08), transparent 30%),
+      radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08), transparent 30%);
   }
 
   * {
-    @apply transition-colors duration-200;
+    @apply transition-all duration-300 ease-in-out;
   }
 
   /* Custom Scrollbar */
   ::-webkit-scrollbar        { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track  { background: transparent; }
-  ::-webkit-scrollbar-thumb  { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-thumb  { @apply bg-border rounded-full transition-all duration-300; }
   ::-webkit-scrollbar-thumb:hover { @apply bg-muted; }
 }
 
@@ -444,19 +444,19 @@ html.light body {
    ═══════════════════════════════════════════ */
 @layer components {
   .glass-panel {
-    @apply bg-glass-bg border border-glass-border backdrop-blur-md rounded-2xl shadow-lg;
+    @apply bg-glass-bg border border-glass-border backdrop-blur-xl rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-500 hover:-translate-y-1;
   }
 
   .premium-input {
-    @apply bg-black/20 border border-border rounded-lg px-3 py-2 text-text text-sm
-           outline-none transition-all duration-200
-           focus:border-primary focus:ring-2 focus:ring-primary-glow;
+    @apply bg-black/5 border border-border rounded-2xl px-4 py-3 text-text text-sm
+           outline-none transition-all duration-300 ease-out shadow-sm hover:shadow-md hover:bg-black/10
+           focus:border-primary focus:ring-4 focus:ring-primary-glow/40 focus:-translate-y-0.5 focus:shadow-lg focus:bg-transparent;
   }
 
   .premium-btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
-           text-sm font-semibold transition-all duration-200 relative overflow-hidden
-           active:scale-95;
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl
+           text-sm font-semibold transition-all duration-300 ease-out relative overflow-hidden
+           shadow-sm hover:shadow-lg hover:-translate-y-0.5 active:scale-95 active:translate-y-0;
   }
 }
 

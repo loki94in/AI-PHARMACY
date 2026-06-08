@@ -301,6 +301,39 @@ class AICameraService {
     console.log(`Added unrecognized scan to audit queue: ${id}`);
   }
 
+  /**
+   * Extract text only from an image buffer using ONNX/Tesseract OCR.
+   * Does NOT do medicine matching, audit logging, or online enrichment.
+   * Designed for batch use (e.g., PDF page OCR in catalog worker).
+   */
+  async extractTextFromImage(imageBuffer: Buffer): Promise<{ text: string; confidence: number }> {
+    const processedBuffer = await this.preprocess(imageBuffer);
+
+    const isONNXAvailable = await onnxOcrService.checkAvailability();
+    if (isONNXAvailable) {
+      try {
+        const result = await onnxOcrService.scanImage(processedBuffer);
+        if (result?.success) {
+          return { text: result.text || '', confidence: result.confidence || 0 };
+        }
+      } catch (err) {
+        console.error('[AI Camera] ONNX OCR failed for image, falling back to Tesseract:', err);
+      }
+    }
+
+    // Tesseract fallback
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    try {
+      const { data } = await this.worker.recognize(processedBuffer);
+      return { text: data.text || '', confidence: Math.round(data.confidence) };
+    } catch (ocrError: any) {
+      console.error('[AI Camera] Tesseract OCR also failed:', ocrError);
+      return { text: '', confidence: 0 };
+    }
+  }
+
   async terminate(): Promise<void> {
     if (this.worker) {
       await this.worker.terminate();

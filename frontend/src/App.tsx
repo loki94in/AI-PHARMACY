@@ -608,6 +608,50 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   // hasUnread persists even after all are "read" — cleared only when user explicitly clears/reads
   const [hasUnread, setHasUnread] = useState(false);
 
+  // Global Arrow Key Navigation (Shift columns / Move focus, do not change numbers)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+
+      const target = e.target as HTMLElement;
+      if (target.tagName !== 'INPUT' && target.tagName !== 'SELECT' && target.tagName !== 'TEXTAREA') return;
+
+      // If a local handler (like an autocomplete dropdown) already prevented default, let it do its thing.
+      if (e.defaultPrevented) return;
+
+      // Prevent the browser from changing <input type="number"> values
+      if (target instanceof HTMLInputElement && target.type === 'number') {
+        e.preventDefault();
+      }
+
+      // Find all interactive inputs
+      const focusableSelector = 'input:not([disabled]):not([readonly]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])';
+      const elements = Array.from(document.querySelectorAll(focusableSelector)) as HTMLElement[];
+      const index = elements.indexOf(target);
+
+      if (index > -1) {
+        e.preventDefault(); // Stop default scroll or number increment
+        
+        let nextEl: HTMLElement | undefined;
+        if (e.key === 'ArrowDown') {
+          nextEl = elements[index + 1];
+        } else if (e.key === 'ArrowUp') {
+          nextEl = elements[index - 1];
+        }
+
+        if (nextEl) {
+          nextEl.focus();
+          if (nextEl instanceof HTMLInputElement && nextEl.type !== 'checkbox' && nextEl.type !== 'radio') {
+            nextEl.select();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
   const handleNewNotification = useCallback((detail: ToastEventDetail) => {
     const newNotif: AppNotification = {
       id: Date.now(),

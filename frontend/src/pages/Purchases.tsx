@@ -621,6 +621,7 @@ const Purchases: React.FC = () => {
         ...createEmptyItem(),
         medicine_name: item.name,
         qty: item.qty || item.quantity || 0,
+        free_qty: item.free_qty || 0,
         rate: item.price || item.rate || 0,
         batch_no: item.batch_no || '',
         expiry_date: item.expiry_date || '01/12',
@@ -718,6 +719,45 @@ const Purchases: React.FC = () => {
       
     return !!(matchesDistributor && matchesInvoice && matchesDateRange && matchesMinAmount && matchesMaxAmount);
   });
+
+  const captureScreen = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      
+      await new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+          video.play();
+          resolve(null);
+        };
+      });
+
+      // Give a tiny delay to ensure frame is painted
+      await new Promise(r => setTimeout(r, 300));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], "screenshot.png", { type: "image/png" });
+            setUploadedFile(file);
+          }
+          stream.getTracks().forEach(track => track.stop());
+        }, 'image/png');
+      } else {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    } catch (err) {
+      console.error("Failed to capture screen:", err);
+      alert("Screen capture was canceled or failed.");
+    }
+  };
 
   const totals = calculateTotals();
 
@@ -1208,19 +1248,40 @@ const Purchases: React.FC = () => {
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-white mb-4">Upload Invoice</h3>
-            <p className="text-gray-400 mb-4">Upload PDF, CSV, Excel, ZIP, DAV, or Image scans from distributor</p>
+            <h3 className="text-lg font-semibold text-white mb-4">Upload or Capture Invoice</h3>
+            <p className="text-gray-400 mb-4">Upload PDF, CSV, Excel, ZIP, DAV, DAC, or Image scans. You can also capture a window (like Word or an email) using the Screen Capture button.</p>
             
-            <input
-              type="file"
-              accept=".pdf,.csv,.xlsx,.xls,.zip,.dav,image/*"
-              onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
-              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white mb-4"
-            />
+            <div className="flex flex-col gap-4 mb-4">
+              <input
+                type="file"
+                accept=".pdf,.csv,.xlsx,.xls,.zip,.dav,.dac,image/*"
+                onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
+                className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+              />
+              
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 text-sm">OR</span>
+                <button
+                  onClick={captureScreen}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+                  title="Take a screenshot of another window (e.g. Word, Email)"
+                >
+                  <Camera size={16} />
+                  Capture Screen / Window
+                </button>
+              </div>
+
+              {uploadedFile && (
+                <div className="bg-white/5 border border-white/10 p-2 rounded text-sm text-green-400 flex justify-between items-center">
+                  <span className="truncate max-w-[250px]">{uploadedFile.name}</span>
+                  <button onClick={() => setUploadedFile(null)} className="text-red-400 hover:text-red-300 ml-2">✕</button>
+                </div>
+              )}
+            </div>
 
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setShowUploadModal(false)}
+                onClick={() => { setShowUploadModal(false); setUploadedFile(null); }}
                 className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
               >
                 Cancel

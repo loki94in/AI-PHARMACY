@@ -121,15 +121,7 @@ app.use(express.json({ limit: '1mb' }));
 
 app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads')));
 
-// Serve the frontend UI
-app.get('/', (req, res) => {
-  res.redirect('/test');
-});
-
-// Serve the API test console
-app.get('/test', (req, res) => {
-  res.sendFile(path.join(__dirname, 'test-console.html'));
-});
+// Old test console routes have been removed. This server now acts purely as an API backend.
 
 // Session token auth for all other API routes
 app.use('/api', authenticateApiKey);
