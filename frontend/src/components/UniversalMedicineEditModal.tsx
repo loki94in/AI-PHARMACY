@@ -179,18 +179,11 @@ export const UniversalMedicineEditModal: React.FC<Props> = ({ medicineId, onClos
                 <h4 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-glass-border pb-2">
                   <Package size={16} className="text-sky-500" /> Packaging & Codes
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-xs font-semibold text-muted mb-1.5">Pack Size (e.g., 10x10)</label>
                     <input 
                       type="text" name="packaging" value={form.packaging} onChange={handleChange}
-                      className="w-full px-4 py-2 bg-black/40 border border-glass-border rounded-xl text-sm text-white focus:border-primary focus:outline-none transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-muted mb-1.5">Pack Unit (e.g., Strip)</label>
-                    <input 
-                      type="text" name="pack_unit" value={form.pack_unit} onChange={handleChange}
                       className="w-full px-4 py-2 bg-black/40 border border-glass-border rounded-xl text-sm text-white focus:border-primary focus:outline-none transition-all"
                     />
                   </div>

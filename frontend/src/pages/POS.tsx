@@ -354,10 +354,29 @@ const POS = () => {
       .catch(err => console.error('Error fetching special orders:', err));
   }, []);
 
-  // Keyboard shortcut listener for Walk-In Patients ('X' key starts AI Camera)
+  // Keyboard shortcut listeners (e.g. 'X' for camera, 'Alt+E' or 'F8' for quick edit medicine)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement as HTMLElement | null;
+
+      // F8 or Alt+E: Universal Medicine Edit for focused row
+      if (e.key === 'F8' || (e.altKey && e.key.toLowerCase() === 'e')) {
+        if (active) {
+          const tr = active.closest('tr');
+          if (tr) {
+            const medicineIdAttr = tr.getAttribute('data-medicine-id');
+            if (medicineIdAttr) {
+              const medId = parseInt(medicineIdAttr, 10);
+              if (medId && !isNaN(medId)) {
+                e.preventDefault();
+                setEditMedicineId(medId);
+                return;
+              }
+            }
+          }
+        }
+      }
+
       if (active && (
         active.tagName === 'INPUT' || 
         active.tagName === 'SELECT' || 
@@ -1308,7 +1327,7 @@ const POS = () => {
                   }
 
                   return (
-                    <tr key={item.id} className="border-b border-glass-border/20 hover:bg-white/5 transition-all">
+                    <tr key={item.id} data-medicine-id={item.medicine_id} className="border-b border-glass-border/20 hover:bg-white/5 transition-all">
                       {/* Medicine Search/Change */}
                       <td className="p-2 min-w-[150px] relative">
                         <div className="flex items-center">

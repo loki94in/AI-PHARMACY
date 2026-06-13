@@ -94,7 +94,7 @@ const getInitialPurchasesTabs = () => {
           medicine_id: null,
           medicine_name: '',
           batch_no: '',
-          expiry_date: '01/12',
+          expiry_date: '',
           qty: '',
           free_qty: '',
           rate: '',
@@ -385,10 +385,29 @@ const Purchases: React.FC = () => {
     })));
   };
 
-  // Keyboard shortcut listener for Walk-In / Camera OCR activation
+  // Keyboard shortcut listeners (e.g. 'Alt+E' or 'F8' for quick edit medicine)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement as HTMLElement | null;
+
+      // F8 or Alt+E: Universal Medicine Edit for focused row
+      if (e.key === 'F8' || (e.altKey && e.key.toLowerCase() === 'e')) {
+        if (active) {
+          const tr = active.closest('tr');
+          if (tr) {
+            const medicineIdAttr = tr.getAttribute('data-medicine-id');
+            if (medicineIdAttr) {
+              const medId = parseInt(medicineIdAttr, 10);
+              if (medId && !isNaN(medId)) {
+                e.preventDefault();
+                setUniversalEditMedicineId(medId);
+                return;
+              }
+            }
+          }
+        }
+      }
+
       if (active && (
         active.tagName === 'INPUT' || 
         active.tagName === 'SELECT' || 
@@ -411,7 +430,7 @@ const Purchases: React.FC = () => {
       medicine_id: null,
       medicine_name: '',
       batch_no: '',
-      expiry_date: '01/12',
+      expiry_date: '',
       qty: '',
       free_qty: '',
       rate: '',
@@ -1127,7 +1146,7 @@ const Purchases: React.FC = () => {
         free_qty: item.free_qty || '',
         rate: item.price || item.rate || '',
         batch_no: item.batch_no || '',
-        expiry_date: item.expiry_date || '01/12',
+        expiry_date: item.expiry_date || '',
         mrp: item.mrp || '',
         cgst_per: item.cgst_per || '',
         sgst_per: item.sgst_per || '',
@@ -1622,19 +1641,19 @@ const Purchases: React.FC = () => {
                     <Plus size={14} />
                   </button>
                 </th>
-                <th className="pb-3 text-xs uppercase tracking-wider">Medicine Name</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">Batch</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">Exp</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">Rate</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">MRP</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">Qty</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">Free</th>
-                <th className="pb-3 text-xs uppercase tracking-wider" title="Input SGST">SGST%</th>
-                <th className="pb-3 text-xs uppercase tracking-wider" title="Input CGST">CGST%</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">CD %</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">CD ₹</th>
-                <th className="pb-3 text-xs uppercase tracking-wider" title="Additional Discount in Rupees">Add. Disc. (₹)</th>
-                <th className="pb-3 text-xs uppercase tracking-wider">Amount</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-left">Medicine Name</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-left">Batch</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-center">Exp</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-center">Rate</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-right">MRP</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-center">Qty</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-center">Free</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-center" title="Input SGST">SGST%</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-center" title="Input CGST">CGST%</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-center">CD %</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-right">CD ₹</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-right" title="Additional Discount in Rupees">Add. Disc. (₹)</th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-right pr-2">Amount</th>
                 <th className="pb-3"></th>
               </tr>
             </thead>
@@ -1652,7 +1671,7 @@ const Purchases: React.FC = () => {
                 const discountAmount = cdRsVal + addDiscVal + (baseAmount * cdPerVal / 100);
                 const taxableAmount = baseAmount - discountAmount;
                 return (
-                  <tr key={item.id} className="border-b border-white/10">
+                  <tr key={item.id} data-medicine-id={item.medicine_id} className="border-b border-white/10">
                   <td className="py-3 text-gray-300">{index + 1}</td>
                   <td className="py-3">
                     <div className="relative group/search">
@@ -1761,34 +1780,36 @@ const Purchases: React.FC = () => {
                     />
                   </td>
                   <td className="py-3 relative group/btn">
-                    <input
-                      type="number"
-                      value={item.rate}
-                      onChange={(e) => updateItem(index, 'rate', e.target.value)}
-                      className="w-14 bg-white/10 border border-white/20 rounded px-1.5 py-1 text-white text-sm text-right"
-                    />
-                    {mrpVal > 0 && (
-                      <div className="text-[9px] mt-1 font-bold select-none leading-none text-center">
-                        {(() => {
-                          const marginPercent = ((mrpVal - rateVal) / mrpVal) * 100;
-                          return (
-                            <span className={`px-0.5 py-0.2 rounded border inline-block ${
-                              marginPercent > 20 
-                                ? 'bg-green-500/10 text-green-400 border-green-500/20' 
-                                : marginPercent > 10 
-                                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                                  : marginPercent > 0 
-                                    ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
-                            }`}>
-                              {marginPercent.toFixed(1)}%
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    )}
-                    {item.medicine_name && rateVal > 0 && (
-                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block min-w-[320px]">
+                    <div className="flex items-center bg-white/10 border border-white/20 rounded px-1.5 py-1 w-[92px] focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+                      {mrpVal > 0 && (
+                        <div className="flex-shrink-0 select-none mr-1">
+                          {(() => {
+                            const marginPercent = ((mrpVal - rateVal) / mrpVal) * 100;
+                            return (
+                              <span className={`text-[9px] font-bold px-0.5 py-0.2 rounded border inline-block leading-none ${
+                                marginPercent > 20 
+                                  ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                                  : marginPercent > 10 
+                                    ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                    : marginPercent > 0 
+                                      ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                      : 'bg-red-500/10 text-red-400 border-red-500/20'
+                              }`}>
+                                {marginPercent.toFixed(1)}%
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+                      <input
+                        type="number"
+                        value={item.rate}
+                        onChange={(e) => updateItem(index, 'rate', e.target.value)}
+                        className="w-full bg-transparent border-0 outline-none text-white text-sm text-right p-0 focus:ring-0 focus:outline-none"
+                      />
+                    </div>
+                    {item.medicine_name && (
+                      <div className="absolute z-[99999] top-full left-0 mt-2 hidden group-hover/btn:block min-w-[320px]">
                         <div className="bg-gray-900 border border-blue-500 rounded-lg p-2 shadow-xl">
                           <HoverPriceIntelTable medicineName={item.medicine_name} />
                         </div>
@@ -1802,8 +1823,8 @@ const Purchases: React.FC = () => {
                       onChange={(e) => updateItem(index, 'mrp', e.target.value)}
                       className="w-14 bg-white/10 border border-white/20 rounded px-1.5 py-1 text-white text-sm text-right"
                     />
-                    {item.medicine_name && mrpVal > 0 && (
-                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block min-w-[320px]">
+                    {item.medicine_name && (
+                      <div className="absolute z-[99999] top-full left-0 mt-2 hidden group-hover/btn:block min-w-[320px]">
                         <div className="bg-gray-900 border border-purple-500 rounded-lg p-2 shadow-xl">
                           <HoverPriceIntelTable medicineName={item.medicine_name} />
                         </div>
