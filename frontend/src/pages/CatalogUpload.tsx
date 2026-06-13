@@ -147,7 +147,14 @@ const CatalogUpload = () => {
             setPreviousJobs(prev => 
               prev.map(job => 
                 job.id === payload.id 
-                  ? { ...job, progress: payload.progress } 
+                  ? { 
+                      ...job, 
+                      progress: payload.progress,
+                      total_count: payload.total_count !== undefined ? payload.total_count : job.total_count,
+                      new_count: payload.new_count !== undefined ? payload.new_count : job.new_count,
+                      existing_count: payload.existing_count !== undefined ? payload.existing_count : job.existing_count,
+                      duplicate_count: payload.duplicate_count !== undefined ? payload.duplicate_count : job.duplicate_count
+                    } 
                   : job
               )
             );
@@ -211,7 +218,11 @@ const CatalogUpload = () => {
                       ...job, 
                       status: payload.status, 
                       progress: payload.progress !== undefined ? payload.progress : job.progress,
-                      error_log: payload.error || job.error_log
+                      error_log: payload.error || job.error_log,
+                      total_count: payload.total_count !== undefined ? payload.total_count : job.total_count,
+                      new_count: payload.new_count !== undefined ? payload.new_count : job.new_count,
+                      existing_count: payload.existing_count !== undefined ? payload.existing_count : job.existing_count,
+                      duplicate_count: payload.duplicate_count !== undefined ? payload.duplicate_count : job.duplicate_count
                     } 
                   : job
               )
@@ -457,6 +468,11 @@ const CatalogUpload = () => {
                   <h4 className="text-lg font-semibold text-white mb-2">
                     Ingesting catalogue: {progress}% Complete
                   </h4>
+                  {stats.total > 0 && (
+                    <p className="text-xs text-gray-400 mb-2 font-semibold">
+                      Ingested {((stats.new || 0) + (stats.existing || 0) + (stats.duplicates || 0)).toLocaleString()} / {stats.total.toLocaleString()} products
+                    </p>
+                  )}
                   <p className="text-gray-400 text-sm mb-4">
                     Processing products in transactional batches of 1,000 to keep memory low and prevent locks.
                   </p>
@@ -618,24 +634,36 @@ const CatalogUpload = () => {
                           </td>
                           <td className="p-3 text-gray-400">
                             {job.total_count ? (
-                              <div className="text-[10px]">
-                                <span>Total: {job.total_count.toLocaleString()}</span>
-                                <span className="mx-1">|</span>
-                                <span className="text-green">New: {job.new_count?.toLocaleString()}</span>
+                              <div className="text-[10px] space-y-0.5">
+                                <div>Total: <span className="font-bold text-white">{job.total_count.toLocaleString()}</span></div>
+                                <div className="flex gap-2">
+                                  <span className="text-green">New: {job.new_count?.toLocaleString() || 0}</span>
+                                  <span>|</span>
+                                  <span className="text-yellow-400">Exist: {job.existing_count?.toLocaleString() || 0}</span>
+                                  <span>|</span>
+                                  <span className="text-red-400">Dup: {job.duplicate_count?.toLocaleString() || 0}</span>
+                                </div>
                               </div>
                             ) : (
                               '—'
                             )}
                           </td>
                           <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-16 bg-white/5 h-1.5 rounded-full overflow-hidden border border-glass-border">
-                                <div 
-                                  className="bg-primary h-full rounded-full" 
-                                  style={{ width: `${job.progress || 0}%` }}
-                                />
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 bg-white/5 h-1.5 rounded-full overflow-hidden border border-glass-border">
+                                  <div 
+                                    className="bg-primary h-full rounded-full" 
+                                    style={{ width: `${job.progress || 0}%` }}
+                                  />
+                                </div>
+                                <span className="text-[9px] font-bold text-gray-400">{job.progress || 0}%</span>
                               </div>
-                              <span className="text-[9px] font-bold text-gray-400">{job.progress || 0}%</span>
+                              {job.total_count ? (
+                                <span className="text-[9px] text-gray-500 font-medium">
+                                  {((job.new_count || 0) + (job.existing_count || 0) + (job.duplicate_count || 0)).toLocaleString()} / {job.total_count.toLocaleString()} rows
+                                </span>
+                              ) : null}
                             </div>
                           </td>
                           <td className="p-3">

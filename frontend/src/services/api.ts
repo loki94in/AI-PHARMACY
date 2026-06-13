@@ -207,8 +207,8 @@ export const api = {
     apiClient.post('/migration/analyze-zip', { fileName }).then(r => r.data),
   analyzeExcelFile: (fileName: string, sheetIndex?: number) =>
     apiClient.post('/migration/analyze-excel', { fileName, sheetIndex }).then(r => r.data),
-  runMigration: (fileName: string, mapping: any, skipLines: number = 0) => 
-    apiClient.post('/migration/run', { fileName, mapping, skipLines }).then(r => r.data),
+  runMigration: (fileName: string, dataType: string, mapping: any, skipLines: number = 0) => 
+    apiClient.post('/migration/run', { fileName, dataType, mapping, skipLines }).then(r => r.data),
   getMigrationStatus: () => apiClient.get('/migration/status').then(r => r.data),
   getStagingInventory: () => apiClient.get('/migration/staging/inventory').then(r => r.data),
   updateStagingInventory: (id: number, data: any) => apiClient.put(`/migration/staging/inventory/${id}`, data).then(r => r.data),
@@ -219,6 +219,9 @@ export const api = {
   getStagingPurchases: () => apiClient.get('/migration/staging/purchases').then(r => r.data),
   updateStagingPurchases: (id: number, data: any) => apiClient.put(`/migration/staging/purchases/${id}`, data).then(r => r.data),
   deleteStagingPurchases: (id: number) => apiClient.delete(`/migration/staging/purchases/${id}`).then(r => r.data),
+  getStagingReturns: () => apiClient.get('/migration/staging/returns').then(r => r.data),
+  updateStagingReturns: (id: number, data: any) => apiClient.put(`/migration/staging/returns/${id}`, data).then(r => r.data),
+  deleteStagingReturns: (id: number) => apiClient.delete(`/migration/staging/returns/${id}`).then(r => r.data),
   getStagingErrors: () => apiClient.get('/migration/staging/errors').then(r => r.data),
   finalizeMigration: (regenerateInvoices: boolean = false) => 
     apiClient.post('/migration/staging/finalize', { regenerateInvoices }).then(r => r.data),

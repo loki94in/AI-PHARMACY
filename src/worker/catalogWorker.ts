@@ -202,11 +202,22 @@ export async function runCatalogAnalysis(jobId: number) {
     const ext = path.extname(job.file_path).toLowerCase();
     let headers: string[] = [];
     let previewData: any[] = [];
+    let totalCount = 0;
+    let newCount = 0;
+    let existingCount = 0;
+    let duplicateCount = 0;
 
     if (ext === '.csv') {
-      const csvPreview = await readCsvPreview(job.file_path, 10);
+      const csvPreview = await readCsvPreview(job.file_path, 50);
       headers = csvPreview.headers;
       previewData = csvPreview.rows;
+
+      // Compute actual counts using preScanCsv
+      const scanResult = await preScanCsv(job.file_path);
+      totalCount = scanResult.totalCount;
+      newCount = scanResult.newCount;
+      existingCount = scanResult.existingCount;
+      duplicateCount = scanResult.duplicateCount;
     } else if (ext === '.xlsx' || ext === '.xls') {
       const workbook = XLSX_import.readFile(job.file_path);
       const sheetName = workbook.SheetNames[0];
@@ -215,18 +226,19 @@ export async function runCatalogAnalysis(jobId: number) {
         const sheetData = XLSX_import.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
         if (sheetData.length > 0) {
           headers = sheetData[0].map((h: any, idx: number) => h ? String(h).trim() : `Column_${idx + 1}`);
-          previewData = sheetData.slice(1, 11).map((row: any[]) => {
+          previewData = sheetData.slice(1, 51).map((row: any[]) => {
             const rowObj: Record<string, any> = {};
             headers.forEach((header, idx) => {
               rowObj[header] = row[idx] !== undefined ? row[idx] : '';
             });
             return rowObj;
           });
+          totalCount = Math.max(0, sheetData.length - 1);
         }
       }
     } else if (ext === '.pdf') {
       const extracted = await extractFromPdf(job.file_path);
-      previewData = extracted.slice(0, 10).map(item => ({
+      previewData = extracted.slice(0, 50).map(item => ({
         'Product Name': item.name,
         'Composition': item.api_reference || '',
         'Strength': item.strength || '',
@@ -235,6 +247,7 @@ export async function runCatalogAnalysis(jobId: number) {
         'Marketed By': item.marketed_by || ''
       }));
       headers = ['Product Name', 'Composition', 'Strength', 'Packaging', 'Manufacturer', 'Marketed By'];
+      totalCount = extracted.length;
     } else {
       throw new Error('Unsupported file format.');
     }
@@ -244,11 +257,19 @@ export async function runCatalogAnalysis(jobId: number) {
     const extractedJson = JSON.stringify({ headers, previewData, suggestedMapping });
 
     await db.run(
-      `UPDATE catalog_jobs SET status = 'waiting_for_mapping', extracted_data = ?, total_count = ? WHERE id = ?`,
-      [extractedJson, previewData.length, jobId]
+      `UPDATE catalog_jobs SET status = 'waiting_for_mapping', extracted_data = ?, total_count = ?, new_count = ?, existing_count = ?, duplicate_count = ? WHERE id = ?`,
+      [extractedJson, totalCount, newCount, existingCount, duplicateCount, jobId]
     );
 
-    eventService.broadcast('catalog_job_update', { id: jobId, status: 'waiting_for_mapping', progress: 100 });
+    eventService.broadcast('catalog_job_update', { 
+      id: jobId, 
+      status: 'waiting_for_mapping', 
+      progress: 100,
+      total_count: totalCount,
+      new_count: newCount,
+      existing_count: existingCount,
+      duplicate_count: duplicateCount
+    });
   } catch (err: any) {
     console.error('Analysis failed', err);
     await db.run("UPDATE catalog_jobs SET status = 'failed', error_log = ? WHERE id = ?", [err.message || 'Unknown error', jobId]);

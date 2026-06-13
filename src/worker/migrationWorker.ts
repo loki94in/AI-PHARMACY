@@ -7,6 +7,7 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import readline from 'readline';
 import csvParser from 'csv-parser';
+import * as XLSX from 'xlsx';
 import { eventService } from '../services/eventService.js';
 
 // PostgreSQL COPY parser
@@ -92,16 +93,16 @@ function validateAndCleanCSVRow(row: any, mapping?: Record<string, string>): { i
       const rawVal = row[rawKey];
       if (rawVal === undefined || rawVal === null) continue;
 
-      if (targetCol === 'quantity') {
+      if (targetCol === 'quantity' || targetCol === 'loose_qty' || targetCol === 'loose_quantity') {
         const valStr = String(rawVal).trim();
         const parsed = parseInt(valStr, 10);
         if (valStr !== '' && (isNaN(parsed) || parsed < 0)) {
-          errors.push(`Quantity must be a non-negative integer: "${rawVal}"`);
+          errors.push(`${targetCol} must be a non-negative integer: "${rawVal}"`);
         } else if (valStr !== '') {
           cleaned[rawKey] = parsed;
         }
       }
-      else if (targetCol === 'mrp' || targetCol === 'cost_price' || targetCol === 'total_amount') {
+      else if (targetCol === 'mrp' || targetCol === 'cost_price' || targetCol === 'total_amount' || targetCol === 'cgst' || targetCol === 'sgst' || targetCol === 'discount') {
         const valStr = String(rawVal).trim();
         const parsed = parseFloat(valStr);
         if (valStr !== '' && (isNaN(parsed) || parsed < 0)) {
@@ -112,7 +113,7 @@ function validateAndCleanCSVRow(row: any, mapping?: Record<string, string>): { i
       }
       else if (targetCol === 'expiry_date') {
         const valStr = String(rawVal).trim();
-        if (valStr !== '') {
+        if (valStr !== '' && !valStr.includes('/') && !valStr.includes('-')) {
           const date = new Date(valStr);
           if (isNaN(date.getTime())) {
             errors.push(`Invalid date format for expiry: "${rawVal}"`);
@@ -129,7 +130,7 @@ function validateAndCleanCSVRow(row: any, mapping?: Record<string, string>): { i
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-export async function runManualMigration(fileName: string, mapping?: Record<string, string>, skipLines: number = 0): Promise<void> {
+export async function runManualMigration(fileName: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0): Promise<void> {
   if (migrationStatus.active) {
     throw new Error('A migration is already in progress.');
   }
@@ -139,18 +140,19 @@ export async function runManualMigration(fileName: string, mapping?: Record<stri
   }
   
   const lowerFileName = fileName.toLowerCase();
-  const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz', '.csv'];
+  const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz', '.csv', '.xlsx', '.xls'];
   const isValid = allowedExtensions.some(ext => lowerFileName.endsWith(ext));
   
   if (!isValid) {
-    throw new Error('Unsupported file format for migration. Supported formats: .zip, .sql, .sql.gz/gz, .tar.gz/tgz, .csv');
+    throw new Error('Unsupported file format for migration. Supported formats: .zip, .sql, .sql.gz/gz, .tar.gz/tgz, .csv, .xlsx, .xls');
   }
 
-  await processMigrationFile(filePath, mapping, skipLines);
+  await processMigrationFile(filePath, dataType, mapping, skipLines);
 }
 
-async function processMigrationFile(filePath: string, mapping?: Record<string, string>, skipLines: number = 0) {
+async function processMigrationFile(filePath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0) {
   let extractPath: string | undefined = undefined;
+  let tempCsvPath: string | null = null;
   try {
     const ext = path.extname(filePath).toLowerCase();
     const basename = path.basename(filePath);
@@ -165,14 +167,30 @@ async function processMigrationFile(filePath: string, mapping?: Record<string, s
       await fs.promises.copyFile(DB_PATH, STAGING_DB_PATH);
     }
 
+    let actualFilePath = filePath;
     let sqlFilePath = filePath;
 
-    if (ext === '.csv') {
-      migrationStatus.message = 'CSV file detected — starting dynamic import into staging...';
-      await parseAndImportCSV(filePath, STAGING_DB_PATH, mapping, skipLines);
+    if (ext === '.xlsx' || ext === '.xls') {
+      migrationStatus.message = 'Excel file detected — converting to CSV...';
+      const workbook = XLSX.readFile(filePath);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+      
+      tempCsvPath = path.join(TEMP_DIR, `converted_${Date.now()}.csv`);
+      fs.writeFileSync(tempCsvPath, csvContent);
+      actualFilePath = tempCsvPath;
+    }
+
+    if (ext === '.csv' || ext === '.xlsx' || ext === '.xls') {
+      migrationStatus.message = `CSV/Excel file detected — starting dynamic ${dataType} import into staging...`;
+      await parseAndImportCSV(actualFilePath, STAGING_DB_PATH, dataType, mapping, skipLines);
       Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
       if (!filePath.includes('archived_migrations')) {
         fs.renameSync(filePath, path.join(archiveDir, basename));
+      }
+      if (tempCsvPath && fs.existsSync(tempCsvPath)) {
+        fs.unlinkSync(tempCsvPath);
       }
       return;
     }
@@ -649,10 +667,10 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
 }
 
 /**
- * Dynamic CSV parser and importer for inventory/medicines.
+ * Dynamic CSV parser and importer for multiple data types.
  * Automatically creates missing columns in inventory_master or maps them using the provided mapping.
  */
-async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?: Record<string, string>, skipLines: number = 0) {
+async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
   await ensureMigrationErrorsTable(db);
   
@@ -668,25 +686,38 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?
     fs.createReadStream(csvPath)
       .pipe(csvParser({ skipLines: skipLines })) // Skip user-defined garbage rows
       .on('headers', async (headers) => {
-        for (const rawHeader of headers) {
-          const rawColName = rawHeader.trim();
-          if (!rawColName) continue;
-          
-          let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
-          
-          // Apply mapping if provided
-          if (mapping && mapping[rawColName] && mapping[rawColName] !== 'IGNORE') {
-            colName = mapping[rawColName];
-          } else if (mapping && mapping[rawColName] === 'IGNORE') {
-            continue; // Skip this column entirely
-          }
+        if (dataType === 'inventory') {
+          for (const rawHeader of headers) {
+            const rawColName = rawHeader.trim();
+            if (!rawColName) continue;
+            
+            let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
+            
+            // Apply mapping if provided
+            if (mapping && mapping[rawColName] && mapping[rawColName] !== 'IGNORE') {
+              colName = mapping[rawColName];
+            } else if (mapping && mapping[rawColName] === 'IGNORE') {
+              continue; // Skip this column entirely
+            }
 
-          if (!existingCols.includes(colName) && colName !== '') {
-            try {
-              await db.run(`ALTER TABLE inventory_master ADD COLUMN "${colName}" TEXT`);
-              existingCols.push(colName);
-            } catch (e: any) {
-              console.error(`Failed to add column ${colName}:`, e.message);
+            if (colName === 'loose_qty') {
+              colName = 'loose_quantity';
+            }
+
+            const medicineFields = [
+              'api_reference', 'mrp', 'hsn_code', 'schedule_type', 'manufacturer',
+              'category', 'marketed_by', 'manufactured_by', 'legacy_id', 'packaging',
+              'strength', 'item_type', 'cgst', 'sgst', 'igst', 'rack',
+              'generic_name', 'pack_unit', 'cgst_per', 'sgst_per', 'item_code'
+            ];
+
+            if (!existingCols.includes(colName) && colName !== '' && colName !== 'name' && !medicineFields.includes(colName)) {
+              try {
+                await db.run(`ALTER TABLE inventory_master ADD COLUMN "${colName}" TEXT`);
+                existingCols.push(colName);
+              } catch (e: any) {
+                console.error(`Failed to add column ${colName}:`, e.message);
+              }
             }
           }
         }
@@ -724,38 +755,290 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?
             }
 
             const cleanRow = validation.cleaned;
-            const medName = cleanRow['Medicine'] || 'Unknown Product';
-            let med = await db.get('SELECT id FROM medicines WHERE name = ?', [medName]);
-            if (!med) {
-              const result = await db.run('INSERT INTO medicines (name) VALUES (?)', [medName]);
-              med = { id: result.lastID };
-            }
 
-            const colsToInsert = ['medicine_id'];
-            const valuesToInsert = [med.id];
-            const placeholders = ['?'];
+            if (dataType === 'inventory') {
+              let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
+              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
 
-            for (const [key, val] of Object.entries(cleanRow)) {
-              const rawColName = key.trim();
-              let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
-              
-              if (mapping && mapping[rawColName] === 'IGNORE') continue;
-              if (mapping && mapping[rawColName]) {
-                colName = mapping[rawColName];
+              const medCols: string[] = [];
+              const medVals: any[] = [];
+              const medUpdates: string[] = [];
+
+              for (const [key, val] of Object.entries(cleanRow)) {
+                if (val === undefined || val === null || val === '') continue;
+                const mappedTarget = mapping?.[key];
+                if (!mappedTarget || mappedTarget === 'IGNORE') continue;
+
+                let dbCol = mappedTarget;
+                if (dbCol === 'hsncode' || dbCol === 'hsn_code') dbCol = 'hsn_code';
+                if (dbCol === 'mfg' || dbCol === 'manufacturer') dbCol = 'manufacturer';
+                if (dbCol === 'mrkby' || dbCol === 'marketed_by') dbCol = 'marketed_by';
+                if (dbCol === 'loos_qty' || dbCol === 'loose_qty' || dbCol === 'loose_quantity') continue; // inventory
+                if (dbCol === 'rate') continue; // inventory
+                if (dbCol === 'name') continue;
+
+                const medicineFields = [
+                  'api_reference', 'mrp', 'hsn_code', 'schedule_type', 'manufacturer',
+                  'category', 'marketed_by', 'manufactured_by', 'legacy_id', 'packaging',
+                  'strength', 'item_type', 'cgst', 'sgst', 'igst', 'rack',
+                  'generic_name', 'pack_unit', 'cgst_per', 'sgst_per', 'item_code'
+                ];
+
+                if (medicineFields.includes(dbCol)) {
+                  medCols.push(`"${dbCol}"`);
+                  medVals.push(val);
+                  medUpdates.push(`"${dbCol}" = ?`);
+                }
               }
 
-              if (!colName || colName === 'medicine' || val === '') continue;
-              
-              if (existingCols.includes(colName)) {
-                colsToInsert.push(`"${colName}"`);
-                valuesToInsert.push(val);
-                placeholders.push('?');
+              let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
+              if (!med) {
+                const colsStr = ['name', ...medCols].join(', ');
+                const placeholdersStr = ['?', ...medVals.map(() => '?')].join(', ');
+                const result = await db.run(`INSERT INTO medicines (${colsStr}) VALUES (${placeholdersStr})`, [medName, ...medVals]);
+                med = { id: result.lastID };
+              } else {
+                if (medUpdates.length > 0) {
+                  await db.run(`UPDATE medicines SET ${medUpdates.join(', ')} WHERE id = ?`, [...medVals, med.id]);
+                }
+              }
+
+              const colsToInsert = ['medicine_id'];
+              const valuesToInsert = [med.id];
+              const placeholders = ['?'];
+
+              for (const [key, val] of Object.entries(cleanRow)) {
+                const rawColName = key.trim();
+                let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
+                
+                if (mapping && mapping[rawColName] === 'IGNORE') continue;
+                if (mapping && mapping[rawColName]) {
+                  colName = mapping[rawColName];
+                }
+
+                if (colName === 'loose_qty' || colName === 'loose_quantity') {
+                  colName = 'loose_quantity';
+                }
+                if (colName === 'rate') {
+                  colName = 'cost_price';
+                }
+
+                if (!colName || colName === 'medicine' || colName === 'name' || val === '') continue;
+                
+                if (existingCols.includes(colName)) {
+                  colsToInsert.push(`"${colName}"`);
+                  valuesToInsert.push(val);
+                  placeholders.push('?');
+                }
+              }
+
+              const insertQuery = `INSERT INTO inventory_master (${colsToInsert.join(', ')}) VALUES (${placeholders.join(', ')})`;
+              await db.run(insertQuery, valuesToInsert);
+            }
+            else if (dataType === 'sales') {
+              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no');
+              const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
+              const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
+              const doctorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'doctor_name');
+              const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
+              const discountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'discount');
+              const cgstKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cgst');
+              const sgstKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'sgst');
+
+              const invoiceNo = invoiceNoKey ? String(cleanRow[invoiceNoKey] || '').trim() : `INV-${Date.now()}-${insertCount}`;
+              const dateStr = dateKey ? cleanRow[dateKey] : new Date().toISOString();
+              const patientName = patientKey ? String(cleanRow[patientKey] || '').trim() : 'Walk-in Customer';
+              const doctorName = doctorKey ? String(cleanRow[doctorKey] || '').trim() : 'Self';
+              const totalAmount = totalAmountKey ? parseFloat(cleanRow[totalAmountKey]) || 0 : 0;
+              const discount = discountKey ? parseFloat(cleanRow[discountKey]) || 0 : 0;
+              const cgstVal = cgstKey ? parseFloat(cleanRow[cgstKey]) || 0 : 0;
+              const sgstVal = sgstKey ? parseFloat(cleanRow[sgstKey]) || 0 : 0;
+
+              let customer = await db.get('SELECT id FROM customers WHERE LOWER(name) = LOWER(?)', [patientName]);
+              if (!customer) {
+                const result = await db.run('INSERT INTO customers (name) VALUES (?)', [patientName]);
+                customer = { id: result.lastID };
+              }
+
+              let doctor = await db.get('SELECT id FROM doctors WHERE LOWER(name) = LOWER(?)', [doctorName]);
+              if (!doctor) {
+                const result = await db.run('INSERT INTO doctors (name) VALUES (?)', [doctorName]);
+                doctor = { id: result.lastID };
+              }
+
+              let invoice = await db.get('SELECT id FROM sales_invoices WHERE invoice_no = ?', [invoiceNo]);
+              if (!invoice) {
+                const result = await db.run(
+                  `INSERT INTO sales_invoices (invoice_no, customer_id, doctor_id, date, total_amount, discount, cgst_value, sgst_value)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [invoiceNo, customer.id, doctor.id, dateStr, totalAmount, discount, cgstVal, sgstVal]
+                );
+                invoice = { id: result.lastID };
+              }
+
+              let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
+              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+
+              let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
+              if (!med) {
+                const result = await db.run('INSERT INTO medicines (name) VALUES (?)', [medName]);
+                med = { id: result.lastID };
+              }
+
+              let inv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ?', [med.id]);
+              if (!inv) {
+                const result = await db.run('INSERT INTO inventory_master (medicine_id, quantity) VALUES (?, 0)', [med.id]);
+                inv = { id: result.lastID };
+              }
+
+              const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+              const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty');
+              const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
+              const rateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+
+              const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
+              const looseQty = looseQtyKey ? parseInt(cleanRow[looseQtyKey]) || 0 : 0;
+              const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
+              const unitPrice = rateKey ? parseFloat(cleanRow[rateKey]) || mrp : mrp;
+
+              await db.run(
+                `INSERT INTO sale_items (invoice_id, inventory_id, quantity, loose_qty, unit_price, mrp)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [invoice.id, inv.id, quantity, looseQty, unitPrice, mrp]
+              );
+            }
+            else if (dataType === 'purchases') {
+              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no');
+              const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
+              const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
+              const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
+
+              const invoiceNo = invoiceNoKey ? String(cleanRow[invoiceNoKey] || '').trim() : `PUR-${Date.now()}-${insertCount}`;
+              const dateStr = dateKey ? cleanRow[dateKey] : new Date().toISOString();
+              const distributorName = distributorKey ? String(cleanRow[distributorKey] || '').trim() : 'Unknown Supplier';
+              const totalAmount = totalAmountKey ? parseFloat(cleanRow[totalAmountKey]) || 0 : 0;
+
+              let distributor = await db.get('SELECT id FROM distributors WHERE LOWER(name) = LOWER(?)', [distributorName]);
+              if (!distributor) {
+                const result = await db.run('INSERT INTO distributors (name) VALUES (?)', [distributorName]);
+                distributor = { id: result.lastID };
+              }
+
+              let purchase = await db.get('SELECT id FROM purchases WHERE invoice_no = ? AND distributor_id = ?', [invoiceNo, distributor.id]);
+              if (!purchase) {
+                const result = await db.run(
+                  `INSERT INTO purchases (invoice_no, distributor_id, date, total_amount)
+                   VALUES (?, ?, ?, ?)`,
+                  [invoiceNo, distributor.id, dateStr, totalAmount]
+                );
+                purchase = { id: result.lastID };
+              }
+
+              let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
+              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+
+              let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
+              if (!med) {
+                const result = await db.run('INSERT INTO medicines (name) VALUES (?)', [medName]);
+                med = { id: result.lastID };
+              }
+
+              const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+              const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
+              const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+              const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
+              const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
+
+              const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
+              const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
+              const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
+              const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
+              const expiryDate = expKey ? String(cleanRow[expKey] || '').trim() : '12/2028';
+
+              await db.run(
+                `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [purchase.id, med.id, batchNo, expiryDate, quantity, costPrice, mrp]
+              );
+            }
+            else if (dataType === 'returns') {
+              const returnNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_no');
+              const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
+              const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
+              const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
+
+              const returnNo = returnNoKey ? String(cleanRow[returnNoKey] || '').trim() : `RET-${Date.now()}-${insertCount}`;
+              const dateStr = dateKey ? cleanRow[dateKey] : new Date().toISOString();
+              const distributorName = distributorKey ? String(cleanRow[distributorKey] || '').trim() : 'Unknown Supplier';
+              const totalAmount = totalAmountKey ? parseFloat(cleanRow[totalAmountKey]) || 0 : 0;
+
+              let distributor = await db.get('SELECT id FROM distributors WHERE LOWER(name) = LOWER(?)', [distributorName]);
+              if (!distributor) {
+                const result = await db.run('INSERT INTO distributors (name) VALUES (?)', [distributorName]);
+                distributor = { id: result.lastID };
+              }
+
+              let retRecord = await db.get('SELECT id FROM returns WHERE return_no = ?', [returnNo]);
+              if (!retRecord) {
+                const result = await db.run(
+                  `INSERT INTO returns (return_no, distributor_id, type, date, total_amount)
+                   VALUES (?, ?, 'purchase', ?, ?)`,
+                  [returnNo, distributor.id, dateStr, totalAmount]
+                );
+                retRecord = { id: result.lastID };
+              }
+
+              let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
+              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+
+              let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
+              if (!med) {
+                const result = await db.run('INSERT INTO medicines (name) VALUES (?)', [medName]);
+                med = { id: result.lastID };
+              }
+
+              const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+              const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
+              const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+              const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
+
+              const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
+              const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
+              const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
+              const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
+
+              await db.run(
+                `INSERT INTO return_items (return_id, medicine_id, batch_no, quantity, cost_price, mrp, total_price)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [retRecord.id, med.id, batchNo, quantity, costPrice, mrp, quantity * costPrice]
+              );
+            }
+            else if (dataType === 'customers') {
+              const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
+              const nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name') || patientKey;
+              const phoneKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'phone') || Object.keys(mapping || {}).find(k => mapping?.[k] === 'mobile');
+              const addressKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'address');
+              const notesKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'notes');
+
+              const name = nameKey ? String(cleanRow[nameKey] || '').trim() : 'Unnamed Customer';
+              const phone = phoneKey ? String(cleanRow[phoneKey] || '').trim() : '';
+              const address = addressKey ? String(cleanRow[addressKey] || '').trim() : '';
+              const notes = notesKey ? String(cleanRow[notesKey] || '').trim() : '';
+
+              let customer = await db.get('SELECT id FROM customers WHERE LOWER(name) = LOWER(?)', [name]);
+              if (!customer) {
+                await db.run(
+                  'INSERT INTO customers (name, phone, address, notes) VALUES (?, ?, ?, ?)',
+                  [name, phone, address, notes]
+                );
+              } else {
+                await db.run(
+                  'UPDATE customers SET phone = COALESCE(NULLIF(phone, ""), ?), address = COALESCE(NULLIF(address, ""), ?), notes = COALESCE(NULLIF(notes, ""), ?) WHERE id = ?',
+                  [phone, address, notes, customer.id]
+                );
               }
             }
 
-            const insertQuery = `INSERT INTO inventory_master (${colsToInsert.join(', ')}) VALUES (${placeholders.join(', ')})`;
-            await db.run(insertQuery, valuesToInsert);
-            
             insertCount++;
             if (insertCount % 1000 === 0) {
               migrationStatus.progress = 50 + Math.min(50, Math.floor((insertCount / rowCount) * 50));
@@ -770,7 +1053,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?
           await db.close();
         }
       })
-      .on('end', () => {}) // Dummy end callback to satisfy event typing if needed
+      .on('end', () => {})
       .on('error', reject);
   });
 }

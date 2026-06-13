@@ -132,7 +132,7 @@ router.get('/files', (req, res) => {
 
 // Trigger a manual migration script
 router.post('/run', async (req, res) => {
-  const { fileName, mapping, skipLines } = req.body;
+  const { fileName, dataType, mapping, skipLines } = req.body;
   if (!fileName) {
     return res.status(400).json({ error: 'fileName required' });
   }
@@ -140,12 +140,12 @@ router.post('/run', async (req, res) => {
     const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-      ['MIGRATION', `Requested manual migration for: ${fileName}`]
+      ['MIGRATION', `Requested manual migration for: ${fileName} (${dataType || 'default'})`]
     );
     
     // Call the worker in the background
     const skipCount = parseInt(skipLines) || 0;
-    runManualMigration(fileName, mapping, skipCount).catch(error => {
+    runManualMigration(fileName, dataType || 'inventory', mapping, skipCount).catch(error => {
       console.error('Background migration error:', error);
     });
 
@@ -372,7 +372,8 @@ router.get('/staging/inventory', async (req, res) => {
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
     const rows = await db.all(`
-      SELECT m.name as medicine_name, m.api_reference, i.id, i.batch_no, i.expiry_date, i.quantity, i.mrp, i.cost_price, i.rack_location 
+      SELECT m.name as medicine_name, m.api_reference, m.hsn_code, m.manufacturer, m.marketed_by, m.cgst, m.sgst,
+             i.id, i.batch_no, i.expiry_date, i.quantity, i.loose_quantity, i.mrp, i.cost_price, i.rack_location 
       FROM inventory_master i
       LEFT JOIN medicines m ON i.medicine_id = m.id
       ORDER BY i.id DESC LIMIT 200
@@ -386,7 +387,10 @@ router.put('/staging/inventory/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
-    const { rack_location, medicine_name, api_reference, batch_no, expiry_date, quantity, mrp, cost_price } = req.body;
+    const {
+      rack_location, medicine_name, api_reference, batch_no, expiry_date,
+      quantity, loose_quantity, mrp, cost_price, hsn_code, manufacturer, marketed_by, cgst, sgst
+    } = req.body;
     
     const updates = [];
     const params = [];
@@ -394,6 +398,7 @@ router.put('/staging/inventory/:id', async (req, res) => {
     if (batch_no !== undefined) { updates.push('batch_no = ?'); params.push(batch_no); }
     if (expiry_date !== undefined) { updates.push('expiry_date = ?'); params.push(expiry_date); }
     if (quantity !== undefined) { updates.push('quantity = ?'); params.push(quantity); }
+    if (loose_quantity !== undefined) { updates.push('loose_quantity = ?'); params.push(loose_quantity); }
     if (mrp !== undefined) { updates.push('mrp = ?'); params.push(mrp); }
     if (cost_price !== undefined) { updates.push('cost_price = ?'); params.push(cost_price); }
     
@@ -401,13 +406,21 @@ router.put('/staging/inventory/:id', async (req, res) => {
       await db.run(`UPDATE inventory_master SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.id]);
     }
     
-    if (medicine_name !== undefined || api_reference !== undefined) {
+    if (
+      medicine_name !== undefined || api_reference !== undefined || hsn_code !== undefined ||
+      manufacturer !== undefined || marketed_by !== undefined || cgst !== undefined || sgst !== undefined
+    ) {
        const inv = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', req.params.id);
        if (inv && inv.medicine_id) {
           const mUpdates = [];
           const mParams = [];
           if (medicine_name !== undefined) { mUpdates.push('name = ?'); mParams.push(medicine_name); }
           if (api_reference !== undefined) { mUpdates.push('api_reference = ?'); mParams.push(api_reference); }
+          if (hsn_code !== undefined) { mUpdates.push('hsn_code = ?'); mParams.push(hsn_code); }
+          if (manufacturer !== undefined) { mUpdates.push('manufacturer = ?'); mParams.push(manufacturer); }
+          if (marketed_by !== undefined) { mUpdates.push('marketed_by = ?'); mParams.push(marketed_by); }
+          if (cgst !== undefined) { mUpdates.push('cgst = ?'); mParams.push(cgst); }
+          if (sgst !== undefined) { mUpdates.push('sgst = ?'); mParams.push(sgst); }
           await db.run(`UPDATE medicines SET ${mUpdates.join(', ')} WHERE id = ?`, [...mParams, inv.medicine_id]);
        }
     }
@@ -527,6 +540,57 @@ router.delete('/staging/purchases/:id', async (req, res) => {
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
     await db.run('DELETE FROM purchases WHERE id = ?', req.params.id);
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/staging/returns', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all(`
+      SELECT r.id, r.return_no, r.date, r.total_amount, d.name as distributor_name
+      FROM returns r
+      LEFT JOIN distributors d ON r.distributor_id = d.id
+      ORDER BY r.id DESC LIMIT 100
+    `);
+    await db.close();
+    res.json(rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/staging/returns/:id', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const { return_no, date, total_amount, distributor_name } = req.body;
+    const updates = [];
+    const params = [];
+    if (return_no !== undefined) { updates.push('return_no = ?'); params.push(return_no); }
+    if (date !== undefined) { updates.push('date = ?'); params.push(date); }
+    if (total_amount !== undefined) { updates.push('total_amount = ?'); params.push(total_amount); }
+    
+    if (updates.length > 0) {
+      await db.run(`UPDATE returns SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.id]);
+    }
+    
+    if (distributor_name !== undefined) {
+      const ret = await db.get('SELECT distributor_id FROM returns WHERE id = ?', req.params.id);
+      if (ret && ret.distributor_id) {
+         await db.run('UPDATE distributors SET name = ? WHERE id = ?', [distributor_name, ret.distributor_id]);
+      }
+    }
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/staging/returns/:id', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    await db.run('DELETE FROM returns WHERE id = ?', req.params.id);
     await db.close();
     res.json({ success: true });
   } catch (e: any) { res.status(500).json({ error: e.message }); }

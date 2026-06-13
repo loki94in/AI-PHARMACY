@@ -492,7 +492,7 @@ const Topbar = ({
       '/catalog': 'Catalog Upload',
       '/customer-returns': 'Customer Returns',
       '/dashboard': 'Dashboard',
-      '/migration': 'Data Migration',
+      '/migration': 'Data Migration Wizard',
       '/dispatch': 'Dispatch',
       '/mail': 'Distributor Mail',
       '/doctors': 'Doctors',
@@ -619,11 +619,12 @@ const Layout = ({
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 }) => {
   const location = useLocation();
-  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning'].includes(location.pathname);
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  // hasUnread persists even after all are "read" — cleared only when user explicitly clears/reads
   const [hasUnread, setHasUnread] = useState(false);
+
+
 
   // Global Arrow Key Navigation (Shift columns / Move focus, do not change numbers)
   useEffect(() => {
