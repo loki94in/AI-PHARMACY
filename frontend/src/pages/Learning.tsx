@@ -16,7 +16,12 @@ import {
   Send,
   Zap,
   Mail,
-  Bell
+  Bell,
+  Globe,
+  Copy,
+  LogIn,
+  LogOut,
+  Plus
 } from 'lucide-react';
 import { apiClient } from '../services/api';
 import { toastEvent } from '../services/events';
@@ -65,6 +70,181 @@ const Learning: React.FC = () => {
   const [settingsData, setSettingsData] = useState<any>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSetting, setSavingSetting] = useState<string | null>(null);
+
+  // Configuration UI toggle states
+  const [showWaConfig, setShowWaConfig] = useState(false);
+  const [showWaBusConfig, setShowWaBusConfig] = useState(false);
+  const [showTgConfig, setShowTgConfig] = useState(false);
+  const [showEmailConfig, setShowEmailConfig] = useState(false);
+  const [showPrConfig, setShowPrConfig] = useState(false);
+
+  // WhatsApp Web Status
+  const [waStatus, setWaStatus] = useState({ isReady: false, qrUrl: null as string | null, message: '' });
+  const [isOpeningWaWindow, setIsOpeningWaWindow] = useState(false);
+
+  // WhatsApp Business API testing
+  const [waBusinessTesting, setWaBusinessTesting] = useState(false);
+  const [waBusinessTestResult, setWaBusinessTestResult] = useState<{ success?: boolean; phone?: string; name?: string; error?: string } | null>(null);
+
+  // Pharmarack link login
+  const [isOpeningWindow, setIsOpeningWindow] = useState(false);
+
+  // New distributor creation states
+  const [showAddDistModal, setShowAddDistModal] = useState(false);
+  const [newDistName, setNewDistName] = useState('');
+  const [newDistPhone, setNewDistPhone] = useState('');
+  const [newDistEmail, setNewDistEmail] = useState('');
+
+  const handleAddDistributor = async () => {
+    if (!newDistName.trim()) {
+      toastEvent.trigger('Distributor name is required', 'error');
+      return;
+    }
+    try {
+      const res = await apiClient.post('/settings/distributors', {
+        name: newDistName.trim(),
+        phone: newDistPhone.trim(),
+        email: newDistEmail.trim()
+      });
+      if (res.data && res.data.success) {
+        toastEvent.trigger('Distributor added successfully', 'success');
+        setShowAddDistModal(false);
+        setNewDistName('');
+        setNewDistPhone('');
+        setNewDistEmail('');
+        fetchProfiles();
+      }
+    } catch (err) {
+      console.error('Failed to add distributor', err);
+      toastEvent.trigger('Failed to add distributor', 'error');
+    }
+  };
+
+  const handleSaveConfig = async (updatedSettings = settingsData) => {
+    try {
+      await apiClient.post('/settings/save', updatedSettings);
+      toastEvent.trigger('Settings saved successfully', 'success');
+      // Refresh settings
+      const { data } = await apiClient.get('/settings');
+      if (data) setSettingsData(data);
+    } catch (error) {
+      console.error('Failed to save settings', error);
+      toastEvent.trigger('Failed to save settings', 'error');
+    }
+  };
+
+  useEffect(() => {
+    let timer: any;
+    if (settingsData?.whatsapp_enabled === 'true' && !waStatus.isReady) {
+      const fetchQR = async () => {
+        try {
+          const { data } = await apiClient.get('/messaging/qr');
+          setWaStatus(data);
+        } catch (error) {
+          console.error("Failed to fetch WhatsApp QR", error);
+        }
+      };
+      fetchQR();
+      timer = setInterval(fetchQR, 5000);
+    }
+    return () => clearInterval(timer);
+  }, [settingsData?.whatsapp_enabled, waStatus.isReady]);
+
+  const handleReconnect = async () => {
+    try {
+      setWaStatus({ isReady: false, qrUrl: null, message: 'Reconnecting...' });
+      await apiClient.post('/messaging/reconnect');
+      toastEvent.trigger('WhatsApp reconnecting...', 'info');
+    } catch (error) {
+      console.error('Failed to reconnect', error);
+      toastEvent.trigger('Failed to reconnect WhatsApp', 'error');
+    }
+  };
+
+  const handleOpenWaLoginWindow = async () => {
+    setIsOpeningWaWindow(true);
+    try {
+      toastEvent.trigger('Launching Chrome login window for WhatsApp...', 'info');
+      await apiClient.post('/messaging/login-window');
+    } catch (err: any) {
+      console.error('Failed to open WhatsApp login window:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to open Chrome login window. Ensure Chrome is installed.', 'error');
+    } finally {
+      setIsOpeningWaWindow(false);
+    }
+  };
+
+  const handleTestWaBusiness = async () => {
+    setWaBusinessTesting(true);
+    setWaBusinessTestResult(null);
+    try {
+      await apiClient.post('/settings/save', settingsData);
+      const { data } = await apiClient.post('/wa-business/test');
+      setWaBusinessTestResult(data);
+    } catch (err: any) {
+      setWaBusinessTestResult({ success: false, error: err?.response?.data?.error || 'Connection failed' });
+    } finally {
+      setWaBusinessTesting(false);
+    }
+  };
+
+  const copyWebhookUrl = () => {
+    const url = `${window.location.origin}/api/wa-business/webhook`;
+    navigator.clipboard.writeText(url);
+    toastEvent.trigger('Webhook URL copied!', 'success');
+  };
+
+  const handleOpenLoginWindow = async () => {
+    setIsOpeningWindow(true);
+    try {
+      await apiClient.post('/pharmarack/login-window');
+      toastEvent.trigger('Google Chrome window opened. Please log in on retailers.pharmarack.com.', 'info');
+      
+      let attempts = 0;
+      const interval = setInterval(async () => {
+        attempts++;
+        if (attempts > 90) { 
+          clearInterval(interval);
+          setIsOpeningWindow(false);
+          return;
+        }
+
+        try {
+          const { data } = await apiClient.get('/settings');
+          if (data && data.pharmarack_session_token && data.pharmarack_session_token !== settingsData?.pharmarack_session_token) {
+            setSettingsData(data);
+            toastEvent.trigger('Successfully linked Pharmarack session!', 'success');
+            clearInterval(interval);
+            setIsOpeningWindow(false);
+          }
+        } catch (err) {
+          console.warn('Failed to poll settings status:', err);
+        }
+      }, 2000);
+    } catch (err: any) {
+      console.error('Failed to open login window:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to open Chrome login window. Ensure Chrome is installed.', 'error');
+      setIsOpeningWindow(false);
+    }
+  };
+
+  const handlePharmarackLogout = async () => {
+    const updated = {
+      ...settingsData,
+      pharmarack_username: '',
+      pharmarack_password: '',
+      pharmarack_session_token: '',
+      pharmarack_mode: 'Simulation'
+    };
+    setSettingsData(updated);
+    try {
+      await apiClient.post('/settings/save', updated);
+      toastEvent.trigger('Logged out and cleared Pharmarack credentials successfully.', 'success');
+    } catch (error) {
+      console.error('Failed to logout from Pharmarack', error);
+      toastEvent.trigger('Failed to logout from Pharmarack', 'error');
+    }
+  };
 
   // Manual trainer editing state
   const [mappingRules, setMappingRules] = useState<Record<string, string>>({
@@ -284,9 +464,6 @@ const Learning: React.FC = () => {
           </h3>
           
           <div className="flex-1 overflow-y-auto pr-1 py-2 space-y-4 custom-scrollbar">
-            <p className="text-xs text-muted leading-relaxed mb-4">
-              Toggle and monitor intelligent background services, automated integrations, and real-time communication modules.
-            </p>
             
             {loadingSettings ? (
               <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted">
@@ -322,7 +499,68 @@ const Learning: React.FC = () => {
                   {settingsData.whatsapp_enabled === 'true' && (
                     <div className="text-[9px] bg-bg2 border border-glass-border rounded px-2 py-1 flex items-center justify-between text-muted">
                       <span>Status: <strong className="text-green uppercase font-semibold text-[9px]">Active Engine</strong></span>
-                      <a href="/settings" className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]">Configure session</a>
+                      <button 
+                        onClick={() => setShowWaConfig(!showWaConfig)}
+                        className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]"
+                      >
+                        {showWaConfig ? 'Close configuration' : 'Configure session'}
+                      </button>
+                    </div>
+                  )}
+
+                  {showWaConfig && (
+                    <div className="flex flex-col gap-3 mt-2 pt-3 border-t border-glass-border/40">
+                      <div className="flex items-center justify-center p-4 border-2 border-dashed border-glass-border/30 rounded-xl bg-bg2/30">
+                        <div className="text-center space-y-3">
+                          <div className="w-32 h-32 mx-auto bg-bg2 rounded-xl flex items-center justify-center p-2 border border-glass-border">
+                            {waStatus.isReady ? (
+                              <div className="flex flex-col items-center justify-center w-full h-full text-green">
+                                <MessageCircle size={36} className="mb-1" />
+                                <span className="font-bold text-xs">Connected!</span>
+                              </div>
+                            ) : waStatus.qrUrl ? (
+                              <img src={waStatus.qrUrl} alt="WhatsApp QR Code" className="w-full h-full object-contain" />
+                            ) : (
+                              <div className="animate-pulse flex flex-col items-center justify-center w-full h-full">
+                                <div className="w-6 h-6 border-3 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin mb-2"></div>
+                                <span className="text-[9px] text-muted font-bold text-center">Loading QR...</span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted max-w-xs mx-auto leading-normal">
+                            {waStatus.isReady 
+                              ? "Your WhatsApp account is linked and active."
+                              : waStatus.message || "Scan the QR code to link your account."}
+                          </p>
+                          <div className="flex flex-wrap gap-2 justify-center mt-1">
+                            {!waStatus.isReady && (
+                              <>
+                                <button 
+                                  onClick={handleOpenWaLoginWindow}
+                                  disabled={isOpeningWaWindow}
+                                  className="text-[10px] font-bold bg-green/20 text-green px-3 py-1.5 rounded-full hover:bg-green/30 transition-all flex items-center gap-1 disabled:opacity-50"
+                                  title="Open Chrome to log in to WhatsApp Web"
+                                >
+                                  <LogIn size={10} />
+                                  {isOpeningWaWindow ? 'Opening...' : 'Chrome Login'}
+                                </button>
+                                <button 
+                                  onClick={() => setWaStatus({ ...waStatus, qrUrl: null })}
+                                  className="text-[10px] font-bold bg-primary/20 text-primary px-3 py-1.5 rounded-full hover:bg-primary/30 transition-all"
+                                >
+                                  Refresh QR
+                                </button>
+                              </>
+                            )}
+                            <button 
+                              onClick={handleReconnect}
+                              className="text-[10px] font-bold bg-red-500/20 text-red-400 px-3 py-1.5 rounded-full hover:bg-red-500/30 transition-all flex items-center gap-1"
+                            >
+                              <LogOut size={10} /> Log Out WhatsApp
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -354,7 +592,98 @@ const Learning: React.FC = () => {
                   {settingsData.wa_business_enabled === 'true' && (
                     <div className="text-[9px] bg-bg2 border border-glass-border rounded px-2 py-1 flex items-center justify-between text-muted">
                       <span>Status: <strong className="text-green uppercase font-semibold text-[9px]">Cloud Ready</strong></span>
-                      <a href="/settings" className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]">Settings</a>
+                      <button 
+                        onClick={() => setShowWaBusConfig(!showWaBusConfig)}
+                        className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]"
+                      >
+                        {showWaBusConfig ? 'Close settings' : 'Settings'}
+                      </button>
+                    </div>
+                  )}
+
+                  {showWaBusConfig && (
+                    <div className="flex flex-col gap-3 mt-2 pt-3 border-t border-glass-border/40 text-left">
+                      <div className="grid grid-cols-1 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Phone Number ID</label>
+                          <input
+                            type="text"
+                            className="premium-input w-full text-xs"
+                            placeholder="Phone Number ID"
+                            value={settingsData.wa_business_phone_number_id || ''}
+                            onChange={(e) => setSettingsData({ ...settingsData, wa_business_phone_number_id: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Access Token</label>
+                          <input
+                            type="password"
+                            className="premium-input w-full text-xs"
+                            placeholder="Access Token"
+                            value={settingsData.wa_business_access_token || ''}
+                            onChange={(e) => setSettingsData({ ...settingsData, wa_business_access_token: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WABA ID</label>
+                          <input
+                            type="text"
+                            className="premium-input w-full text-xs"
+                            placeholder="Business Account ID"
+                            value={settingsData.wa_business_waba_id || ''}
+                            onChange={(e) => setSettingsData({ ...settingsData, wa_business_waba_id: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Verify Token</label>
+                          <input
+                            type="text"
+                            className="premium-input w-full text-xs"
+                            placeholder="Webhook Verify Token"
+                            value={settingsData.wa_business_webhook_verify_token || ''}
+                            onChange={(e) => setSettingsData({ ...settingsData, wa_business_webhook_verify_token: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="bg-bg2/40 p-2.5 flex items-center justify-between border border-glass-border rounded-lg mt-1">
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <Globe size={12} className="text-sky flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-[8px] text-muted uppercase font-bold tracking-wider">Webhook URL</p>
+                            <p className="text-[10px] text-sky font-mono truncate">{window.location.origin}/api/wa-business/webhook</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={copyWebhookUrl}
+                          className="text-[9px] font-bold bg-sky-500/20 text-sky px-2 py-1 rounded-full hover:bg-sky-500/30 transition-all flex items-center gap-0.5 flex-shrink-0"
+                        >
+                          <Copy size={9} /> Copy
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-1">
+                        <button
+                          onClick={() => handleSaveConfig()}
+                          className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 transition-all"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleTestWaBusiness}
+                          disabled={waBusinessTesting || !settingsData.wa_business_phone_number_id || !settingsData.wa_business_access_token}
+                          className="text-[10px] font-bold bg-sky-500/20 text-sky px-3 py-1.5 rounded-lg hover:bg-sky-500/30 transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {waBusinessTesting ? 'Testing...' : 'Test connection'}
+                        </button>
+                        {waBusinessTestResult && (
+                          <span className={`text-[9px] font-bold px-2 py-1 rounded-full truncate max-w-[120px] ${
+                            waBusinessTestResult.success ? 'bg-green/10 text-green' : 'bg-red-500/10 text-red-400'
+                          }`}>
+                            {waBusinessTestResult.success ? 'Connected' : 'Failed'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -386,7 +715,45 @@ const Learning: React.FC = () => {
                   {settingsData.telegram_enabled === 'true' && (
                     <div className="text-[9px] bg-bg2 border border-glass-border rounded px-2 py-1 flex items-center justify-between text-muted">
                       <span>Status: <strong className="text-green uppercase font-semibold text-[9px]">Bot Listening</strong></span>
-                      <a href="/settings" className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]">Configure token</a>
+                      <button 
+                        onClick={() => setShowTgConfig(!showTgConfig)}
+                        className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]"
+                      >
+                        {showTgConfig ? 'Close configuration' : 'Configure token'}
+                      </button>
+                    </div>
+                  )}
+
+                  {showTgConfig && (
+                    <div className="flex flex-col gap-2.5 mt-2 pt-3 border-t border-glass-border/40 text-left">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Bot Token</label>
+                        <input
+                          type="text"
+                          className="premium-input w-full text-xs"
+                          placeholder="Telegram Bot Token"
+                          value={settingsData.telegram_token || ''}
+                          onChange={(e) => setSettingsData({ ...settingsData, telegram_token: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Chat ID</label>
+                        <input
+                          type="text"
+                          className="premium-input w-full text-xs"
+                          placeholder="Telegram Chat ID"
+                          value={settingsData.telegram_chat_id || ''}
+                          onChange={(e) => setSettingsData({ ...settingsData, telegram_chat_id: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex gap-2 mt-1">
+                        <button
+                          onClick={() => handleSaveConfig()}
+                          className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 transition-all"
+                        >
+                          Save Credentials
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -418,33 +785,206 @@ const Learning: React.FC = () => {
                   {settingsData.automation_enabled === 'true' && (
                     <div className="text-[9px] bg-bg2 border border-glass-border rounded px-2 py-1 flex items-center justify-between text-muted">
                       <span>Status: <strong className="text-green uppercase font-semibold text-[9px]">Gmail Scanner Active</strong></span>
-                      <a href="/settings" className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]">Set credentials</a>
+                      <button 
+                        onClick={() => setShowEmailConfig(!showEmailConfig)}
+                        className="text-sky hover:underline font-bold uppercase tracking-wider text-[9px]"
+                      >
+                        {showEmailConfig ? 'Close credentials' : 'Set credentials'}
+                      </button>
+                    </div>
+                  )}
+
+                  {showEmailConfig && (
+                    <div className="flex flex-col gap-3 mt-2 pt-3 border-t border-glass-border/40 text-left">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted uppercase tracking-wider block">Authentication Method</label>
+                        <div className="flex gap-4 py-1">
+                          <label className="inline-flex items-center text-[10px] text-muted cursor-pointer hover:text-text">
+                            <input
+                              type="radio"
+                              name="gmailAuthMethod"
+                              value="password"
+                              checked={settingsData.gmail_auth_method === 'password'}
+                              onChange={() => setSettingsData({ ...settingsData, gmail_auth_method: 'password' })}
+                              className="mr-1 accent-green"
+                            />
+                            App Password
+                          </label>
+                          <label className="inline-flex items-center text-[10px] text-muted cursor-pointer hover:text-text">
+                            <input
+                              type="radio"
+                              name="gmailAuthMethod"
+                              value="oauth2"
+                              checked={settingsData.gmail_auth_method === 'oauth2'}
+                              onChange={() => setSettingsData({ ...settingsData, gmail_auth_method: 'oauth2' })}
+                              className="mr-1 accent-green"
+                            />
+                            OAuth2
+                          </label>
+                        </div>
+                      </div>
+
+                      {settingsData.gmail_auth_method === 'password' ? (
+                        <div className="grid grid-cols-1 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Gmail Login ID</label>
+                            <input
+                              type="email"
+                              className="premium-input w-full text-xs"
+                              placeholder="pharmacy@gmail.com"
+                              value={settingsData.gmail_user || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, gmail_user: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Gmail App Password</label>
+                            <input
+                              type="password"
+                              className="premium-input w-full text-xs"
+                              placeholder="App Password (16 chars)"
+                              value={settingsData.gmail_pass || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, gmail_pass: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Gmail Login ID</label>
+                            <input
+                              type="email"
+                              className="premium-input w-full text-xs"
+                              placeholder="pharmacy@gmail.com"
+                              value={settingsData.gmail_user || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, gmail_user: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Google Client ID</label>
+                            <input
+                              type="text"
+                              className="premium-input w-full text-xs"
+                              placeholder="OAuth2 Client ID"
+                              value={settingsData.google_client_id || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, google_client_id: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Google Client Secret</label>
+                            <input
+                              type="password"
+                              className="premium-input w-full text-xs"
+                              placeholder="OAuth2 Client Secret"
+                              value={settingsData.google_client_secret || ''}
+                              onChange={(e) => setSettingsData({ ...settingsData, google_client_secret: e.target.value })}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await apiClient.post('/settings/save', settingsData);
+                              const backendUrl = apiClient.defaults.baseURL || window.location.origin;
+                              window.open(`${backendUrl}/api/email/auth/google`, '_blank');
+                            }}
+                            className="text-[10px] font-bold bg-primary text-text px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-all flex items-center gap-1"
+                            disabled={!settingsData.google_client_id || !settingsData.google_client_secret}
+                          >
+                            Link Gmail Account
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Auto delete */}
+                      <div className="pt-2 border-t border-glass-border/30 space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="accent-green"
+                            checked={settingsData.email_autodelete_enabled !== 'false'}
+                            onChange={(e) => setSettingsData({ ...settingsData, email_autodelete_enabled: e.target.checked.toString() })}
+                          />
+                          <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Auto-delete attachments</span>
+                        </label>
+                        {settingsData.email_autodelete_enabled !== 'false' && (
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-muted uppercase">Retention Count</label>
+                            <input
+                              type="number"
+                              className="premium-input w-full text-xs"
+                              placeholder="10"
+                              value={settingsData.email_autodelete_limit || 10}
+                              onChange={(e) => setSettingsData({ ...settingsData, email_autodelete_limit: e.target.value })}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 mt-1">
+                        <button
+                          onClick={() => handleSaveConfig()}
+                          className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 transition-all"
+                        >
+                          Save Credentials
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* 5. General WhatsApp Alerts */}
-                <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex justify-between items-start">
-                  <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-text flex items-center gap-2">
-                      <Bell size={14} className="text-purple" />
-                      WhatsApp Stock Alerts
-                    </h4>
-                    <p className="text-[10px] text-muted leading-normal">
-                      Dispatch low-stock notifications and supplier alerts automatically to key store personnel.
-                    </p>
+                {/* 5. WhatsApp Alert Contacts */}
+                <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-bold text-text flex items-center gap-2">
+                        <Bell size={14} className="text-purple" />
+                        WhatsApp Alert Contacts
+                      </h4>
+                      <p className="text-[10px] text-muted leading-normal">
+                        Configure WhatsApp numbers (separated by commas for multiple recipients) for automated alerts.
+                      </p>
+                    </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={settingsData.whatsapp_notif === 'true'} 
-                      onChange={() => handleToggleSetting('whatsapp_notif')}
-                      disabled={savingSetting === 'whatsapp_notif'}
-                    />
-                    <div className="w-9 h-5 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors peer-disabled:opacity-50" />
-                    <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-4 peer-disabled:opacity-50" />
-                  </label>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2 border-t border-glass-border/40 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Admin WhatsApp No(s).</label>
+                      <input
+                        type="text"
+                        className="premium-input w-full text-xs"
+                        placeholder="e.g. +919876543210, +9199..."
+                        value={settingsData.admin_whatsapp || ''}
+                        onChange={(e) => setSettingsData({ ...settingsData, admin_whatsapp: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Distributor WhatsApp No(s).</label>
+                      <input
+                        type="text"
+                        className="premium-input w-full text-xs"
+                        placeholder="e.g. +919876543210, +9199..."
+                        value={settingsData.distributor_whatsapp || ''}
+                        onChange={(e) => setSettingsData({ ...settingsData, distributor_whatsapp: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Delivery Boy WhatsApp No(s).</label>
+                      <input
+                        type="text"
+                        className="premium-input w-full text-xs"
+                        placeholder="e.g. +919876543210, +9199..."
+                        value={settingsData.delivery_boy_whatsapp || ''}
+                        onChange={(e) => setSettingsData({ ...settingsData, delivery_boy_whatsapp: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end mt-1">
+                    <button
+                      onClick={() => handleSaveConfig()}
+                      className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 transition-all"
+                    >
+                      Save Contacts
+                    </button>
+                  </div>
                 </div>
 
                 {/* 6. Email Alerts */}
@@ -470,9 +1010,108 @@ const Learning: React.FC = () => {
                     <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-4 peer-disabled:opacity-50" />
                   </label>
                 </div>
+
+                {/* 7. Pharmarack Integration Settings */}
+                <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-bold text-text flex items-center gap-2">
+                        <Globe size={14} className="text-sky" />
+                        Pharmarack Settings
+                      </h4>
+                      <p className="text-[10px] text-muted leading-normal">
+                        Link retailer account credentials and cookies for background distributor inventory queries.
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => setShowPrConfig(!showPrConfig)}
+                      className="text-[9px] font-bold text-sky hover:underline uppercase tracking-wider shrink-0 mt-0.5"
+                    >
+                      {showPrConfig ? 'Hide' : 'Configure'}
+                    </button>
+                  </div>
+                  
+                  {showPrConfig && (
+                    <div className="flex flex-col gap-2.5 pt-3 border-t border-glass-border/40 text-left">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Connection Mode</label>
+                        <select
+                          className="premium-input w-full text-xs py-1.5"
+                          value={settingsData.pharmarack_mode || 'Simulation'}
+                          onChange={(e) => setSettingsData({ ...settingsData, pharmarack_mode: e.target.value })}
+                        >
+                          <option value="Simulation" className="bg-bg text-text">Simulation Mode</option>
+                          <option value="Live" className="bg-bg text-text">Live Scraper Mode</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Username</label>
+                        <input
+                          type="text"
+                          className="premium-input w-full text-xs"
+                          placeholder="Pharmarack Mobile No"
+                          value={settingsData.pharmarack_username || ''}
+                          onChange={(e) => setSettingsData({ ...settingsData, pharmarack_username: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Password</label>
+                        <input
+                          type="password"
+                          className="premium-input w-full text-xs"
+                          placeholder="Password"
+                          value={settingsData.pharmarack_password || ''}
+                          onChange={(e) => setSettingsData({ ...settingsData, pharmarack_password: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Session Token</label>
+                        <input
+                          type="text"
+                          className="premium-input w-full text-xs"
+                          placeholder="Session Token / cookies"
+                          value={settingsData.pharmarack_session_token || ''}
+                          onChange={(e) => setSettingsData({ ...settingsData, pharmarack_session_token: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        <button
+                          onClick={() => handleSaveConfig()}
+                          className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 transition-all"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleOpenLoginWindow}
+                          disabled={isOpeningWindow}
+                          className="text-[10px] font-bold bg-sky-500/20 text-sky px-3 py-1.5 rounded-lg hover:bg-sky-500/30 transition-all flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <LogIn size={10} />
+                          {isOpeningWindow ? 'Opening...' : 'Chrome Login'}
+                        </button>
+                        <button
+                          onClick={handlePharmarackLogout}
+                          className="text-[10px] font-bold bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/30 transition-all flex items-center gap-1"
+                        >
+                          <LogOut size={10} /> Log Out
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
-              <div className="py-8 text-center text-xs text-muted">Failed to retrieve configuration settings.</div>
+              <div className="py-8 text-center text-xs text-muted flex flex-col items-center justify-center gap-2">
+                <span>Failed to retrieve configuration settings.</span>
+                <button
+                  onClick={fetchSettings}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-glass-border text-muted hover:text-text transition-all font-semibold flex items-center gap-1 active:scale-95"
+                >
+                  <RefreshCw size={12} />
+                  Retry Loading
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -484,14 +1123,24 @@ const Learning: React.FC = () => {
               <Database size={16} className="text-sky" />
               Distributors ({profiles.length})
             </h3>
-            <button
-              onClick={fetchProfiles}
-              disabled={loadingProfiles}
-              className="p-1 text-muted hover:text-sky transition-all disabled:opacity-50"
-              title="Sync Profiles"
-            >
-              <RefreshCw size={14} className={loadingProfiles ? 'animate-spin' : ''} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAddDistModal(true)}
+                className="p-1 text-muted hover:text-sky transition-all flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider"
+                title="Add Distributor"
+              >
+                <Plus size={12} /> Add
+              </button>
+              <span className="text-muted/30">|</span>
+              <button
+                onClick={fetchProfiles}
+                disabled={loadingProfiles}
+                className="p-1 text-muted hover:text-sky transition-all disabled:opacity-50"
+                title="Sync Profiles"
+              >
+                <RefreshCw size={14} className={loadingProfiles ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
           
           <div className="flex-1 overflow-y-auto py-2 space-y-2 pr-1 custom-scrollbar">
@@ -572,6 +1221,80 @@ const Learning: React.FC = () => {
 
               {/* Scrollable Form & References */}
               <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+                
+                {/* Distributor Profile Details (Name, Phone, Email) */}
+                <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
+                  <h4 className="text-[11px] font-black uppercase tracking-wider text-sky flex items-center gap-1.5 border-b border-glass-border/40 pb-1.5">
+                    <Database size={12} />
+                    Distributor Contact Details
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Name</label>
+                      <input
+                        type="text"
+                        className="premium-input w-full text-xs"
+                        value={selectedProfile.distributor.name || ''}
+                        onChange={(e) => {
+                          setSelectedProfile({
+                            ...selectedProfile,
+                            distributor: { ...selectedProfile.distributor, name: e.target.value }
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WhatsApp Phone</label>
+                      <input
+                        type="text"
+                        className="premium-input w-full text-xs"
+                        placeholder="e.g. +919876543210"
+                        value={selectedProfile.distributor.phone || ''}
+                        onChange={(e) => {
+                          setSelectedProfile({
+                            ...selectedProfile,
+                            distributor: { ...selectedProfile.distributor, phone: e.target.value }
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Email Address</label>
+                      <input
+                        type="text"
+                        className="premium-input w-full text-xs"
+                        placeholder="e.g. supplier@gmail.com"
+                        value={selectedProfile.distributor.email || ''}
+                        onChange={(e) => {
+                          setSelectedProfile({
+                            ...selectedProfile,
+                            distributor: { ...selectedProfile.distributor, email: e.target.value }
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center mt-1">
+                    <div className="text-[9px] text-muted">
+                      ID: {selectedProfile.distributor.id} | References: {selectedProfile.files.length}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await apiClient.put(`/settings/distributors/${selectedProfile.distributor.id}`, selectedProfile.distributor);
+                          toastEvent.trigger('Distributor details updated successfully', 'success');
+                          fetchProfiles();
+                        } catch (err) {
+                          console.error('Failed to update distributor details', err);
+                          toastEvent.trigger('Failed to update distributor details', 'error');
+                        }
+                      }}
+                      className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 transition-all"
+                    >
+                      Update Details
+                    </button>
+                  </div>
+                </div>
                 
                 {/* Column Mappings Form */}
                 <div className="space-y-3">
@@ -811,6 +1534,72 @@ const Learning: React.FC = () => {
                 className="px-5 py-2 bg-sky-500 hover:bg-sky-400 text-white rounded-xl text-xs font-bold uppercase transition-all"
               >
                 Close Comparator
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Distributor Modal */}
+      {showAddDistModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-md border-primary/20 p-5 space-y-4">
+            <div className="flex justify-between items-center border-b border-glass-border pb-2.5">
+              <h3 className="font-bold text-sm text-text flex items-center gap-2">
+                <Database size={16} className="text-sky" />
+                Add New Distributor
+              </h3>
+              <button
+                onClick={() => setShowAddDistModal(false)}
+                className="p-1 rounded hover:bg-white/10 text-muted hover:text-text transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-3.5 py-1 text-left">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Name *</label>
+                <input
+                  type="text"
+                  className="premium-input w-full text-xs"
+                  placeholder="Distributor / Supplier Name"
+                  value={newDistName}
+                  onChange={(e) => setNewDistName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WhatsApp Phone No.</label>
+                <input
+                  type="text"
+                  className="premium-input w-full text-xs"
+                  placeholder="e.g. +919876543210"
+                  value={newDistPhone}
+                  onChange={(e) => setNewDistPhone(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Email Address</label>
+                <input
+                  type="text"
+                  className="premium-input w-full text-xs"
+                  placeholder="e.g. distributor@gmail.com"
+                  value={newDistEmail}
+                  onChange={(e) => setNewDistEmail(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                onClick={() => setShowAddDistModal(false)}
+                className="px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-glass-border text-muted hover:text-text text-xs font-bold transition-all active:scale-95"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddDistributor}
+                className="px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold transition-all active:scale-95 shadow-md shadow-sky-500/10"
+              >
+                Add Distributor
               </button>
             </div>
           </div>

@@ -146,32 +146,36 @@ export async function sendMessage(
     return;
   }
 
-  // Global Phone Number Sanitizer
-  let chatId = String(to);
-  if (!chatId.includes('@')) {
-    // Strip spaces, alphabets, plus signs, and any other special characters
-    let cleanPhone = chatId.replace(/\D/g, '');
-    
-    // Automatically add India country code if it's exactly 10 digits
-    if (cleanPhone.length === 10) {
-      cleanPhone = `91${cleanPhone}`;
-    }
-    
-    // Ensure the required WhatsApp suffix is added
-    chatId = `${cleanPhone}@c.us`;
-  }
+  const recipients = String(to)
+    .split(/[,;\s]+/)
+    .map(r => r.trim())
+    .filter(r => r.length > 0);
 
-  // whatsapp-web.js v1.22: sendMessage(chatId, content, options?)
-  if (file && file.mimetype && file.data) {
-    const { MessageMedia } = await import('whatsapp-web.js');
-    const media = new MessageMedia(file.mimetype, file.data, file.filename || 'file');
-    await clientInstance.sendMessage(chatId, media, { caption: caption ?? '' });
-  } else if (mediaPath) {
-    const { MessageMedia } = await import('whatsapp-web.js');
-    const media = MessageMedia.fromFilePath(mediaPath);
-    await clientInstance.sendMessage(chatId, media, { caption: caption ?? '' });
-  } else {
-    await clientInstance.sendMessage(chatId, caption ?? '');
+  for (const recipient of recipients) {
+    let chatId = recipient;
+    if (!chatId.includes('@')) {
+      let cleanPhone = chatId.replace(/\D/g, '');
+      if (cleanPhone.length === 10) {
+        cleanPhone = `91${cleanPhone}`;
+      }
+      chatId = `${cleanPhone}@c.us`;
+    }
+
+    try {
+      if (file && file.mimetype && file.data) {
+        const { MessageMedia } = await import('whatsapp-web.js');
+        const media = new MessageMedia(file.mimetype, file.data, file.filename || 'file');
+        await clientInstance.sendMessage(chatId, media, { caption: caption ?? '' });
+      } else if (mediaPath) {
+        const { MessageMedia } = await import('whatsapp-web.js');
+        const media = MessageMedia.fromFilePath(mediaPath);
+        await clientInstance.sendMessage(chatId, media, { caption: caption ?? '' });
+      } else {
+        await clientInstance.sendMessage(chatId, caption ?? '');
+      }
+    } catch (err) {
+      console.error(`Failed to send WhatsApp message to ${chatId}:`, err);
+    }
   }
 }
 

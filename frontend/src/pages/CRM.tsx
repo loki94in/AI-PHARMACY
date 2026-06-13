@@ -584,13 +584,6 @@ const CRM = () => {
                     <MessageCircle size={16} className="text-green" />
                     <span className="font-bold text-xs text-text">WhatsApp Chats</span>
                   </div>
-                  <button 
-                    onClick={handleWaReconnect} 
-                    className="p-1.5 hover:bg-red/10 rounded-full text-muted hover:text-red transition-colors"
-                    title="Disconnect & Scan New QR"
-                  >
-                    <RefreshCw size={12} />
-                  </button>
                 </div>
 
                 {/* Chats List */}
@@ -618,33 +611,35 @@ const CRM = () => {
                     </div>
 
                     {/* Messages Scroll Panel */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-bg2/30 custom-scrollbar">
+                    <div className="flex-1 flex flex-col-reverse overflow-y-auto p-4 gap-3 bg-bg2/30 custom-scrollbar">
                       {waLoading ? (
                         <div className="text-center text-muted text-xs py-4">Loading messages...</div>
                       ) : (
-                        waMessages.map((msg, idx) => (
-                          <div key={msg.id || idx} className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[75%] rounded-xl p-2.5 text-xs shadow-sm relative border ${msg.fromMe ? 'bg-primary/10 text-text border-primary/20 rounded-tr-none' : 'bg-bg3 text-text border-glass-border rounded-tl-none'}`}>
-                              {msg.hasMedia ? (
-                                <WhatsAppMedia
-                                  msg={msg}
-                                  chatId={activeWaChat.id}
-                                  media={loadedMedia[msg.id]}
-                                  loading={loadingMedia[msg.id]}
-                                  onLoad={() => fetchMedia(msg.id)}
-                                  onImageClick={(src, name) => setLightbox({ isOpen: true, src, name })}
-                                />
-                              ) : (
-                                <span className="whitespace-pre-wrap">{msg.body}</span>
-                              )}
-                              <div className="text-[8px] text-muted mt-1 text-right float-right ml-3 pt-0.5 select-none">
-                                {new Date(msg.timestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        <>
+                          <div ref={messagesEndRef} />
+                          {[...waMessages].reverse().map((msg, idx) => (
+                            <div key={msg.id || idx} className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-[75%] rounded-xl p-2.5 text-xs shadow-sm relative border ${msg.fromMe ? 'bg-primary/10 text-text border-primary/20 rounded-tr-none' : 'bg-bg3 text-text border-glass-border rounded-tl-none'}`}>
+                                {msg.hasMedia ? (
+                                  <WhatsAppMedia
+                                    msg={msg}
+                                    chatId={activeWaChat.id}
+                                    media={loadedMedia[msg.id]}
+                                    loading={loadingMedia[msg.id]}
+                                    onLoad={() => fetchMedia(msg.id)}
+                                    onImageClick={(src, name) => setLightbox({ isOpen: true, src, name })}
+                                  />
+                                ) : (
+                                  <span className="whitespace-pre-wrap">{msg.body}</span>
+                                )}
+                                <div className="text-[8px] text-muted mt-1 text-right float-right ml-3 pt-0.5 select-none">
+                                  {new Date(msg.timestamp * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          ))}
+                        </>
                       )}
-                      <div ref={messagesEndRef} />
                     </div>
 
                     {/* Attachment Preview Strip */}
@@ -944,14 +939,17 @@ const CRM = () => {
 
       {/* Lightbox Modal */}
       {lightbox.isOpen && (
-        <div className="fixed inset-0 z-[999999] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4" onClick={() => setLightbox({ isOpen: false, src: '', name: '' })}>
-          <button className="absolute top-4 right-4 p-2 bg-bg3 hover:bg-bg2 rounded-full text-text transition-colors">
+        <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setLightbox({ isOpen: false, src: '', name: '' })}>
+          <button 
+            onClick={() => setLightbox({ isOpen: false, src: '', name: '' })}
+            className="absolute top-4 right-4 p-2 bg-bg3 hover:bg-bg2 border border-glass-border rounded-full text-text transition-colors shadow-lg"
+          >
             <X size={20} />
           </button>
           <div className="max-w-4xl max-h-[80vh] flex items-center justify-center animate-zoom-in" onClick={e => e.stopPropagation()}>
             <img src={lightbox.src} alt={lightbox.name} className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl border border-glass-border/10" />
           </div>
-          <p className="mt-4 text-xs font-bold text-white tracking-wide">{lightbox.name}</p>
+          <p className="mt-4 text-xs font-bold text-text bg-bg3/60 px-3 py-1.5 rounded-full border border-glass-border/20 tracking-wide">{lightbox.name}</p>
         </div>
       )}
     </div>

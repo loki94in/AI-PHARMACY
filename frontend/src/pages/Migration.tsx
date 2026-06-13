@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   UploadCloud, Database, ArrowRight, CheckCircle, Loader2, AlertTriangle,
-  FileSpreadsheet, FileText, Archive, X, RefreshCw, Eye, ChevronDown,
+  FileText, X, RefreshCw, Eye, ChevronDown,
   Package, ShoppingCart, Users, RotateCcw, Zap, FileCheck
 } from 'lucide-react';
 import { api, apiClient } from '../services/api';
@@ -393,7 +393,7 @@ const Migration = () => {
     try {
       setMigrationStatus({ message: `Importing ${file.originalName}...`, isStagingReady: false });
       setIsPolling(true);
-      await api.runMigration(file.uploadedFileName, file.mapping, 0);
+      await api.runMigration(file.uploadedFileName, file.userSelectedType, file.mapping, 0);
     } catch (err: any) {
       setError(`Failed to import ${file.originalName}: ${err.message}`);
       setIsPolling(false);
@@ -449,28 +449,7 @@ const Migration = () => {
   return (
     <div className="h-full flex flex-col fade-in space-y-5 overflow-y-auto pb-12">
 
-      {/* Header */}
-      <div>
-        <h2 className="text-3xl font-extrabold tracking-tight mb-1 flex items-center gap-2">
-          <Database size={28} className="text-primary" />
-          Data Migration Wizard
-        </h2>
-        <p className="text-muted text-sm mt-1">Import your old pharmacy data — CSV, Excel, ZIP, or SQL dumps.</p>
-        
-        {/* Feature Badges */}
-        <div className="flex gap-2 text-[10px] flex-wrap mt-3 max-w-4xl">
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Product Import</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Customer Import</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Supplier Import</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Purchase Import</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Sales Import</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Inventory Import</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Data Validation</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Error Detection</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Duplicate Detection</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Migration Progress Tracking</span>
-        </div>
-      </div>
+
 
       {/* Progress Steps */}
       <div className="flex items-center glass-panel p-4 bg-black/40 gap-1">
@@ -526,21 +505,7 @@ const Migration = () => {
             />
           </label>
 
-          {/* Format Guide */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { icon: <FileText size={20} className="text-sky" />, label: 'CSV', desc: 'Any comma-separated export from your old software', color: 'border-sky/20' },
-              { icon: <FileSpreadsheet size={20} className="text-green" />, label: 'Excel (.xlsx)', desc: 'Excel sheets with medicine/sales data', color: 'border-green/20' },
-              { icon: <Archive size={20} className="text-amber-400" />, label: 'ZIP Archive', desc: 'Folder of multiple CSV/Excel files zipped together', color: 'border-amber-400/20' },
-              { icon: <Database size={20} className="text-purple-400" />, label: 'SQL Dump', desc: 'Database backup from Marg, Busy, or PostgreSQL', color: 'border-purple-400/20' },
-            ].map(f => (
-              <div key={f.label} className={`glass-panel p-4 border ${f.color}`}>
-                <div className="mb-2">{f.icon}</div>
-                <p className="font-bold text-sm">{f.label}</p>
-                <p className="text-muted text-xs mt-1">{f.desc}</p>
-              </div>
-            ))}
-          </div>
+
         </div>
       )}
 

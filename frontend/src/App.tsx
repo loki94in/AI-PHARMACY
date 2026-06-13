@@ -492,7 +492,7 @@ const Topbar = ({
       '/catalog': 'Catalog Upload',
       '/customer-returns': 'Customer Returns',
       '/dashboard': 'Dashboard',
-      '/migration': 'Data Migration Wizard',
+      '/migration': 'Data Migration',
       '/dispatch': 'Dispatch',
       '/mail': 'Distributor Mail',
       '/doctors': 'Doctors',

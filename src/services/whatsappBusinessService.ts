@@ -93,6 +93,21 @@ export class WhatsAppBusinessService {
    * @param to  Recipient phone number in international format (e.g. "919876543210")
    * @param text Message body
    */
+  /**
+   * Split a comma/semicolon/space separated string of numbers into individual sanitized phone numbers
+   */
+  private parseRecipients(to: string): string[] {
+    return String(to)
+      .split(/[,;\s]+/)
+      .map(r => this.sanitizePhone(r))
+      .filter(r => r.length > 0);
+  }
+
+  /**
+   * Send a plain text message to a WhatsApp number.
+   * @param to  Recipient phone number in international format (e.g. "919876543210")
+   * @param text Message body
+   */
   async sendTextMessage(to: string, text: string): Promise<SendMessageResult> {
     const config = await this.getConfig();
     if (!config.enabled) {
@@ -102,39 +117,43 @@ export class WhatsAppBusinessService {
       return { success: false, error: 'Missing credentials. Configure in Settings.' };
     }
 
-    const cleanPhone = this.sanitizePhone(to);
+    const recipients = this.parseRecipients(to);
+    let lastResult: SendMessageResult = { success: false, error: 'No recipients specified.' };
 
-    try {
-      const res = await fetch(`${GRAPH_API_BASE}/${config.phoneNumberId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: cleanPhone,
-          type: 'text',
-          text: { preview_url: false, body: text },
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
+    for (const cleanPhone of recipients) {
+      try {
+        const res = await fetch(`${GRAPH_API_BASE}/${config.phoneNumberId}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: cleanPhone,
+            type: 'text',
+            text: { preview_url: false, body: text },
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
 
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        const msg = (errBody as any)?.error?.message || `HTTP ${res.status}`;
-        console.error('[WA Business] Send text failed:', msg);
-        return { success: false, error: msg };
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const msg = (errBody as any)?.error?.message || `HTTP ${res.status}`;
+          console.error('[WA Business] Send text failed:', msg);
+          lastResult = { success: false, error: msg };
+        } else {
+          const data = await res.json() as any;
+          const messageId = data?.messages?.[0]?.id;
+          lastResult = { success: true, messageId };
+        }
+      } catch (err: any) {
+        console.error('[WA Business] Send text failed:', err.message);
+        lastResult = { success: false, error: err.message || 'Unknown error' };
       }
-
-      const data = await res.json() as any;
-      const messageId = data?.messages?.[0]?.id;
-      return { success: true, messageId };
-    } catch (err: any) {
-      console.error('[WA Business] Send text failed:', err.message);
-      return { success: false, error: err.message || 'Unknown error' };
     }
+    return lastResult;
   }
 
   /**
@@ -169,7 +188,8 @@ export class WhatsAppBusinessService {
       return { success: false, error: 'File not found.' };
     }
 
-    const cleanPhone = this.sanitizePhone(to);
+    const recipients = this.parseRecipients(to);
+    let lastResult: SendMessageResult = { success: false, error: 'No recipients specified.' };
 
     try {
       // Step 1: Upload the media using multipart form-data via native fetch + Blob
@@ -198,41 +218,44 @@ export class WhatsAppBusinessService {
         return { success: false, error: 'Media upload failed — no ID returned.' };
       }
 
-      // Step 2: Send document message referencing the uploaded media
-      const msgRes = await fetch(`${GRAPH_API_BASE}/${config.phoneNumberId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: cleanPhone,
-          type: 'document',
-          document: {
-            id: mediaId,
-            caption: caption || '',
-            filename: displayName,
+      // Step 2: Send document message referencing the uploaded media to each recipient
+      for (const cleanPhone of recipients) {
+        const msgRes = await fetch(`${GRAPH_API_BASE}/${config.phoneNumberId}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.accessToken}`,
+            'Content-Type': 'application/json',
           },
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: cleanPhone,
+            type: 'document',
+            document: {
+              id: mediaId,
+              caption: caption || '',
+              filename: displayName,
+            },
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
 
-      if (!msgRes.ok) {
-        const errBody = await msgRes.json().catch(() => ({}));
-        const msg = (errBody as any)?.error?.message || `HTTP ${msgRes.status}`;
-        console.error('[WA Business] Send document failed:', msg);
-        return { success: false, error: msg };
+        if (!msgRes.ok) {
+          const errBody = await msgRes.json().catch(() => ({}));
+          const msg = (errBody as any)?.error?.message || `HTTP ${msgRes.status}`;
+          console.error('[WA Business] Send document failed:', msg);
+          lastResult = { success: false, error: msg };
+        } else {
+          const msgData = await msgRes.json() as any;
+          const messageId = msgData?.messages?.[0]?.id;
+          lastResult = { success: true, messageId };
+        }
       }
-
-      const msgData = await msgRes.json() as any;
-      const messageId = msgData?.messages?.[0]?.id;
-      return { success: true, messageId };
     } catch (err: any) {
       console.error('[WA Business] Send document failed:', err.message);
-      return { success: false, error: err.message || 'Unknown error' };
+      lastResult = { success: false, error: err.message || 'Unknown error' };
     }
+    return lastResult;
   }
 
   /**
@@ -257,47 +280,51 @@ export class WhatsAppBusinessService {
       return { success: false, error: 'Missing credentials. Configure in Settings.' };
     }
 
-    const cleanPhone = this.sanitizePhone(to);
+    const recipients = this.parseRecipients(to);
+    let lastResult: SendMessageResult = { success: false, error: 'No recipients specified.' };
 
-    try {
-      const payload: any = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: cleanPhone,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-        },
-      };
-      if (components && components.length > 0) {
-        payload.template.components = components;
+    for (const cleanPhone of recipients) {
+      try {
+        const payload: any = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: cleanPhone,
+          type: 'template',
+          template: {
+            name: templateName,
+            language: { code: languageCode },
+          },
+        };
+        if (components && components.length > 0) {
+          payload.template.components = components;
+        }
+
+        const res = await fetch(`${GRAPH_API_BASE}/${config.phoneNumberId}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const msg = (errBody as any)?.error?.message || `HTTP ${res.status}`;
+          console.error('[WA Business] Send template failed:', msg);
+          lastResult = { success: false, error: msg };
+        } else {
+          const data = await res.json() as any;
+          const messageId = data?.messages?.[0]?.id;
+          lastResult = { success: true, messageId };
+        }
+      } catch (err: any) {
+        console.error('[WA Business] Send template failed:', err.message);
+        lastResult = { success: false, error: err.message || 'Unknown error' };
       }
-
-      const res = await fetch(`${GRAPH_API_BASE}/${config.phoneNumberId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        const msg = (errBody as any)?.error?.message || `HTTP ${res.status}`;
-        console.error('[WA Business] Send template failed:', msg);
-        return { success: false, error: msg };
-      }
-
-      const data = await res.json() as any;
-      const messageId = data?.messages?.[0]?.id;
-      return { success: true, messageId };
-    } catch (err: any) {
-      console.error('[WA Business] Send template failed:', err.message);
-      return { success: false, error: err.message || 'Unknown error' };
     }
+    return lastResult;
   }
 
   /**
