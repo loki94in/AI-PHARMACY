@@ -1965,7 +1965,10 @@ navItems.forEach(item => {
       pageContent.classList.remove('pos-active');
     }
     if (v === 'inventory') renderInventory();
-    if (v === 'crm') renderCRM();
+    if (v === 'crm') {
+      renderCRM();
+      loadPatients();
+    }
     if (v === 'dashboard') updateDashStats();
   });
 });
@@ -2243,7 +2246,7 @@ document.getElementById('btn-hold-bill')?.addEventListener('click', async () => 
     patient: currentPatient,
     doctor: document.getElementById('doctor-select').value,
     discount: od,
-    date: new Date().toLocaleString()
+    date: new Date().toLocaleString(undefined, { hour12: false })
   };
 
   try {
@@ -2349,7 +2352,7 @@ document.getElementById('btn-complete-sale').addEventListener('click', async () 
     const sale = {
       inv: data.invoice_no || ('S-2026-' + String(salesHistory.length+1).padStart(4,'0')),
       patient: currentPatient?.name || 'Walk-in Customer',
-      date: new Date().toLocaleString(),
+      date: new Date().toLocaleString(undefined, { hour12: false }),
       total: data.total || 0,
       mode: paymentMode,
       items: [...items]
@@ -2556,7 +2559,7 @@ document.getElementById('btn-rush-checkout').addEventListener('click', () => {
   const total = rushCart.reduce((s,i)=>s+i.mrp*i.qty,0);
   rushCart.forEach(i=>{const m=inventory.find(m=>m.id===i.id);if(m)m.qty=Math.max(0,m.qty-i.qty);});
   const invNo='R-2026-'+String(salesHistory.length+1).padStart(4,'0');
-  salesHistory.unshift({inv:invNo,patient:'Rush Customer',date:new Date().toLocaleString(),total,mode:'CASH',items:[...rushCart]});
+  salesHistory.unshift({inv:invNo,patient:'Rush Customer',date:new Date().toLocaleString(undefined, { hour12: false }),total,mode:'CASH',items:[...rushCart]});
   saveData();
   rushCart=[]; renderRushCart();
   toast(`Rush sale ${invNo} — ₹${total.toFixed(2)}`, 'success');
@@ -2871,7 +2874,7 @@ function renderCRM(filter='') {
         <div class="flex gap-4">
           <button class="btn btn-outline btn-sm" title="WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
           ${Number(p.credit_balance) > 0 ? `<button class="btn btn-sky btn-sm" onclick="payLedger(${p.id}, '${p.name}', ${p.credit_balance})"><i class="fa-solid fa-money-bill"></i> Pay</button>` : ''}
-          <button class="btn btn-danger btn-sm" title="Delete Patient" onclick="deletePatient(${i})"><i class="fa-solid fa-trash"></i></button>
+          <button class="btn btn-danger btn-sm" title="Delete Patient" onclick="deletePatient(${p.id})"><i class="fa-solid fa-trash"></i></button>
         </div>
       </td>
     </tr>`).join('');
@@ -2899,8 +2902,28 @@ window.payLedger = async function(id, name, currentBalance) {
   }
 }
 
-window.deletePatient = function(i) {
-  patients.splice(i,1); saveData(); renderCRM(); toast('Patient removed','info');
+window.deletePatient = async function(id) {
+  if (!id) {
+    toast('Invalid patient ID', 'error');
+    return;
+  }
+  if (!confirm('Are you sure you want to delete this patient?')) return;
+  try {
+    const res = await fetch(`/api/crm/patients/${id}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      patients = patients.filter(p => p.id !== id);
+      saveData();
+      renderCRM();
+      toast('Patient removed', 'info');
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast(data.error || 'Failed to remove patient', 'error');
+    }
+  } catch (err) {
+    toast('Failed to delete patient due to network error', 'error');
+  }
 };
 
 document.getElementById('btn-crm-add').addEventListener('click', () => openModal('modal-crm-patient'));
@@ -2913,14 +2936,20 @@ document.getElementById('btn-save-crm').addEventListener('click', async () => {
   const notes = document.getElementById('crm-notes').value;
   
   try {
-    await fetch('/api/crm/patients', {
+    const res = await fetch('/api/crm/patients', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, phone, address, notes })
     });
-    patients.push({ name, phone, address, notes });
-    saveData(); renderCRM(); closeModal('modal-crm-patient');
-    toast(`Patient ${name} added`, 'success');
-    ['crm-name','crm-phone','crm-addr','crm-notes'].forEach(id=>document.getElementById(id).value='');
+    if (res.ok) {
+      const newPatient = await res.json();
+      patients.push(newPatient);
+      saveData(); renderCRM(); closeModal('modal-crm-patient');
+      toast(`Patient ${name} added`, 'success');
+      ['crm-name','crm-phone','crm-addr','crm-notes'].forEach(id=>document.getElementById(id).value='');
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast(data.error || 'Failed to save patient to database', 'error');
+    }
   } catch(e) {
     toast('Failed to sync patient with backend', 'error');
   }
