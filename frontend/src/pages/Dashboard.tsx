@@ -168,49 +168,8 @@ const Dashboard = () => {
           </span>
         </div>
         <div className="divide-y divide-glass-border/30">
-          <div className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-[#0088cc]/20 text-[#0088cc]">
-                <Send size={16} />
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-semibold text-text">Admin alert - Paracetamol stock is critical.</p>
-                <span className="text-[10px] text-muted font-mono">Telegram • 2 mins ago</span>
-              </div>
-            </div>
-            <button className="px-3 py-1 bg-white/5 hover:bg-white/10 text-muted hover:text-text text-[10px] font-bold border border-glass-border rounded-lg transition-all">
-              Acknowledge
-            </button>
-          </div>
-          
-          <div className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-[#25D366]/20 text-[#25D366]">
-                <MessageCircle size={16} />
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-semibold text-text">Patient John Doe confirmed their refill order.</p>
-                <span className="text-[10px] text-muted font-mono">WhatsApp • 15 mins ago</span>
-              </div>
-            </div>
-            <button className="px-3 py-1 bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] text-[10px] font-bold border border-[#25D366]/30 rounded-lg transition-all">
-              Process Refill
-            </button>
-          </div>
-
-          <div className="p-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-all">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-red/20 text-red">
-                <Mail size={16} />
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-semibold text-text">New bulk order received from City Clinic.</p>
-                <span className="text-[10px] text-muted font-mono">Email • 1 hour ago</span>
-              </div>
-            </div>
-            <button className="px-3 py-1 bg-red/20 hover:bg-red/30 text-red text-[10px] font-bold border border-red/30 rounded-lg transition-all">
-              Review Order
-            </button>
+          <div className="p-8 text-center text-sm text-muted">
+            No recent communications
           </div>
         </div>
       </div>

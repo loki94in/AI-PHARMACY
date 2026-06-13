@@ -1,7 +1,6 @@
 // Telegram Prescription Routes for cart management
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { telegramPrescriptionService } from '../services/telegramPrescriptionService.js';
@@ -128,7 +127,7 @@ router.post('/bill/generate', async (req, res) => {
       unit_price: item.unit_price
     }));
 
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
 
     // Link customer to telegram chatId if patient_id is not passed
     let finalPatientId = patient_id;
@@ -196,8 +195,7 @@ router.post('/bill/generate', async (req, res) => {
       await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [item.quantity, item.inventory_id]);
     }
 
-    await db.close();
-
+    
     // Clear cart after successful bill generation
     telegramPrescriptionService.clearCart(parsedChatId);
 
@@ -214,7 +212,6 @@ router.post('/bill/generate', async (req, res) => {
       message: 'Bill generated successfully'
     });
   } catch (error) {
-    if (db) await db.close();
     console.error('Error generating bill:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

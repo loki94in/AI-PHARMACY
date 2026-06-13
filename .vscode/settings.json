@@ -3,5 +3,6 @@
     "htmlhint.options": {
         "style-disabled": false,
         "inline-style-disabled": false
-    }
+    },
+    "css.lint.unknownAtRules": "ignore"
 }

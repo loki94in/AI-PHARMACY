@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,7 +12,7 @@ const router = express.Router();
 // Dashboard summary
 router.get('/', async (_req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     // Simple aggregates
     const salesTodayRow = await db.get(`SELECT IFNULL(SUM(total_amount),0) as total FROM sales_invoices WHERE date(date) = date('now')`);
     const lowStockCount = await db.get(`SELECT COUNT(*) as cnt FROM inventory_master WHERE quantity < 5`);
@@ -24,8 +23,7 @@ router.get('/', async (_req, res) => {
       ORDER BY created_at DESC
       LIMIT 10
     `);
-    await db.close();
-    res.json({
+        res.json({
       todaySales: salesTodayRow.total,
       lowStock: lowStockCount.cnt,
       pendingTasks: pendingTasksCount.cnt,
@@ -41,10 +39,9 @@ router.get('/', async (_req, res) => {
 router.delete('/alerts/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('DELETE FROM action_logs WHERE id = ?', id);
-    await db.close();
-    res.json({ success: true, message: 'Alert dismissed successfully' });
+        res.json({ success: true, message: 'Alert dismissed successfully' });
   } catch (err) {
     console.error('Dismiss alert error:', err);
     res.status(500).json({ error: 'Internal server error' });

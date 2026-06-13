@@ -1,7 +1,6 @@
 // WhatsApp Business Cloud API Service
 // Uses Node.js native fetch (available in Node 18+) — no extra packages needed.
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -31,7 +30,7 @@ export class WhatsAppBusinessService {
    * Load WhatsApp Business API config from app_settings table.
    */
   async getConfig(): Promise<WaBusinessConfig> {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     try {
       const rows = await db.all(
         `SELECT key, value FROM app_settings WHERE key IN (?, ?, ?, ?, ?)`,
@@ -55,8 +54,7 @@ export class WhatsAppBusinessService {
         webhookVerifyToken: map['wa_business_webhook_verify_token'] || '',
       };
     } finally {
-      await db.close();
-    }
+          }
   }
 
   /**

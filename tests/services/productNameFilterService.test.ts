@@ -8,6 +8,7 @@ describe('ProductNameFilterService', () => {
   const TEST_DB_PATH = './data/test-app.db';
 
   beforeEach(async () => {
+    process.env.DB_PATH = TEST_DB_PATH;
     service = new ProductNameFilterService(TEST_DB_PATH);
     // Setup test database with sample medicines
     const db = await open({ filename: TEST_DB_PATH, driver: sqlite3.Database });
@@ -33,6 +34,11 @@ describe('ProductNameFilterService', () => {
 
   afterEach(async () => {
     // Cleanup test database
+    try {
+      const { dbManager } = await import('../../src/database/connection.js');
+      await dbManager.close();
+    } catch {}
+    delete process.env.DB_PATH;
     try {
       if (fs.existsSync(TEST_DB_PATH)) {
         fs.unlinkSync(TEST_DB_PATH);

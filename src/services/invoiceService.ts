@@ -1,8 +1,9 @@
 
+import { Database } from 'sqlite';
 import { dbManager } from '../database/connection.js';
 // @ts-ignore from '../database/connection.js';
 // @ts-ignore from '../database/connection.js';
-import { config } from '../config';
+import { config } from '../config/index.js';
 
 export interface InvoiceItem {
   inventoryId?: number;
@@ -199,10 +200,15 @@ export class InvoiceService {
           )).lastID;
         }
 
-        // Verify stock is sufficient for the transaction
-        const currentStock = await db.get('SELECT quantity FROM inventory_master WHERE id = ?', [invId]);
+        // Verify stock is sufficient and not expired for the transaction
+        const currentStock = await db.get('SELECT quantity, expiry_date FROM inventory_master WHERE id = ?', [invId]);
         if (!currentStock || currentStock.quantity < Number(item.quantity)) {
           throw new Error(`Insufficient stock for inventory item ID ${invId}. Available: ${currentStock ? currentStock.quantity : 0}, Requested: ${item.quantity}`);
+        }
+        
+        // Strict Expiry check
+        if (currentStock.expiry_date && new Date(currentStock.expiry_date) < new Date()) {
+          throw new Error(`Cannot sell expired medicine for inventory item ID ${invId}. Expiry: ${currentStock.expiry_date}`);
         }
 
         await db.run(
@@ -251,7 +257,7 @@ export class InvoiceService {
       }
 
       // Trigger WhatsApp delivery asynchronously
-      if (customerId) {
+      if (customerId && invoiceId !== undefined) {
         import('./whatsappInvoiceService.js').then(({ whatsappInvoiceService }) => {
           whatsappInvoiceService.sendInvoiceViaWhatsApp(invoiceId).catch(console.error);
         });

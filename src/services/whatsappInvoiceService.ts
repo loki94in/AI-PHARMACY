@@ -1,5 +1,4 @@
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -15,7 +14,7 @@ export class WhatsappInvoiceService {
   async sendInvoiceViaWhatsApp(invoiceId: number): Promise<boolean> {
     let db;
     try {
-      db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      db = await dbManager.getConnection();
       
       const invoice = await db.get(
         `SELECT si.invoice_no, si.total_amount, si.payment_medium, si.payment_status,
@@ -26,8 +25,7 @@ export class WhatsappInvoiceService {
         [invoiceId]
       );
 
-      await db.close();
-
+      
       if (!invoice) {
         console.error(`Invoice ID ${invoiceId} not found for WhatsApp dispatch`);
         return false;

@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 // @ts-ignore — @types/pdfkit not installed; pdfkit works at runtime
@@ -16,11 +15,10 @@ const router = express.Router();
 // Basic analytics report placeholder
 router.get('/', async (_req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const totalSales = await db.get('SELECT IFNULL(SUM(total_amount),0) as total FROM sales_invoices');
     const totalPurchases = await db.get('SELECT IFNULL(SUM(total_amount),0) as total FROM purchases');
-    await db.close();
-    res.json({ totalSales: totalSales.total, totalPurchases: totalPurchases.total });
+        res.json({ totalSales: totalSales.total, totalPurchases: totalPurchases.total });
   } catch (err) {
     console.error('Reports error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -42,7 +40,7 @@ router.get('/export-pdf', async (req, res) => {
   doc.moveDown();
   
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     let query = '';
     
     if (type === 'expiry') {
@@ -63,8 +61,7 @@ router.get('/export-pdf', async (req, res) => {
 
     
     const rows = await db.all(query);
-    await db.close();
-    
+        
     if (rows.length === 0) {
       doc.fontSize(12).text('No records found for this report.');
     } else {
@@ -85,7 +82,7 @@ router.get('/export-pdf', async (req, res) => {
 router.get('/data', async (req, res) => {
   const { type } = req.query;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     let data: any[] = [];
     if (type === 'sales') {
       data = await db.all('SELECT invoice_no, total_amount, date FROM sales_invoices ORDER BY date DESC LIMIT 50');
@@ -100,8 +97,7 @@ router.get('/data', async (req, res) => {
     } else {
       data = await db.all('SELECT created_at as timestamp, action_type, description FROM action_logs ORDER BY id DESC LIMIT 50');
     }
-    await db.close();
-    res.json(data);
+        res.json(data);
   } catch (err) {
     console.error('Reports data error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -168,7 +164,7 @@ router.get('/product-trace', async (req, res) => {
 
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const likeQuery = `%${query}%`;
 
     // Fetch matching purchases
@@ -206,10 +202,8 @@ router.get('/product-trace', async (req, res) => {
       LIMIT 100
     `, [likeQuery, likeQuery, likeQuery, likeQuery]);
 
-    await db.close();
-    res.json({ purchases, sales });
+        res.json({ purchases, sales });
   } catch (err: any) {
-    if (db) await db.close();
     console.error('Error tracing product:', err);
     res.status(500).json({ error: 'Internal server error' });
   }

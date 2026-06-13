@@ -67,6 +67,8 @@ html.light body {
 
 /* ═══════════════════════════════════════════
    LIGHT MODE — HARDCODED DARK BACKGROUNDS
+   [AI/AGENT INSTRUCTION: DO NOT USE THESE IN NEW COMPONENTS!]
+   [Use semantic classes instead: `bg-bg`, `bg-bg2`, `bg-bg3`, `text-text`]
    ═══════════════════════════════════════════ */
 .light .bg-white\/5 {
   background-color: rgba(99, 179, 135, 0.06) !important;
@@ -82,6 +84,9 @@ html.light body {
 }
 .light .bg-black\/20 {
   background-color: rgba(0, 0, 0, 0.04) !important;
+}
+.light .bg-black\/30 {
+  background-color: rgba(0, 0, 0, 0.045) !important;
 }
 .light .bg-black\/40 {
   background-color: rgba(0, 0, 0, 0.05) !important;
@@ -145,19 +150,44 @@ html.light body {
    LIGHT MODE — TEXT COLORS
    ═══════════════════════════════════════════ */
 /* Override elements that hardcode text-white */
+/* Override elements that hardcode text-white */
 .light .bg-glass-bg h1,
 .light .bg-glass-bg h2,
 .light .bg-glass-bg a,
 .light header h2,
-.light header button,
-.light .text-white {
+.light header button {
   color: var(--text) !important;
 }
-.light .hover\:text-white:hover {
+
+/* Smarter text-white override: turns to black EXCEPT if it has a colored background */
+.light .text-white:not([class*="bg-primary"]):not([class*="bg-red"]):not([class*="bg-green"]):not([class*="bg-blue"]):not([class*="bg-purple"]):not([class*="bg-emerald"]):not([class*="from-primary"]):not([class*="bg-sky"]):not([class*="bg-indigo"]):not([class*="bg-yellow"]):not([class*="bg-amber"]):not([class*="bg-cyan"]):not([class*="bg-orange"]) {
   color: var(--text) !important;
 }
+.light .hover\:text-white:hover:not([class*="bg-primary"]):not([class*="bg-red"]):not([class*="bg-green"]):not([class*="bg-blue"]):not([class*="bg-purple"]):not([class*="bg-emerald"]):not([class*="from-primary"]):not([class*="bg-sky"]):not([class*="bg-indigo"]):not([class*="bg-yellow"]):not([class*="bg-amber"]):not([class*="bg-cyan"]):not([class*="bg-orange"]) {
+  color: var(--text) !important;
+}
+
 .light .text-text   { color: var(--text)   !important; }
 .light .text-muted  { color: var(--muted)  !important; }
+.light .text-gray-100 { color: #1f2937 !important; }
+.light .text-gray-200 { color: #374151 !important; }
+
+/* Bulletproof Select & Option overrides for Day & Night Modes to prevent white-on-white native option text bugs */
+select,
+option,
+select option {
+  background-color: #18181b !important;
+  color: #fafafa !important;
+}
+
+.light select,
+.light select *,
+.light option,
+.light select option,
+.light select option * {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
 
 /* Semantic colour overrides — stay vivid but readable on white */
 .light .text-sky    { color: #0284c7 !important; }
@@ -466,8 +496,72 @@ html.light body {
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
+  appearance: none;
   margin: 0;
 }
 input[type="number"] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
+
+/* ═══════════════════════════════════════════
+   GLOBAL INPUT SIZE & PADDING ENHANCEMENTS
+   ═══════════════════════════════════════════ */
+
+/* Target form text, search, date, and general input fields globally, except those inside table grids */
+.premium-input:not(table *):not(td *):not(input[type="number"]):not(.font-mono):not(.text-xs):not([class*="py-"]),
+input[type="text"]:not(table *):not(td *):not(.font-mono):not(.text-xs):not([class*="py-"]),
+input[type="search"]:not(table *):not(td *):not(.text-xs):not([class*="py-"]),
+input[type="date"]:not(table *):not(td *):not(.text-xs):not([class*="py-"]),
+input[type="tel"]:not(table *):not(td *):not(.text-xs):not([class*="py-"]),
+input[type="email"]:not(table *):not(td *):not(.text-xs):not([class*="py-"]),
+select:not(table *):not(td *):not(.w-10):not(.w-12):not(.w-16):not(.text-xs):not([class*="py-"]) {
+  padding-top: 0.625rem !important; /* ~ py-2.5 equivalent */
+  padding-bottom: 0.625rem !important;
+  padding-left: 0.875rem !important; /* ~ px-3.5 equivalent */
+  padding-right: 0.875rem !important;
+  font-size: 0.9375rem !important; /* Clean text-sm/base transition (15px) */
+  line-height: 1.25rem !important;
+  min-height: 2.75rem !important; /* Consistent, comfortable height */
+}
+
+/* Specific focus state transition to keep them visible and premium */
+.premium-input:focus,
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="date"]:focus {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15) !important;
+}
+
+/* ═══════════════════════════════════════════
+   POS SCANNER & CHECKOUT ANIMATIONS
+   ═══════════════════════════════════════════ */
+@keyframes scanSlow {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+
+@keyframes scanBar {
+  0% { top: 2%; }
+  50% { top: 96%; }
+  100% { top: 2%; }
+}
+
+@keyframes pulseSubtle {
+  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(16,185,129,0.3); }
+  50% { transform: scale(0.985); box-shadow: 0 2px 8px rgba(16,185,129,0.15); }
+}
+
+.animate-scan-slow {
+  animation: scanSlow 12s linear infinite;
+}
+
+.animate-scan-bar {
+  animation: scanBar 3s ease-in-out infinite;
+}
+
+.animate-pulse-subtle {
+  animation: pulseSubtle 2.5s ease-in-out infinite;
+}
+

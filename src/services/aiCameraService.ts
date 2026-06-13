@@ -4,8 +4,7 @@ import { Jimp } from 'jimp';
 import { productNameFilterService } from './productNameFilterService.js';
 import { onnxOcrService } from './onnxOcrService.js';
 import { onlineDataEnricher } from './onlineDataEnricher.js';
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { dbManager } from '../database/connection.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -68,7 +67,7 @@ class AICameraService {
     }
   }
 
-  async processImage(imageData: string | Buffer): Promise<any> {
+  async processImage(imageData: string | Buffer, skipEnrichment: boolean = false): Promise<any> {
     let buffer: Buffer;
     if (typeof imageData === 'string') {
       if (imageData.startsWith('data:')) {
@@ -195,6 +194,10 @@ class AICameraService {
       auditLogged: matches.length === 0
     };
 
+    if (skipEnrichment) {
+      return ocrResult;
+    }
+
     try {
       const enrichedResult = await onlineDataEnricher.enrichMedicineData(ocrResult);
       return enrichedResult;
@@ -279,7 +282,7 @@ class AICameraService {
     // Save to SQLite database
     try {
       const activeDbPath = process.env.DB_PATH || path.resolve(process.cwd(), 'data', 'app.db');
-      const db = await open({ filename: activeDbPath, driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       await db.run(
         `INSERT OR REPLACE INTO ocr_audit_queue (id, image_path, raw_ocr_text, cloud_suggested_text, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -292,8 +295,7 @@ class AICameraService {
           newEntry.createdAt
         ]
       );
-      await db.close();
-      console.log(`Saved unrecognized scan to SQLite audit queue table: ${id}`);
+            console.log(`Saved unrecognized scan to SQLite audit queue table: ${id}`);
     } catch (dbErr) {
       console.error('Failed to save audit item to SQLite database:', dbErr);
     }

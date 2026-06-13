@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,10 +12,9 @@ const router = express.Router();
 // Get patients
 router.get('/patients', async (req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const patients = await db.all('SELECT * FROM customers ORDER BY id DESC');
-    await db.close();
-    res.json(patients);
+        res.json(patients);
   } catch (error) {
     console.error('Failed to fetch patients:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -28,14 +26,13 @@ router.post('/patients', async (req, res) => {
   const { name, phone, address, notes } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const result = await db.run(
       'INSERT INTO customers (name, phone, address, notes) VALUES (?, ?, ?, ?)',
       [name, phone || '', address || '', notes || '']
     );
     const newPatient = await db.get('SELECT * FROM customers WHERE id = ?', result.lastID);
-    await db.close();
-    res.status(201).json(newPatient);
+        res.status(201).json(newPatient);
   } catch (error) {
     console.error('Failed to create patient:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -47,14 +44,13 @@ router.put('/patients/:id', async (req, res) => {
   const { id } = req.params;
   const { name, phone, address, notes } = req.body;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'UPDATE customers SET name=?, phone=?, address=?, notes=? WHERE id=?',
       [name, phone || '', address || '', notes || '', id]
     );
     const updated = await db.get('SELECT * FROM customers WHERE id = ?', id);
-    await db.close();
-    res.json(updated);
+        res.json(updated);
   } catch (error) {
     console.error('Failed to update patient:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -65,10 +61,9 @@ router.put('/patients/:id', async (req, res) => {
 router.delete('/patients/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('DELETE FROM customers WHERE id = ?', id);
-    await db.close();
-    res.json({ success: true });
+        res.json({ success: true });
   } catch (error) {
     console.error('Failed to delete patient:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -78,10 +73,9 @@ router.delete('/patients/:id', async (req, res) => {
 // Get customers (legacy alias)
 router.get('/', async (req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const customers = await db.all('SELECT * FROM customers ORDER BY id DESC');
-    await db.close();
-    res.json(customers);
+        res.json(customers);
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -91,14 +85,13 @@ router.get('/', async (req, res) => {
 router.get('/:id/history', async (req, res) => {
   const customerId = req.params.id;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     // Agent 1 manages sales_invoices, we can safely read it here
     const history = await db.all(
       'SELECT * FROM sales_invoices WHERE customer_id = ? ORDER BY date DESC',
       [customerId]
     );
-    await db.close();
-    res.json(history);
+        res.json(history);
   } catch (error) {
     console.error('Failed to fetch history:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -108,10 +101,9 @@ router.get('/:id/history', async (req, res) => {
 // Get doctors list
 router.get('/doctors', async (req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const doctors = await db.all('SELECT * FROM doctors ORDER BY name ASC');
-    await db.close();
-    res.json(doctors);
+        res.json(doctors);
   } catch (error) {
     console.error('Failed to fetch doctors:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -123,14 +115,13 @@ router.post('/doctors', async (req, res) => {
   const { name, speciality, phone, hospital, degree, reg_no } = req.body;
   if (!name) return res.status(400).json({ error: 'Doctor name is required' });
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       `INSERT INTO doctors (name, speciality, phone, hospital, degree, reg_no)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [name, speciality || '', phone || '', hospital || '', degree || '', reg_no || '']
     );
-    await db.close();
-    res.json({ success: true, message: 'Doctor added successfully' });
+        res.json({ success: true, message: 'Doctor added successfully' });
   } catch (error) {
     console.error('Failed to add doctor:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -141,7 +132,7 @@ router.post('/doctors', async (req, res) => {
 router.get('/doctors/:id/suggestions', async (req, res) => {
   const doctorId = req.params.id;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     // Fetch top 10 most frequently prescribed medicines by this doctor
     const suggestions = await db.all(
       `SELECT m.id as medicine_id, m.name as medicine_name, m.mrp, COUNT(*) as frequency
@@ -155,8 +146,7 @@ router.get('/doctors/:id/suggestions', async (req, res) => {
        LIMIT 10`,
       [doctorId]
     );
-    await db.close();
-    res.json(suggestions);
+        res.json(suggestions);
   } catch (error) {
     console.error('Failed to fetch doctor suggestions:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -170,13 +160,12 @@ router.post('/ledger/pay', async (req, res) => {
     return res.status(400).json({ error: 'Customer ID and amount are required' });
   }
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'UPDATE customers SET credit_balance = MAX(0, credit_balance - ?) WHERE id = ?',
       [amount, customer_id]
     );
-    await db.close();
-    res.json({ success: true, message: `Paid ₹${amount} successfully` });
+        res.json({ success: true, message: `Paid ₹${amount} successfully` });
   } catch (error) {
     console.error('Failed to pay ledger:', error);
     res.status(500).json({ error: 'Internal server error' });

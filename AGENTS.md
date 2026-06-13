@@ -154,3 +154,24 @@ node scripts/quick-update.mjs
 ---
 
 *This file ensures every AI agent keeps the project knowledge graph synchronized.*
+
+---
+
+## Delegating to Subagents
+
+To maximize response efficiency and prevent main context bloat, agents **SHOULD** delegate tasks to subagents:
+1. **Research & Code Scanning**: Delegate extensive file reading, codebase-wide grep searches, or external documentation lookups to the `research` subagent.
+2. **Parallelizable/Isolated Tasks**: Use `self` or `research` subagents for independent tasks (e.g., verifying test cases, analyzing a specific component's security model) while keeping the main conversation focused on user interaction.
+3. **Task Hand-off**: When starting a subagent, provide a clear, actionable prompt and wait for the system to notify you when it completes. Do not poll or loop in the meantime.
+
+---
+
+## UI Development Guidelines
+
+**CRITICAL RULE FOR ALL NEW UI COMPONENTS:**
+Never hardcode raw Tailwind colors like `bg-black/20`, `bg-[#18181b]`, `text-white`, or `bg-white/5` when building UI.
+This breaks the light mode/theme toggle.
+**ALWAYS** use the semantic Tailwind variables defined in the project:
+- Backgrounds: `bg-bg`, `bg-bg2`, `bg-bg3`, `bg-glass-bg`
+- Text: `text-text`, `text-muted`
+- Borders: `border-border`, `border-glass-border`

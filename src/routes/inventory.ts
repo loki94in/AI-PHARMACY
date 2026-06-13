@@ -1,7 +1,6 @@
 import express from 'express';
 import { inventoryService } from '../services/inventoryService.js';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -18,18 +17,17 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 100;
   
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     // If limit is 0, fetch all (warning: can cause frontend lag)
     if (limit === 0) {
       const rows = await db.all(`
-        SELECT im.*, m.name as medicine_name
+        SELECT im.*, m.name as medicine_name, m.item_code as item_code
         FROM inventory_master im
         LEFT JOIN medicines m ON im.medicine_id = m.id
         ORDER BY m.name ASC, im.id DESC
       `);
-      await db.close();
-      return res.json({ data: rows, totalPages: 1, currentPage: 1, totalItems: rows.length });
+            return res.json({ data: rows, totalPages: 1, currentPage: 1, totalItems: rows.length });
     }
 
     // Pagination logic
@@ -40,23 +38,21 @@ router.get('/', async (req, res) => {
     const totalPages = Math.ceil(totalItems / limit);
 
     const rows = await db.all(`
-      SELECT im.*, m.name as medicine_name
+      SELECT im.*, m.name as medicine_name, m.item_code as item_code
       FROM inventory_master im
       LEFT JOIN medicines m ON im.medicine_id = m.id
       ORDER BY m.name ASC, im.id DESC
       LIMIT ? OFFSET ?
     `, [limit, offset]);
     
-    await db.close();
-    res.json({
+        res.json({
       data: rows,
       totalPages,
       currentPage: page,
       totalItems
     });
   } catch (error: any) {
-    if (db) await db.close();
-    console.error(JSON.stringify({
+    if (db)     console.error(JSON.stringify({
       message: 'Error fetching inventory',
       error: error.message,
       stack: error.stack,
@@ -70,15 +66,23 @@ router.get('/', async (req, res) => {
 router.post('/override', async (req, res) => {
   let db;
   try {
-    const { inventory_id, quantity } = req.body;
+    const { inventory_id, quantity, reason } = req.body;
     if (!inventory_id) {
       return res.status(400).json({ error: 'inventory_id required' });
     }
     if (typeof quantity !== 'number' || quantity < 0) {
       return res.status(400).json({ error: 'quantity must be a non-negative number' });
     }
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    if (!reason || reason.trim() === '') {
+      return res.status(400).json({ error: 'reason is required for stock override' });
+    }
+    db = await dbManager.getConnection();
     await db.run('UPDATE inventory_master SET quantity = ? WHERE id = ?', [quantity, inventory_id]);
+    
+    await db.run(
+      `INSERT INTO action_logs (action_type, description) VALUES ('STOCK_OVERRIDE', ?)`,
+      [`Override stock for inventory_id ${inventory_id} to ${quantity}. Reason: ${reason}`]
+    );
 
     // Check if new stock triggers pending patient refills
     const invItem = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', [inventory_id]);
@@ -86,11 +90,9 @@ router.post('/override', async (req, res) => {
       await inventoryService.checkAndTriggerRefillsForMedicine(invItem.medicine_id);
     }
 
-    await db.close();
-    res.json({ success: true, message: 'Stock updated' });
+        res.json({ success: true, message: 'Stock updated' });
   } catch (error: any) {
-    if (db) await db.close();
-    console.error(JSON.stringify({
+    if (db)     console.error(JSON.stringify({
       message: 'Error overriding stock',
       error: error.message,
       stack: error.stack,
@@ -108,7 +110,7 @@ router.get('/peek/:medicine_id', async (req, res) => {
     if (!medicine_id) {
       return res.status(400).json({ error: 'medicine_id is required' });
     }
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     // Simplified: return last purchase price from purchases table joined via inventory_master
     const rows = await db.all(
       `SELECT im.batch_no, im.expiry_date, im.quantity, im.unit_price, im.cost_price
@@ -118,11 +120,9 @@ router.get('/peek/:medicine_id', async (req, res) => {
       [medicine_id]
     );
 
-    await db.close();
-    res.json(rows);
+        res.json(rows);
   } catch (error: any) {
-    if (db) await db.close();
-    console.error(JSON.stringify({
+    if (db)     console.error(JSON.stringify({
       message: 'Error fetching peek data',
       error: error.message,
       stack: error.stack,
@@ -135,27 +135,45 @@ router.get('/peek/:medicine_id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   let db;
   const { id } = req.params;
-  const { quantity, rack_location, batch_no, expiry_date, reorder_level } = req.body;
+  const { quantity, rack_location, batch_no, expiry_date, reorder_level, name, mrp, loose_quantity } = req.body;
   try {
     if (!id) {
       return res.status(400).json({ error: 'id is required' });
     }
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    await db.run(`UPDATE inventory_master SET quantity = ?, rack_location = ?, batch_no = ?, expiry_date = ?, reorder_level = ? WHERE id = ?`,
-      [quantity, rack_location, batch_no, expiry_date, reorder_level, id]
+    db = await dbManager.getConnection();
+    
+    // 1. Update inventory_master fields
+    await db.run(
+      `UPDATE inventory_master 
+       SET quantity = ?, rack_location = ?, batch_no = ?, expiry_date = ?, reorder_level = ?, mrp = ?, loose_quantity = ? 
+       WHERE id = ?`,
+      [quantity, rack_location, batch_no, expiry_date, reorder_level, mrp, loose_quantity, id]
     );
 
-    // Check if new stock triggers pending patient refills
+    // 2. Fetch the medicine_id associated with this inventory record
     const invItem = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', [id]);
+    
+    // 3. Update the medicines table if name or mrp changes
     if (invItem && invItem.medicine_id) {
+      if (name !== undefined || mrp !== undefined) {
+        const updates = [];
+        const params = [];
+        if (name !== undefined) { updates.push('name = ?'); params.push(name); }
+        if (mrp !== undefined) { updates.push('mrp = ?'); params.push(mrp); }
+        
+        if (updates.length > 0) {
+          params.push(invItem.medicine_id);
+          await db.run(`UPDATE medicines SET ${updates.join(', ')} WHERE id = ?`, params);
+        }
+      }
+      
+      // Check if new stock triggers pending patient refills
       await inventoryService.checkAndTriggerRefillsForMedicine(invItem.medicine_id);
     }
 
-    await db.close();
-    res.json({ success: true, message: 'Inventory updated' });
+        res.json({ success: true, message: 'Inventory updated' });
   } catch (error: any) {
-    if (db) await db.close();
-    console.error(JSON.stringify({
+    if (db)     console.error(JSON.stringify({
       message: 'Inventory update error',
       error: error.message,
       stack: error.stack,
@@ -174,18 +192,16 @@ router.post('/bulk-action', async (req, res) => {
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids must be a non-empty array' });
     }
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     // Log the bulk action to action_logs using the correct schema
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       [`BULK_${(action as string).toUpperCase()}`, `Bulk ${action} on ${ids.length} inventory items: [${(ids as any[]).join(',')}]`]
     );
 
-    await db.close();
-    res.json({ success: true, message: `Bulk ${action} completed and logged` });
+        res.json({ success: true, message: `Bulk ${action} completed and logged` });
   } catch (error: any) {
-    if (db) await db.close();
-    console.error(JSON.stringify({
+    if (db)     console.error(JSON.stringify({
       message: 'Bulk action error',
       error: error.message,
       stack: error.stack,
@@ -202,14 +218,26 @@ router.post('/', async (req, res) => {
   
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
-    // 1. Insert medicine record
-    const medResult = await db.run(
-      'INSERT INTO medicines (name, api_reference, mrp) VALUES (?, ?, ?)',
-      [name, api_reference || '', parseFloat(mrp) || 0]
-    );
-    const medicineId = medResult.lastID;
+    // 1. Check duplicate and insert/retrieve medicine record
+    const cleanName = name.trim();
+    let dbMed = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [cleanName]);
+    let medicineId;
+    if (dbMed) {
+      medicineId = dbMed.id;
+      // Optionally update details if they are provided, e.g. api_reference, mrp
+      await db.run(
+        'UPDATE medicines SET api_reference = COALESCE(NULLIF(api_reference, ""), ?), mrp = COALESCE(NULLIF(mrp, 0), ?) WHERE id = ?',
+        [api_reference || '', parseFloat(mrp) || 0, medicineId]
+      );
+    } else {
+      const medResult = await db.run(
+        'INSERT INTO medicines (name, api_reference, mrp) VALUES (?, ?, ?)',
+        [cleanName, api_reference || '', parseFloat(mrp) || 0]
+      );
+      medicineId = medResult.lastID;
+    }
     
     // 2. Insert initial inventory master record
     const invResult = await db.run(
@@ -227,37 +255,53 @@ router.post('/', async (req, res) => {
       ]
     );
     
-    await db.close();
-    res.json({
+        res.json({
       success: true,
       message: 'Medicine and inventory registered successfully',
       medicine_id: medicineId,
       inventory_id: invResult.lastID
     });
   } catch (error: any) {
-    if (db) await db.close();
     console.error('Failed to create medicine and inventory:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+// Save a custom medicine alias (distributor name mapping)
+router.post('/medicines/alias', async (req, res) => {
+  const { alias_name, medicine_id } = req.body;
+  if (!alias_name || !medicine_id) {
+    return res.status(400).json({ error: 'alias_name and medicine_id are required' });
+  }
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    await db.run(
+      'INSERT OR IGNORE INTO medicine_aliases (alias_name, medicine_id) VALUES (?, ?)',
+      [alias_name, medicine_id]
+    );
+        res.json({ success: true, message: 'Alias saved successfully' });
+  } catch (error: any) {
+    console.error('Save alias error:', error.message);
+    res.status(500).json({ error: 'Failed to save alias' });
+  }
+});
+
 // Catalog search for auto-suggest in Manual Purchase Entry
 router.get('/catalog-search', async (req, res) => {
   let db;
   try {
     const q = (req.query.q as string || '').trim();
     if (q.length < 2) return res.json([]);
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const rows = await db.all(
-      `SELECT id, name, manufacturer, strength, packaging, mrp
+      `SELECT id, name, item_code, manufacturer, strength, packaging, mrp
        FROM medicines
-       WHERE name LIKE ? OR api_reference LIKE ?
+       WHERE name LIKE ? OR api_reference LIKE ? OR item_code LIKE ?
        ORDER BY name ASC LIMIT 15`,
-      [`%${q}%`, `%${q}%`]
+      [`%${q}%`, `%${q}%`, `%${q}%`]
     );
-    await db.close();
-    res.json(rows);
+        res.json(rows);
   } catch (error: any) {
-    if (db) await db.close();
     console.error('Catalog search error:', error.message);
     res.status(500).json({ error: 'Search failed' });
   }
@@ -269,7 +313,7 @@ router.get('/barcode/:id', async (req, res) => {
   let db;
   try {
     const { id } = req.params;
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     // Fetch medicine and inventory details
     const item = await db.get(`
@@ -279,8 +323,7 @@ router.get('/barcode/:id', async (req, res) => {
       WHERE im.id = ?
     `, [id]);
     
-    await db.close();
-    
+        
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -309,7 +352,6 @@ router.get('/barcode/:id', async (req, res) => {
     });
 
   } catch (error: any) {
-    if (db) await db.close();
     console.error('QR code generation error:', error);
     res.status(500).json({ error: 'Failed to generate QR Code' });
   }
@@ -320,13 +362,12 @@ router.get('/medicines/:id/enriched', async (req, res) => {
   let db;
   const { id } = req.params;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     // Find the medicine brand name
     const medicine = await db.get('SELECT name, api_reference, manufacturer FROM medicines WHERE id = ?', [id]);
     if (!medicine) {
-      await db.close();
-      return res.status(404).json({ error: 'Medicine not found' });
+            return res.status(404).json({ error: 'Medicine not found' });
     }
 
     // Lookup matching entry in enrichment cache
@@ -334,8 +375,7 @@ router.get('/medicines/:id/enriched', async (req, res) => {
       'SELECT enriched_data FROM medicine_enrichment_cache WHERE LOWER(medicine_name) = ?',
       [medicine.name.toLowerCase().trim()]
     );
-    await db.close();
-
+    
     const enrichment = cacheRow ? JSON.parse(cacheRow.enriched_data) : null;
 
     res.json({
@@ -355,9 +395,108 @@ router.get('/medicines/:id/enriched', async (req, res) => {
     });
 
   } catch (error: any) {
-    if (db) await db.close();
     console.error('Error fetching enriched medicine details:', error);
     res.status(500).json({ error: 'Failed to fetch enriched medicine details' });
+  }
+});
+
+// Universal Medicine Quick Edit - GET Details
+router.get('/medicines/:id/quick-edit', async (req, res) => {
+  let db;
+  const { id } = req.params;
+  try {
+    db = await dbManager.getConnection();
+    
+    // Fetch medicine details
+    const medicine = await db.get('SELECT * FROM medicines WHERE id = ?', [id]);
+    if (!medicine) {
+            return res.status(404).json({ error: 'Medicine not found' });
+    }
+
+    // Fetch primary inventory record (latest batch or highest quantity)
+    const invPrimary = await db.get(`
+      SELECT id as inventory_id, quantity, rack_location, batch_no, expiry_date 
+      FROM inventory_master 
+      WHERE medicine_id = ? 
+      ORDER BY quantity DESC LIMIT 1
+    `, [id]);
+
+    // Calculate total stock across all batches
+    const stockRow = await db.get(`SELECT SUM(quantity) as total_stock FROM inventory_master WHERE medicine_id = ?`, [id]);
+    const total_stock = stockRow?.total_stock || 0;
+
+    
+    res.json({
+      success: true,
+      medicine,
+      inventory: invPrimary || {},
+      total_stock
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching quick-edit medicine details:', error);
+    res.status(500).json({ error: 'Failed to fetch quick-edit details' });
+  }
+});
+
+// Universal Medicine Quick Edit - PUT Update
+router.put('/medicines/:id/quick-edit', async (req, res) => {
+  let db;
+  const { id } = req.params;
+  const { 
+    name, generic_name, manufacturer, marketed_by, 
+    packaging, pack_unit, item_code, category, api_reference,
+    inventory_id, quantity, rack_location 
+  } = req.body;
+  
+  try {
+    if (!id) {
+      return res.status(400).json({ error: 'id is required' });
+    }
+    db = await dbManager.getConnection();
+    await db.run('BEGIN TRANSACTION');
+
+    // 1. Update medicines table
+    const updates = [];
+    const params = [];
+    
+    if (name !== undefined) { updates.push('name = ?'); params.push(name); }
+    if (generic_name !== undefined) { updates.push('generic_name = ?'); params.push(generic_name); }
+    if (manufacturer !== undefined) { updates.push('manufacturer = ?'); params.push(manufacturer); }
+    if (marketed_by !== undefined) { updates.push('marketed_by = ?'); params.push(marketed_by); }
+    if (packaging !== undefined) { updates.push('packaging = ?'); params.push(packaging); }
+    if (pack_unit !== undefined) { updates.push('pack_unit = ?'); params.push(pack_unit); }
+    if (item_code !== undefined) { updates.push('item_code = ?'); params.push(item_code); }
+    if (category !== undefined) { updates.push('category = ?'); params.push(category); }
+    if (api_reference !== undefined) { updates.push('api_reference = ?'); params.push(api_reference); }
+
+    if (updates.length > 0) {
+      params.push(id);
+      await db.run(`UPDATE medicines SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+
+    // 2. Update primary inventory record if inventory_id is provided
+    if (inventory_id) {
+      const invUpdates = [];
+      const invParams = [];
+      if (quantity !== undefined) { invUpdates.push('quantity = ?'); invParams.push(quantity); }
+      if (rack_location !== undefined) { invUpdates.push('rack_location = ?'); invParams.push(rack_location); }
+      
+      if (invUpdates.length > 0) {
+        invParams.push(inventory_id);
+        await db.run(`UPDATE inventory_master SET ${invUpdates.join(', ')} WHERE id = ?`, invParams);
+      }
+    }
+
+    await db.run('COMMIT');
+    
+    res.json({ success: true, message: 'Medicine universally updated' });
+  } catch (error: any) {
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch(e) {}
+          }
+    console.error('Universal Medicine update error:', error);
+    res.status(500).json({ error: 'Internal server error during update' });
   }
 });
 

@@ -1,5 +1,5 @@
-import sqlite3 from 'sqlite3';
-import { open, Database } from 'sqlite';
+import { Database } from 'sqlite';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { EnrichedProductData } from './apiClients/baseApiClient.js';
@@ -10,7 +10,7 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 export class CacheService {
   private async getDb(): Promise<Database> {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.exec(`
       CREATE TABLE IF NOT EXISTS medicine_enrichment_cache (
         medicine_name TEXT PRIMARY KEY,
@@ -31,8 +31,7 @@ export class CacheService {
         'SELECT enriched_data FROM medicine_enrichment_cache WHERE LOWER(medicine_name) = ?',
         [cleanName]
       );
-      await db.close();
-
+      
       if (row && row.enriched_data) {
         return JSON.parse(row.enriched_data) as EnrichedProductData;
       }
@@ -52,8 +51,7 @@ export class CacheService {
         'INSERT OR REPLACE INTO medicine_enrichment_cache (medicine_name, enriched_data, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
         [cleanName, JSON.stringify(data)]
       );
-      await db.close();
-    } catch (err) {
+          } catch (err) {
       console.error('Failed to set enrichment cache:', err);
     }
   }
@@ -65,8 +63,7 @@ export class CacheService {
         "DELETE FROM medicine_enrichment_cache WHERE created_at < datetime('now', ?)",
         [`-${hours} hours`]
       );
-      await db.close();
-    } catch (err) {
+          } catch (err) {
       console.error('Failed to clear expired cache:', err);
     }
   }

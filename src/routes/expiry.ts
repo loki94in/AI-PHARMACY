@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -14,7 +13,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const days = req.query.days ? parseInt(req.query.days as string, 10) : 90;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const rows = await db.all(`
       SELECT im.id, m.name as medicine_name, im.batch_no, im.expiry_date, im.quantity, im.mrp, im.rack_location
       FROM inventory_master im
@@ -23,8 +22,7 @@ router.get('/', async (req, res) => {
       AND im.quantity > 0
       ORDER BY im.expiry_date ASC
     `, [days]);
-    await db.close();
-    res.json(rows);
+        res.json(rows);
   } catch (err) {
     console.error('Expiry fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -37,7 +35,7 @@ router.post('/send-alerts', async (req, res) => {
   const targetDays = days ? parseInt(days, 10) : 90;
 
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const rows = await db.all(`
       SELECT m.name as medicine_name, im.batch_no, im.expiry_date, im.quantity
       FROM inventory_master im
@@ -61,13 +59,11 @@ router.post('/send-alerts', async (req, res) => {
     }
     
     if (!targetPhone) {
-      await db.close();
-      return res.status(400).json({ error: 'Recipient phone number is required (configure owner_phone in settings or pass phone in body).' });
+            return res.status(400).json({ error: 'Recipient phone number is required (configure owner_phone in settings or pass phone in body).' });
     }
 
     if (rows.length === 0) {
-      await db.close();
-      return res.json({ success: true, message: 'No expiring items found to report.' });
+            return res.json({ success: true, message: 'No expiring items found to report.' });
     }
 
     const { sendMessage } = await import('../whatsappClient.js');
@@ -88,8 +84,7 @@ router.post('/send-alerts', async (req, res) => {
     }
 
     await sendMessage(formattedPhone, undefined, msg);
-    await db.close();
-    res.json({ success: true, message: `Alert summary successfully sent to ${targetPhone}` });
+        res.json({ success: true, message: `Alert summary successfully sent to ${targetPhone}` });
   } catch (error) {
     console.error('Trigger expiry alert error:', error);
     res.status(500).json({ error: 'Failed to send summary report alerts via WhatsApp' });

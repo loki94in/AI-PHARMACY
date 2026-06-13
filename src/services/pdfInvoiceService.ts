@@ -1,6 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -11,7 +10,7 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 export class PdfInvoiceService {
   async generateInvoicePdf(invoiceId: number, outPath: string, includeStampAndSig: boolean = true): Promise<void> {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     
     // Fetch settings
     await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
@@ -30,8 +29,7 @@ export class PdfInvoiceService {
     );
 
     if (!invoice) {
-      await db.close();
-      throw new Error(`Invoice ID ${invoiceId} not found`);
+            throw new Error(`Invoice ID ${invoiceId} not found`);
     }
 
     // Fetch line items
@@ -44,8 +42,7 @@ export class PdfInvoiceService {
       [invoiceId]
     );
 
-    await db.close();
-
+    
     const shopName = settings.shop_name || 'AI PHARMACY OS';
     const shopAddress = settings.shop_address || '123 Health Ave, Medical District, Tech City';
     const shopPhone = settings.shop_phone || '+91 99999 99999';

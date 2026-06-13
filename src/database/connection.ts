@@ -1,3 +1,4 @@
+import './sqlitePatch.js';
 import { Database } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
@@ -11,6 +12,7 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 class DatabaseManager {
   private static instance: DatabaseManager;
   private connection: Database | null = null;
+  private currentDbPath: string | null = null;
 
   private constructor() {}
 
@@ -22,15 +24,27 @@ class DatabaseManager {
   }
 
   public async getConnection(): Promise<Database> {
-    if (!this.connection) {
-      this.connection = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const dbPath = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+    if (!this.connection || this.currentDbPath !== dbPath) {
+      if (this.connection) {
+        try {
+          await this.connection.close();
+        } catch (e) {}
+      }
+      this.connection = await open({ filename: dbPath, driver: sqlite3.Database });
+      this.currentDbPath = dbPath;
     }
     return this.connection;
   }
 
   public async close(): Promise<void> {
-    // Keep connection open for the lifetime of the application
-    // to prevent SQLITE_MISUSE during concurrent route access.
+    if (this.connection) {
+      try {
+        await this.connection.close();
+      } catch (e) {}
+      this.connection = null;
+      this.currentDbPath = null;
+    }
   }
 
   public async transaction<T>(callback: (db: Database) => Promise<T>): Promise<T> {

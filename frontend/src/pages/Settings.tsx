@@ -18,6 +18,8 @@ import {
   Globe,
   Copy,
   Mail,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import { toastEvent } from '../services/events';
 
@@ -36,6 +38,15 @@ const Settings = () => {
   const [gmailAuthMethod, setGmailAuthMethod] = useState('password');
   const [emailAutodeleteEnabled, setEmailAutodeleteEnabled] = useState(true);
   const [emailAutodeleteLimit, setEmailAutodeleteLimit] = useState<number>(10);
+  const [automationEnabled, setAutomationEnabled] = useState(false);
+
+  // Pharmarack Settings state
+  const [prUsername, setPrUsername] = useState('');
+  const [prPassword, setPrPassword] = useState('');
+  const [prToken, setPrToken] = useState('');
+  const [prMode, setPrMode] = useState('Simulation');
+  const [isOpeningWindow, setIsOpeningWindow] = useState(false);
+  const [isOpeningWaWindow, setIsOpeningWaWindow] = useState(false);
 
 
   // Billing Preferences
@@ -86,6 +97,7 @@ const Settings = () => {
           setGmailAuthMethod(data.gmail_auth_method || 'password');
           setEmailAutodeleteEnabled(data.email_autodelete_enabled !== 'false');
           setEmailAutodeleteLimit(Number(data.email_autodelete_limit) || 10);
+          setAutomationEnabled(data.automation_enabled === 'true');
 
 
           setDefaultTaxRate(Number(data.default_tax_rate) || 18);
@@ -104,12 +116,18 @@ const Settings = () => {
           
           setWhatsappEnabled(data.whatsapp_enabled === 'true');
 
-          // WhatsApp Business API
+           // WhatsApp Business API
           setWaBusinessEnabled(data.wa_business_enabled === 'true');
           setWaBusinessPhoneNumberId(data.wa_business_phone_number_id || '');
           setWaBusinessAccessToken(data.wa_business_access_token || '');
           setWaBusinessWabaId(data.wa_business_waba_id || '');
           setWaBusinessWebhookVerifyToken(data.wa_business_webhook_verify_token || '');
+
+          // Pharmarack Settings
+          setPrUsername(data.pharmarack_username || '');
+          setPrPassword(data.pharmarack_password || '');
+          setPrToken(data.pharmarack_session_token || '');
+          setPrMode(data.pharmarack_mode || 'Simulation');
         }
       } catch (error) {
         console.error('Failed to load settings', error);
@@ -151,6 +169,7 @@ const Settings = () => {
       gmail_auth_method: gmailAuthMethod,
       email_autodelete_enabled: emailAutodeleteEnabled.toString(),
       email_autodelete_limit: emailAutodeleteLimit.toString(),
+      automation_enabled: automationEnabled.toString(),
 
 
       default_tax_rate: defaultTaxRate.toString(),
@@ -169,12 +188,18 @@ const Settings = () => {
       
       whatsapp_enabled: whatsappEnabled.toString(),
 
-      // WhatsApp Business API
+       // WhatsApp Business API
       wa_business_enabled: waBusinessEnabled.toString(),
       wa_business_phone_number_id: waBusinessPhoneNumberId,
       wa_business_access_token: waBusinessAccessToken,
       wa_business_waba_id: waBusinessWabaId,
       wa_business_webhook_verify_token: waBusinessWebhookVerifyToken,
+
+      // Pharmarack Settings
+      pharmarack_username: prUsername,
+      pharmarack_password: prPassword,
+      pharmarack_session_token: prToken,
+      pharmarack_mode: prMode,
     };
 
     try {
@@ -186,6 +211,102 @@ const Settings = () => {
     }
   };
 
+  const handleOpenLoginWindow = async () => {
+    setIsOpeningWindow(true);
+    setPrToken('');
+    try {
+      await apiClient.post('/pharmarack/login-window');
+      toastEvent.trigger('Google Chrome window opened. Please log in on retailers.pharmarack.com.', 'info');
+      
+      let attempts = 0;
+      const interval = setInterval(async () => {
+        attempts++;
+        if (attempts > 90) { 
+          clearInterval(interval);
+          setIsOpeningWindow(false);
+          return;
+        }
+
+        try {
+          const { data } = await apiClient.get('/settings');
+          if (data && data.pharmarack_session_token && data.pharmarack_session_token !== prToken) {
+            setPrToken(data.pharmarack_session_token);
+            setPrMode(data.pharmarack_mode || 'Live');
+            toastEvent.trigger('Successfully linked Pharmarack session!', 'success');
+            clearInterval(interval);
+            setIsOpeningWindow(false);
+          }
+        } catch (err) {
+          console.warn('Failed to poll settings status:', err);
+        }
+      }, 2000);
+    } catch (err: any) {
+      console.error('Failed to open login window:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to open Chrome login window. Ensure Chrome is installed.', 'error');
+      setIsOpeningWindow(false);
+    }
+  };
+
+  const handlePharmarackLogout = async () => {
+    setPrUsername('');
+    setPrPassword('');
+    setPrToken('');
+    setPrMode('Simulation');
+    
+    const payload = {
+      shop_name: pharmacyName,
+      shop_address: address,
+      shop_phone: phone,
+      gstin: gstin,
+      shop_licence: drugLicense,
+      email: email,
+      
+      gmail_user: gmailUser,
+      gmail_pass: gmailPass,
+      google_client_id: googleClientId,
+      google_client_secret: googleClientSecret,
+      gmail_auth_method: gmailAuthMethod,
+      email_autodelete_enabled: emailAutodeleteEnabled.toString(),
+      email_autodelete_limit: emailAutodeleteLimit.toString(),
+      automation_enabled: automationEnabled.toString(),
+
+      default_tax_rate: defaultTaxRate.toString(),
+      invoice_prefix: invoicePrefix,
+      auto_print: autoPrint.toString(),
+      default_payment_mode: defaultPaymentMode,
+
+      whatsapp_notif: whatsappNotif.toString(),
+      email_alerts: emailAlerts.toString(),
+      low_stock_threshold: lowStockThreshold.toString(),
+      expiry_alert_days: expiryAlertDays.toString(),
+
+      telegram_enabled: telegramEnabled.toString(),
+      telegram_token: telegramToken,
+      telegram_chat_id: telegramChatId,
+      
+      whatsapp_enabled: whatsappEnabled.toString(),
+
+      wa_business_enabled: waBusinessEnabled.toString(),
+      wa_business_phone_number_id: waBusinessPhoneNumberId,
+      wa_business_access_token: waBusinessAccessToken,
+      wa_business_waba_id: waBusinessWabaId,
+      wa_business_webhook_verify_token: waBusinessWebhookVerifyToken,
+
+      pharmarack_username: '',
+      pharmarack_password: '',
+      pharmarack_session_token: '',
+      pharmarack_mode: 'Simulation'
+    };
+
+    try {
+      await apiClient.post('/settings/save', payload);
+      toastEvent.trigger('Logged out and cleared Pharmarack credentials successfully.', 'success');
+    } catch (error) {
+      console.error('Failed to logout from Pharmarack', error);
+      toastEvent.trigger('Failed to logout from Pharmarack', 'error');
+    }
+  };
+
   const handleReconnect = async () => {
     try {
       setWaStatus({ isReady: false, qrUrl: null, message: 'Reconnecting...' });
@@ -194,6 +315,19 @@ const Settings = () => {
     } catch (error) {
       console.error('Failed to reconnect', error);
       toastEvent.trigger('Failed to reconnect WhatsApp', 'error');
+    }
+  };
+
+  const handleOpenWaLoginWindow = async () => {
+    setIsOpeningWaWindow(true);
+    try {
+      toastEvent.trigger('Launching Chrome login window for WhatsApp...', 'info');
+      await apiClient.post('/messaging/login-window');
+    } catch (err: any) {
+      console.error('Failed to open WhatsApp login window:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to open Chrome login window. Ensure Chrome is installed.', 'error');
+    } finally {
+      setIsOpeningWaWindow(false);
     }
   };
 
@@ -220,30 +354,6 @@ const Settings = () => {
 
   return (
     <div className="h-full flex flex-col fade-in space-y-6 overflow-y-auto pb-8">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-extrabold tracking-tight mb-1 flex items-center gap-2">
-          <SettingsIcon size={22} className="text-muted" />
-          Settings
-        </h2>
-        <p className="text-muted text-sm mt-1">Configure your pharmacy application.</p>
-        
-        {/* Feature Badges */}
-        <div className="flex gap-2 text-[10px] flex-wrap mt-3 max-w-4xl">
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ User Management</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Role Management</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Permission Management</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Store Information</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GST Settings</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Billing Settings</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Notification Settings</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Printer Settings</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Backup Settings</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Security Settings</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Theme Settings</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Language Settings</span>
-        </div>
-      </div>
 
       {/* ─── Pharmacy Details ─── */}
       <div className="glass-panel p-6">
@@ -617,21 +727,32 @@ const Settings = () => {
                     ? "Your WhatsApp account is successfully linked and active."
                     : waStatus.message || "Scan this QR code with your WhatsApp app to link your account."}
                 </p>
-                <div className="flex gap-2 justify-center mt-2">
+                <div className="flex flex-wrap gap-2 justify-center mt-2">
                   {!waStatus.isReady && (
-                    <button 
-                      onClick={() => setWaStatus({ ...waStatus, qrUrl: null })}
-                      className="text-xs font-bold bg-primary/20 text-primary px-4 py-1.5 rounded-full hover:bg-primary/30 transition-all"
-                    >
-                      Refresh Status
-                    </button>
+                    <>
+                      <button 
+                        onClick={handleOpenWaLoginWindow}
+                        disabled={isOpeningWaWindow}
+                        className="text-xs font-bold bg-green/20 text-green px-4 py-1.5 rounded-full hover:bg-green/30 transition-all flex items-center gap-1 disabled:opacity-50"
+                        title="Open Chrome to log in to WhatsApp Web"
+                      >
+                        <LogIn size={12} />
+                        {isOpeningWaWindow ? 'Opening...' : 'Log In (Chrome Popup)'}
+                      </button>
+                      <button 
+                        onClick={() => setWaStatus({ ...waStatus, qrUrl: null })}
+                        className="text-xs font-bold bg-primary/20 text-primary px-4 py-1.5 rounded-full hover:bg-primary/30 transition-all"
+                      >
+                        Refresh Status
+                      </button>
+                    </>
                   )}
                   <button 
                     onClick={handleReconnect}
                     className="text-xs font-bold bg-red/20 text-red px-4 py-1.5 rounded-full hover:bg-red/30 transition-all flex items-center gap-1"
-                    title="Force logout and generate a new QR code"
+                    title="Log out and clear WhatsApp session"
                   >
-                    <RefreshCw size={12} /> Force Reconnect
+                    <LogOut size={12} /> Log Out WhatsApp
                   </button>
                 </div>
               </div>
@@ -954,6 +1075,160 @@ const Settings = () => {
           >
             <Save size={16} />
             Save Integrations
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Pharmarack Integration ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Globe size={18} className="text-sky" />
+          Pharmarack Integration Settings
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <div className="space-y-2">
+            <label htmlFor="prMode" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Connection Mode
+            </label>
+            <select
+              id="prMode"
+              className="premium-input w-full bg-zinc-900 border-glass-border/60 text-xs py-2"
+              value={prMode}
+              onChange={(e) => setPrMode(e.target.value)}
+            >
+              <option value="Simulation">Simulation Mode (Pre-populated Screenshots & Demo Data)</option>
+              <option value="Live">Live Scraper Mode (Interprets Session Cookie / Token)</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="prUsername" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Pharmarack Mobile / Username
+            </label>
+            <input
+              id="prUsername"
+              type="text"
+              className="premium-input w-full"
+              placeholder="e.g. 9876543210"
+              value={prUsername}
+              onChange={(e) => setPrUsername(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="prPassword" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Pharmarack Password
+            </label>
+            <input
+              id="prPassword"
+              type="password"
+              className="premium-input w-full"
+              placeholder="••••••••"
+              value={prPassword}
+              onChange={(e) => setPrPassword(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="prToken" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Pharmarack Intercepted Session Token / Cookies
+            </label>
+            <input
+              id="prToken"
+              type="text"
+              className="premium-input w-full"
+              placeholder="Copy Bearer token or cookies from browser DevTools"
+              value={prToken}
+              onChange={(e) => setPrToken(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <p className="text-[10px] text-zinc-500 mt-4 leading-relaxed">
+          <strong>How to capture token:</strong> Log in to <code>retailers.pharmarack.com</code> in your browser. Open Developer Tools (F12), go to the Network tab, type in the search bar, look for an API request, and copy the value of the <code>Authorization</code> header or request cookies. Paste it here to enable background live searching!
+        </p>
+
+        <div className="mt-6 flex flex-wrap gap-3 justify-end">
+          <button 
+            type="button"
+            onClick={handleOpenLoginWindow}
+            disabled={isOpeningWindow}
+            className="premium-btn bg-sky-500 hover:bg-sky-400 text-white shadow-[0_4px_14px_rgba(14,165,233,0.4)] flex items-center gap-2"
+          >
+            {isOpeningWindow ? (
+              <>
+                <RefreshCw size={16} className="animate-spin" />
+                Waiting for browser login...
+              </>
+            ) : (
+              <>
+                <LogIn size={16} />
+                Log In (Chrome Popup)
+              </>
+            )}
+          </button>
+          
+          <button 
+            type="button"
+            onClick={handlePharmarackLogout}
+            className="premium-btn bg-red-600 hover:bg-red-500 text-white shadow-[0_4px_14px_rgba(239,68,68,0.4)] flex items-center gap-2"
+          >
+            <LogOut size={16} />
+            Log Out Pharmarack
+          </button>
+
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Pharmarack Settings
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Background Automations ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Zap size={18} className="text-amber" />
+          Background Automations
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+          <div className="space-y-2 flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer select-none group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={automationEnabled}
+                  onChange={(e) => setAutomationEnabled(e.target.checked)}
+                  aria-label="Enable Background Automations"
+                />
+                <div className="w-11 h-6 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+              </div>
+              <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                Enable Background Automations
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <p className="text-xs text-muted mt-4 max-w-3xl leading-relaxed">
+          Enabling this starts background services at startup including: WhatsApp client pre-initialization, the WhatsApp queue worker, the catalog upload process, daily checks for patient refills, and automatic near-expiry scans.
+          <br />
+          <span className="text-amber/85 font-semibold italic">Note: Changing this setting requires a server restart to take effect.</span>
+        </p>
+
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Automations
           </button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { BarChart3, TrendingUp, Download, IndianRupee, ShoppingBag, Package, Fil
 const Reports = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'purchases' | 'expiry'>('sales');
 
   const statsCards = [
     {
@@ -43,285 +44,243 @@ const Reports = () => {
     primary: 'text-primary',
   };
 
+  const tabs = [
+    { id: 'sales', label: 'Sales Report', icon: FileText, color: 'text-green' },
+    { id: 'inventory', label: 'Inventory Report', icon: Package, color: 'text-sky' },
+    { id: 'purchases', label: 'Purchase Report', icon: ShoppingBag, color: 'text-amber' },
+    { id: 'expiry', label: 'Expiry Report', icon: BarChart3, color: 'text-red' },
+  ] as const;
+
   return (
-    <div className="h-full flex flex-col fade-in space-y-6 overflow-y-auto pb-8">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-tight mb-1 flex items-center gap-2">
-            <BarChart3 size={24} className="text-primary" />
-            Reports &amp; Analytics
-          </h2>
-          <p className="text-muted text-sm mt-1">Generate and view business intelligence reports</p>
-          
-          {/* Feature Badges */}
-          <div className="flex gap-2 text-[10px] flex-wrap mt-3 max-w-4xl">
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Sales Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Purchase Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Inventory Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GST Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Profit Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Customer Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Supplier Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Expiry Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Return Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Custom Reports</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ PDF Export</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Excel Export</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Scheduled Reports</span>
-          </div>
+    <div className="h-full flex flex-col fade-in gap-4 min-h-0 overflow-hidden text-text bg-bg">
+      {/* Date Controls & Action Row */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-bg2 border border-border p-3 rounded-xl flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <Info size={16} className="text-primary shrink-0 animate-pulse" />
+          <span className="text-xs text-muted font-medium">Placeholder stats shown. Engine incoming.</span>
         </div>
-        <div className="flex gap-2 items-center flex-wrap">
-          <div className="space-y-0">
-            <label htmlFor="report-from-date" className="sr-only">From Date</label>
+        <div className="flex gap-2 items-center flex-wrap w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-1.5 text-xs text-muted font-semibold">
+            <span>From</span>
             <input
-              id="report-from-date"
               type="date"
-              className="premium-input text-sm"
+              className="bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
               aria-label="From Date"
-              title="From Date"
             />
           </div>
-          <span className="text-muted text-xs">to</span>
-          <div className="space-y-0">
-            <label htmlFor="report-to-date" className="sr-only">To Date</label>
+          <div className="flex items-center gap-1.5 text-xs text-muted font-semibold">
+            <span>To</span>
             <input
-              id="report-to-date"
               type="date"
-              className="premium-input text-sm"
+              className="bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
               aria-label="To Date"
-              title="To Date"
             />
           </div>
           <button
-            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600"
-            aria-label="Generate Report"
+            className="bg-green hover:bg-green/95 text-white font-semibold px-4 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
             title="Generate Report"
           >
-            <BarChart3 size={16} />
-            Generate
+            <BarChart3 size={14} />
+            <span>Generate</span>
           </button>
         </div>
       </div>
 
-      {/* Coming Soon Banner */}
-      <div className="glass-panel p-4 border-primary/30 flex items-center gap-3">
-        <Info size={18} className="text-primary shrink-0" />
-        <p className="text-sm text-muted">
-          <span className="font-semibold text-primary">Reports engine coming soon.</span>{' '}
-          Placeholder data is shown below. Full analytics with charts and export will be available in the next update.
-        </p>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Stats Grid - Compact Row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 flex-shrink-0">
         {statsCards.map((card) => {
           const Icon = card.icon;
           return (
-            <div key={card.label} className="glass-panel p-6 relative overflow-hidden group">
+            <div key={card.label} className="bg-bg2 border border-border rounded-xl p-4 relative overflow-hidden group">
               <div
-                className="absolute top-0 right-0 w-32 h-32 translate-x-8 -translate-y-8"
+                className="absolute top-0 right-0 w-24 h-24 translate-x-6 -translate-y-6 pointer-events-none"
                 style={{ background: `radial-gradient(circle, ${card.gradient} 0%, transparent 70%)` }}
               />
-              <Icon className="absolute right-6 top-6 text-muted/30" size={28} />
-              <div className="text-xs text-muted font-bold uppercase tracking-wider mb-2">{card.label}</div>
-              <div className={`text-3xl font-extrabold ${colorMap[card.color]} mb-3`}>
+              <Icon className="absolute right-4 top-4 text-muted/20" size={24} />
+              <div className="text-[10px] text-muted font-bold uppercase tracking-wider mb-1">{card.label}</div>
+              <div className={`text-2xl font-black ${colorMap[card.color]} mb-1`}>
                 {card.value}
               </div>
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
-                No data yet
+              <div className="text-[9px] text-muted font-medium">
+                No active records
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Report Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Sales Report */}
-        <div className="glass-panel flex flex-col overflow-hidden">
-          <div className="p-5 border-b border-glass-border flex justify-between items-center bg-white/5">
-            <h3 className="font-bold flex items-center gap-2">
-              <FileText size={18} className="text-green" />
-              Sales Report
-            </h3>
-            <button
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-muted hover:text-white"
-              aria-label="Download Sales Report"
-              title="Download Sales Report"
-            >
-              <Download size={16} />
-            </button>
-          </div>
-          <div className="overflow-auto bg-black/20">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
-                <tr>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Date</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Invoice</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm">01-06-2026</td>
-                  <td className="p-4 text-sm font-semibold text-sky">INV-0001</td>
-                  <td className="p-4 text-sm font-bold text-green">₹1,250.00</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm">01-06-2026</td>
-                  <td className="p-4 text-sm font-semibold text-sky">INV-0002</td>
-                  <td className="p-4 text-sm font-bold text-green">₹780.50</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm">02-06-2026</td>
-                  <td className="p-4 text-sm font-semibold text-sky">INV-0003</td>
-                  <td className="p-4 text-sm font-bold text-green">₹2,340.00</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      {/* Main Workspace: Split tabs left, selected table right */}
+      <div className="flex-1 flex gap-4 min-h-0 overflow-hidden">
+        
+        {/* Left Tabs Selection Sidebar */}
+        <div className="w-64 flex-shrink-0 flex flex-col gap-2 bg-bg2 border border-border rounded-xl p-3 overflow-y-auto scrollbar-thin">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted px-2 mb-1">Select Report</h3>
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all text-left ${
+                  isActive
+                    ? 'bg-primary/10 border-primary text-text font-bold'
+                    : 'bg-bg3/30 border-glass-border text-muted hover:text-text hover:bg-bg3'
+                }`}
+              >
+                <Icon size={16} className={isActive ? tab.color : 'text-muted'} />
+                <span className="flex-1 truncate">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Inventory Report */}
-        <div className="glass-panel flex flex-col overflow-hidden">
-          <div className="p-5 border-b border-glass-border flex justify-between items-center bg-white/5">
-            <h3 className="font-bold flex items-center gap-2">
-              <Package size={18} className="text-sky" />
-              Inventory Report
-            </h3>
-            <button
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-muted hover:text-white"
-              aria-label="Download Inventory Report"
-              title="Download Inventory Report"
-            >
-              <Download size={16} />
-            </button>
-          </div>
-          <div className="overflow-auto bg-black/20">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
-                <tr>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Medicine</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Stock</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">Paracetamol 500mg</td>
-                  <td className="p-4 text-sm">120 units</td>
-                  <td className="p-4 text-sm font-bold text-green">₹3,600.00</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">Amoxicillin 250mg</td>
-                  <td className="p-4 text-sm">45 units</td>
-                  <td className="p-4 text-sm font-bold text-green">₹2,025.00</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">Cetirizine 10mg</td>
-                  <td className="p-4 text-sm">200 units</td>
-                  <td className="p-4 text-sm font-bold text-green">₹1,400.00</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        {/* Right Active Table Panel */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-bg2 border border-border rounded-xl">
+          {activeTab === 'sales' && (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 border-b border-glass-border flex justify-between items-center bg-bg3/30 flex-shrink-0">
+                <h3 className="font-bold text-sm flex items-center gap-2 text-text">
+                  <FileText size={18} className="text-green" />
+                  <span>Sales Records</span>
+                </h3>
+                <button
+                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
+                  aria-label="Download Sales Report"
+                  title="Download Sales Report"
+                >
+                  <Download size={15} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 bg-bg2 border-b border-glass-border shadow-sm">
+                    <tr className="text-muted">
+                      <th className="p-3 font-semibold border-b border-glass-border">Date</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Invoice</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No sales records found</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'inventory' && (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 border-b border-glass-border flex justify-between items-center bg-bg3/30 flex-shrink-0">
+                <h3 className="font-bold text-sm flex items-center gap-2 text-text">
+                  <Package size={18} className="text-sky" />
+                  <span>Inventory Status</span>
+                </h3>
+                <button
+                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
+                  aria-label="Download Inventory Report"
+                  title="Download Inventory Report"
+                >
+                  <Download size={15} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 bg-bg2 border-b border-glass-border shadow-sm">
+                    <tr className="text-muted">
+                      <th className="p-3 font-semibold border-b border-glass-border">Medicine</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Stock</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No inventory records found</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'purchases' && (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 border-b border-glass-border flex justify-between items-center bg-bg3/30 flex-shrink-0">
+                <h3 className="font-bold text-sm flex items-center gap-2 text-text">
+                  <ShoppingBag size={18} className="text-amber" />
+                  <span>Purchase Logs</span>
+                </h3>
+                <button
+                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
+                  aria-label="Download Purchase Report"
+                  title="Download Purchase Report"
+                >
+                  <Download size={15} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 bg-bg2 border-b border-glass-border shadow-sm">
+                    <tr className="text-muted">
+                      <th className="p-3 font-semibold border-b border-glass-border">Distributor</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Invoice</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No purchase records found</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'expiry' && (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 border-b border-glass-border flex justify-between items-center bg-bg3/30 flex-shrink-0">
+                <h3 className="font-bold text-sm flex items-center gap-2 text-text">
+                  <BarChart3 size={18} className="text-red" />
+                  <span>Expiry Warning List</span>
+                </h3>
+                <button
+                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
+                  aria-label="Download Expiry Report"
+                  title="Download Expiry Report"
+                >
+                  <Download size={15} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 bg-bg2 border-b border-glass-border shadow-sm">
+                    <tr className="text-muted">
+                      <th className="p-3 font-semibold border-b border-glass-border">Medicine</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Batch</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Expiry Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No expiry records found</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
         </div>
 
-        {/* Purchase Report */}
-        <div className="glass-panel flex flex-col overflow-hidden">
-          <div className="p-5 border-b border-glass-border flex justify-between items-center bg-white/5">
-            <h3 className="font-bold flex items-center gap-2">
-              <ShoppingBag size={18} className="text-amber" />
-              Purchase Report
-            </h3>
-            <button
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-muted hover:text-white"
-              aria-label="Download Purchase Report"
-              title="Download Purchase Report"
-            >
-              <Download size={16} />
-            </button>
-          </div>
-          <div className="overflow-auto bg-black/20">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
-                <tr>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Distributor</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Invoice</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">Apollo Pharma</td>
-                  <td className="p-4 text-sm font-semibold text-sky">PUR-0501</td>
-                  <td className="p-4 text-sm font-bold text-amber">₹15,400.00</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">MedPlus Supply</td>
-                  <td className="p-4 text-sm font-semibold text-sky">PUR-0502</td>
-                  <td className="p-4 text-sm font-bold text-amber">₹8,720.00</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">HealthCare Dist.</td>
-                  <td className="p-4 text-sm font-semibold text-sky">PUR-0503</td>
-                  <td className="p-4 text-sm font-bold text-amber">₹6,150.00</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Expiry Report */}
-        <div className="glass-panel flex flex-col overflow-hidden">
-          <div className="p-5 border-b border-glass-border flex justify-between items-center bg-white/5">
-            <h3 className="font-bold flex items-center gap-2">
-              <BarChart3 size={18} className="text-red" />
-              Expiry Report
-            </h3>
-            <button
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-muted hover:text-white"
-              aria-label="Download Expiry Report"
-              title="Download Expiry Report"
-            >
-              <Download size={16} />
-            </button>
-          </div>
-          <div className="overflow-auto bg-black/20">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
-                <tr>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Medicine</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Batch</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Expiry Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">Ibuprofen 400mg</td>
-                  <td className="p-4 text-sm text-muted">BATCH-A12</td>
-                  <td className="p-4 text-sm font-bold text-red">15-07-2026</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">Metformin 500mg</td>
-                  <td className="p-4 text-sm text-muted">BATCH-B34</td>
-                  <td className="p-4 text-sm font-bold text-red">22-08-2026</td>
-                </tr>
-                <tr className="hover:bg-white/5 transition-colors border-b border-glass-border">
-                  <td className="p-4 text-sm font-semibold">Omeprazole 20mg</td>
-                  <td className="p-4 text-sm text-muted">BATCH-C56</td>
-                  <td className="p-4 text-sm font-bold text-amber">10-12-2026</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
+
     </div>
   );
 };

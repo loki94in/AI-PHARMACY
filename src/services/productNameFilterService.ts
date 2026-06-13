@@ -1,6 +1,5 @@
 function stringSimilarity(a: string, b: string): number { return 1.0; }
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { dbManager } from '../database/connection.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -214,8 +213,9 @@ export class ProductNameFilterService {
 
   async initialize(): Promise<void> {
     try {
-      const activeDbPath = process.env.DB_PATH || this.dbPath;
-      const db = await open({ filename: activeDbPath, driver: sqlite3.Database });
+      const activeDbPath = this.dbPath;
+      process.env.DB_PATH = activeDbPath;
+      const db = await dbManager.getConnection();
       const rows = await db.all('SELECT DISTINCT name FROM medicines WHERE name IS NOT NULL AND name <> ""');
       this.medicineNames = rows.map(row => row.name).filter(Boolean);
 
@@ -233,8 +233,7 @@ export class ProductNameFilterService {
         console.warn('Failed to load corrections from database, falling back to JSON:', dbErr);
       }
 
-      await db.close();
-      this.initialized = true;
+            this.initialized = true;
     } catch (error) {
       console.error('Failed to initialize ProductNameFilterService:', error);
       throw new Error(`Failed to load medicine names from database: ${(error as any).message}`);
@@ -273,15 +272,15 @@ export class ProductNameFilterService {
     this.saveCorrections();
 
     // Save to SQLite database asynchronously
-    const activeDbPath = process.env.DB_PATH || this.dbPath;
-    open({ filename: activeDbPath, driver: sqlite3.Database })
+    const activeDbPath = this.dbPath;
+    process.env.DB_PATH = activeDbPath;
+    dbManager.getConnection()
       .then(async (db) => {
         await db.run(
           'INSERT OR REPLACE INTO ocr_corrections (ocr, correct, count) VALUES (?, ?, ?)',
           [normalizedOcr, normalizedCorrect, count]
         );
-        await db.close();
-        console.log(`Saved OCR correction to database: "${normalizedOcr}" → "${normalizedCorrect}" (count: ${count})`);
+                console.log(`Saved OCR correction to database: "${normalizedOcr}" → "${normalizedCorrect}" (count: ${count})`);
       })
       .catch((dbErr) => {
         console.error('Failed to save OCR correction to database:', dbErr);
@@ -460,7 +459,7 @@ export class ProductNameFilterService {
       // Filter and return unique matches with high similarity
       const uniqueMatches = Array.from(new Set(matches));
       return uniqueMatches.filter(matchName => 
-        stringSimilarity(query, matchName.toLowerCase(), minConfidenceThreshold) >= minConfidenceThreshold
+        stringSimilarity(query, matchName.toLowerCase()) >= minConfidenceThreshold
       );
 
     } catch (error: any) {

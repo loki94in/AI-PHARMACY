@@ -1,7 +1,6 @@
 // Archive & Purge API (Agent 2)
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -25,7 +24,7 @@ router.post('/purge', async (req, res) => {
     return res.status(400).json({ error: 'table and days are required' });
   }
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
     const iso = cutoff.toISOString();
@@ -38,13 +37,11 @@ router.post('/purge', async (req, res) => {
     };
     const query = purgeQueries[table];
     if (!query) {
-      await db.close();
-      return res.status(400).json({ error: 'Table not allowed for purge' });
+            return res.status(400).json({ error: 'Table not allowed for purge' });
     }
     await db.run(query, iso);
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['PURGE', `Purged ${table} older than ${days} days`]);
-    await db.close();
-    res.json({ success: true, message: `Purged old records from ${table}` });
+        res.json({ success: true, message: `Purged old records from ${table}` });
   } catch (error) {
     console.error('Archive purge error:', error);
     res.status(500).json({ error: 'Failed to purge records' });
@@ -57,13 +54,12 @@ router.get('/preview', async (req, res) => {
   cutoff.setDate(cutoff.getDate() - days);
   const iso = cutoff.toISOString();
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const logs = await db.all('SELECT * FROM action_logs WHERE created_at < ?', iso);
     const sales = await db.all('SELECT * FROM sales_invoices WHERE date < ? OR business_date < ?', [iso, iso]);
     const purchases = await db.all('SELECT * FROM purchases WHERE date < ? OR business_date < ?', [iso, iso]);
     const returnsData = await db.all('SELECT * FROM returns WHERE date < ?', iso);
-    await db.close();
-    res.json({
+        res.json({
       cutoff_date: iso,
       counts: {
         action_logs: logs.length,
@@ -85,7 +81,7 @@ router.post('/sweep', async (req, res) => {
   const iso = cutoff.toISOString();
   
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     
     // Begin transaction for safety
     await db.run('BEGIN TRANSACTION');
@@ -121,8 +117,7 @@ router.post('/sweep', async (req, res) => {
     const totalRecords = logs.length + sales.length + purchases.length + returnsData.length;
     if (totalRecords === 0) {
       await db.run('COMMIT');
-      await db.close();
-      return res.json({ success: true, message: 'No data older than the specified limit to archive.', archived: 0 });
+            return res.json({ success: true, message: 'No data older than the specified limit to archive.', archived: 0 });
     }
 
     // 2. Prepare JSON payload
@@ -176,8 +171,7 @@ router.post('/sweep', async (req, res) => {
 
     // Run VACUUM to reclaim disk space after transaction
     await db.run('VACUUM');
-    await db.close();
-
+    
     res.json({
       success: true,
       message: `Successfully archived and purged data older than ${days} days.`,

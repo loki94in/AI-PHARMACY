@@ -1,5 +1,4 @@
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sendMessage, isReady } from '../whatsappClient.js';
@@ -14,18 +13,16 @@ export class WhatsappQueue {
   async queueJob(invoiceId: number, phone: string, pdfPath: string, caption: string): Promise<void> {
     let db;
     try {
-      db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      db = await dbManager.getConnection();
       await db.run(
         `INSERT INTO pending_whatsapp_jobs (invoice_id, recipient_phone, pdf_path, caption) VALUES (?, ?, ?, ?)`,
         [invoiceId, phone, pdfPath, caption]
       );
-      await db.close();
-      console.log(`Queued pending WhatsApp transmission for Invoice ID ${invoiceId}`);
+            console.log(`Queued pending WhatsApp transmission for Invoice ID ${invoiceId}`);
       
       // Try immediate processing
       this.processQueue().catch(console.error);
     } catch (err) {
-      if (db) await db.close();
       console.error('Failed to queue WhatsApp job:', err);
     }
   }
@@ -36,15 +33,13 @@ export class WhatsappQueue {
     // Check if WhatsApp is enabled in settings
     let dbCheck;
     try {
-      dbCheck = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      dbCheck = await dbManager.getConnection();
       const row = await dbCheck.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
-      await dbCheck.close();
-      if (!row || row.value !== 'true') {
+            if (!row || row.value !== 'true') {
         // Silent return if disabled to prevent background spam logs
         return;
       }
     } catch (dbErr) {
-      if (dbCheck) await dbCheck.close();
       console.error('Failed to check if WhatsApp is enabled in queue worker:', dbErr);
     }
 
@@ -56,7 +51,7 @@ export class WhatsappQueue {
     this.isProcessing = true;
     let db;
     try {
-      db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      db = await dbManager.getConnection();
       const jobs = await db.all('SELECT * FROM pending_whatsapp_jobs ORDER BY created_at ASC');
 
       for (const job of jobs) {
@@ -79,9 +74,7 @@ export class WhatsappQueue {
         }
       }
       
-      await db.close();
-    } catch (err) {
-      if (db) await db.close();
+          } catch (err) {
       console.error('Error processing WhatsApp queue:', err);
     } finally {
       this.isProcessing = false;

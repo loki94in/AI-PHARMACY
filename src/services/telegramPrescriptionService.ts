@@ -1,6 +1,5 @@
 // Telegram Prescription Service for managing prescription-to-cart workflow
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { aiCameraService } from './aiCameraService.js';
@@ -220,7 +219,7 @@ class TelegramPrescriptionService {
    */
   private async findMedicineIdByName(name: string): Promise<number | null> {
     try {
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
 
       // First try exact match
       const exactMatch = await db.get(
@@ -229,8 +228,7 @@ class TelegramPrescriptionService {
       );
 
       if (exactMatch) {
-        await db.close();
-        return exactMatch.id;
+                return exactMatch.id;
       }
 
       // Try fuzzy match using product name filter service
@@ -246,12 +244,10 @@ class TelegramPrescriptionService {
           [bestMatch]
         );
 
-        await db.close();
-        return medicine ? medicine.id : null;
+                return medicine ? medicine.id : null;
       }
 
-      await db.close();
-      return null;
+            return null;
     } catch (error) {
       console.error('Error finding medicine ID:', error);
       return null;
@@ -263,7 +259,7 @@ class TelegramPrescriptionService {
    */
   private async getInventoryDetails(medicineId: number): Promise<any> {
     try {
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
 
       const inventory = await db.get(
         `SELECT im.id, im.quantity, im.mrp, im.batch_number, im.expiry_date
@@ -273,8 +269,7 @@ class TelegramPrescriptionService {
         [medicineId]
       );
 
-      await db.close();
-      return inventory;
+            return inventory;
     } catch (error) {
       console.error('Error getting inventory details:', error);
       return null;

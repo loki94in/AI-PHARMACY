@@ -3,8 +3,7 @@
 import express from 'express';
 import { whatsappBusinessService } from '../services/whatsappBusinessService.js';
 import { eventService } from '../services/eventService.js';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -100,13 +99,12 @@ router.post('/webhook', async (req, res) => {
 
             // Log to action_logs
             try {
-              const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+              const db = await dbManager.getConnection();
               await db.run(
                 `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
                 ['WA_BUSINESS_INCOMING', `From: ${from} | Type: ${msgType} | Body: ${messageBody.substring(0, 500)}`]
               );
-              await db.close();
-            } catch (dbErr) {
+                          } catch (dbErr) {
               console.error('[WA Business Webhook] DB log error:', dbErr);
             }
 

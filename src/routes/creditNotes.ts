@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,7 +12,7 @@ const router = express.Router();
 // List credit notes (with optional filters)
 router.get('/', async (req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const { distributor_id, status } = req.query;
 
     let query = `
@@ -36,8 +35,7 @@ router.get('/', async (req, res) => {
     query += ' ORDER BY cn.cn_date DESC';
 
     const creditNotes = await db.all(query, params);
-    await db.close();
-    res.json(creditNotes);
+        res.json(creditNotes);
   } catch (err) {
     console.error('Credit notes fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -47,7 +45,7 @@ router.get('/', async (req, res) => {
 // Get pending credit notes for a distributor
 router.get('/pending/:distributorId', async (req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const { distributorId } = req.params;
 
     const pendingCNs = await db.all(
@@ -59,8 +57,7 @@ router.get('/pending/:distributorId', async (req, res) => {
 
     const totalPending = pendingCNs.reduce((sum, cn) => sum + (cn.amount - cn.applied_amount), 0);
 
-    await db.close();
-    res.json({ creditNotes: pendingCNs, totalPending });
+        res.json({ creditNotes: pendingCNs, totalPending });
   } catch (err) {
     console.error('Pending CNs fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -76,7 +73,7 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
 
     const result = await db.run(
@@ -95,8 +92,7 @@ router.post('/', async (req, res) => {
     );
 
     await db.run('COMMIT');
-    await db.close();
-
+    
     res.json({ success: true, id: cnId, message: 'Credit note created successfully' });
   } catch (error) {
     console.error('Create CN error:', error);
@@ -113,21 +109,19 @@ router.post('/apply', async (req, res) => {
   }
 
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
 
     // Get the credit note
     const cn = await db.get('SELECT * FROM credit_notes WHERE id = ?', [cn_id]);
     if (!cn) {
       await db.run('ROLLBACK');
-      await db.close();
-      return res.status(404).json({ error: 'Credit note not found' });
+            return res.status(404).json({ error: 'Credit note not found' });
     }
 
     if (cn.status !== 'pending') {
       await db.run('ROLLBACK');
-      await db.close();
-      return res.status(400).json({ error: 'Credit note is not pending' });
+            return res.status(400).json({ error: 'Credit note is not pending' });
     }
 
     const availableAmount = cn.amount - cn.applied_amount;
@@ -135,16 +129,14 @@ router.post('/apply', async (req, res) => {
 
     if (amountToApply <= 0) {
       await db.run('ROLLBACK');
-      await db.close();
-      return res.status(400).json({ error: 'No available amount to apply' });
+            return res.status(400).json({ error: 'No available amount to apply' });
     }
 
     // Get the purchase bill
     const purchase = await db.get('SELECT * FROM purchases WHERE id = ?', [purchase_id]);
     if (!purchase) {
       await db.run('ROLLBACK');
-      await db.close();
-      return res.status(404).json({ error: 'Purchase not found' });
+            return res.status(404).json({ error: 'Purchase not found' });
     }
 
     // Update purchase total
@@ -170,8 +162,7 @@ router.post('/apply', async (req, res) => {
     );
 
     await db.run('COMMIT');
-    await db.close();
-
+    
     res.json({ 
       success: true, 
       message: `₹${amountToApply} credit note applied successfully`,
@@ -189,17 +180,15 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
 
     const cn = await db.get('SELECT * FROM credit_notes WHERE id = ?', [id]);
     if (!cn) {
-      await db.close();
-      return res.status(404).json({ error: 'Credit note not found' });
+            return res.status(404).json({ error: 'Credit note not found' });
     }
 
     if (cn.status !== 'pending') {
-      await db.close();
-      return res.status(400).json({ error: 'Can only delete pending credit notes' });
+            return res.status(400).json({ error: 'Can only delete pending credit notes' });
     }
 
     await db.run('DELETE FROM credit_notes WHERE id = ?', [id]);
@@ -210,8 +199,7 @@ router.delete('/:id', async (req, res) => {
       [`Deleted CN #${cn.cn_number || cn.id} for distributor ID ${cn.distributor_id}`]
     );
 
-    await db.close();
-    res.json({ success: true, message: 'Credit note deleted' });
+        res.json({ success: true, message: 'Credit note deleted' });
   } catch (error) {
     console.error('Delete CN error:', error);
     res.status(500).json({ error: 'Internal server error' });

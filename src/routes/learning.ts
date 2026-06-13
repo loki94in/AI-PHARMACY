@@ -1,9 +1,9 @@
 // Learning Engine API (Agent 2)
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,13 +16,12 @@ router.post('/', async (req, res) => {
   const { payload } = req.body;
   if (!payload) return res.status(400).json({ error: 'payload required' });
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['LEARNING_DATA', JSON.stringify(payload).slice(0, 200)]
     );
-    await db.close();
-    res.json({ success: true, message: 'Learning data received' });
+        res.json({ success: true, message: 'Learning data received' });
   } catch (error) {
     console.error('Learning endpoint error:', error);
     res.status(500).json({ error: 'Failed to store learning data' });
@@ -59,13 +58,13 @@ router.post('/analyze', async (req, res) => {
       }
     } catch (e) {
       // Not JSON, try to parse as CSV-like format
-      const lines = sampleData.split('\n').filter(line => line.trim() !== '');
+      const lines = sampleData.split('\n').filter((line: string) => line.trim() !== '');
       if (lines.length > 0) {
         // Assume first line is header
-        headers = lines[0].split(',').map(h => h.trim());
-        sampleRows = lines.slice(1, 4).map(line => {
-          const values = line.split(',').map(v => v.trim());
-          const rowObj = {};
+        headers = lines[0].split(',').map((h: string) => h.trim());
+        sampleRows = lines.slice(1, 4).map((line: string) => {
+          const values = line.split(',').map((v: string) => v.trim());
+          const rowObj: Record<string, string> = {};
           headers.forEach((header, index) => {
             rowObj[header] = values[index] || '';
           });
@@ -143,14 +142,13 @@ router.post('/apply-model', async (req, res) => {
   const { rawData, mapping } = req.body;
   if (!rawData || !mapping) return res.status(400).json({ error: 'rawData and mapping required' });
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     // For demo, store raw data and mapping in action_logs
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['LEARNING_APPLY', JSON.stringify({ rawData, mapping })]
     );
-    await db.close();
-    res.json({ success: true, message: 'Learning model applied' });
+        res.json({ success: true, message: 'Learning model applied' });
   } catch (error) {
     console.error('Apply model error:', error);
     res.status(500).json({ error: 'Failed to apply learning model' });
@@ -160,13 +158,12 @@ router.post('/apply-model', async (req, res) => {
 // Retrain/Refresh learning model
 router.post('/refresh-model', async (req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['REFRESH_MODEL', 'Learning engine model retrained']
     );
-    await db.close();
-    res.json({ success: true, message: 'Learning model refreshed successfully' });
+        res.json({ success: true, message: 'Learning model refreshed successfully' });
   } catch (error) {
     console.error('Refresh model error:', error);
     res.status(500).json({ error: 'Failed to refresh learning model' });
@@ -179,21 +176,170 @@ router.get('/mapping', async (req, res) => {
   if (!name) return res.status(400).json({ error: 'name query parameter is required' });
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const correction = await db.get('SELECT correct FROM ocr_corrections WHERE LOWER(ocr) = ?', [name]);
     if (correction) {
       const medicine = await db.get('SELECT id, name, mrp, rate, cgst_per, sgst_per FROM medicines WHERE LOWER(name) = ?', [correction.correct.toLowerCase()]);
       if (medicine) {
-        await db.close();
-        return res.json({ success: true, mapped: true, medicine });
+                return res.json({ success: true, mapped: true, medicine });
       }
     }
-    await db.close();
-    res.json({ success: true, mapped: false });
+        res.json({ success: true, mapped: false });
   } catch (error: any) {
-    if (db) await db.close();
     console.error('Failed to look up mapping:', error);
     res.status(500).json({ error: 'Failed to look up mapping' });
+  }
+});
+
+// GET /api/learning/profiles - fetch all learning profiles
+router.get('/profiles', async (req, res) => {
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const profiles = await db.all(`
+      SELECT d.id as distributor_id, d.name as distributor_name, d.email as distributor_email,
+             lp.last_updated,
+             (SELECT COUNT(*) FROM distributor_historical_files WHERE distributor_id = d.id) as files_count,
+             (SELECT status FROM distributor_historical_files WHERE distributor_id = d.id ORDER BY id DESC LIMIT 1) as last_status
+      FROM distributors d
+      LEFT JOIN distributor_learning_profiles lp ON d.id = lp.distributor_id
+      ORDER BY d.name ASC
+    `);
+        res.json({ success: true, profiles });
+  } catch (error: any) {
+    console.error('Failed to fetch learning profiles:', error);
+    res.status(500).json({ error: 'Failed to fetch learning profiles' });
+  }
+});
+
+// GET /api/learning/profiles/:distributorId - fetch profile details
+router.get('/profiles/:distributorId', async (req, res) => {
+  const distId = parseInt(req.params.distributorId);
+  if (isNaN(distId)) return res.status(400).json({ error: 'Invalid distributor ID' });
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const distributor = await db.get('SELECT * FROM distributors WHERE id = ?', [distId]);
+    if (!distributor) {
+            return res.status(404).json({ error: 'Distributor not found' });
+    }
+    const profile = await db.get('SELECT * FROM distributor_learning_profiles WHERE distributor_id = ?', [distId]);
+    const files = await db.all('SELECT * FROM distributor_historical_files WHERE distributor_id = ? ORDER BY id DESC', [distId]);
+        res.json({
+      success: true,
+      distributor,
+      profile: profile || null,
+      files
+    });
+  } catch (error: any) {
+    console.error('Failed to fetch profile detail:', error);
+    res.status(500).json({ error: 'Failed to fetch profile detail' });
+  }
+});
+
+// POST /api/learning/profiles/:distributorId/mapping - update manual column mapping
+router.post('/profiles/:distributorId/mapping', async (req, res) => {
+  const distId = parseInt(req.params.distributorId);
+  const { mappingRules } = req.body;
+  if (isNaN(distId)) return res.status(400).json({ error: 'Invalid distributor ID' });
+  if (!mappingRules || typeof mappingRules !== 'object') return res.status(400).json({ error: 'mappingRules object is required' });
+
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    await db.run(`
+      INSERT INTO distributor_learning_profiles (distributor_id, file_mapping_rules, last_updated)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(distributor_id) DO UPDATE SET
+        file_mapping_rules = excluded.file_mapping_rules,
+        last_updated = CURRENT_TIMESTAMP
+    `, [distId, JSON.stringify(mappingRules)]);
+        res.json({ success: true, message: 'Column mapping updated successfully' });
+  } catch (error: any) {
+    console.error('Failed to update column mapping:', error);
+    res.status(500).json({ error: 'Failed to update column mapping' });
+  }
+});
+
+// POST /api/learning/profiles/:distributorId/reset - reset learning profile
+router.post('/profiles/:distributorId/reset', async (req, res) => {
+  const distId = parseInt(req.params.distributorId);
+  if (isNaN(distId)) return res.status(400).json({ error: 'Invalid distributor ID' });
+
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    
+    // Find all files to delete their path on disk
+    const files = await db.all('SELECT file_path FROM distributor_historical_files WHERE distributor_id = ?', [distId]);
+    for (const f of files) {
+      if (f.file_path && fs.existsSync(f.file_path)) {
+        try { fs.unlinkSync(f.file_path); } catch (e) { console.warn('Failed to delete file:', f.file_path, e); }
+      }
+    }
+
+    await db.run('DELETE FROM distributor_learning_profiles WHERE distributor_id = ?', [distId]);
+    await db.run('DELETE FROM distributor_historical_files WHERE distributor_id = ?', [distId]);
+    
+    res.json({ success: true, message: 'Learning profile reset successfully' });
+  } catch (error: any) {
+    console.error('Failed to reset profile:', error);
+    res.status(500).json({ error: 'Failed to reset profile' });
+  }
+});
+
+// GET /api/learning/historical-files/:fileId/data - get file side-by-side comparison data
+router.get('/historical-files/:fileId/data', async (req, res) => {
+  const fileId = parseInt(req.params.fileId);
+  if (isNaN(fileId)) return res.status(400).json({ error: 'Invalid file ID' });
+
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const fileRecord = await db.get('SELECT * FROM distributor_historical_files WHERE id = ?', [fileId]);
+    
+    if (!fileRecord) return res.status(404).json({ error: 'File record not found' });
+
+    res.json({
+      success: true,
+      file: {
+        id: fileRecord.id,
+        distributor_id: fileRecord.distributor_id,
+        filename: fileRecord.filename,
+        file_path: fileRecord.file_path,
+        file_type: fileRecord.file_type,
+        file_headers: fileRecord.file_headers ? JSON.parse(fileRecord.file_headers) : [],
+        mapping_config: fileRecord.mapping_config ? JSON.parse(fileRecord.mapping_config) : {},
+        extracted_data: fileRecord.extracted_data ? JSON.parse(fileRecord.extracted_data) : [],
+        status: fileRecord.status,
+        created_at: fileRecord.created_at
+      }
+    });
+  } catch (error: any) {
+    console.error('Failed to get historical file data:', error);
+    res.status(500).json({ error: 'Failed to get historical file data' });
+  }
+});
+
+// DELETE /api/learning/historical-files/:fileId - delete specific historical file reference
+router.delete('/historical-files/:fileId', async (req, res) => {
+  const fileId = parseInt(req.params.fileId);
+  if (isNaN(fileId)) return res.status(400).json({ error: 'Invalid file ID' });
+
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const fileRecord = await db.get('SELECT file_path FROM distributor_historical_files WHERE id = ?', [fileId]);
+    if (fileRecord) {
+      if (fileRecord.file_path && fs.existsSync(fileRecord.file_path)) {
+        try { fs.unlinkSync(fileRecord.file_path); } catch (e) { console.warn('Failed to delete file from disk:', fileRecord.file_path, e); }
+      }
+      await db.run('DELETE FROM distributor_historical_files WHERE id = ?', [fileId]);
+    }
+        res.json({ success: true, message: 'Historical file deleted successfully' });
+  } catch (error: any) {
+    console.error('Failed to delete historical file:', error);
+    res.status(500).json({ error: 'Failed to delete historical file' });
   }
 });
 

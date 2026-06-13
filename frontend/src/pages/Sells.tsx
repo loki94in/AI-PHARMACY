@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Edit3, Trash2, X, ChevronDown, ChevronUp, Calendar, Package, User, FileText, Save, AlertTriangle, TrendingUp, Activity, CreditCard } from 'lucide-react';
+import { Search, Filter, Edit3, Trash2, X, ChevronDown, ChevronUp, Calendar, Package, User, FileText, Save, AlertTriangle, TrendingUp, Activity, CreditCard, BookOpen, RefreshCw, ShieldAlert, Factory } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { UniversalMedicineEditModal } from '../components/UniversalMedicineEditModal';
 import { api } from '../services/api';
 import { toastEvent } from '../services/events';
 
@@ -7,6 +9,7 @@ interface SaleItem {
   id: number;
   invoice_id: number;
   inventory_id: number;
+  medicine_id?: number;
   quantity: number;
   unit_price: number;
   loose_qty?: number;
@@ -32,6 +35,9 @@ interface SaleInvoice {
   igst_value?: number;
   customer_name?: string;
   customer_phone?: string;
+  doctor_name?: string;
+  discount?: number;
+  subtotal?: number;
   items?: SaleItem[];
 }
 
@@ -48,6 +54,7 @@ const Sells = () => {
 
   // Edit modal state
   const [editInvoice, setEditInvoice] = useState<SaleInvoice | null>(null);
+  const [viewInvoice, setViewInvoice] = useState<SaleInvoice | null>(null);
   const [editItems, setEditItems] = useState<SaleItem[]>([]);
   const [editCustomerName, setEditCustomerName] = useState('');
   const [editCustomerPhone, setEditCustomerPhone] = useState('');
@@ -57,6 +64,35 @@ const Sells = () => {
 
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+
+  // OpenFDA Enrichment Drawer State
+  const [selectedEnrichedItem, setSelectedEnrichedItem] = useState<{ medicine_name: string; batch?: string } | null>(null);
+  const [enrichedData, setEnrichedData] = useState<any>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  // Universal Edit state
+  const [universalEditMedicineId, setUniversalEditMedicineId] = useState<number | null>(null);
+
+  const handleOpenEnrichment = async (item: SaleItem) => {
+    if (!item.medicine_id) {
+      toastEvent.trigger('Medicine profile not available', 'error');
+      return;
+    }
+    setSelectedEnrichedItem({ medicine_name: item.medicine_name || 'Unknown', batch: item.batch_number });
+    setPanelOpen(true);
+    setDetailsLoading(true);
+    try {
+      const data = await api.getEnrichedMedicine(item.medicine_id);
+      setEnrichedData(data);
+    } catch (err) {
+      console.error('Failed to load enriched details:', err);
+      toastEvent.trigger('Failed to load medical profile', 'error');
+      setPanelOpen(false);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
 
   const fetchInvoices = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -86,9 +122,19 @@ const Sells = () => {
     fetchInvoices();
   };
 
+  const openView = async (invoice: SaleInvoice) => {
+    try {
+      const full = await api.getSale(invoice.id);
+      setViewInvoice(full);
+    } catch (err) {
+      toastEvent.trigger('Failed to load invoice details', 'error');
+    }
+  };
+
   const openEdit = async (invoice: SaleInvoice) => {
     try {
       const full = await api.getSale(invoice.id);
+      setViewInvoice(null);
       setEditInvoice(full);
       setEditItems(full.items || []);
       setEditCustomerName(full.customer_name || '');
@@ -175,26 +221,12 @@ const Sells = () => {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Header */}
-      <div className="flex justify-between items-center p-6 glass-panel relative overflow-hidden group shadow-xl">
-        <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
-        <div className="relative z-10">
-          <h2 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-text to-muted bg-clip-text text-transparent">Sales History</h2>
-          <p className="text-sm text-muted mt-2 font-medium">Manage, filter, and review all your point-of-sale transactions</p>
-        </div>
-        <div className="relative z-10 flex flex-col items-end">
-          <div className="text-xs font-bold text-primary uppercase tracking-wider mb-1">Total Records</div>
-          <div className="text-2xl font-black bg-white/10 px-4 py-1 rounded-xl border border-glass-border shadow-inner text-text">
-            {invoices.length}
-          </div>
-        </div>
-      </div>
+    <div className="h-full flex flex-col px-6 pt-0 pb-0 animate-in fade-in duration-500">
 
       {/* Face Sell Report (Fast Metrics) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2">
 
-        <div className="glass-panel p-6 relative overflow-hidden group shadow-lg hover:shadow-primary/10 transition-all hover:-translate-y-1">
+        <div className="bg-white/10 backdrop-blur-lg rounded-tl-xl p-6 border border-white/20 border-b-0 border-r-0 relative overflow-hidden group hover:bg-white/5 transition-all">
           <div className="absolute -right-4 -top-4 text-primary/10 group-hover:text-primary/20 transition-colors transform group-hover:-rotate-12 group-hover:scale-110 duration-500">
             <Activity size={100} strokeWidth={1} />
           </div>
@@ -210,7 +242,7 @@ const Sells = () => {
           </div>
         </div>
 
-        <div className="glass-panel p-6 relative overflow-hidden group shadow-lg hover:shadow-purple-500/10 transition-all hover:-translate-y-1">
+        <div className="bg-white/10 backdrop-blur-lg rounded-tr-xl p-6 border border-white/20 border-b-0 relative overflow-hidden group hover:bg-white/5 transition-all">
           <div className="absolute -right-4 -top-4 text-purple-500/10 group-hover:text-purple-500/20 transition-colors transform group-hover:rotate-6 group-hover:scale-110 duration-500">
             <CreditCard size={100} strokeWidth={1} />
           </div>
@@ -239,16 +271,15 @@ const Sells = () => {
       </div>
 
       {/* Search & Filters */}
-      <div className="glass-panel p-5 shadow-lg relative z-20 transition-all hover:shadow-primary/5">
+      <div className="bg-white/10 backdrop-blur-lg rounded-none p-5 border border-white/20 border-b-0 relative z-20">
         <form onSubmit={handleSearch} className="flex flex-wrap gap-4 items-center">
           <div className="relative flex-1 min-w-[250px] group">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-primary transition-colors" />
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by invoice #, customer name, or phone..."
-              className="w-full pl-12 pr-4 py-3 bg-black/20 border border-glass-border rounded-xl text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-inner"
+              placeholder="Search by invoice #, batch, customer, or phone..."
+              className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded-xl text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-inner"
             />
           </div>
           <button
@@ -337,30 +368,31 @@ const Sells = () => {
       </div>
 
       {/* Invoices Table */}
-      <div className="glass-panel overflow-hidden">
+      <div className="bg-white/10 backdrop-blur-lg rounded-b-xl p-0 border border-white/20 flex-1 flex flex-col overflow-hidden min-h-0">
         {loading ? (
-          <div className="p-12 text-center text-muted">
+          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
             <div className="animate-pulse">Loading invoices...</div>
           </div>
         ) : invoices.length === 0 ? (
-          <div className="p-12 text-center text-muted">
+          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
             <FileText size={40} className="mx-auto mb-3 opacity-30" />
             <p className="font-semibold">No invoices found</p>
             <p className="text-xs mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="flex-1 overflow-auto">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20 bg-[#18181b]/95 backdrop-blur-sm shadow-sm">
                 <tr>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Invoice #</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Date</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Customer</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Items</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Total</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Payment</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Status</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border bg-black/20">Actions</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">No.</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Name of the patient</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Date</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Dr Name</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Bill Amount</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Final Amount</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Discount</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Pay Via</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -370,16 +402,10 @@ const Sells = () => {
                   const max = maxAmount ? Number(maxAmount) : 100000000;
                   return total >= min && total <= max;
                 }).map((inv, idx) => (
-                  <tr key={inv.id} className="hover:bg-white/10 transition-all duration-300 group relative z-10 hover:shadow-lg hover:-translate-y-0.5" onClick={(e) => {
-                    if ((e.target as HTMLElement).closest('button')) return;
-                    openEdit(inv);
-                  }}>
+                  <tr key={inv.id} className="hover:bg-white/10 transition-all duration-300 group relative z-10 hover:shadow-lg hover:-translate-y-0.5">
                     <td className="p-4 border-b border-glass-border/50 relative cursor-pointer">
                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-purple-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>
                       <span className="font-mono text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-md border border-primary/20 shadow-sm">{inv.invoice_no}</span>
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
-                      {formatDate(inv.date)}
                     </td>
                     <td className="p-4 border-b border-glass-border/50 cursor-pointer">
                       <div className="flex items-center gap-3">
@@ -393,35 +419,38 @@ const Sells = () => {
                       </div>
                     </td>
                     <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
-                      {inv.items?.length || 0} item{inv.items?.length !== 1 ? 's' : ''}
+                      {formatDate(inv.date)}
+                    </td>
+                    <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
+                      {inv.doctor_name || '-'}
                     </td>
                     <td className="p-4 border-b border-glass-border/50">
-                      <span className="text-sm font-bold text-green">₹{Math.round(Number(inv.total_amount))}</span>
+                      <span className="text-sm font-bold text-text">₹{Math.round(Number(inv.subtotal || 0))}</span>
+                    </td>
+                    <td className="p-4 border-b border-glass-border/50">
+                      <span className="text-sm font-bold text-green">₹{Math.round(Number(inv.total_amount || 0))}</span>
+                    </td>
+                    <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
+                      ₹{Math.round(Number(inv.discount || 0))}
                     </td>
                     <td className="p-4 border-b border-glass-border/50">
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/10 text-muted">
                         {inv.payment_medium || 'CASH'}
                       </span>
                     </td>
-                    <td className="p-4 border-b border-glass-border/50">
-                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                        inv.payment_status === 'PAID' ? 'bg-green/20 text-green' : 'bg-amber/20 text-amber'
-                      }`}>
-                        {inv.payment_status || 'PAID'}
-                      </span>
-                    </td>
+
                     <td className="p-4 border-b border-glass-border/50">
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 min-w-[140px]">
                         {deleteConfirm === inv.id ? (
                           <div className="flex items-center gap-2 p-1 rounded-lg bg-red/10 border border-red/20 w-full justify-center">
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleDelete(inv.id); }}
+                              onClick={() => handleDelete(inv.id)}
                               className="px-3 py-1.5 bg-red text-white rounded-md text-[10px] font-bold hover:bg-red/80 shadow-md transform hover:scale-105 transition-all"
                             >
                               Confirm
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); setDeleteConfirm(null); }}
+                              onClick={() => setDeleteConfirm(null)}
                               className="px-3 py-1.5 bg-white/10 text-text rounded-md text-[10px] font-bold hover:bg-white/20 shadow-sm transition-all"
                             >
                               Cancel
@@ -430,14 +459,14 @@ const Sells = () => {
                         ) : (
                           <>
                             <button
-                              onClick={(e) => { e.stopPropagation(); openEdit(inv); }}
-                              className="p-2 rounded-lg bg-white/5 hover:bg-primary hover:text-white border border-glass-border hover:border-primary shadow-sm hover:shadow-[0_0_15px_rgba(37,99,235,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
-                              title="Edit invoice"
+                              onClick={() => openView(inv)}
+                              className="p-2 rounded-lg bg-white/5 hover:bg-sky-500 hover:text-white border border-glass-border hover:border-sky-500 shadow-sm hover:shadow-[0_0_15px_rgba(14,165,233,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
+                              title="View invoice"
                             >
-                              <Edit3 size={14} />
+                              <FileText size={14} />
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); setDeleteConfirm(inv.id); }}
+                              onClick={() => setDeleteConfirm(inv.id)}
                               className="p-2 rounded-lg bg-white/5 hover:bg-red hover:text-white border border-glass-border hover:border-red shadow-sm hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
                               title="Delete invoice"
                             >
@@ -456,7 +485,7 @@ const Sells = () => {
       </div>
 
       {/* Edit Modal */}
-      {editInvoice && (
+      {editInvoice && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="glass-panel w-full max-w-4xl max-h-[90vh] overflow-y-auto border-primary/20">
             {/* Modal Header */}
@@ -546,7 +575,30 @@ const Sells = () => {
                         const itemTotal = (discountedPrice * item.quantity) + ((discountedPrice / packSize) * looseQty);
                         return (
                           <tr key={item.id} className="hover:bg-white/5">
-                            <td className="p-3 border-b border-glass-border/50 text-sm font-semibold">{item.medicine_name || `Item #${item.inventory_id}`}</td>
+                            <td className="p-3 border-b border-glass-border/50 text-sm font-semibold">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleOpenEnrichment(item)}
+                                  className="text-primary hover:text-sky-400 p-1 bg-primary/10 rounded-lg transition-colors border border-primary/20 shadow-sm"
+                                  title="View Medical Profile"
+                                >
+                                  <BookOpen size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    if (item.medicine_id) setUniversalEditMedicineId(item.medicine_id);
+                                  }}
+                                  disabled={!item.medicine_id}
+                                  className={`p-1 rounded-lg transition-all border shadow-sm ${item.medicine_id ? 'bg-sky/10 border-sky/20 text-sky hover:text-white hover:bg-sky' : 'opacity-30 cursor-not-allowed border-glass-border text-muted bg-white/5'}`}
+                                  title="Quick Edit Medicine"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
+                                <span>{item.medicine_name || `Item #${item.inventory_id}`}</span>
+                              </div>
+                            </td>
                             <td className="p-3 border-b border-glass-border/50">
                               <span className="text-[10px] font-mono bg-white/10 px-2 py-0.5 rounded">{item.batch_number || '-'}</span>
                             </td>
@@ -685,8 +737,267 @@ const Sells = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
+
+      {/* View Modal */}
+      {viewInvoice && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-4xl max-h-[90vh] flex flex-col border-sky-500/20">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-glass-border flex justify-between items-center bg-white/5 shrink-0">
+              <div>
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <FileText size={18} className="text-sky-500" />
+                  Bill Preview: {viewInvoice.invoice_no}
+                </h3>
+                <p className="text-xs text-muted mt-1">Read-only view of the invoice</p>
+              </div>
+              <button
+                onClick={() => setViewInvoice(null)}
+                className="p-2 rounded-lg hover:bg-white/10 text-muted hover:text-text transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-5 flex-1 overflow-y-auto">
+              {/* Customer Info */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white/5 p-4 rounded-xl border border-glass-border">
+                <div>
+                  <div className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Customer Name</div>
+                  <div className="text-sm font-semibold text-text">{viewInvoice.customer_name || 'Walk-in'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Phone</div>
+                  <div className="text-sm font-semibold text-text">{viewInvoice.customer_phone || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Payment Method</div>
+                  <div className="text-sm font-semibold text-text">{viewInvoice.payment_medium || 'CASH'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Date</div>
+                  <div className="text-sm font-semibold text-text">{formatDate(viewInvoice.date)}</div>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-muted uppercase tracking-wider">Invoice Items</h4>
+                  <span className="text-xs text-muted">{viewInvoice.items?.length || 0} item{(viewInvoice.items?.length || 0) !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="overflow-x-auto border border-glass-border rounded-lg bg-black/20">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="p-3 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-glass-border">Medicine</th>
+                        <th className="p-3 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-glass-border">Batch</th>
+                        <th className="p-3 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Qty (Strips/Loose)</th>
+                        <th className="p-3 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">CD %</th>
+                        <th className="p-3 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-glass-border">MRP</th>
+                        <th className="p-3 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-glass-border">Unit Price</th>
+                        <th className="p-3 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-glass-border">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewInvoice.items?.map((item, idx) => {
+                        const packSize = item.pack_size || 10;
+                        const looseQty = item.loose_qty || 0;
+                        const discPer = item.discount_per || 0;
+                        const discountedPrice = item.unit_price * (1 - discPer / 100);
+                        const itemTotal = (discountedPrice * item.quantity) + ((discountedPrice / packSize) * looseQty);
+                        return (
+                          <tr key={idx} className="hover:bg-white/5">
+                            <td className="p-3 border-b border-glass-border/50 text-sm font-semibold">
+                              {item.medicine_name || `Item #${item.inventory_id}`}
+                            </td>
+                            <td className="p-3 border-b border-glass-border/50">
+                              <span className="text-[10px] font-mono bg-white/10 px-2 py-0.5 rounded">{item.batch_number || '-'}</span>
+                            </td>
+                            <td className="p-3 border-b border-glass-border/50 text-center text-sm">
+                              {item.quantity} / {looseQty}
+                            </td>
+                            <td className="p-3 border-b border-glass-border/50 text-center text-sm">
+                              {discPer}%
+                            </td>
+                            <td className="p-3 border-b border-glass-border/50 text-sm text-muted">
+                              ₹{item.mrp || 0}
+                            </td>
+                            <td className="p-3 border-b border-glass-border/50 text-sm font-medium">
+                              ₹{discountedPrice.toFixed(2)}
+                            </td>
+                            <td className="p-3 border-b border-glass-border/50 text-sm font-bold text-green">
+                              ₹{Math.round(itemTotal)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {(!viewInvoice.items || viewInvoice.items.length === 0) && (
+                        <tr>
+                          <td colSpan={7} className="p-8 text-center text-muted">No items found in this invoice</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Discount & Tax Info */}
+              <div className="flex justify-end pt-2 mt-6">
+                <div className="w-64 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted">Subtotal:</span>
+                    <span className="font-semibold">₹{Math.round(viewInvoice.subtotal || 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted">Discount:</span>
+                    <span className="font-semibold text-amber-500">-₹{Math.round(viewInvoice.discount || 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold pt-2 border-t border-glass-border/50">
+                    <span className="text-text">Grand Total:</span>
+                    <span className="text-green text-xl">₹{Math.round(viewInvoice.total_amount || 0)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-glass-border flex justify-between items-center bg-white/5 shrink-0">
+              <button
+                onClick={() => setViewInvoice(null)}
+                className="px-4 py-2 bg-white/10 text-muted rounded-lg text-sm font-semibold hover:bg-white/20 transition-all"
+              >
+                Close Preview
+              </button>
+              <button
+                onClick={() => openEdit(viewInvoice)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg text-sm font-bold hover:bg-primary/80 transition-all"
+              >
+                <Edit3 size={14} />
+                Edit Invoice
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* Sliding Details Drawer for OpenFDA Enrichment */}
+      {createPortal(
+        <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-[999999] flex flex-col ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        {selectedEnrichedItem && (
+          <>
+            {/* Header */}
+            <div className="p-6 border-b border-glass-border flex justify-between items-center bg-white/5">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-purple-400 px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">
+                  Medical Profile
+                </span>
+                <h4 className="text-xl font-bold mt-1 text-white">{selectedEnrichedItem.medicine_name}</h4>
+              </div>
+              <button 
+                onClick={() => setPanelOpen(false)}
+                className="p-1.5 rounded-full hover:bg-white/10 text-muted hover:text-white transition-colors"
+                aria-label="Close panel"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Enrichment Section */}
+              <div className="space-y-5">
+                <h5 className="text-xs font-bold uppercase tracking-widest text-muted border-b border-glass-border pb-2">openFDA Intelligence</h5>
+
+                {detailsLoading ? (
+                  <div className="flex flex-col items-center justify-center py-10 space-y-3">
+                    <RefreshCw className="animate-spin text-purple-500" size={24} />
+                    <span className="text-sm text-muted">Retrieving OpenFDA monographs...</span>
+                  </div>
+                ) : enrichedData ? (
+                  <div className="space-y-5 fade-in">
+                    {/* Active Ingredients */}
+                    <div>
+                      <span className="text-xs text-muted uppercase font-bold block mb-2">Active Ingredients</span>
+                      <div className="flex flex-wrap gap-2">
+                        {enrichedData.activeIngredients && enrichedData.activeIngredients.length > 0 ? (
+                          enrichedData.activeIngredients.map((ing: string, i: number) => (
+                            <span key={i} className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                              {ing}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-sm text-muted italic">Generic formula not indexed.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Indications */}
+                    <div className="space-y-1.5">
+                      <span className="text-xs text-muted uppercase font-bold flex items-center gap-1.5 text-sky-400">
+                        <BookOpen size={14} className="text-sky-400" /> Indications & Usage
+                      </span>
+                      <div className="bg-white/5 p-3 rounded-lg border border-glass-border text-sm text-muted leading-relaxed max-h-48 overflow-y-auto">
+                        {enrichedData.indications || 'Not available.'}
+                      </div>
+                    </div>
+
+                    {/* Warnings */}
+                    <div className="space-y-1.5">
+                      <span className="text-xs text-muted uppercase font-bold flex items-center gap-1.5 text-yellow-500">
+                        <AlertTriangle size={14} /> Warnings & Precautions
+                      </span>
+                      <div className="bg-yellow-500/5 p-3 rounded-lg border border-yellow-500/20 text-sm text-yellow-200/80 leading-relaxed max-h-48 overflow-y-auto">
+                        {enrichedData.warnings || 'No active drug safety warnings.'}
+                      </div>
+                    </div>
+
+                    {/* Side Effects */}
+                    <div className="space-y-1.5">
+                      <span className="text-xs text-muted uppercase font-bold flex items-center gap-1.5 text-red-500">
+                        <ShieldAlert size={14} /> Adverse Reactions
+                      </span>
+                      <div className="bg-red-500/5 p-3 rounded-lg border border-red-500/20 text-sm text-red-300 leading-relaxed max-h-48 overflow-y-auto">
+                        {enrichedData.sideEffects || 'No common adverse reactions logged.'}
+                      </div>
+                    </div>
+
+                    {/* Source and Manufacturer */}
+                    <div className="pt-2 flex justify-between items-center text-xs text-muted">
+                      <span className="flex items-center gap-1">
+                        <Factory size={12} /> Mfg: {enrichedData.manufacturer || 'Unknown'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-500 font-bold uppercase text-[10px] tracking-wide">
+                        Source: {enrichedData.enrichmentSource || 'FDA'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-muted italic">No enrichment profile found.</div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>,
+        document.body
+      )}
+
+      {universalEditMedicineId && (
+        <UniversalMedicineEditModal 
+          medicineId={universalEditMedicineId} 
+          onClose={() => setUniversalEditMedicineId(null)} 
+          onSave={() => {
+            // Refetch to reflect any potential naming changes if needed
+            fetchInvoices(true);
+          }} 
+        />
+      )}
+
     </div>
   );
 };

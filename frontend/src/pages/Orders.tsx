@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   ClipboardList, 
   Plus, 
@@ -19,6 +20,7 @@ import { api } from '../services/api';
 import type { SpecialOrder } from '../services/api';
 
 const Orders = () => {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<SpecialOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -38,6 +40,52 @@ const Orders = () => {
   const [priority, setPriority] = useState('Normal');
   const [status, setStatus] = useState('Pending');
   const [formSubmitting, setFormSubmitting] = useState(false);
+
+  // Pharmarack Search States
+  const [prSearchResults, setPrSearchResults] = useState<any[]>([]);
+  const [showPrDropdown, setShowPrDropdown] = useState(false);
+  const [loadingPr, setLoadingPr] = useState(false);
+  
+  // Selected Pharmarack Metadata Form State
+  const [selectedDistributor, setSelectedDistributor] = useState('');
+  const [selectedRate, setSelectedRate] = useState<number | ''>('');
+  const [selectedMrp, setSelectedMrp] = useState<number | ''>('');
+  const [selectedMapped, setSelectedMapped] = useState(true);
+  const [selectedScheme, setSelectedScheme] = useState('');
+
+  // Debounced search for Pharmarack products
+  useEffect(() => {
+    if (!product.trim()) {
+      setPrSearchResults([]);
+      setShowPrDropdown(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoadingPr(true);
+      try {
+        const results = await api.searchPharmarack(product);
+        setPrSearchResults(results || []);
+        setShowPrDropdown(results && results.length > 0);
+      } catch (err) {
+        console.error('Pharmarack query failed:', err);
+      } finally {
+        setLoadingPr(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [product]);
+
+  const handleSelectPharmarackItem = (item: any) => {
+    setProduct(`${item.name} (${item.packaging})`);
+    setSelectedDistributor(item.distributor);
+    setSelectedRate(item.rate !== null && item.rate !== undefined ? item.rate : '');
+    setSelectedMrp(item.mrp !== null && item.mrp !== undefined ? item.mrp : '');
+    setSelectedMapped(!!item.mapped);
+    setSelectedScheme(item.scheme || '');
+    setShowPrDropdown(false);
+  };
 
   // Fetch all orders
   const fetchOrders = async (showRefresh = false) => {
@@ -90,7 +138,12 @@ const Orders = () => {
         phone: phone.replace(/\D/g, '') || '',
         qty,
         priority,
-        status
+        status,
+        pharmarack_distributor: selectedDistributor || undefined,
+        pharmarack_rate: selectedRate !== '' ? Number(selectedRate) : undefined,
+        pharmarack_mrp: selectedMrp !== '' ? Number(selectedMrp) : undefined,
+        pharmarack_mapped: selectedMapped ? 1 : 0,
+        pharmarack_scheme: selectedScheme || undefined
       });
 
       showNotification(`Order for "${product}" logged successfully!`, 'success');
@@ -102,6 +155,11 @@ const Orders = () => {
       setQty(1);
       setPriority('Normal');
       setStatus('Pending');
+      setSelectedDistributor('');
+      setSelectedRate('');
+      setSelectedMrp('');
+      setSelectedMapped(true);
+      setSelectedScheme('');
       
       // Refresh list
       fetchOrders();
@@ -239,7 +297,7 @@ const Orders = () => {
   };
 
   return (
-    <div className="h-full flex flex-col fade-in space-y-6">
+    <div className="h-full flex flex-col fade-in gap-3 pb-4">
       
       {/* Toast Notification */}
       {notification && (
@@ -261,34 +319,25 @@ const Orders = () => {
         </div>
       )}
 
-      {/* Page Title & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            <ClipboardList className="text-primary" size={22} />
-            Out-of-Stock Orders & Requests
-          </h2>
-          <p className="text-xs text-muted mt-1">Log customer medicine requests, monitor statuses, and automate pickup notifications.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button 
-            type="button"
-            onClick={handleScanUncollected}
-            disabled={refreshing || loading}
-            className="premium-btn bg-amber-500/10 border border-amber-500/30 text-amber-500 hover:bg-amber-500/20 text-xs px-3 py-2 disabled:opacity-50"
-            title="Scan orders ready for 2+ days and send auto WhatsApp reminder notifications."
-          >
-            <AlertTriangle size={14} className={refreshing ? 'animate-spin' : ''} />
-            Auto Remind Uncollected
-          </button>
-          <button 
-            onClick={() => fetchOrders(true)} 
-            disabled={refreshing}
-            className="p-2 rounded-lg bg-white/5 border border-glass-border hover:bg-white/10 hover:text-white transition-all text-muted"
-          >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          </button>
-        </div>
+      {/* Page Controls */}
+      <div className="flex justify-end items-center gap-3">
+        <button 
+          type="button"
+          onClick={handleScanUncollected}
+          disabled={refreshing || loading}
+          className="premium-btn bg-amber-500/10 border border-amber-500/30 text-amber-500 hover:bg-amber-500/20 text-xs px-3 py-2 disabled:opacity-50"
+          title="Scan orders ready for 2+ days and send auto WhatsApp reminder notifications."
+        >
+          <AlertTriangle size={14} className={refreshing ? 'animate-spin' : ''} />
+          Auto Remind Uncollected
+        </button>
+        <button 
+          onClick={() => fetchOrders(true)} 
+          disabled={refreshing}
+          className="p-2 rounded-lg bg-white/5 border border-glass-border hover:bg-white/10 hover:text-white transition-all text-muted"
+        >
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 flex-1 min-h-0">
@@ -301,17 +350,116 @@ const Orders = () => {
               Register Out-of-Stock Request
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Requested Medicine Name *</label>
-                <input 
-                  type="text" 
-                  required
-                  value={product}
-                  onChange={e => setProduct(e.target.value)}
-                  className="premium-input w-full font-semibold" 
-                  placeholder="e.g. Lipitor 10mg / Salt composition" 
-                />
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    required
+                    value={product}
+                    onChange={e => setProduct(e.target.value)}
+                    onFocus={() => { if (prSearchResults.length > 0) setShowPrDropdown(true); }}
+                    className="premium-input w-full font-semibold" 
+                    placeholder="e.g. Lipitor 10mg / Salt composition" 
+                  />
+                  {loadingPr && (
+                    <div className="absolute right-3 top-2.5">
+                      <RefreshCw size={14} className="animate-spin text-sky-400" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Dropdown results from Pharmarack */}
+                {showPrDropdown && prSearchResults.length > 0 && (
+                  <div className="absolute left-0 right-0 mt-1 bg-bg2 border border-glass-border rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto scrollbar-thin">
+                    <div className="p-2 border-b border-glass-border/40 bg-bg3/50 text-[9px] font-bold text-muted uppercase tracking-wider flex justify-between items-center">
+                      <span>Pharmarack Live Matches</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowPrDropdown(false)}
+                        className="text-muted hover:text-text font-bold"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    {prSearchResults.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectPharmarackItem(item)}
+                        className="p-3 border-b border-glass-border/10 hover:bg-bg3/60 transition-colors cursor-pointer flex flex-col gap-1 text-xs"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-1.5 flex-wrap truncate max-w-[170px]">
+                            <span className="font-bold text-text truncate" title={item.name}>
+                              {item.name} <span className="text-[10px] text-muted">({item.packaging})</span>
+                            </span>
+                            {item.scheme && (
+                              <span className="text-[8px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1 py-0.2 rounded font-semibold uppercase">
+                                {item.scheme}
+                              </span>
+                            )}
+                          </div>
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
+                            item.mapped 
+                              ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {item.mapped ? 'Mapped' : 'Non-Mapped'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-muted truncate">
+                          Dist: <span className="text-text font-medium">{item.distributor}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] font-mono mt-0.5">
+                          <span className="text-green-400 font-bold">
+                            PTR: {item.rate ? `₹${item.rate.toFixed(2)}` : 'N/A'}
+                          </span>
+                          <span className="text-text">
+                            MRP: {item.mrp ? `₹${item.mrp.toFixed(2)}` : 'N/A'}
+                          </span>
+                          <span className="text-sky-400">
+                            Stock: {item.stock}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Selected Pharmarack Metadata Panel */}
+              {selectedDistributor && (
+                <div className="p-3 bg-sky-500/5 border border-sky-500/20 rounded-xl flex flex-col gap-1.5 text-[11px] mt-2 animate-fade-in">
+                  <div className="font-bold text-sky-400 flex items-center justify-between">
+                    <span>Selected Pharmarack Option</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDistributor('');
+                        setSelectedRate('');
+                        setSelectedMrp('');
+                        setSelectedMapped(true);
+                        setSelectedScheme('');
+                      }}
+                      className="text-[9px] text-muted hover:text-red-400 underline font-semibold"
+                    >
+                      Clear Link
+                    </button>
+                  </div>
+                  <div className="text-text font-medium truncate flex items-center gap-1.5 flex-wrap">
+                    <span>Distributor: {selectedDistributor} ({selectedMapped ? 'Mapped' : 'Non-Mapped'})</span>
+                    {selectedScheme && (
+                      <span className="text-[8px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold uppercase">
+                        Scheme: {selectedScheme}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-between items-center font-mono mt-0.5">
+                    <span>PTR: {selectedRate ? `₹${Number(selectedRate).toFixed(2)}` : 'N/A'}</span>
+                    <span>MRP: {selectedMrp ? `₹${Number(selectedMrp).toFixed(2)}` : 'N/A'}</span>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Quantity Requested</label>
@@ -485,9 +633,43 @@ const Orders = () => {
                           ) : (
                             <span title="Walk-in / Manual"><User size={14} className="text-muted" /></span>
                           )}
-                          <span className="font-semibold text-text max-w-[160px] truncate">
-                            {order.product}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-text max-w-[160px] truncate">
+                              {order.product}
+                            </span>
+                            {order.pharmarack_distributor && (
+                              <div className="flex flex-wrap gap-1 items-center mt-1 text-[9px]">
+                                <span 
+                                  className={`px-1 py-0.2 rounded font-bold uppercase ${
+                                    order.pharmarack_mapped === 1
+                                      ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  }`}
+                                  title={order.pharmarack_mapped === 1 ? 'Mapped Distributor' : 'Non-Mapped Distributor'}
+                                >
+                                  {order.pharmarack_mapped === 1 ? 'M' : 'NM'}
+                                </span>
+                                <span className="text-muted truncate max-w-[110px]" title={`Distributor: ${order.pharmarack_distributor}`}>
+                                  {order.pharmarack_distributor}
+                                </span>
+                                {(order.pharmarack_rate !== undefined && order.pharmarack_rate !== null) && (
+                                  <span className="text-sky-400 font-mono font-medium">
+                                    ₹{order.pharmarack_rate.toFixed(2)}
+                                  </span>
+                                )}
+                                {(order.pharmarack_mrp !== undefined && order.pharmarack_mrp !== null) && (
+                                  <span className="text-muted font-mono">
+                                    (M: ₹{order.pharmarack_mrp.toFixed(2)})
+                                  </span>
+                                )}
+                                {order.pharmarack_scheme && (
+                                  <span className="bg-amber-500/15 text-amber-400 px-1 py-0.2 rounded font-bold uppercase border border-amber-500/30">
+                                    {order.pharmarack_scheme}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
 
@@ -559,7 +741,22 @@ const Orders = () => {
                       </td>
 
                       {/* Actions */}
-                      <td className="p-4 text-center">
+                      <td className="p-4 text-center flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => {
+                            navigate('/mail', {
+                              state: {
+                                searchDistributor: order.pharmarack_distributor || '',
+                                searchProduct: order.product || '',
+                                orderId: order.id,
+                              }
+                            });
+                          }}
+                          className="p-1.5 hover:bg-primary/10 text-muted hover:text-primary rounded-lg transition-all"
+                          title="Process Invoice in Mail"
+                        >
+                          <Mail size={13} />
+                        </button>
                         <button
                           onClick={() => handleDelete(order.id)}
                           className="p-1.5 hover:bg-red/10 text-muted hover:text-red rounded-lg transition-all"

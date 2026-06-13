@@ -1,10 +1,9 @@
 // Settings API (Agent 2)
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { dbManager } from '../database/connection.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,10 +15,9 @@ const router = express.Router();
 // Get all settings
 router.get('/', async (_req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
     const rows = await db.all('SELECT * FROM app_settings');
-    await db.close();
     const settingsObj: Record<string, string> = {};
     rows.forEach(r => {
       settingsObj[r.key] = r.value;
@@ -35,9 +33,8 @@ router.get('/', async (_req, res) => {
 router.get('/:key', async (req, res) => {
   const { key } = req.params;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const row = await db.get('SELECT value FROM settings WHERE key = ?', key);
-    await db.close();
     if (!row) return res.status(404).json({ error: 'Setting not found' });
     res.json({ key, value: row.value });
   } catch (error) {
@@ -51,9 +48,8 @@ router.post('/', async (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'key required' });
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value ?? '']);
-    await db.close();
     res.json({ success: true, message: 'Setting saved' });
   } catch (error) {
     console.error('Settings save error:', error);
@@ -66,13 +62,12 @@ router.post('/save', async (req, res) => {
   const payload = req.body;
   if (!payload || typeof payload !== 'object') return res.status(400).json({ error: 'payload required' });
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
     const entries = Object.entries(payload);
     for (const [k, v] of entries) {
       await db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [k, v ?? '']);
     }
-    await db.close();
     res.json({ success: true, message: 'Settings saved' });
   } catch (error) {
     console.error('Bulk settings save error:', error);
@@ -97,9 +92,8 @@ router.post('/upload-stamp', async (req, res) => {
     const stampPath = path.join(UPLOADS_DIR, 'custom_stamp.png');
     fs.writeFileSync(stampPath, buffer);
 
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_custom_stamp', 'true')");
-    await db.close();
 
     res.json({ success: true, message: 'Custom stamp uploaded and enabled' });
   } catch (err: any) {
@@ -125,9 +119,8 @@ router.post('/upload-signature', async (req, res) => {
     const sigPath = path.join(UPLOADS_DIR, 'custom_signature.png');
     fs.writeFileSync(sigPath, buffer);
 
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('use_custom_signature', 'true')");
-    await db.close();
 
     res.json({ success: true, message: 'Custom signature uploaded and enabled' });
   } catch (err: any) {
@@ -141,19 +134,36 @@ router.post('/distributors', async (req, res) => {
   const { name, phone, email, address, state_code } = req.body;
   if (!name) return res.status(400).json({ error: 'Distributor name is required' });
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const result = await db.run(
       `INSERT INTO distributors (name, phone, email, address, state_code) VALUES (?, ?, ?, ?, ?)`,
       [name, phone || '', email || '', address || '', state_code || '']
     );
     const id = result.lastID;
     const saved = await db.get('SELECT * FROM distributors WHERE id = ?', [id]);
-    await db.close();
     res.json({ success: true, data: saved });
   } catch (error) {
     console.error('Failed to create distributor:', error);
     res.status(500).json({ error: 'Failed to create distributor' });
   }
 });
-
+// Update a distributor
+router.put('/distributors/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, phone, email, address, state_code } = req.body;
+  if (!name) return res.status(400).json({ error: 'Distributor name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    await db.run(
+      `UPDATE distributors SET name = ?, phone = ?, email = ?, address = ?, state_code = ? WHERE id = ?`,
+      [name, phone || '', email || '', address || '', state_code || '', id]
+    );
+    const updated = await db.get('SELECT * FROM distributors WHERE id = ?', [id]);
+    if (!updated) return res.status(404).json({ error: 'Distributor not found' });
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error('Failed to update distributor:', error);
+    res.status(500).json({ error: 'Failed to update distributor' });
+  }
+});
 export default router;

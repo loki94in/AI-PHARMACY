@@ -92,6 +92,7 @@ export interface Medicine {
   id: number;
   name: string;
   api_reference?: string;
+  item_code?: string;
   strength?: string;
   packaging?: string;
   item_type?: string;
@@ -112,6 +113,8 @@ export interface InventoryItem extends Medicine {
   stock_quantity: number;
   loose_quantity: number;
   rack_location?: string;
+  medicine_id?: number;
+  medicine_name?: string;
 }
 
 export interface SpecialOrder {
@@ -124,6 +127,11 @@ export interface SpecialOrder {
   status: string;
   date: string;
   notified: number;
+  pharmarack_distributor?: string;
+  pharmarack_rate?: number;
+  pharmarack_mrp?: number;
+  pharmarack_mapped?: number;
+  pharmarack_scheme?: string;
 }
 
 // API methods mapping
@@ -136,6 +144,8 @@ export const api = {
   addMedicine: (data: Partial<InventoryItem>) => apiClient.post('/inventory', data).then(res => res.data),
   updateMedicine: (id: number, data: Partial<InventoryItem>) => apiClient.put(`/inventory/${id}`, data).then(res => res.data),
   getEnrichedMedicine: (id: number) => apiClient.get(`/inventory/medicines/${id}/enriched`).then(res => res.data),
+  getQuickEditMedicine: (id: number) => apiClient.get(`/inventory/medicines/${id}/quick-edit`).then(res => res.data),
+  updateQuickEditMedicine: (id: number, data: any) => apiClient.put(`/inventory/medicines/${id}/quick-edit`, data).then(res => res.data),
   
   // Sales / POS
   getSalesHistory: () => apiClient.get('/sales/history').then(res => res.data),
@@ -154,7 +164,18 @@ export const api = {
   
   // Purchases
   getPurchases: () => apiClient.get('/purchases').then(res => res.data),
+  getPurchaseItems: () => apiClient.get('/purchases/items/all').then(res => res.data),
+  getPurchase: (id: number) => apiClient.get(`/purchases/${id}`).then(res => res.data),
+  updatePurchase: (id: number, data: any) => apiClient.put(`/purchases/${id}/full`, data).then(res => res.data),
+  deletePurchase: (id: number) => apiClient.delete(`/purchases/${id}`).then(res => res.data),
   createPurchase: (data: any) => apiClient.post('/purchases', data).then(res => res.data),
+
+  // Customer Returns
+  searchInvoiceForReturn: (invoice_no: string) => apiClient.get('/customer-returns/search-invoice', { params: { invoice_no } }).then(res => res.data),
+  createCustomerReturn: (data: any) => apiClient.post('/customer-returns', data).then(res => res.data),
+  getCustomerReturnsHistory: () => apiClient.get('/customer-returns/history').then(res => res.data),
+  
+  // Returns (Supplier)
   createManualPurchase: (data: any) => apiClient.post('/purchases/manual', data).then(res => res.data),
   getDistributors: () => apiClient.get('/distributors').then(res => res.data),
   getLastPurchase: (name: string, distributorId?: number) => {
@@ -165,6 +186,7 @@ export const api = {
   batchLastPurchase: (medicines: Array<{name: string}>, distributorId?: number) =>
     apiClient.post('/purchases/batch-last-purchase', { medicines, distributor_id: distributorId }).then(res => res.data),
   catalogSearch: (q: string) => apiClient.get('/inventory/catalog-search', { params: { q } }).then(res => res.data),
+  createMedicineAlias: (aliasName: string, medicineId: number) => apiClient.post('/inventory/medicines/alias', { alias_name: aliasName, medicine_id: medicineId }).then(res => res.data),
   getLearnedMapping: (name: string) => apiClient.get('/learning/mapping', { params: { name } }).then(res => res.data),
 
   
@@ -176,7 +198,7 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
     return apiClient.post('/migration/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': undefined }
     }).then(r => r.data);
   },
   analyzeMigrationFile: (fileName: string, skipLines: number = 0) => 
@@ -189,8 +211,15 @@ export const api = {
     apiClient.post('/migration/run', { fileName, mapping, skipLines }).then(r => r.data),
   getMigrationStatus: () => apiClient.get('/migration/status').then(r => r.data),
   getStagingInventory: () => apiClient.get('/migration/staging/inventory').then(r => r.data),
+  updateStagingInventory: (id: number, data: any) => apiClient.put(`/migration/staging/inventory/${id}`, data).then(r => r.data),
+  deleteStagingInventory: (id: number) => apiClient.delete(`/migration/staging/inventory/${id}`).then(r => r.data),
   getStagingSales: () => apiClient.get('/migration/staging/sales').then(r => r.data),
+  updateStagingSales: (id: number, data: any) => apiClient.put(`/migration/staging/sales/${id}`, data).then(r => r.data),
+  deleteStagingSales: (id: number) => apiClient.delete(`/migration/staging/sales/${id}`).then(r => r.data),
   getStagingPurchases: () => apiClient.get('/migration/staging/purchases').then(r => r.data),
+  updateStagingPurchases: (id: number, data: any) => apiClient.put(`/migration/staging/purchases/${id}`, data).then(r => r.data),
+  deleteStagingPurchases: (id: number) => apiClient.delete(`/migration/staging/purchases/${id}`).then(r => r.data),
+  getStagingErrors: () => apiClient.get('/migration/staging/errors').then(r => r.data),
   finalizeMigration: (regenerateInvoices: boolean = false) => 
     apiClient.post('/migration/staging/finalize', { regenerateInvoices }).then(r => r.data),
   rollbackMigration: () =>
@@ -211,7 +240,47 @@ export const api = {
   markEmailSaved: (uid: number) => apiClient.post(`/email/${uid}/saved`).then(res => res.data),
   triggerEmailSync: () => apiClient.post('/email/sync').then(res => res.data),
   clearAttachmentsCache: () => apiClient.delete('/email/attachments/cache').then(res => res.data),
+  
+  // Medicines Database
+  getMedicines: (
+    page: number = 1, 
+    limit: number = 100, 
+    search: string = '', 
+    sort: string = 'id_desc', 
+    letter: string = '', 
+    productName: string = '', 
+    mrpFilter: string = '', 
+    apiFilter: string = '',
+    packagingFilter: string = '',
+    distributorFilter: string = ''
+  ) => 
+    apiClient.get('/medicines', { 
+      params: { 
+        page, 
+        limit, 
+        search, 
+        sort, 
+        letter, 
+        productName, 
+        mrpFilter, 
+        apiFilter,
+        packagingFilter,
+        distributorFilter
+      } 
+    }).then(res => res.data),
+
   getMedicinePriceHistory: (name: string) => apiClient.get('/purchases/price-history', { params: { name } }).then(res => res.data),
+  searchPharmarack: (q: string) => apiClient.get('/pharmarack/search', { params: { q } }).then(res => res.data),
+  addPharmarackCart: (items: Array<{ productId: string | number; storeId: string | number; qty: number; rate?: number; scheme?: string }>) => 
+    apiClient.post('/pharmarack/cart/add', { items }).then(res => res.data),
+  
+  // Composition Enrichment
+  getEnrichmentStatus: () => apiClient.get('/enrichment/status').then(res => res.data),
+  startEnrichment: () => apiClient.post('/enrichment/start').then(res => res.data),
+  getEnrichmentQueue: (page: number = 1, limit: number = 50, filter: string = 'all') =>
+    apiClient.get('/enrichment/queue', { params: { page, limit, filter } }).then(res => res.data),
+  updateComposition: (id: number, composition: string) =>
+    apiClient.put(`/enrichment/queue/${id}`, { composition }).then(res => res.data),
   
   // Utilities (Barcode generation)
   generateMedicineBarcodes: (items: Array<{ name: string; batch?: string }>) => apiClient.post('/utilities/barcode', { items }).then(res => res.data),
@@ -224,9 +293,11 @@ export const api = {
   // WhatsApp Custom UI
   getWhatsappStatus: () => apiClient.get('/messaging/qr').then(res => res.data),
   reconnectWhatsapp: () => apiClient.post('/messaging/reconnect').then(res => res.data),
+  launchWhatsappLoginWindow: () => apiClient.post('/messaging/login-window').then(res => res.data),
   getWhatsappChats: () => apiClient.get('/messaging/chats').then(res => res.data),
   getWhatsappMessages: (chatId: string) => apiClient.get(`/messaging/chats/${encodeURIComponent(chatId)}/messages`).then(res => res.data),
-  sendWhatsappMessage: (number: string, message: string) => apiClient.post('/messaging/send', { number, message }).then(res => res.data),
+  sendWhatsappMessage: (number: string, message: string, file?: { mimetype: string; data: string; filename?: string }) => apiClient.post('/messaging/send', { number, message, file }).then(res => res.data),
+  getWhatsappMessageMedia: (chatId: string, messageId: string) => apiClient.get(`/messaging/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/media`).then(res => res.data),
   
   // Returns
   getReturns: () => apiClient.get('/returns').then(res => res.data),
@@ -265,4 +336,22 @@ export const api = {
   updatePatient: (id: number, data: any) => apiClient.put(`/crm/patients/${id}`, data).then(res => res.data),
   deletePatient: (id: number) => apiClient.delete(`/crm/patients/${id}`).then(res => res.data),
   getPatientHistory: (id: number) => apiClient.get(`/crm/${id}/history`).then(res => res.data),
+
+  // Catalog Upload & Import
+  uploadCatalogFile: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post('/upload', formData, {
+      headers: { 'Content-Type': undefined }
+    }).then(r => r.data);
+  },
+  getCatalogJobs: () => apiClient.get('/jobs').then(res => res.data),
+  getCatalogJobStatus: (id: number) => apiClient.get(`/catalog/job/${id}`).then(res => res.data),
+  importCatalog: (medicines: any[]) => apiClient.post('/catalog/import', { medicines }).then(res => res.data),
+  importCatalogJob: (id: number, mappings?: any, filters?: any) => apiClient.post(`/catalog/import-job/${id}`, { mappings, filters }).then(res => res.data),
+  
+  // Reconciliation
+  getReconciliationList: () => apiClient.get('/purchases/reconciliation').then(res => res.data),
+  reissueOrder: (emailUid: number) => apiClient.post('/purchases/reconciliation/reissue', { email_uid: emailUid }).then(res => res.data),
+  resolveOrderManually: (emailUid: number) => apiClient.post('/purchases/reconciliation/resolve', { email_uid: emailUid }).then(res => res.data),
 };

@@ -8,6 +8,8 @@ node_modules/
 
 # SQLite Database & Backups
 data/*.db
+data/*.db-shm
+data/*.db-wal
 backup/
 data/temp_migration/
 
@@ -52,3 +54,10 @@ data/audit_images/
 # Misc temp/test artifacts
 temp.json
 test.csv
+
+# Large archives and database backups
+*.zip
+*.bak
+MIGRATION SAMPEL/
+data/archived_migrations/
+

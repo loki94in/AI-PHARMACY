@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -29,10 +28,9 @@ router.post('/backup', async (req, res) => {
     fs.copyFileSync(DB_PATH, backupPath);
     
     // Log the action
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['BACKUP', `Manual backup created: ${backupFilename}`]);
-    await db.close();
-
+    
     res.json({ success: true, message: 'Backup created successfully', backupFilename });
   } catch (error) {
     console.error('Backup failed:', error);
@@ -166,10 +164,9 @@ router.post('/cloud/push', async (req, res) => {
     const data = await s3.upload(uploadParams).promise();
 
     // Log the action
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['CLOUD_PUSH', `Uploaded to S3: ${data.Key}`]);
-    await db.close();
-
+    
     res.json({ success: true, message: 'Data pushed to AWS S3', s3Url: data.Location });
   } catch (e: any) {
     console.error('Cloud push error:', e);
@@ -205,13 +202,12 @@ router.post('/backup/restore', async (req, res) => {
     fs.copyFileSync(backupPath, DB_PATH);
 
     // Re-open database connection to log action
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)', 
       ['RESTORE_BACKUP', `Database successfully restored from backup: ${latestBackup}`]
     );
-    await db.close();
-
+    
     res.json({ success: true, message: `Backup restored successfully from: ${latestBackup}` });
   } catch (e: any) {
     console.error('Backup restore error:', e);
@@ -242,13 +238,12 @@ router.post('/restore', async (req, res) => {
 
     fs.copyFileSync(backupPath, DB_PATH);
 
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)', 
       ['RESTORE_BACKUP', `Database successfully restored from backup: ${latestBackup}`]
     );
-    await db.close();
-
+    
     res.json({ success: true, message: `Backup restored successfully from: ${latestBackup}` });
   } catch (e: any) {
     console.error('Restore error:', e);
@@ -259,10 +254,9 @@ router.post('/restore', async (req, res) => {
 // Rotate encryption key placeholder
 router.post('/encrypt/rotate', async (req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['ROTATE_KEY', 'Encryption key rotated']);
-    await db.close();
-    res.json({ success: true, message: 'Encryption key rotated (simulated)' });
+        res.json({ success: true, message: 'Encryption key rotated (simulated)' });
   } catch (e) {
     console.error('Key rotation error:', e);
     res.status(500).json({ error: 'Failed to rotate key' });
@@ -275,10 +269,9 @@ router.post('/encrypt/rotate', async (req, res) => {
 router.get('/gmail/test', async (req, res) => {
   try {
     console.log('TEST_CONNECTION_GMAIL');
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['TEST_CONNECTION_GMAIL', 'Gmail test connection invoked']);
-    await db.close();
-    res.json({ success: true, message: 'Gmail connection OK' });
+        res.json({ success: true, message: 'Gmail connection OK' });
   } catch (e) {
     console.error('Gmail test connection error:', e);
     res.status(500).json({ error: 'Gmail test connection failed' });
@@ -289,10 +282,9 @@ router.get('/gmail/test', async (req, res) => {
 router.get('/whatsapp/test', async (req, res) => {
   try {
     console.log('TEST_CONNECTION_WHATSAPP');
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['TEST_CONNECTION_WHATSAPP', 'WhatsApp test connection invoked']);
-    await db.close();
-    res.json({ success: true, message: 'WhatsApp connection OK' });
+        res.json({ success: true, message: 'WhatsApp connection OK' });
   } catch (e) {
     console.error('WhatsApp test connection error:', e);
     res.status(500).json({ error: 'WhatsApp test connection failed' });
@@ -303,10 +295,9 @@ router.get('/whatsapp/test', async (req, res) => {
 router.post('/whatsapp/send', async (req, res) => {
   try {
     // payload could contain chatId/message but we just mock success
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['WHATSAPP_SEND', 'Mock WhatsApp test message sent']);
-    await db.close();
-    res.json({ success: true, message: 'WhatsApp test message sent (mock)' });
+        res.json({ success: true, message: 'WhatsApp test message sent (mock)' });
   } catch (e) {
     console.error('WhatsApp send‑test error:', e);
     res.status(500).json({ error: 'Failed to send WhatsApp test message' });
@@ -316,11 +307,10 @@ router.get('/test-connection', async (req, res) => {
   try {
     const service = (req.query.service as string) || '';
     const actionType = service ? `TEST_CONNECTION_${service.toUpperCase()}` : 'TEST_CONNECTION';
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const row = await db.get('SELECT 1 as ok');
     await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', [actionType, `Test connection ${service ? 'for ' + service : 'generic'}`]);
-    await db.close();
-    let message = 'Connection test OK';
+        let message = 'Connection test OK';
     if (service) {
       const friendly = service.charAt(0).toUpperCase() + service.slice(1);
       message = `${friendly} test OK`;

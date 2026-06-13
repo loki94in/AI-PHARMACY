@@ -26,12 +26,14 @@ import {
   Info,
   ChevronRight,
   Mail as MailIcon,
+  Beaker,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toastEvent, quickOrderEvent } from './services/events';
 import type { ToastEventDetail } from './services/events';
 import { QuickOrderModal } from './components/QuickOrderModal';
 import { apiClient } from './services/api';
+import { Agentation } from 'agentation';
 
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
@@ -51,6 +53,9 @@ import CatalogUpload from './pages/CatalogUpload';
 import Orders from './pages/Orders';
 import Expiry from './pages/Expiry';
 import Sells from './pages/Sells';
+import Learning from './pages/Learning';
+import DatabasePage from './pages/Database';
+import CompositionQueue from './pages/CompositionQueue';
 
 // ──────────────────────────────────────────────
 // Notification Types
@@ -72,49 +77,54 @@ const Sidebar = () => {
   const menuItems = [
     { path: '/pos', label: 'Sales / POS', icon: <ShoppingCart size={18} /> },
     { path: '/sells', label: 'Sells / Bills', icon: <Receipt size={18} /> },
+    { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
     { path: '/purchases', label: 'Purchases', icon: <Receipt size={18} /> },
     { path: '/purchase-history', label: 'Purchase History', icon: <ClipboardList size={18} /> },
     { path: '/mail', label: 'Distributor Mail', icon: <Activity size={18} /> },
-    { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
-    { path: '/returns', label: 'Returns', icon: <RotateCcw size={18} /> },
-    { path: '/expiry', label: 'Expiry Monitor', icon: <CalendarDays size={18} /> },
-    { path: '/crm', label: 'CRM / Patients', icon: <Users size={18} /> },
-    { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
     { path: '/doctors', label: 'Doctors', icon: <UserPlus size={18} /> },
-    { path: '/catalog', label: 'Catalog Upload', icon: <Database size={18} /> },
-    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    { path: '/dispatch', label: 'Dispatch', icon: <Activity size={18} /> },
+    { path: '/expiry', label: 'Expiry Monitor', icon: <CalendarDays size={18} /> },
+    { path: '/returns', label: 'Supplier Returns', icon: <RotateCcw size={18} /> },
+    { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
+    { path: '/database', label: 'Master Database', icon: <Database size={18} /> },
+    { path: '/composition-queue', label: 'Composition Queue', icon: <Beaker size={18} /> },
     { path: '/reports', label: 'Reports', icon: <LayoutDashboard size={18} /> },
     { path: '/learning', label: 'AI Learning', icon: <Activity size={18} /> },
+    { path: '/crm', label: 'CRM / Patients', icon: <Users size={18} /> },
+    { path: '/catalog', label: 'Catalog Upload', icon: <Database size={18} /> },
+    { path: '/customer-returns', label: 'Customer Returns', icon: <RotateCcw size={18} /> },
+    { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { path: '/migration', label: 'Data Migration', icon: <Database size={18} /> },
-    { path: '/license', label: 'License', icon: <Database size={18} /> },
+    { path: '/dispatch', label: 'Dispatch', icon: <Activity size={18} /> },
     { path: '/settings', label: 'Settings', icon: <SettingsIcon size={18} /> },
+    { path: '/license', label: 'License', icon: <Database size={18} /> },
   ];
 
   return (
-    <div className="w-64 bg-glass-bg border-r border-glass-border backdrop-blur-xl flex flex-col h-full overflow-y-auto">
-      <div className="p-5 border-b border-glass-border flex flex-col gap-1 bg-white/[0.02]">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-sky/20 to-sky/5 border border-sky/30 shadow-[0_0_15px_rgba(14,165,233,0.2)] shrink-0 transition-all duration-300">
-            <svg className="w-5.5 h-5.5 text-sky drop-shadow-[0_0_6px_rgba(14,165,233,0.6)]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round"/>
-              <path d="M12 8.5V15.5M8.5 12H15.5" stroke="#fafafa" strokeWidth="2.5" strokeLinecap="round"/>
+    <div className="w-64 bg-glass-bg border-r border-glass-border backdrop-blur-xl flex flex-col h-full">
+      <div className="p-5 border-b border-glass-border flex flex-col gap-1 bg-white/[0.02] shrink-0">
+        <div className="flex items-center gap-3 w-full relative">
+          <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-sky/20 to-sky/5 border border-sky/30 shadow-[0_0_15px_rgba(14,165,233,0.2)] shrink-0 transition-all duration-300">
+            <svg className="w-6 h-6 text-sky drop-shadow-[0_0_6px_rgba(14,165,233,0.6)]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
+              <path d="M12 8.5V15.5M8.5 12H15.5" stroke="#fafafa" strokeWidth="2" strokeLinecap="round"/>
             </svg>
-            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green"></span>
-            </span>
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-base font-black tracking-wider bg-gradient-to-r from-text to-sky bg-clip-text text-transparent leading-none">
               AI PHARMACY
             </h1>
-            <p className="text-[9px] text-muted tracking-widest uppercase font-bold mt-1 leading-none">OS Version 2.0</p>
+            <p className="text-[9px] text-muted tracking-widest uppercase font-bold mt-1.5 leading-none">OS Version 2.0</p>
+          </div>
+          <div className="shrink-0 pl-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green"></span>
+            </span>
           </div>
         </div>
       </div>
       
-      <div className="py-4 flex-1">
+      <div className="py-4 flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
         <div className="px-5 mb-2 text-[10px] font-bold tracking-[0.15em] uppercase text-muted/70">Main Menu</div>
         <nav className="flex flex-col gap-1">
           {menuItems.map((item) => {
@@ -124,7 +134,7 @@ const Sidebar = () => {
                 key={item.path}
                 to={item.path}
                 className={`
-                  flex items-center gap-3 px-5 py-2.5 mx-2 rounded-lg text-sm font-medium transition-all duration-200
+                  flex items-center gap-3 px-5 py-2.5 mx-2 rounded-lg text-sm font-medium uppercase transition-all duration-200
                   ${isActive 
                     ? 'text-white bg-gradient-to-r from-primary/20 to-transparent border-l-2 border-primary shadow-[inset_0_0_20px_rgba(59,130,246,0.1)]' 
                     : 'text-muted hover:text-white hover:bg-white/5 hover:translate-x-1 border-l-2 border-transparent'}
@@ -140,7 +150,7 @@ const Sidebar = () => {
         </nav>
       </div>
 
-      <div className="p-4 border-t border-glass-border">
+      <div className="p-4 border-t border-glass-border shrink-0">
         <div className="flex items-center gap-3 px-3 py-2 text-sm text-muted">
           <Activity size={16} className="text-green" />
           <span>System Online</span>
@@ -378,6 +388,8 @@ const NotificationPanel = ({
 // Topbar
 // ──────────────────────────────────────────────
 const Topbar = ({
+  theme,
+  setTheme,
   notifications,
   hasUnread,
   onNewNotification,
@@ -385,6 +397,8 @@ const Topbar = ({
   onClearOne,
   onMarkRead,
 }: {
+  theme: string;
+  setTheme: React.Dispatch<React.SetStateAction<string>>;
   notifications: AppNotification[];
   hasUnread: boolean;
   onNewNotification: (n: ToastEventDetail) => void;
@@ -393,24 +407,9 @@ const Topbar = ({
   onMarkRead: (id: number) => void;
 }) => {
   const location = useLocation();
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem('theme') || 'dark'; }
-    catch { return 'dark'; }
-  });
   const [showPanel, setShowPanel] = useState(false);
   const [flashToast, setFlashToast] = useState<(ToastEventDetail & { id: number }) | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  useEffect(() => {
-    if (theme === 'light') {
-      document.documentElement.classList.add('light');
-      document.body.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
-      document.body.classList.remove('light');
-    }
-    try { localStorage.setItem('theme', theme); } catch { }
-  }, [theme]);
 
   // Listen for toast events — show flash AND add to panel
   useEffect(() => {
@@ -428,7 +427,9 @@ const Topbar = ({
   useEffect(() => {
     const backendUrl = apiClient.defaults.baseURL || window.location.origin;
     const cleanBaseUrl = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
-    const sseUrl = `${cleanBaseUrl}/api/notifications/stream`;
+    const sseUrl = cleanBaseUrl.startsWith('/api')
+      ? `${cleanBaseUrl}/notifications/stream`
+      : `${cleanBaseUrl}/api/notifications/stream`;
     
     let eventSource: EventSource | null = null;
     
@@ -440,10 +441,19 @@ const Topbar = ({
           const data = JSON.parse(event.data);
           if (data.type === 'auth_failure' || data.type === 'auth_required' || data.type === 'notification') {
             toastEvent.trigger(
-              data.payload.message || data.message || 'Action required',
+              data.payload?.message || data.message || 'Action required',
               'error',
               '/settings'
             );
+          } else if (data.type === 'catalog_job_update' && data.payload) {
+            const status = data.payload.status;
+            if (status === 'waiting_for_mapping') {
+              toastEvent.trigger('Catalogue analyzed! Ready for mapping configuration.', 'info', '/catalog');
+            } else if (status === 'done') {
+              toastEvent.trigger('Catalogue ingestion completed successfully!', 'success', '/catalog');
+            } else if (status === 'failed') {
+              toastEvent.trigger('Catalogue processing failed: ' + (data.payload.error || 'Unknown error'), 'error', '/catalog');
+            }
           }
         } catch (err) {
           console.error('Failed to parse SSE event:', err);
@@ -477,27 +487,31 @@ const Topbar = ({
 
   const getPageTitle = (pathname: string) => {
     const map: Record<string, string> = {
-      '/dashboard': 'Dashboard',
-      '/pos': 'Sales / POS',
-      '/sells': 'Sells / Bills',
-      '/inventory': 'Inventory Master',
-      '/purchases': 'Purchases',
-      '/purchase-history': 'Purchase History',
-      '/manual-purchase': 'Create Purchase Bill',
-      '/returns': 'Returns & Expiry',
-      '/expiry': 'Expiry Monitor',
+      '/learning': 'AI Learning',
       '/crm': 'CRM / Patients',
-      '/orders': 'Orders & Requests',
+      '/catalog': 'Catalog Upload',
+      '/customer-returns': 'Customer Returns',
+      '/dashboard': 'Dashboard',
       '/migration': 'Data Migration',
+      '/dispatch': 'Dispatch',
       '/mail': 'Distributor Mail',
       '/doctors': 'Doctors',
-      '/catalog': 'Catalog Upload',
-      '/dispatch': 'Dispatch',
-      '/reports': 'Reports',
-      '/learning': 'AI Learning',
+      '/expiry': 'Expiry Monitor',
+      '/inventory': 'Inventory',
       '/license': 'License',
+      '/database': 'Master Database',
+      '/composition-queue': 'Composition Queue',
+      '/orders': 'Orders & Requests',
+      '/purchase-history': 'Purchase History',
+      '/purchases': 'Purchases',
+      '/manual-purchase': 'Create Purchase Bill',
+      '/reports': 'Reports',
+      '/pos': 'Sales / POS',
+      '/sells': 'Sells / Bills',
       '/settings': 'Settings',
+      '/returns': 'Supplier Returns',
     };
+    // Extract base path (e.g. /pos/invoice -> /pos) for fallback matching if needed, though strictly exact match first
     return map[pathname] || 'Administration';
   };
 
@@ -510,7 +524,7 @@ const Topbar = ({
 
       <header className="h-16 bg-glass-bg border-b border-glass-border backdrop-blur-xl flex items-center justify-between px-8 shrink-0 relative z-40">
         <div className="flex items-center gap-4">
-          <h2 className="text-lg font-bold tracking-tight text-white">{getPageTitle(location.pathname)}</h2>
+          <h2 className="text-lg font-bold tracking-tight text-white uppercase">{getPageTitle(location.pathname)}</h2>
         </div>
         <div className="flex items-center gap-3">
           {/* Quick Request */}
@@ -524,11 +538,6 @@ const Topbar = ({
             <span className="hidden sm:inline text-[9px] bg-black/40 border border-white/10 text-muted px-1.5 py-0.5 rounded font-mono font-normal">Alt + O</span>
           </button>
 
-          {/* Connected badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-bg border border-green/20">
-            <div className="w-2 h-2 rounded-full bg-green animate-pulse"></div>
-            <span className="text-xs font-bold text-green uppercase tracking-wide">Connected</span>
-          </div>
 
           {/* ── Notification Bell ── */}
           <div className="relative">
@@ -585,7 +594,7 @@ const Topbar = ({
             aria-label="Toggle theme"
             title={theme === 'light' ? 'Switch to Night Mode' : 'Switch to Day Mode'}
           >
-            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            {theme === 'light' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
 
           <button className="p-2 text-muted hover:text-white transition-colors flex items-center justify-center" aria-label="Log out" title="Log out">
@@ -600,9 +609,17 @@ const Topbar = ({
 // ──────────────────────────────────────────────
 // Layout (holds notification state globally)
 // ──────────────────────────────────────────────
-const Layout = ({ children }: { children: React.ReactNode }) => {
+const Layout = ({
+  children,
+  theme,
+  setTheme,
+}: {
+  children: React.ReactNode;
+  theme: string;
+  setTheme: React.Dispatch<React.SetStateAction<string>>;
+}) => {
   const location = useLocation();
-  const isFitPage = location.pathname === '/pos' || location.pathname === '/orders' || location.pathname === '/expiry';
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   // hasUnread persists even after all are "read" — cleared only when user explicitly clears/reads
@@ -687,6 +704,8 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <Topbar
+          theme={theme}
+          setTheme={setTheme}
           notifications={notifications}
           hasUnread={hasUnread}
           onNewNotification={handleNewNotification}
@@ -715,9 +734,27 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 // App
 // ──────────────────────────────────────────────
 function App() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('theme') || 'dark'; }
+    catch { return 'dark'; }
+  });
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light');
+      document.body.classList.add('light');
+      try { localStorage.setItem('feedback-toolbar-theme', 'light'); } catch { }
+    } else {
+      document.documentElement.classList.remove('light');
+      document.body.classList.remove('light');
+      try { localStorage.setItem('feedback-toolbar-theme', 'dark'); } catch { }
+    }
+    try { localStorage.setItem('theme', theme); } catch { }
+  }, [theme]);
+
   return (
     <BrowserRouter>
-      <Layout>
+      <Layout theme={theme} setTheme={setTheme}>
         <Routes>
           <Route path="/" element={<Navigate to="/pos" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -739,6 +776,9 @@ function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/mail" element={<Mail />} />
           <Route path="/catalog" element={<CatalogUpload />} />
+          <Route path="/learning" element={<Learning />} />
+          <Route path="/database" element={<DatabasePage />} />
+          <Route path="/composition-queue" element={<CompositionQueue />} />
           <Route path="*" element={
             <div className="flex flex-col items-center justify-center h-full text-muted">
               <h1 className="text-2xl font-bold mb-2">Coming Soon</h1>
@@ -747,6 +787,7 @@ function App() {
           } />
         </Routes>
       </Layout>
+      <Agentation key={theme} />
     </BrowserRouter>
   );
 }

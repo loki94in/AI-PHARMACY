@@ -1,7 +1,6 @@
 import imap from 'imap-simple';
 import { simpleParser } from 'mailparser';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import { createTransport, Transporter, SendMailOptions } from 'nodemailer';
 import path from 'path';
 import fs from 'fs';
@@ -11,11 +10,277 @@ import { sendMessage } from '../whatsappClient.js';
 import { telegramBotService } from '../telegramBot.js';
 import { notificationManager } from '../utils/notifications.js';
 import { extractDateFromText } from '../utils/dateExtractor.js';
+import { parse } from 'csv-parse/sync';
+import * as XLSX from 'xlsx';
 import { eventService } from './eventService.js';
+import { aiCameraService } from './aiCameraService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const getDbPath = () => process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const getUploadsDir = () => process.env.UPLOADS_DIR || path.resolve(__dirname, '..', '..', 'uploads');
+
+function getJaccardSimilarity(arr1: string[], arr2: string[]): number {
+  const set1 = new Set(arr1.map(s => s.toLowerCase().trim()));
+  const set2 = new Set(arr2.map(s => s.toLowerCase().trim()));
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  if (union.size === 0) return 0;
+  return intersection.size / union.size;
+}
+
+function normalizeMapping(map: Record<string, string> | null | undefined): Record<string, string> {
+  if (!map) return {};
+  const normalized: Record<string, string> = {};
+  
+  const canonicalSet = new Set([
+    'distributor_name', 'invoice_no', 'invoice_date', 'global_cd_per', 'total_amount',
+    'name', 'quantity', 'rate', 'mrp', 'batch_no', 'expiry_date', 'cgst', 'sgst',
+    'free_qty', 'cd_per', 'cd_rs'
+  ]);
+  
+  let keysAreCanonical = 0;
+  let valuesAreCanonical = 0;
+  
+  for (const [k, v] of Object.entries(map)) {
+    if (k && canonicalSet.has(k)) keysAreCanonical++;
+    if (v && canonicalSet.has(v)) valuesAreCanonical++;
+  }
+  
+  if (valuesAreCanonical > keysAreCanonical) {
+    // Format is { rawHeader: canonicalName }, so invert it to { canonicalName: rawHeader }
+    for (const [k, v] of Object.entries(map)) {
+      if (v && k) {
+        normalized[v] = k;
+      }
+    }
+  } else {
+    // Format is already { canonicalName: rawHeader }
+    for (const [k, v] of Object.entries(map)) {
+      if (k && v) {
+        normalized[k] = v;
+      }
+    }
+  }
+  
+  return normalized;
+}
+
+async function getSuggestedMappingFromHeaders(headers: string[], db: any): Promise<Record<string, string>> {
+  const suggested: Record<string, string> = {};
+  const headerKey = headers.slice().sort().join(',');
+
+  try {
+    const matched = await db.get('SELECT mapping_json FROM catalog_mappings WHERE file_headers = ?', headerKey);
+    if (matched && matched.mapping_json) {
+      return JSON.parse(matched.mapping_json);
+    }
+  } catch (err) {
+    console.warn('Smart learning mapping load failed:', err);
+  }
+
+  // Helper to normalize header for comparison
+  const normalize = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const rules: Array<{
+    field: string;
+    priority1: RegExp;
+    priority2?: RegExp;
+  }> = [
+    {
+      field: 'distributor_name',
+      priority1: /^(distributor|supplier|vendor|party|partyname)$/i,
+      priority2: /distributor|supplier|vendor|party/i
+    },
+    {
+      field: 'invoice_date',
+      priority1: /^(invoicedate|billdate|date|invdate|trdate)$/i,
+      priority2: /date|dt/i
+    },
+    {
+      field: 'invoice_no',
+      priority1: /^(invoiceno|billno|invno|vouno)$/i,
+      priority2: /invno|invoiceno|billno|vou/i
+    },
+    {
+      field: 'total_amount',
+      priority1: /^(totalamount|invamt|netamt|grandtotal|total|inetamt)$/i,
+      priority2: /total|amt|amount/i
+    },
+    {
+      field: 'name',
+      priority1: /^(itemname|productname|medicinename|prodname|pitemname|productdesc|itemdesc|description|name)$/i,
+      priority2: /name|brand|product|item|desc/i
+    },
+    {
+      field: 'api_reference',
+      priority1: /^(api|composition|generic|salt|formula|active|molecule)$/i,
+      priority2: /api|composition|generic|salt/i
+    },
+    {
+      field: 'strength',
+      priority1: /^(strength|dosage|potency)$/i,
+      priority2: /strength|dosage|potency|mg|ml/i
+    },
+    {
+      field: 'packaging',
+      priority1: /^(pack|packaging|dosageform|type|unit)$/i,
+      priority2: /pack|pkg|packaging/i
+    },
+    {
+      field: 'manufacturer',
+      priority1: /^(mfg|manufacturer|applicant|company|maker)$/i,
+      priority2: /mfg|manufactur|company/i
+    },
+    {
+      field: 'marketed_by',
+      priority1: /^(mkt|marketedby|market)$/i,
+      priority2: /mkt|market/i
+    },
+    {
+      field: 'hsn_code',
+      priority1: /^(hsn|hsncode)$/i,
+      priority2: /hsn/i
+    },
+    {
+      field: 'schedule_type',
+      priority1: /^(schedule|scheduletype)$/i,
+      priority2: /schedule/i
+    },
+    {
+      field: 'mrp',
+      priority1: /^(mrp)$/i,
+      priority2: /mrp/i
+    },
+    {
+      field: 'rate',
+      priority1: /^(rate|ptr|cost|price|unitrate|purrate|ftrate|srate)$/i,
+      priority2: /rate|price|ptr/i
+    },
+    {
+      field: 'cgst',
+      priority1: /^(cgstper|cgstrate|cgst)$/i,
+      priority2: /cgst/i
+    },
+    {
+      field: 'sgst',
+      priority1: /^(sgstper|sgstrate|sgst)$/i,
+      priority2: /sgst/i
+    },
+    {
+      field: 'rack',
+      priority1: /^(rack|shelf|location)$/i,
+      priority2: /rack|shelf|location/i
+    },
+    {
+      field: 'quantity',
+      priority1: /^(qty|quantity|quantitybld|bldqty)$/i,
+      priority2: /qty|quantity/i
+    },
+    {
+      field: 'batch_no',
+      priority1: /^(batch|batchno|lot|lotno)$/i,
+      priority2: /batch|lot/i
+    },
+    {
+      field: 'expiry_date',
+      priority1: /^(expiry|expdate|expirydate)$/i,
+      priority2: /exp|expiry/i
+    },
+    {
+      field: 'free_qty',
+      priority1: /^(free|freeqty|fqty)$/i,
+      priority2: /free/i
+    },
+    {
+      field: 'cd_per',
+      priority1: /^(cdper|discper|discountper|discount)$/i,
+      priority2: /disc|discount/i
+    },
+    {
+      field: 'cd_rs',
+      priority1: /^(cdamt|cdval|discamt|cdrs)$/i,
+      priority2: /disc.*amt|cd.*amt|disc.*val|cd.*val/i
+    }
+  ];
+
+  // Keep track of which headers are already mapped to prevent double mapping of same header to multiple fields
+  const mappedHeaders = new Set<string>();
+
+  // Helper to check negative patterns (e.g. to exclude 'lrdate' from invoice_date or 'fqty' from qty)
+  const isExcluded = (field: string, norm: string): boolean => {
+    if (field === 'invoice_date') {
+      return /exp|expiry|due|lr|deliv/i.test(norm);
+    }
+    if (field === 'invoice_no') {
+      return /date/i.test(norm);
+    }
+    if (field === 'total_amount') {
+      return /tax|disc|discount|qty|free|rate|per|prcode|barcode/i.test(norm);
+    }
+    if (field === 'quantity') {
+      return /free|sch|adj|amt/i.test(norm);
+    }
+    if (field === 'rate') {
+      return /mrp|free|sch|cgst|sgst|disc|net|grs|tax|ptr|pts/i.test(norm);
+    }
+    if (field === 'cgst' || field === 'sgst') {
+      return /amt|val|tax/i.test(norm);
+    }
+    if (field === 'expiry_date') {
+      return /year|day|month/i.test(norm);
+    }
+    if (field === 'cd_per') {
+      return /amt|val|rs|net/i.test(norm);
+    }
+    return false;
+  };
+
+  // Phase 1: Try priority 1 (exact/strict matches) for all fields
+  for (const rule of rules) {
+    for (const h of headers) {
+      if (mappedHeaders.has(h)) continue;
+      const norm = normalize(h);
+      if (isExcluded(rule.field, norm)) continue;
+      
+      if (rule.priority1.test(norm)) {
+        suggested[h] = rule.field;
+        mappedHeaders.add(h);
+        break; // Match found, proceed to next field rule
+      }
+    }
+  }
+
+  // Phase 2: Try priority 2 (broader/substring matches) for remaining unmapped fields
+  for (const rule of rules) {
+    // Check if this field is already mapped
+    const isAlreadyMapped = Object.values(suggested).includes(rule.field);
+    if (isAlreadyMapped) continue;
+
+    if (rule.priority2) {
+      for (const h of headers) {
+        if (mappedHeaders.has(h)) continue;
+        const norm = normalize(h);
+        if (isExcluded(rule.field, norm)) continue;
+
+        if (rule.priority2.test(norm)) {
+          suggested[h] = rule.field;
+          mappedHeaders.add(h);
+          break; // Match found, proceed to next field rule
+        }
+      }
+    }
+  }
+
+  // Initialize unmapped fields with empty string
+  for (const h of headers) {
+    if (!suggested[h]) {
+      suggested[h] = '';
+    }
+  }
+
+  return suggested;
+}
 
 interface EmailOptions {
   user: string;
@@ -46,6 +311,650 @@ interface ProcessedEmail {
     content: Buffer;
     contentType: string;
   }>;
+}
+
+function formatExpiryDate(expStr: string): string {
+  if (!expStr) return '01/12';
+  const clean = expStr.trim();
+  if (clean === '00000000' || clean === '*' || clean === '***' || clean === '') return '01/12';
+  
+  // Format DD/MM/YYYY or MM/YYYY or DD-MM-YYYY
+  const match = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (match) {
+    let month = match[2];
+    let year = match[3];
+    if (!year && match[2]) {
+      month = match[1];
+      year = match[2];
+    }
+    if (year && year.length === 4) {
+      year = year.substring(2, 4);
+    }
+    return `${month.padStart(2, '0')}/${year || '12'}`;
+  }
+  
+  // If it's MM/YY or MM-YY
+  const matchShort = clean.match(/^(\d{1,2})[\/\-](\d{2})/);
+  if (matchShort) {
+    return `${matchShort[1].padStart(2, '0')}/${matchShort[2]}`;
+  }
+
+  // If it's raw 8 digits (DDMMYYYY) or 6 digits (MMYYYY)
+  if (/^\d{8}$/.test(clean)) {
+    const month = clean.substring(2, 4);
+    const year = clean.substring(6, 8);
+    return `${month}/${year}`;
+  }
+  if (/^\d{6}$/.test(clean)) {
+    const month = clean.substring(0, 2);
+    const year = clean.substring(4, 6);
+    return `${month}/${year}`;
+  }
+
+  return '01/12';
+}
+
+function normalizeDateToYYYYMMDD(dateStr: string): string {
+  if (!dateStr) return '';
+  dateStr = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const match = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (match) {
+    let day = match[1].padStart(2, '0');
+    let month = match[2].padStart(2, '0');
+    let year = match[3];
+    if (year.length === 2) {
+      year = '20' + year;
+    }
+    return `${year}-${month}-${day}`;
+  }
+  if (/^\d{8}$/.test(dateStr)) {
+    const firstFour = parseInt(dateStr.substring(0, 4), 10);
+    if (firstFour > 2000) {
+      const year = dateStr.substring(0, 4);
+      const month = dateStr.substring(4, 6);
+      const day = dateStr.substring(6, 8);
+      return `${year}-${month}-${day}`;
+    } else {
+      const day = dateStr.substring(0, 2);
+      const month = dateStr.substring(2, 4);
+      const year = dateStr.substring(4, 8);
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return dateStr;
+}
+
+function parseRecordTypeInvoice(csvRecords: string[][], filename: string): {
+  distributor_name: string;
+  invoice_no: string;
+  invoice_date: string;
+  total_amount: number;
+  items: any[];
+} {
+  let distributor_name = '';
+  let invoice_no = '';
+  let invoice_date = '';
+  let total_amount = 0;
+  const items: any[] = [];
+  
+  const headerRow = csvRecords.find(row => row[0]?.trim() === 'H');
+  if (headerRow) {
+    if (headerRow[5] && isNaN(Number(headerRow[5])) && headerRow[5].trim().length > 3 && !headerRow[5].includes('/') && !headerRow[5].includes('-')) {
+      distributor_name = headerRow[5].trim();
+      invoice_no = headerRow[3] ? headerRow[3].trim() : '';
+      invoice_date = headerRow[2] ? normalizeDateToYYYYMMDD(headerRow[2]) : '';
+      total_amount = parseFloat(headerRow[19]) || parseFloat(headerRow[8]) || 0;
+    } else {
+      distributor_name = headerRow[19] ? headerRow[19].trim() : '';
+      invoice_no = headerRow[2] ? headerRow[2].trim() : '';
+      const rawDate = headerRow[3] ? headerRow[3].trim() : '';
+      invoice_date = normalizeDateToYYYYMMDD(rawDate);
+      total_amount = parseFloat(headerRow[16]) || 0;
+    }
+  }
+  
+  for (const row of csvRecords) {
+    if (row.length < 5) continue;
+    if (row[0]?.trim() !== 'T') continue;
+    
+    const isLayoutB = row[11] && (row[11].includes('/') || row[11].includes('-')) && !isNaN(parseFloat(row[6]));
+    
+    if (isLayoutB) {
+      let name = row[2] ? row[2].trim() : '';
+      const pack = row[4] ? row[4].trim() : '';
+      if (pack && name) {
+        name = name + ' ' + pack;
+      }
+      
+      const qty = parseFloat(row[6]) || 0;
+      const free_qty = parseFloat(row[7]) || 0;
+      const mrp = parseFloat(row[8]) || 0;
+      const rate = parseFloat(row[9]) || 0;
+      const batch = row[10] ? row[10].trim() : '';
+      const expiry = formatExpiryDate(row[11]);
+      const gst = parseFloat(row[16]) || 0;
+      
+      if (name) {
+        items.push({
+          name,
+          quantity: qty,
+          free_qty,
+          rate,
+          mrp,
+          batch_no: batch,
+          expiry_date: expiry,
+          cgst_per: gst / 2,
+          sgst_per: gst / 2,
+          cd_per: 0,
+          cd_rs: 0,
+          hsn_code: ''
+        });
+      }
+    } else {
+      const offset = 1;
+      let name = row[4 + offset] ? row[4 + offset].trim() : '';
+      const pack = row[5 + offset] ? row[5 + offset].trim() : '';
+      if (pack && name) {
+        name = name + ' ' + pack;
+      }
+      
+      const qty = parseFloat(row[19 + offset]) || parseFloat(row[10]) || 0;
+      const free_qty = parseFloat(row[14 + offset]) || parseFloat(row[18]) || parseFloat(row[11]) || 0;
+      const rate = parseFloat(row[13 + offset]) || parseFloat(row[14]) || 0;
+      const mrp = parseFloat(row[15 + offset]) || parseFloat(row[16]) || 0;
+      const batch = row[7 + offset] ? row[7 + offset].trim() : (row[8] ? row[8].trim() : '');
+      const expiry = formatExpiryDate(row[8 + offset] || row[9]);
+      const gst = parseFloat(row[11 + offset]) || parseFloat(row[12]) || 0;
+      const hsn = row[25 + offset] || row[37] || '';
+      
+      if (name) {
+        items.push({
+          name,
+          quantity: qty,
+          free_qty,
+          rate,
+          mrp,
+          batch_no: batch,
+          expiry_date: expiry,
+          cgst_per: gst / 2,
+          sgst_per: gst / 2,
+          cd_per: 0,
+          cd_rs: 0,
+          hsn_code: hsn.trim()
+        });
+      }
+    }
+  }
+  
+  if (!distributor_name && filename) {
+    const base = path.basename(filename).toLowerCase();
+    if (base.includes('prakash_pharmaceuticals') || base.includes('prakashpharmaceuticals')) {
+      distributor_name = 'PRAKASH PHARMACEUTICALS';
+    }
+  }
+  
+  return {
+    distributor_name,
+    invoice_no,
+    invoice_date,
+    total_amount,
+    items
+  };
+}
+
+function parseItemsFromTextLines(content: string, global_cd_per: number): any[] {
+  const items: any[] = [];
+  const lines = content.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    
+    const tokens = trimmed.split(/\s+/);
+    if (tokens.length < 5) continue;
+    
+    const expIdx = tokens.findIndex(t => /^\d{1,2}[\/\-]\d{2,4}$/.test(t) || /^\d{2}[\/\-]\d{2}[\/\-]\d{2,4}$/.test(t));
+    if (expIdx !== -1 && expIdx > 1 && expIdx < tokens.length - 3) {
+      const batch = tokens[expIdx - 1];
+      const expiry = formatExpiryDate(tokens[expIdx]);
+      const qty = parseFloat(tokens[expIdx + 1]);
+      const mrp = parseFloat(tokens[expIdx + 2]);
+      const rate = parseFloat(tokens[expIdx + 3]);
+      
+      if (!isNaN(qty) && qty > 0 && !isNaN(mrp) && mrp > 0 && !isNaN(rate) && rate > 0) {
+        const hasHsn = /^\d{4,8}$/.test(tokens[0]);
+        const nameTokens = tokens.slice(hasHsn ? 1 : 0, expIdx - 1);
+        
+        const name = nameTokens.join(' ').trim();
+        
+        let cgst_per = 0;
+        let sgst_per = 0;
+        if (tokens[expIdx + 7] && !isNaN(parseFloat(tokens[expIdx + 7]))) {
+          cgst_per = parseFloat(tokens[expIdx + 7]);
+        }
+        if (tokens[expIdx + 9] && !isNaN(parseFloat(tokens[expIdx + 9]))) {
+          sgst_per = parseFloat(tokens[expIdx + 9]);
+        }
+        
+        if (cgst_per > 30) cgst_per = 0;
+        if (sgst_per > 30) sgst_per = 0;
+        
+        items.push({
+          name,
+          quantity: qty,
+          rate,
+          mrp,
+          batch_no: batch === '*' || batch === '***' ? '' : batch,
+          expiry_date: expiry,
+          cgst_per,
+          sgst_per,
+          cd_per: global_cd_per,
+          cd_rs: 0,
+          free_qty: 0,
+          hsn_code: hasHsn ? tokens[0] : ''
+        });
+      }
+    }
+  }
+  return items;
+}
+
+function parseShriyashInvoice(content: string, globalCdPer: number): { items: any[]; invoice_no: string; invoice_date: string; total_amount: number } {
+  const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const items: any[] = [];
+  let invoice_no = '';
+  let invoice_date = '';
+  let total_amount = 0;
+
+  for (const line of lines) {
+    const invMatch = line.match(/(?:Invoice No\.|Inv No\.)\s*[:\-]?\s*([A-Za-z0-9\/]+)/i);
+    if (invMatch && !invoice_no) {
+      invoice_no = invMatch[1];
+    }
+    const dateMatch = line.match(/Date\s*[:\-]?\s*(\d{2}-\d{2}-\d{4})/i);
+    if (dateMatch && !invoice_date) {
+      invoice_date = normalizeDateToYYYYMMDD(dateMatch[1]);
+    }
+    const amtMatch = line.match(/NET AMT\s*[:\-]?\s*(\d+\.\d{2})/i);
+    if (amtMatch && !total_amount) {
+      total_amount = parseFloat(amtMatch[1]);
+    }
+  }
+
+  const srIndices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\d{3}$/.test(lines[i])) {
+      srIndices.push(i);
+    }
+  }
+
+  for (let k = 0; k < srIndices.length; k++) {
+    const startIdx = srIndices[k];
+    const endIdx = srIndices[k + 1] || lines.length;
+    const itemLines = lines.slice(startIdx, endIdx);
+
+    if (itemLines.length < 5) continue;
+
+    const srNo = itemLines[0];
+    const mfg = itemLines[1];
+    const hsn_code = itemLines[2];
+    const rawProductDesc = itemLines[3];
+    const qty = parseFloat(itemLines[4]) || 0;
+
+    let batch_no = '';
+    let expiry_date = '';
+    let mrp = 0;
+    let rate = 0;
+    let gstVal = 0;
+
+    const expLineIdx = itemLines.findIndex((line, index) => index >= 5 && /\d{2}-\d{2}/.test(line));
+
+    if (expLineIdx !== -1) {
+      const expLine = itemLines[expLineIdx];
+      const parsed = decomposeShriyashConcatenatedLine(expLine);
+
+      if (parsed.expiry) expiry_date = formatExpiryDate(parsed.expiry);
+      
+      if (parsed.batch) {
+        batch_no = parsed.batch;
+      } else if (expLineIdx > 5) {
+        batch_no = itemLines[expLineIdx - 1];
+      }
+
+      if (parsed.mrp) mrp = parseFloat(parsed.mrp) || 0;
+      if (parsed.rate) rate = parseFloat(parsed.rate) || 0;
+      if (parsed.gst) gstVal = parseFloat(parsed.gst) || 0;
+
+      if (!parsed.rate) {
+        if (expLineIdx + 1 < itemLines.length) {
+          mrp = parseFloat(itemLines[expLineIdx + 1]) || 0;
+        }
+        if (expLineIdx + 2 < itemLines.length) {
+          const nextParsed = decomposeShriyashConcatenatedLine(itemLines[expLineIdx + 2]);
+          rate = parseFloat(nextParsed.rate) || 0;
+          if (nextParsed.gst) gstVal = parseFloat(nextParsed.gst) || 0;
+        }
+      }
+    }
+
+    let brandName = rawProductDesc;
+    let packSize = '';
+    
+    const packMatch = rawProductDesc.match(/(10|15|20|30|60|100|120|150)(?:\s*(?:TA|TAB|Ta|ML|Dry SYP|CAP|Syp|Cap|G|Mg)s?)?$/i);
+    if (packMatch) {
+      packSize = packMatch[0];
+      const index = rawProductDesc.lastIndexOf(packSize);
+      brandName = rawProductDesc.substring(0, index).trim();
+    }
+
+    items.push({
+      name: brandName,
+      quantity: qty,
+      rate,
+      mrp,
+      batch_no,
+      expiry_date,
+      cgst_per: gstVal / 2,
+      sgst_per: gstVal / 2,
+      cd_per: globalCdPer,
+      cd_rs: 0,
+      free_qty: 0,
+      hsn_code
+    });
+  }
+
+  return { items, invoice_no, invoice_date, total_amount, distributor_name: 'SHRIYASH DISTRIBUTORS' };
+}
+
+function decomposeShriyashConcatenatedLine(line: string): { batch: string; expiry: string; mrp: string; rate: string; gst: string; amount: string } {
+  let batch = '';
+  let expiry = '';
+  let mrp = '';
+  let rate = '';
+  let gst = '';
+  let amount = '';
+
+  const expMatch = line.match(/(\d{2}-\d{2})/);
+  if (expMatch) {
+    expiry = expMatch[1];
+    const expIndex = line.indexOf(expiry);
+    batch = line.substring(0, expIndex).trim();
+    const rest = line.substring(expIndex + expiry.length).trim();
+
+    const gstMatch = rest.match(/(5|12|18|28|0)%/);
+    if (gstMatch) {
+      gst = gstMatch[0].replace('%', '');
+      const gstIndex = rest.indexOf(gstMatch[0]);
+      const mrpRatePart = rest.substring(0, gstIndex).trim();
+      amount = rest.substring(gstIndex + gstMatch[0].length).trim();
+
+      const twoDecimals = mrpRatePart.match(/^(\d+\.\d{2})(\d+\.\d{2})$/);
+      if (twoDecimals) {
+        mrp = twoDecimals[1];
+        rate = twoDecimals[2];
+      } else {
+        rate = mrpRatePart;
+      }
+    }
+  } else {
+    const gstMatch = line.match(/(5|12|18|28|0)%/);
+    if (gstMatch) {
+      gst = gstMatch[0].replace('%', '');
+      const gstIndex = line.indexOf(gstMatch[0]);
+      rate = line.substring(0, gstIndex).trim();
+      amount = line.substring(gstIndex + gstMatch[0].length).trim();
+    }
+  }
+
+  return { batch, expiry, mrp, rate, gst, amount };
+}
+
+function parseNitinInvoice(content: string, globalCdPer: number): { items: any[]; invoice_no: string; invoice_date: string; total_amount: number } {
+  const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const items: any[] = [];
+  let invoice_no = '';
+  let invoice_date = '';
+  let total_amount = 0;
+
+  for (const line of lines) {
+    const invMatch = line.match(/Invoice No:?\s*([A-Za-z0-9\/]+)/i);
+    if (invMatch && !invoice_no) {
+      invoice_no = invMatch[1];
+    }
+    const dateMatch = line.match(/Inv Date:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+    if (dateMatch && !invoice_date) {
+      const parts = dateMatch[1].split('/');
+      invoice_date = `${parts[2]}-${parts[1]}-${parts[0]}`; // Normalize DD/MM/YYYY to YYYY-MM-DD
+    }
+  }
+
+  const totalLines = content.split('\n').map(l => l.trim()).filter(Boolean);
+  const lastNumLine = totalLines.reverse().find(l => /^\d+\.\d{2}$/.test(l));
+  if (lastNumLine) {
+    total_amount = parseFloat(lastNumLine) || 0;
+  }
+
+  for (const line of lines) {
+    if (/^\d{8}/.test(line)) {
+      const hsn = line.substring(0, 8);
+      const rest = line.substring(8);
+
+      const expMatch = rest.match(/(\d{2}\/\d{2})/);
+      if (!expMatch) continue;
+
+      const expiry = expMatch[1];
+      const expIndex = rest.indexOf(expiry);
+      const partBeforeExp = rest.substring(0, expIndex).trim();
+      let remaining = rest.substring(expIndex + expiry.length).trim();
+
+      const mfgMatch = partBeforeExp.match(/([A-Z]{3})$/);
+      const mfg = mfgMatch ? mfgMatch[1] : '';
+      const productAndPack = mfgMatch ? partBeforeExp.substring(0, partBeforeExp.length - 3).trim() : partBeforeExp;
+
+      const packMatch = productAndPack.match(/(\d+\s*(?:TAB|CAP|ML|Ta|Cap|Tab)s?)$/i);
+      const packSize = packMatch ? packMatch[1] : '';
+      const brandName = packMatch ? productAndPack.substring(0, productAndPack.length - packSize.length).trim() : productAndPack;
+
+      const sgstMatch = remaining.match(/(2\.5|6\.0|9\.0|14\.0|6|9|14|0)(\d+\.\d{2})$/);
+      if (!sgstMatch) continue;
+      const sgstPercent = parseFloat(sgstMatch[1]);
+      remaining = remaining.substring(0, remaining.length - sgstMatch[0].length).trim();
+
+      const cgstMatch = remaining.match(/(2\.5|6\.0|9\.0|14\.0|6|9|14|0)(\d+\.\d{2})$/);
+      if (!cgstMatch) continue;
+      const cgstPercent = parseFloat(cgstMatch[1]);
+      remaining = remaining.substring(0, remaining.length - cgstMatch[0].length).trim();
+
+      const { decimals, remaining: batchPart } = splitConcatenatedDecimals(remaining);
+      if (decimals.length < 5) continue;
+
+      const taxable = parseFloat(decimals[decimals.length - 1]);
+      const tdPercent = parseFloat(decimals[decimals.length - 2]);
+      const amount = parseFloat(decimals[decimals.length - 3]);
+      const rate = parseFloat(decimals[decimals.length - 4]);
+      const rawMrpStr = decimals[decimals.length - 5];
+
+      const { mrp, mrpOriginalDigits } = extractMrp(rawMrpStr, rate);
+      const qty = Math.round(amount / rate);
+
+      const rawMrpPrefix = rawMrpStr.substring(0, rawMrpStr.length - mrpOriginalDigits.length);
+      let fullBatchPart = batchPart + rawMrpPrefix;
+
+      let batch = fullBatchPart;
+      if (batch.startsWith('SOT-')) {
+        const standardMatch = batch.match(/^(SOT-\d+3B)/);
+        if (standardMatch) batch = standardMatch[1];
+      } else if (batch.startsWith('FND')) {
+        batch = batch.substring(0, 10);
+      } else if (batch.startsWith('I75')) {
+        batch = batch.substring(0, 7);
+      } else if (batch.startsWith('SIH')) {
+        batch = batch.substring(0, 8);
+      } else if (batch.startsWith('260')) {
+        batch = batch.substring(0, 8);
+      }
+
+      items.push({
+        name: brandName,
+        quantity: qty,
+        rate,
+        mrp,
+        batch_no: batch,
+        expiry_date: formatExpiryDate(expiry),
+        cgst_per: cgstPercent,
+        sgst_per: sgstPercent,
+        cd_per: globalCdPer,
+        cd_rs: 0,
+        free_qty: 0,
+        hsn_code: hsn
+      });
+    }
+  }
+
+  return { items, invoice_no, invoice_date, total_amount, distributor_name: 'NITIN AGENCY' };
+}
+
+function splitConcatenatedDecimals(str: string): { decimals: string[]; remaining: string } {
+  const decimals: string[] = [];
+  let remaining = str;
+
+  while (true) {
+    const match = remaining.match(/\.(\d{2})(\d+)\.(\d{2})$/);
+    if (match) {
+      const decPart = match[1];
+      const intPart = match[2];
+      const lastDecPart = match[3];
+      
+      decimals.unshift(intPart + '.' + lastDecPart);
+      remaining = remaining.substring(0, remaining.length - intPart.length - lastDecPart.length - 1);
+    } else {
+      const lastMatch = remaining.match(/(\d+\.\d{2})$/);
+      if (lastMatch) {
+        decimals.unshift(lastMatch[1]);
+        remaining = remaining.substring(0, remaining.length - lastMatch[1].length).trim();
+      }
+      break;
+    }
+  }
+
+  return { decimals, remaining };
+}
+
+function extractMrp(mrpStr: string, rate: number): { mrp: number; mrpOriginalDigits: string } {
+  const dotIndex = mrpStr.indexOf('.');
+  if (dotIndex === -1) return { mrp: parseFloat(mrpStr), mrpOriginalDigits: mrpStr };
+  const decimals = mrpStr.substring(dotIndex);
+  const integers = mrpStr.substring(0, dotIndex);
+
+  for (let len = 1; len <= integers.length; len++) {
+    const candidateStr = integers.substring(integers.length - len) + decimals;
+    const candidate = parseFloat(candidateStr);
+    if (candidate >= rate && candidate <= rate * 2.5) {
+      return { mrp: candidate, mrpOriginalDigits: candidateStr };
+    }
+  }
+  return { mrp: parseFloat(mrpStr), mrpOriginalDigits: mrpStr };
+}
+
+function extractTotalsFromText(text: string) {
+  const cleanLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let subtotal = 0;
+  let total_amount = 0;
+  let cgst = 0;
+  let sgst = 0;
+  let igst = 0;
+  let global_cd_per = 0;
+  let total_discount = 0;
+  let round_off = 0;
+
+  for (const line of cleanLines) {
+    // CGST
+    const cgstMatch = line.match(/(?:cgst|central gst)\s*(?:amt|amount)?\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+    if (cgstMatch && !cgst) {
+      cgst = parseFloat(cgstMatch[1]) || 0;
+    }
+    
+    // SGST
+    const sgstMatch = line.match(/(?:sgst|state gst)\s*(?:amt|amount)?\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+    if (sgstMatch && !sgst) {
+      sgst = parseFloat(sgstMatch[1]) || 0;
+    }
+
+    // IGST
+    const igstMatch = line.match(/(?:igst|integrated gst)\s*(?:amt|amount)?\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+    if (igstMatch && !igst) {
+      igst = parseFloat(igstMatch[1]) || 0;
+    }
+
+    // Subtotal
+    const subMatch = line.match(/(?:sub\s*total|taxable\s*amt|taxable\s*amount|assessable\s*value)\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+    if (subMatch && !subtotal) {
+      subtotal = parseFloat(subMatch[1]) || 0;
+    }
+
+    // Discount Total
+    const discMatch = line.match(/(?:total\s*disc|discount\s*total|total\s*discount)\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+    if (discMatch && !total_discount) {
+      total_discount = parseFloat(discMatch[1]) || 0;
+    }
+
+    // Round off
+    const roundMatch = line.match(/(?:round\s*off|rounding)\s*[:\-]?\s*([+\-]?\s*\d+(?:\.\d{2})?)/i);
+    if (roundMatch && !round_off) {
+      round_off = parseFloat(roundMatch[1].replace(/\s+/g, '')) || 0;
+    }
+
+    // Discount percentage
+    const pctMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
+    if (pctMatch && !global_cd_per) {
+      const val = parseFloat(pctMatch[1]);
+      if (val > 0 && val <= 10) {
+        global_cd_per = val;
+      }
+    }
+  }
+
+  for (let i = 0; i < cleanLines.length; i++) {
+    const line = cleanLines[i];
+    if (line.toLowerCase() === 'net' || line.toLowerCase().includes('net amount') || line.toLowerCase().includes('grand total') || line.toLowerCase().includes('net value') || line.toLowerCase().includes('final bill') || line.toLowerCase().includes('payable')) {
+      for (let j = Math.max(0, i - 3); j <= Math.min(cleanLines.length - 1, i + 3); j++) {
+        const numMatch = cleanLines[j].match(/^\s*(\d+(?:\.\d{2})?)\s*$/);
+        if (numMatch) {
+          const val = parseFloat(numMatch[1]);
+          if (val > 100) {
+            total_amount = val;
+          }
+        }
+      }
+    }
+  }
+
+  if (!total_amount) {
+    for (let i = cleanLines.length - 1; i >= 0; i--) {
+      const line = cleanLines[i];
+      const match = line.match(/(?:net|total|debit|grand|payable|final)\s*(?:amount|amt|val)?\s*[:\-]?\s*(\d+(?:\.\d{2})?)/i);
+      if (match) {
+        total_amount = parseFloat(match[1]);
+        break;
+      }
+    }
+  }
+  
+  if (!total_amount) {
+    for (let i = cleanLines.length - 1; i >= Math.max(0, cleanLines.length - 15); i--) {
+      const line = cleanLines[i];
+      const match = line.match(/^\s*(\d+(?:\.\d{2})?)\s*$/);
+      if (match) {
+        const val = parseFloat(match[1]);
+        if (val > 100) {
+          total_amount = val;
+          break;
+        }
+      }
+    }
+  }
+
+  return { subtotal, cgst, sgst, igst, total_amount, global_cd_per, total_discount, round_off };
 }
 
 export class EmailService {
@@ -84,11 +993,10 @@ export class EmailService {
    */
   public async getGmailAccessToken(): Promise<string | null> {
     try {
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       const authMethodRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_auth_method'");
       if (!authMethodRow || authMethodRow.value !== 'oauth2') {
-        await db.close();
-        return null;
+                return null;
       }
 
       const accessTokenRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_oauth_access_token'");
@@ -98,8 +1006,7 @@ export class EmailService {
       const clientSecretRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_secret'");
       
       if (!accessTokenRow || !accessTokenRow.value) {
-        await db.close();
-        return null;
+                return null;
       }
 
       const expiry = expiryRow ? parseInt(expiryRow.value, 10) : 0;
@@ -124,15 +1031,13 @@ export class EmailService {
           const newExpiry = Date.now() + (data.expires_in * 1000);
           await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_oauth_access_token', ?)", [data.access_token]);
           await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gmail_oauth_token_expiry', ?)", [newExpiry.toString()]);
-          await db.close();
-          return data.access_token;
+                    return data.access_token;
         } else {
           console.warn('Failed to refresh Gmail OAuth token:', data);
         }
       }
 
-      await db.close();
-      return accessTokenRow.value;
+            return accessTokenRow.value;
     } catch (err) {
       console.error('Error getting Gmail access token:', err);
       return null;
@@ -159,11 +1064,10 @@ export class EmailService {
       let xoauth2: string | undefined = undefined;
 
       try {
-        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
         const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-        await db.close();
-        if (userRow && userRow.value) user = userRow.value;
+                if (userRow && userRow.value) user = userRow.value;
         if (passRow && passRow.value) password = passRow.value;
       } catch (_) {}
 
@@ -213,31 +1117,39 @@ export class EmailService {
       connection = await imap.connect(config);
       await connection.openBox('INBOX');
 
-      // Fetch all email UIDs by searching ALL (which fetches attributes very quickly without bodies)
-      const results = await connection.search(['ALL'], { struct: true });
-      results.sort((a: any, b: any) => b.attributes.uid - a.attributes.uid);
+      // Fetch all email UIDs (very fast)
+      const uids: number[] = await new Promise((resolve, reject) => {
+        connection.imap.search(['ALL'], (err: any, results: number[]) => {
+          if (err) reject(err);
+          else resolve(results || []);
+        });
+      });
+
+      // Sort descending to get the newest emails first
+      uids.sort((a, b) => b - a);
       
-      // Process the latest 50 emails
-      const latestResults = results.slice(0, 50);
+      // Look at the latest 50 emails
+      const topUids = uids.slice(0, 50);
       
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       
       // Get the set of already processed UIDs
       const processedRows = await db.all('SELECT uid FROM processed_emails');
       const processedUids = new Set<number>(processedRows.map((r: any) => r.uid));
 
-      // Filter to only non-processed email results
-      const newEmailsToProcess = latestResults.filter((item: any) => !processedUids.has(item.attributes.uid));
+      // Filter to only non-processed email UIDs
+      const unprocessedUids = topUids.filter(uid => !processedUids.has(uid));
       
-      console.log(`IMAP Poller: Found ${newEmailsToProcess.length} unprocessed emails among the latest 50.`);
+      console.log(`IMAP Poller: Found ${unprocessedUids.length} unprocessed emails among the latest 50.`);
 
-      for (const item of newEmailsToProcess) {
+      for (const uid of unprocessedUids) {
         try {
           // Fetch the full message content for this specific UID
-          const fetchResult = await connection.search([['UID', item.attributes.uid]], { bodies: [''], struct: true });
+          const fetchResult = await connection.search([['UID', uid]], { bodies: [''], struct: true });
           if (!fetchResult || fetchResult.length === 0) continue;
           
-          const bodyPart = fetchResult[0].parts.find((p: any) => p.which === '');
+          const item = fetchResult[0];
+          const bodyPart = item.parts.find((p: any) => p.which === '');
           if (!bodyPart) continue;
           
           const parsed = await simpleParser(bodyPart.body);
@@ -277,12 +1189,11 @@ export class EmailService {
             });
           }
         } catch (emailError) {
-          console.error(`Error processing email UID ${item.attributes.uid}:`, emailError);
+          console.error(`Error processing email UID ${uid}:`, emailError);
         }
       }
 
-      await db.close();
-
+      
       // Background sync and clean attachments for the latest emails
       try {
         await this.syncAndCleanAttachments();
@@ -386,13 +1297,12 @@ export class EmailService {
    */
   private async logEmailReceived(email: ProcessedEmail): Promise<void> {
     try {
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       await db.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_RECEIVED', `From: ${email.from}, Subject: ${email.subject}`]
       );
-      await db.close();
-    } catch (error) {
+          } catch (error) {
       console.error('Failed to log email receipt:', error);
     }
   }
@@ -415,7 +1325,7 @@ export class EmailService {
   /**
    * Extracts order info from email
    */
-  private extractOrderInfo(email: ProcessedEmail) {
+  public extractOrderInfo(email: ProcessedEmail) {
     const subject = email.subject;
     const body = email.body;
 
@@ -499,10 +1409,9 @@ export class EmailService {
   private async notifyDeliveryBoys(orderInfo: any): Promise<void> {
     let db = null;
     try {
-      db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      db = await dbManager.getConnection();
       const activeBoys = await db.all('SELECT * FROM delivery_boys WHERE is_active = 1');
-      await db.close();
-
+      
       if (activeBoys.length === 0) {
         console.log('No active delivery boys found to notify.');
         return;
@@ -570,13 +1479,12 @@ export class EmailService {
         const logMsg = `${orderInfo.distributorName} - ${orderInfo.invoiceNumber} ${orderInfo.timeStr}`;
 
         // Log as potential order for follow-up
-        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ORDER_DETECTED', logMsg]
         );
-        await db.close();
-        
+                
         // Notify delivery boys
         await this.notifyDeliveryBoys(orderInfo);
 
@@ -593,13 +1501,12 @@ export class EmailService {
 
       if (isInquiryRelated) {
         // Log as potential inquiry
-        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_INQUIRY_DETECTED', `Potential inquiry detected: ${email.subject}`]
         );
-        await db.close();
-
+        
         // Implement auto-response or routing logic
         await this.sendAutoResponse(email);
         console.log('Potential inquiry detected and auto-response sent:', email.subject);
@@ -622,13 +1529,12 @@ export class EmailService {
         // Check if attachment is a medicine list (CSV, Excel, etc.)
         if (attachment.filename.match(/\.(csv|xlsx?|ods)$/i)) {
           // Log as potential medicine list for processing
-          const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+          const db = await dbManager.getConnection();
           await db.run(
             'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
             ['EMAIL_ATTACHMENT_MEDICINE_LIST', `Medicine list attachment: ${attachment.filename}`]
           );
-          await db.close();
-
+          
           // Implement actual attachment processing (parse CSV/XLS for medicine orders)
           await this.processMedicineListAttachment(attachment);
           console.log('Medicine list attachment processed:', attachment.filename);
@@ -655,7 +1561,7 @@ export class EmailService {
   private async processMedicineOrder(email: ProcessedEmail): Promise<void> {
     try {
       const orderInfo = this.extractOrderInfo(email);
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       
       // Log order processing start
       await db.run(
@@ -715,18 +1621,16 @@ export class EmailService {
         ['EMAIL_ORDER_COMPLETED', `Successfully added ${orderInfo.medicines.length} products to inventory from ${orderInfo.distributorName}`]
       );
       
-      await db.close();
-      console.log('Medicine order processed & stock added:', orderInfo.invoiceNumber);
+            console.log('Medicine order processed & stock added:', orderInfo.invoiceNumber);
     } catch (error) {
       console.error('Error processing medicine order:', error);
       try {
-        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ORDER_ERROR', `Error processing medicine order: ${email.subject} - ${(error as any).message}`]
         );
-        await db.close();
-      } catch (logError) {
+              } catch (logError) {
         console.error('Failed to log order processing error:', logError);
       }
     }
@@ -743,13 +1647,12 @@ export class EmailService {
       }
 
       // Log that we're sending an auto-response
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       await db.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_AUTO_RESPONSE_SENDING', `Sending auto-response to: ${email.from}`]
       );
-      await db.close();
-
+      
       // Send the auto-response
       const responseSent = await this.sendEmail({
         to: email.from,
@@ -759,35 +1662,32 @@ export class EmailService {
 
       if (responseSent) {
         // Log successful auto-response
-        const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db2 = await dbManager.getConnection();
         await db2.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_AUTO_RESPONSE_SENT', `Auto-response sent to: ${email.from}`]
         );
-        await db2.close();
-        console.log('Auto-response sent successfully to:', email.from);
+                console.log('Auto-response sent successfully to:', email.from);
       } else {
         // Log failed auto-response
-        const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db2 = await dbManager.getConnection();
         await db2.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_AUTO_RESPONSE_FAILED', `Failed to send auto-response to: ${email.from}`]
         );
-        await db2.close();
-        console.error('Failed to send auto-response to:', email.from);
+                console.error('Failed to send auto-response to:', email.from);
       }
     } catch (error) {
       console.error('Error sending auto-response:', error);
 
       // Log the error
       try {
-        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_AUTO_RESPONSE_ERROR', `Error sending auto-response to: ${email.from} - ${(error as any).message}`]
         );
-        await db.close();
-      } catch (logError) {
+              } catch (logError) {
         console.error('Failed to log auto-response error:', logError);
       }
     }
@@ -803,22 +1703,20 @@ export class EmailService {
   }): Promise<void> {
     try {
       // Log that we're processing the attachment
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       await db.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_ATTACHMENT_PROCESSING', `Processing medicine list attachment: ${attachment.filename}`]
       );
-      await db.close();
-
+      
       // For now, we'll just log that we processed it
       // In a real implementation, this would parse the CSV/XLS and update inventory or create orders
-      const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db2 = await dbManager.getConnection();
       await db2.run(
         'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
         ['EMAIL_ATTACHMENT_PROCESSED', `Medicine list attachment processed: ${attachment.filename}`]
       );
-      await db2.close();
-
+      
       // TODO: Implement actual attachment processing logic here
       // This could involve:
       // - Parsing CSV files for medicine lists
@@ -831,13 +1729,12 @@ export class EmailService {
 
       // Log the error
       try {
-        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         await db.run(
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ATTACHMENT_ERROR', `Error processing medicine list attachment: ${attachment.filename} - ${(error as any).message}`]
         );
-        await db.close();
-      } catch (logError) {
+              } catch (logError) {
         console.error('Failed to log attachment processing error:', logError);
       }
     }
@@ -852,6 +1749,19 @@ export class EmailService {
   ): Promise<{
     success: boolean;
     count: number;
+    distributor_name?: string;
+    distributor_id?: number;
+    invoice_no?: string;
+    invoice_date?: string;
+    total_amount?: number;
+    global_cd_per?: number;
+    subtotal?: number;
+    cgst?: number;
+    sgst?: number;
+    igst?: number;
+    needs_review?: boolean;
+    mapping_config?: Record<string, string>;
+    headers?: string[];
     items: Array<{
       name: string;
       quantity: number;
@@ -860,106 +1770,677 @@ export class EmailService {
       batch_no?: string;
       expiry_date?: string;
       free_qty?: number;
+      cgst_per?: number;
+      sgst_per?: number;
+      cd_per?: number;
+      cd_rs?: number;
     }>;
   }> {
     try {
-      let content = '';
-      const isPdf = filePath.toLowerCase().endsWith('.pdf');
+      const nameLower = filePath.toLowerCase();
       
-      if (isPdf) {
-        const { default: pdfParse } = await import('pdf-parse');
-        const fileBuffer = fs.readFileSync(filePath);
-        const pdfData = await pdfParse(fileBuffer);
-        content = pdfData.text || '';
-      } else {
-        content = fs.readFileSync(filePath, 'utf-8');
+      // ZIP files support
+      if (nameLower.endsWith('.zip')) {
+        const { default: AdmZip } = await import('adm-zip');
+        const zip = new AdmZip(filePath);
+        const zipEntries = zip.getEntries();
+        
+        const validEntry = zipEntries.find(entry => {
+          if (entry.isDirectory) return false;
+          const entryName = entry.entryName.toLowerCase();
+          return entryName.endsWith('.csv') ||
+                 entryName.endsWith('.xlsx') ||
+                 entryName.endsWith('.xls') ||
+                 entryName.endsWith('.pdf') ||
+                 entryName.endsWith('.dav') ||
+                 entryName.endsWith('.dac') ||
+                 /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(entryName);
+        });
+
+        if (validEntry) {
+          const uploadsDir = getUploadsDir();
+          const tempExt = path.extname(validEntry.entryName);
+          const tempChildPath = path.join(uploadsDir, `zip-extracted-${Date.now()}${tempExt}`);
+          fs.writeFileSync(tempChildPath, validEntry.getData());
+          
+          try {
+            const result = await this.parseAndImportAttachment(tempChildPath, importData);
+            try { fs.unlinkSync(tempChildPath); } catch {}
+            return result;
+          } catch (err) {
+            try { fs.unlinkSync(tempChildPath); } catch {}
+            throw err;
+          }
+        } else {
+          return { success: false, count: 0, items: [] };
+        }
+      }
+      
+      let distributor_name = 'Unknown Distributor';
+      let distributorId: number | undefined;
+      let invoice_no = '';
+      let invoice_date = '';
+      let global_cd_per = 0;
+      let total_amount = 0;
+      let subtotal = 0;
+      let cgst = 0;
+      let sgst = 0;
+      let igst = 0;
+      let items: any[] = [];
+      let mappingConfig: Record<string, string> = {};
+      let rawHeaders: string[] = [];
+      let needsReview = false;
+
+      // 1. Database connection & Distributor/Profile Lookup
+      const safeBasename = path.basename(filePath);
+      const db = await dbManager.getConnection();
+      
+      let distributor: any = null;
+      let emailAttachment = await db.get(
+        'SELECT ea.uid, e.from_addr, e.subject, e.distributor_name FROM email_attachments ea JOIN emails e ON ea.uid = e.uid WHERE ea.local_path = ? OR ea.filename = ?',
+        [filePath, safeBasename]
+      );
+
+      if (emailAttachment) {
+        const fromEmailMatch = emailAttachment.from_addr.match(/<([^>]+)>/);
+        const senderEmail = fromEmailMatch ? fromEmailMatch[1] : emailAttachment.from_addr;
+        distributor = await db.get(
+          'SELECT * FROM distributors WHERE LOWER(email) = ? OR LOWER(name) = ? OR LOWER(name) LIKE ?',
+          [senderEmail.toLowerCase(), emailAttachment.distributor_name?.toLowerCase(), `%${emailAttachment.distributor_name?.toLowerCase()}%`]
+        );
       }
 
-      const lines = content.split(/\r?\n|\n/);
-      const items: Array<{
-        name: string;
-        quantity: number;
-        rate?: number;
-        mrp?: number;
-        batch_no?: string;
-        expiry_date?: string;
-        free_qty?: number;
-      }> = [];
+      let historicalFiles: any[] = [];
+      let lpProfile: any = null;
+      if (distributor) {
+        distributorId = distributor.id;
+        distributor_name = distributor.name;
+        lpProfile = await db.get('SELECT file_mapping_rules FROM distributor_learning_profiles WHERE distributor_id = ?', [distributor.id]);
+        historicalFiles = await db.all('SELECT file_headers, mapping_config FROM distributor_historical_files WHERE distributor_id = ? ORDER BY id DESC', [distributor.id]);
+      } else {
+        historicalFiles = await db.all('SELECT distributor_id, file_headers, mapping_config FROM distributor_historical_files ORDER BY id DESC');
+      }
 
-      // Determine if CSV
-      const isCsv = filePath.endsWith('.csv');
+      
+      // 2. Parse File Contents
+      if (nameLower.endsWith('.csv') || nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls')) {
+        let records: any[] = [];
+        let isRecordType = false;
+        let recordData: any = null;
 
-      if (isCsv && lines.length > 0) {
-        // Simple CSV parser
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('medicine') || h.includes('item') || h.includes('product') || h.includes('desc'));
-        const qtyIdx = headers.findIndex(h => h.includes('qty') || h.includes('quantity') || h.includes('units') || h.includes('count'));
-        const rateIdx = headers.findIndex(h => h.includes('rate') || h.includes('price') || h.includes('cost') || h.includes('purchase'));
-        const mrpIdx = headers.findIndex(h => h.includes('mrp'));
-        const batchIdx = headers.findIndex(h => h.includes('batch') || h.includes('lot'));
-        const expiryIdx = headers.findIndex(h => h.includes('expiry') || h.includes('exp'));
-        const freeIdx = headers.findIndex(h => h.includes('free'));
-
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          const cols = line.split(',').map(c => c.trim());
-          const name = nameIdx !== -1 ? cols[nameIdx] : cols[0];
-          const qtyStr = qtyIdx !== -1 ? cols[qtyIdx] : cols[1];
-          const qty = parseInt(qtyStr) || 10;
-
-          const rateStr = rateIdx !== -1 ? cols[rateIdx] : '0';
-          const rate = parseFloat(rateStr) || 0;
-
-          const mrpStr = mrpIdx !== -1 ? cols[mrpIdx] : '0';
-          const mrp = parseFloat(mrpStr) || 0;
-
-          const batch_no = batchIdx !== -1 ? cols[batchIdx] : '';
-          const expiry_date = expiryIdx !== -1 ? cols[expiryIdx] : '';
-
-          const freeStr = freeIdx !== -1 ? cols[freeIdx] : '0';
-          const free_qty = parseInt(freeStr) || 0;
-
-          if (name && isNaN(Number(name))) {
-            items.push({ name, quantity: qty, rate, mrp, batch_no, expiry_date, free_qty });
+        if (nameLower.endsWith('.csv')) {
+          const fileBuffer = fs.readFileSync(filePath);
+          const textContent = fileBuffer.toString('utf8');
+          const firstLine = textContent.split('\n')[0]?.trim() || '';
+          const firstField = firstLine.split(',')[0]?.trim();
+          
+          if (firstField === 'H') {
+            isRecordType = true;
+            const csvRecords = parse(fileBuffer, { columns: false, skip_empty_lines: true, relax_column_count: true });
+            recordData = parseRecordTypeInvoice(csvRecords, filePath);
+            distributor_name = recordData.distributor_name;
+            invoice_no = recordData.invoice_no;
+            invoice_date = recordData.invoice_date;
+            total_amount = recordData.total_amount;
+            items = recordData.items;
+          } else {
+            records = parse(fileBuffer, { columns: true, skip_empty_lines: true, relax_column_count: true });
+          }
+        } else {
+          const fileBuffer = fs.readFileSync(filePath);
+          const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+          const sheetName = workbook.SheetNames[0];
+          if (sheetName) {
+            const sheet = workbook.Sheets[sheetName];
+            const sheetRows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            if (sheetRows.length > 0 && sheetRows[0][0]?.toString().trim() === 'H') {
+              isRecordType = true;
+              const stringRecords = sheetRows.map(row => row.map(cell => cell !== null && cell !== undefined ? cell.toString() : ''));
+              recordData = parseRecordTypeInvoice(stringRecords, filePath);
+              distributor_name = recordData.distributor_name;
+              invoice_no = recordData.invoice_no;
+              invoice_date = recordData.invoice_date;
+              total_amount = recordData.total_amount;
+              items = recordData.items;
+            } else {
+              records = XLSX.utils.sheet_to_json(sheet);
+            }
           }
         }
-      } else {
-        // Plain text parsing line by line (TXT or PDF text extraction)
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const qtyMatch = trimmed.match(/(?:(?:qty|quantity|x|count)\s*[:\-\s]*\s*(\d+))|(\d+)\s*(?:x|units|pcs)/i);
-          if (qtyMatch) {
-            const qty = parseInt(qtyMatch[1] || qtyMatch[2]) || 10;
-            let name = trimmed.replace(qtyMatch[0], '').replace(/[:\-\t\r\n]/g, ' ').trim();
-            if (name && name.length > 3 && isNaN(Number(name))) {
-              items.push({ name, quantity: qty });
+
+        if (!isRecordType) {
+          if (records.length > 0) {
+            rawHeaders = Object.keys(records[0]);
+          }
+
+          // Layout matching using Jaccard Similarity against historical files
+          let bestMatchFile = null;
+          let highestSim = 0;
+          for (const hf of historicalFiles) {
+            try {
+              const histHeaders = JSON.parse(hf.file_headers);
+              const sim = getJaccardSimilarity(rawHeaders, histHeaders);
+              if (sim > highestSim) {
+                highestSim = sim;
+                bestMatchFile = hf;
+              }
+            } catch (e) {}
+          }
+
+          if (highestSim >= 0.8 && bestMatchFile) {
+            mappingConfig = JSON.parse(bestMatchFile.mapping_config);
+            needsReview = false;
+            if (!distributor && bestMatchFile.distributor_id) {
+              const matchedD = await db.get('SELECT * FROM distributors WHERE id = ?', [bestMatchFile.distributor_id]);
+              if (matchedD) {
+                distributorId = matchedD.id;
+                distributor_name = matchedD.name;
+              }
+            }
+          } else if (highestSim >= 0.5 && bestMatchFile) {
+            mappingConfig = JSON.parse(bestMatchFile.mapping_config);
+            needsReview = true;
+            if (!distributor && bestMatchFile.distributor_id) {
+              const matchedD = await db.get('SELECT * FROM distributors WHERE id = ?', [bestMatchFile.distributor_id]);
+              if (matchedD) {
+                distributorId = matchedD.id;
+                distributor_name = matchedD.name;
+              }
             }
           } else {
-            // Match space-separated line items (e.g. "Paracetamol 500mg 10 12.50")
-            const tokens = trimmed.split(/\s+/);
-            if (tokens.length >= 3) {
-              const lastVal = parseFloat(tokens[tokens.length - 1]);
-              const prevVal = parseInt(tokens[tokens.length - 2]);
-              if (!isNaN(lastVal) && !isNaN(prevVal) && prevVal > 0 && lastVal > 0) {
-                const namePart = tokens.slice(0, tokens.length - 2).join(' ');
-                if (namePart && namePart.length > 3 && isNaN(Number(namePart))) {
-                  items.push({ name: namePart, quantity: prevVal, rate: lastVal });
+            // If no distributor layout is matched, fall back to global / default auto-suggest mapping
+            const activeDb = await dbManager.getConnection();
+            mappingConfig = await getSuggestedMappingFromHeaders(rawHeaders, activeDb);
+            needsReview = true;
+          }
+
+          mappingConfig = normalizeMapping(mappingConfig);
+          const headerMap = mappingConfig;
+
+          if (records.length > 0) {
+            const r0 = records[0];
+            distributor_name = r0[headerMap.distributor_name] || r0['name'] || r0['distributor'] || r0['party_name'] || distributor_name || '';
+            invoice_no = r0[headerMap.invoice_no] || r0['vou_no'] || r0['invoice_no'] || r0['bill_no'] || '';
+            const rawDate = r0[headerMap.invoice_date] || r0['tr_date'] || r0['date'] || r0['invoice_date'] || '';
+            invoice_date = normalizeDateToYYYYMMDD(rawDate);
+            global_cd_per = parseFloat(r0[headerMap.global_cd_per] || r0['disc_per'] || r0['cd_per'] || r0['global_cd_per'] || '0') || 0;
+            total_amount = parseFloat(r0[headerMap.total_amount] || r0['debit'] || r0['net_amt'] || r0['total_amount'] || r0['grand_total'] || '0') || 0;
+          }
+
+          items = records.map((r: any) => {
+            const cgstVal = parseFloat(r[headerMap.cgst] || r['sgst'] || '0');
+            const sgstVal = parseFloat(r[headerMap.sgst] || r['cgst'] || '0');
+            const igstVal = parseFloat(r['igst'] || '0');
+            const cgst_per = cgstVal || (igstVal / 2) || 0;
+            const sgst_per = sgstVal || (igstVal / 2) || 0;
+            const rowCdPer = parseFloat(r[headerMap.cd_per] || r['discount'] || r['disc_per'] || r['cd_per'] || '0') || 0;
+            const rowCdRs = parseFloat(r[headerMap.cd_rs] || r['disc_amt'] || r['cd_amt'] || r['cd_value'] || '0') || 0;
+            const free_qty = parseInt(r[headerMap.free_qty] || r['free'] || r['free_qty'] || r['Free'] || '0', 10) || 0;
+
+            return {
+              name: r[headerMap.name] || r['prod_name'] || r['product_name'] || r['medicine_name'] || r['Medicine Name'] || r['Product'] || r['Item'] || r['item'] || r['Name'] || r['name'] || 'Unknown CSV Item',
+              quantity: parseInt(r[headerMap.quantity] || r['Qty'] || r['Quantity'] || r['Pack'] || r['qty'] || '0', 10) || 0,
+              rate: parseFloat(r[headerMap.rate] || r['Rate'] || r['Price'] || r['rate'] || r['price'] || '0') || 0,
+              mrp: parseFloat(r[headerMap.mrp] || r['MRP'] || r['mrp'] || '0') || 0,
+              batch_no: r[headerMap.batch_no] || r['pr_batchno'] || r['batch_no'] || r['Batch'] || '',
+              expiry_date: formatExpiryDate(r[headerMap.expiry_date] || r['expiry'] || r['expiry_date'] || r['Expiry'] || '01/12'),
+              free_qty,
+              cgst_per,
+              sgst_per,
+              cd_per: rowCdPer,
+              cd_rs: rowCdRs
+            };
+          }).filter((item: any) => item.name !== 'Unknown CSV Item' && item.name !== distributor_name);
+        }
+
+      } else if (nameLower.endsWith('.dav') || nameLower.endsWith('.dac')) {
+        const text = fs.readFileSync(filePath, 'utf8');
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        
+        const headerLine = lines.find(l => l.startsWith('H,'));
+        if (headerLine) {
+          const parts = headerLine.split(',');
+          if (parts[19]) distributor_name = parts[19].trim();
+          if (parts[18]) invoice_no = parts[18].trim();
+          if (parts[16]) total_amount = parseFloat(parts[16]) || 0;
+          
+          const rawDate = parts[3];
+          if (rawDate && rawDate.length === 8) {
+            const d = rawDate.substring(0, 2);
+            const m = rawDate.substring(2, 4);
+            const y = rawDate.substring(4, 8);
+            invoice_date = `${y}-${m}-${d}`;
+          }
+        }
+        
+        for (const line of lines) {
+          const parts = line.split(',');
+          if (parts.length < 10) continue;
+          if (parts[0] !== 'I' && parts[0] !== 'T') continue;
+          
+          const offset = parts[0] === 'T' ? 1 : 0;
+          let name = parts[4 + offset] || '';
+          const pack = parts[5 + offset] || '';
+          if (pack.trim() && name.trim()) {
+            name = name.trim() + ' ' + pack.trim();
+          }
+          
+          if (name && name.trim()) {
+            const qty = parseInt(parts[19 + offset], 10) || 0;
+            const free_qty = parseInt(parts[14 + offset], 10) || 0;
+            const rate = parseFloat(parts[13 + offset]) || 0;
+            const mrp = parseFloat(parts[15 + offset]) || 0;
+            const batch = parts[7 + offset] || '';
+            const rawExp = parts[8 + offset] || '';
+            let expiry = formatExpiryDate(rawExp);
+            
+            const gst = parseFloat(parts[11 + offset]) || 0;
+            
+            items.push({
+              name: name.trim(),
+              quantity: qty,
+              free_qty: free_qty,
+              rate: rate,
+              mrp: mrp,
+              batch_no: batch,
+              expiry_date: expiry,
+              cgst_per: gst / 2,
+              sgst_per: gst / 2,
+              cd_per: 0,
+              cd_rs: 0
+            });
+          }
+        }
+
+      } else {
+        // PDF, Image, or Plain text parsing line by line
+        let content = '';
+        const isPdf = nameLower.endsWith('.pdf');
+        const isImage = /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(nameLower);
+        
+        if (isPdf) {
+          const { default: pdfParse } = await import('pdf-parse');
+          const fileBuffer = fs.readFileSync(filePath);
+          const pdfData = await pdfParse(fileBuffer);
+          content = pdfData.text || '';
+        } else if (isImage) {
+          const fileBuffer = fs.readFileSync(filePath);
+          const ocrResult = await aiCameraService.processImage(fileBuffer, true);
+          content = ocrResult?.text || '';
+        } else {
+          content = fs.readFileSync(filePath, 'utf-8');
+        }
+
+        // Helper function for PDF OCR fallback
+        const runPdfOcrFallback = async () => {
+          console.log('[emailService] PDF jumbled or scanned. Falling back to page-by-page OCR rendering.');
+          const fileBuffer = fs.readFileSync(filePath);
+          try {
+            const canvasPkg = await import('@napi-rs/canvas');
+            const { createCanvas, Canvas, Image } = canvasPkg;
+            (globalThis as any).Canvas = Canvas;
+            (globalThis as any).Image = Image;
+            
+            class NodeCanvasFactory {
+              create(width: number, height: number) {
+                const canvas = createCanvas(width, height);
+                return {
+                  canvas,
+                  context: canvas.getContext('2d'),
+                };
+              }
+              reset(canvasAndContext: any, width: number, height: number) {
+                canvasAndContext.canvas.width = width;
+                canvasAndContext.canvas.height = height;
+              }
+              destroy(canvasAndContext: any) {
+                canvasAndContext.canvas.width = 0;
+                canvasAndContext.canvas.height = 0;
+                canvasAndContext.canvas = null;
+                canvasAndContext.context = null;
+              }
+            }
+            const canvasFactory = new NodeCanvasFactory();
+
+            const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+            const pdfDoc = await pdfjsLib.getDocument({
+              data: new Uint8Array(fileBuffer),
+              CanvasFactory: canvasFactory
+            } as any).promise;
+            const numPages = pdfDoc.numPages;
+            let ocrText = '';
+            
+            const { Jimp } = await import('jimp');
+            
+            for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+              const page = await pdfDoc.getPage(pageNum);
+              const viewport = page.getViewport({ scale: 2.0 });
+              const width = Math.floor(viewport.width);
+              const height = Math.floor(viewport.height);
+              
+              let pageBuffer: Buffer;
+              try {
+                const canvas = createCanvas(width, height);
+                const ctx = canvas.getContext('2d') as any;
+                await page.render({ canvasContext: ctx, viewport, canvasFactory } as any).promise;
+                pageBuffer = canvas.toBuffer('image/png');
+              } catch (err) {
+                console.error('[emailService PDF page render error]:', err);
+                const image = new Jimp({ width, height, color: 0xFFFFFFFF });
+                pageBuffer = await image.getBuffer('image/png');
+              }
+              
+              const pageOcr = await aiCameraService.extractTextFromImage(pageBuffer);
+              if (pageOcr?.text) {
+                ocrText += pageOcr.text + '\n';
+              }
+            }
+            if (ocrText.trim()) {
+              content = ocrText;
+            }
+          } catch (ocrErr) {
+            console.error('[emailService] OCR PDF rendering failed, attempting direct image OCR:', ocrErr);
+            try {
+              const directOcr = await aiCameraService.processImage(fileBuffer, true);
+              if (directOcr?.text) content = directOcr.text;
+            } catch (err2) {
+              console.error('[emailService] Direct image OCR also failed:', err2);
+            }
+          }
+        };
+
+        if (isPdf && (!content || content.replace(/\s+/g, '').trim().length < 50)) {
+          await runPdfOcrFallback();
+        }
+
+        const parseItemsFromText = () => {
+          items = [];
+          
+          // Apply learned regex layout patterns if profile exists
+          if (distributor && lpProfile && lpProfile.file_mapping_rules) {
+            try {
+              const rules = JSON.parse(lpProfile.file_mapping_rules);
+              if (rules.invoice_no_prefix) {
+                const index = content.indexOf(rules.invoice_no_prefix);
+                if (index !== -1) {
+                  const suffix = content.substring(index + rules.invoice_no_prefix.length).trim();
+                  const match = suffix.match(/^([a-zA-Z0-9\-]+)/);
+                  if (match) invoice_no = match[1];
+                }
+              }
+              if (rules.invoice_date_prefix) {
+                const index = content.indexOf(rules.invoice_date_prefix);
+                if (index !== -1) {
+                  const suffix = content.substring(index + rules.invoice_date_prefix.length).trim();
+                  const match = suffix.match(/^(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+                  if (match) invoice_date = normalizeDateToYYYYMMDD(match[1]);
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to apply learning profile text prefixes:', e);
+            }
+          }
+
+          const cleanLines = content.split('\n').map(l => l.trim()).filter(Boolean);
+
+          for (let i = 0; i < Math.min(cleanLines.length, 10); i++) {
+            const line = cleanLines[i];
+            if (line.toLowerCase().includes('tax invoice')) {
+              if (cleanLines[i + 1]) {
+                distributor_name = cleanLines[i + 1];
+                break;
+              }
+            }
+          }
+          if (!distributor_name && cleanLines.length > 1) {
+            distributor_name = cleanLines[1];
+          }
+          if (!distributor_name) {
+            distributor_name = 'Unknown Distributor';
+          }
+
+          if (!invoice_date) {
+            for (let i = 0; i < cleanLines.length; i++) {
+              const line = cleanLines[i];
+              if (line.toLowerCase().includes('date:')) {
+                const nextLine = cleanLines[i + 1];
+                if (nextLine && /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/.test(nextLine)) {
+                  invoice_date = normalizeDateToYYYYMMDD(nextLine);
+                  break;
                 }
               }
             }
           }
+          if (!invoice_date) {
+            for (const line of cleanLines) {
+              const dateMatch = line.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+              if (dateMatch) {
+                invoice_date = normalizeDateToYYYYMMDD(line);
+                break;
+              }
+            }
+          }
+
+          if (!invoice_no) {
+            for (const line of cleanLines) {
+              const invMatch = line.match(/(?:inv(?:oice)?|bill|vou(?:cher)?)\s*(?:no|num)?\.?\s*[:\-]?\s*([a-zA-Z0-9\-]+)/i);
+              if (invMatch && invMatch[1] && invMatch[1].length > 2) {
+                invoice_no = invMatch[1];
+                break;
+              }
+              const csbMatch = line.match(/\d+[A-Z]+\d+/);
+              if (csbMatch) {
+                invoice_no = csbMatch[0];
+                break;
+              }
+            }
+          }
+          if (!invoice_no) {
+            const filename = path.basename(filePath);
+            const fileDigits = filename.replace(/\.[^/.]+$/, "").match(/\d+/);
+            if (fileDigits) {
+              invoice_no = fileDigits[0];
+            }
+          }
+
+          const totals = extractTotalsFromText(content);
+          global_cd_per = totals.global_cd_per;
+          total_amount = totals.total_amount;
+          subtotal = totals.subtotal;
+          cgst = totals.cgst;
+          sgst = totals.sgst;
+          igst = totals.igst;
+
+          items = parseItemsFromTextLines(content, global_cd_per);
+
+          if (items.length === 0) {
+            if (content.includes('SHRIYASH DISTRIBUTORS') || content.includes('SDC/')) {
+              const customRes = parseShriyashInvoice(content, global_cd_per);
+              items = customRes.items;
+              if (customRes.invoice_no) invoice_no = customRes.invoice_no;
+              if (customRes.invoice_date) invoice_date = customRes.invoice_date;
+              if (customRes.total_amount) total_amount = customRes.total_amount;
+              if (customRes.distributor_name) distributor_name = customRes.distributor_name;
+            } else if (content.includes('NITIN AGENCY') || content.includes('NA/')) {
+              const customRes = parseNitinInvoice(content, global_cd_per);
+              items = customRes.items;
+              if (customRes.invoice_no) invoice_no = customRes.invoice_no;
+              if (customRes.invoice_date) invoice_date = customRes.invoice_date;
+              if (customRes.total_amount) total_amount = customRes.total_amount;
+              if (customRes.distributor_name) distributor_name = customRes.distributor_name;
+            }
+          }
+
+          if (items.length === 0) {
+            for (let i = 0; i < cleanLines.length; i++) {
+              const line = cleanLines[i];
+              if (/^\d+[a-zA-Z]+$/.test(line) && i >= 7) {
+                const qtyStr = cleanLines[i - 1];
+                const qty = parseInt(qtyStr, 10);
+                const pricesLine = cleanLines[i - 2];
+                const pricesTokens = pricesLine ? pricesLine.split(/\s+/) : [];
+                const batchExpHsnLine = cleanLines[i - 3];
+                const gstPerLine = cleanLines[i - 5];
+                const productNameLine = cleanLines[i - 7];
+                
+                if (!isNaN(qty) && qty > 0 && pricesTokens.length >= 3 && productNameLine && productNameLine.length > 2) {
+                  const rate = parseFloat(pricesTokens[0]);
+                  const mrp = parseFloat(pricesTokens[2]);
+                  
+                  let batch_no = '';
+                  let expiry_date = '01/12';
+                  
+                  if (batchExpHsnLine && batchExpHsnLine.length > 9) {
+                    expiry_date = formatExpiryDate(batchExpHsnLine.substring(batchExpHsnLine.length - 5));
+                    batch_no = batchExpHsnLine.substring(4, batchExpHsnLine.length - 5);
+                  }
+                  
+                  let cgst_per = 0;
+                  let sgst_per = 0;
+                  if (gstPerLine) {
+                    const totalGst = parseFloat(gstPerLine);
+                    if (!isNaN(totalGst)) {
+                      cgst_per = totalGst / 2;
+                      sgst_per = totalGst / 2;
+                    }
+                  }
+                  
+                  if (!isNaN(rate)) {
+                    items.push({
+                      name: productNameLine,
+                      quantity: qty,
+                      rate,
+                      mrp: !isNaN(mrp) ? mrp : 0,
+                      batch_no: batch_no,
+                      expiry_date: expiry_date,
+                      cgst_per,
+                      sgst_per,
+                      cd_per: global_cd_per,
+                      cd_rs: 0,
+                      free_qty: 0
+                    });
+                  }
+                }
+              }
+            }
+
+            if (items.length === 0) {
+              const lines = content.split('\n');
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                
+                const match = trimmed.match(/^([a-zA-Z0-9\s().&/\-]+)\s+(\d+)\s+(\d+(?:\.\d+)?)$/);
+                if (match) {
+                  items.push({
+                    name: match[1].trim(),
+                    quantity: parseInt(match[2], 10),
+                    rate: parseFloat(match[3]),
+                    mrp: parseFloat(match[3]),
+                    batch_no: '',
+                    expiry_date: '01/12',
+                    cgst_per: 0,
+                    sgst_per: 0,
+                    cd_per: global_cd_per,
+                    cd_rs: 0,
+                    free_qty: 0
+                  });
+                }
+              }
+            }
+            
+            if (items.length === 0) {
+              const lines = content.split('\n');
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.length > 5 && /\d+/.test(trimmed)) {
+                  const tokens = trimmed.split(/\s+/);
+                  if (tokens.length >= 3) {
+                    const priceVal = parseFloat(tokens[tokens.length - 1]);
+                    const qtyVal = parseInt(tokens[tokens.length - 2], 10);
+                    
+                    if (!isNaN(priceVal) && !isNaN(qtyVal) && priceVal > 0 && qtyVal > 0) {
+                      const namePart = tokens.slice(0, tokens.length - 2).join(' ');
+                      if (namePart.length > 2) {
+                        items.push({
+                          name: namePart,
+                          quantity: qtyVal,
+                          rate: priceVal,
+                          mrp: priceVal,
+                          batch_no: '',
+                          expiry_date: '01/12',
+                          cgst_per: 0,
+                          sgst_per: 0,
+                          cd_per: global_cd_per,
+                          cd_rs: 0,
+                          free_qty: 0
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        };
+
+        parseItemsFromText();
+
+        // If direct text parsing yielded 0 items, fall back to page-by-page OCR rendering for jumbled/scanned layout
+        if (isPdf && items.length === 0) {
+          await runPdfOcrFallback();
+          parseItemsFromText();
+        }
+      }
+
+      // 3. Match Distributor from DB using the parsed distributor name (if not already found via email metadata)
+      if (!distributorId && distributor_name && distributor_name !== 'Unknown Distributor') {
+        const cleanedName = distributor_name.trim().toLowerCase();
+        
+        let matchedDist = await db.get('SELECT * FROM distributors WHERE LOWER(name) = ?', [cleanedName]);
+        if (!matchedDist) {
+          matchedDist = await db.get(
+            'SELECT * FROM distributors WHERE ? LIKE "%" || LOWER(name) || "%" OR LOWER(name) LIKE ?',
+            [cleanedName, `%${cleanedName}%`]
+          );
+        }
+        
+        if (matchedDist) {
+          distributorId = matchedDist.id;
+          distributor_name = matchedDist.name;
+        } else {
+          distributorId = undefined;
+        }
+      } else if (!distributorId) {
+        if (distributor_name === 'Unknown Distributor') {
+          distributor_name = '';
         }
       }
 
       if (items.length === 0) {
-        return { success: false, count: 0, items: [] };
+        return {
+          success: true,
+          count: 0,
+          distributor_name: distributor_name || '',
+          distributor_id: distributorId,
+          invoice_no: invoice_no || '',
+          invoice_date: invoice_date || '',
+          total_amount: total_amount || 0,
+          global_cd_per: global_cd_per || 0,
+          subtotal: subtotal || 0,
+          cgst: cgst || 0,
+          sgst: sgst || 0,
+          igst: igst || 0,
+          needs_review: true,
+          mapping_config: mappingConfig || {},
+          headers: rawHeaders || [],
+          items: []
+        };
       }
 
       if (importData) {
         // Add/update to database inventory
-        const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         for (const item of items) {
           let med = await db.get('SELECT id FROM medicines WHERE name LIKE ? LIMIT 1', [`%${item.name}%`]);
           if (!med) {
@@ -992,14 +2473,115 @@ export class EmailService {
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ATTACHMENT_PROCESSED', `Manually parsed attachment: ${filename}, imported ${items.length} items.`]
         );
-        await db.close();
-      }
+              }
 
-      return { success: true, count: items.length, items };
+      return {
+        success: true,
+        count: items.length,
+        distributor_name,
+        distributor_id: distributorId,
+        invoice_no,
+        invoice_date,
+        total_amount,
+        global_cd_per,
+        subtotal,
+        cgst,
+        sgst,
+        igst,
+        needs_review: needsReview,
+        mapping_config: mappingConfig,
+        headers: rawHeaders,
+        items
+      };
     } catch (error) {
       console.error('Failed to parse and import attachment:', error);
       return { success: false, count: 0, items: [] };
     }
+  }
+
+  /**
+   * Saves a confirmed file mapping structure to historical files (keeps max 5)
+   * and updates the distributor's learning profile.
+   */
+  public async saveLearningProfile(
+    distributorId: number,
+    filename: string,
+    rawHeaders: string[],
+    mappingConfig: Record<string, string>,
+    extractedItems: any[]
+  ): Promise<void> {
+    const db = await dbManager.getConnection();
+    try {
+      await db.run('BEGIN TRANSACTION');
+
+      const uploadsDir = getUploadsDir();
+      const historicalDir = path.join(uploadsDir, 'historical');
+      if (!fs.existsSync(historicalDir)) {
+        fs.mkdirSync(historicalDir, { recursive: true });
+      }
+
+      const srcPath = path.isAbsolute(filename) ? filename : path.join(uploadsDir, filename);
+      const safeBasename = path.basename(filename);
+      const destPath = path.join(historicalDir, safeBasename);
+
+      if (fs.existsSync(srcPath) && srcPath !== destPath) {
+        fs.copyFileSync(srcPath, destPath);
+      }
+
+      const fileType = path.extname(safeBasename).slice(1).toLowerCase();
+      const headersJson = JSON.stringify(rawHeaders);
+      const mappingJson = JSON.stringify(mappingConfig);
+      const dataJson = JSON.stringify(extractedItems);
+
+      await db.run(`
+        INSERT INTO distributor_historical_files (distributor_id, filename, file_path, file_type, file_headers, mapping_config, extracted_data, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'success')
+      `, [distributorId, safeBasename, destPath, fileType, headersJson, mappingJson, dataJson]);
+
+      const historicalFiles = await db.all(
+        'SELECT id, file_path FROM distributor_historical_files WHERE distributor_id = ? ORDER BY id DESC',
+        [distributorId]
+      );
+      if (historicalFiles.length > 5) {
+        const toDelete = historicalFiles.slice(5);
+        for (const fileToDelete of toDelete) {
+          if (fileToDelete.file_path && fs.existsSync(fileToDelete.file_path)) {
+            try { fs.unlinkSync(fileToDelete.file_path); } catch (err) { console.warn('Failed to delete old historical file:', fileToDelete.file_path, err); }
+          }
+          await db.run('DELETE FROM distributor_historical_files WHERE id = ?', [fileToDelete.id]);
+        }
+      }
+
+      const existingProfile = await db.get(
+        'SELECT file_mapping_rules FROM distributor_learning_profiles WHERE distributor_id = ?',
+        [distributorId]
+      );
+
+      let mergedRules: Record<string, string> = { ...mappingConfig };
+      if (existingProfile && existingProfile.file_mapping_rules) {
+        try {
+          const oldRules = JSON.parse(existingProfile.file_mapping_rules);
+          mergedRules = { ...oldRules, ...mappingConfig };
+        } catch (e) {
+          console.warn('Failed to parse existing mapping rules, replacing:', e);
+        }
+      }
+
+      await db.run(`
+        INSERT INTO distributor_learning_profiles (distributor_id, file_mapping_rules, last_updated)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(distributor_id) DO UPDATE SET
+          file_mapping_rules = excluded.file_mapping_rules,
+          last_updated = CURRENT_TIMESTAMP
+      `, [distributorId, JSON.stringify(mergedRules)]);
+
+      await db.run('COMMIT');
+    } catch (err) {
+      await db.run('ROLLBACK');
+      console.error('Failed to save learning profile:', err);
+      throw err;
+    } finally {
+          }
   }
 
   /**
@@ -1012,7 +2594,7 @@ export class EmailService {
       let password = this.imapConfig.password;
       let xoauth2: string | undefined = undefined;
 
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       
       // Check if auto-delete/cleanup is enabled
       const autodeleteRow = await db.get("SELECT value FROM app_settings WHERE key = 'email_autodelete_enabled'");
@@ -1044,8 +2626,7 @@ export class EmailService {
       }
 
       if ((!user || !password || !host) && !xoauth2) {
-        await db.close();
-        return;
+                return;
       }
 
       const imapConfig: any = {
@@ -1184,8 +2765,7 @@ export class EmailService {
         }
       }
 
-      await db.close();
-    } catch (err) {
+          } catch (err) {
       console.error('[Sync] Error during syncAndCleanAttachments:', err);
     } finally {
       if (connection) {
@@ -1218,18 +2798,17 @@ export class EmailService {
   public async getLocalInbox(limit: number = 50): Promise<Array<any>> {
     try {
       await ensureSchema(getDbPath());
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       const rows = await db.all(
         `SELECT e.*, GROUP_CONCAT(ea.filename) as attachment_filenames
          FROM emails e
          LEFT JOIN email_attachments ea ON ea.uid = e.uid
          GROUP BY e.uid
-         ORDER BY e.uid DESC
+         ORDER BY e.date DESC, e.uid DESC
          LIMIT ?`,
         [limit]
       );
-      await db.close();
-
+      
       return rows.map((row: any) => ({
         id: row.uid,
         uid: row.uid,
@@ -1260,11 +2839,10 @@ export class EmailService {
     let xoauth2: string | undefined = undefined;
 
     try {
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
       const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-      await db.close();
-      if (userRow && userRow.value) user = userRow.value;
+            if (userRow && userRow.value) user = userRow.value;
       if (passRow && passRow.value) password = passRow.value;
     } catch (_) {}
 
@@ -1325,7 +2903,7 @@ export class EmailService {
 
     try {
       await ensureSchema(getDbPath());
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
 
       // Find the highest UID already stored
       const maxRow = await db.get('SELECT MAX(uid) as maxUid FROM emails');
@@ -1342,21 +2920,28 @@ export class EmailService {
         ? [['UID', `${lastStoredUid + 1}:*`]]
         : ['ALL'];
 
-      const results = await connection.search(searchCriteria, { struct: true });
+      const uids = await new Promise<number[]>((resolve, reject) => {
+        connection.imap.search(searchCriteria, (err: any, results: number[]) => {
+          if (err) reject(err);
+          else resolve(results || []);
+        });
+      });
 
       // Filter strictly: only new UIDs (IMAP UID range can return boundary message)
-      const newResults = results.filter((item: any) => item.attributes.uid > lastStoredUid);
+      const newResults = uids.filter((uid: number) => uid > lastStoredUid);
 
       // Sort ascending (oldest first) so we insert in order
-      newResults.sort((a: any, b: any) => a.attributes.uid - b.attributes.uid);
+      newResults.sort((a: number, b: number) => a - b);
+      
+      // Limit to max 50 per sync to avoid timeouts and connection drops
+      const limitedResults = newResults.slice(0, 50);
 
       console.log(`[Sync] Found ${newResults.length} new email(s) to download.`);
 
       const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
       if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-      for (const item of newResults) {
-        const uid: number = item.attributes.uid;
+      for (const uid of limitedResults) {
         try {
           const fetchResult = await connection.search([['UID', uid]], { bodies: [''], struct: true });
           if (!fetchResult || fetchResult.length === 0) continue;
@@ -1366,7 +2951,7 @@ export class EmailService {
           if (!bodyPart) continue;
 
           const parsed = await simpleParser(bodyPart.body);
-          const isSeen = item.attributes.flags.includes('\\Seen') ? 1 : 0;
+          const isSeen = msg.attributes.flags.includes('\\Seen') ? 1 : 0;
 
           const processedEmail: ProcessedEmail = {
             from: parsed.from?.text || '',
@@ -1450,8 +3035,7 @@ export class EmailService {
         }
       }
 
-      await db.close();
-      console.log(`[Sync] Delta sync complete. Stored ${syncedCount} new email(s).`);
+            console.log(`[Sync] Delta sync complete. Stored ${syncedCount} new email(s).`);
     } catch (err: any) {
       const errMsg = err.message || '';
       if (errMsg.includes('AUTHENTICATIONFAILED') || errMsg.includes('Invalid credentials') || errMsg.includes('login') || errMsg.includes('auth')) {
@@ -1477,10 +3061,9 @@ export class EmailService {
   public async markEmailSaved(uid: number): Promise<boolean> {
     try {
       await ensureSchema(getDbPath());
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       await db.run('UPDATE emails SET is_saved = 1, is_seen = 1 WHERE uid = ?', [uid]);
-      await db.close();
-      return true;
+            return true;
     } catch (err) {
       console.error('[Mail] markEmailSaved error:', err);
       return false;
@@ -1504,11 +3087,10 @@ export class EmailService {
     let xoauth2: string | undefined = undefined;
 
     try {
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
       const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-      await db.close();
-      if (userRow && userRow.value) user = userRow.value;
+            if (userRow && userRow.value) user = userRow.value;
       if (passRow && passRow.value) password = passRow.value;
     } catch (_) {}
 
@@ -1659,10 +3241,9 @@ export class EmailService {
   public async markEmailSeen(uid: number): Promise<void> {
     try {
       await ensureSchema(getDbPath());
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       await db.run('UPDATE emails SET is_seen = 1 WHERE uid = ?', [uid]);
-      await db.close();
-    } catch (err) {
+          } catch (err) {
       console.error('[Mail] markEmailSeen error:', err);
     }
   }
@@ -1677,11 +3258,10 @@ export class EmailService {
     let xoauth2: string | undefined = undefined;
 
     try {
-      const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
       const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-      await db.close();
-      if (userRow && userRow.value) user = userRow.value;
+            if (userRow && userRow.value) user = userRow.value;
       if (passRow && passRow.value) password = passRow.value;
     } catch (_) {}
 

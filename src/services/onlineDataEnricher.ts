@@ -55,7 +55,45 @@ export class OnlineDataEnricher {
     // No enrichment found
     return mergeOcrAndEnrichedData(ocrResult, null);
   }
+
+  async enrichMedicineByName(medicineName: string): Promise<void> {
+    if (!medicineName) return;
+    const cleanName = medicineName.trim();
+    if (!cleanName) return;
+
+    try {
+      // 1. Check cache first (offline capable)
+      const cachedData = await cacheService.get(cleanName);
+      if (cachedData) {
+        return;
+      }
+
+      // 2. Check network connectivity
+      this.isOnline = await checkConnectivity();
+      if (!this.isOnline) {
+        return;
+      }
+
+      // 3. Query APIs
+      for (const client of this.apiClients) {
+        try {
+          const enrichedData = await client.queryMedicine(cleanName);
+          if (enrichedData) {
+            // Store in cache for future queries
+            await cacheService.set(cleanName, enrichedData);
+            console.log(`[Enricher] [Background] Successfully enriched ${cleanName} using ${client.name}`);
+            return;
+          }
+        } catch (clientErr) {
+          console.error(`[Enricher] [Background] API Client ${client.name} query failed for ${cleanName}:`, clientErr);
+        }
+      }
+    } catch (err) {
+      console.error(`[Enricher] [Background] Failed to enrich medicine ${cleanName}:`, err);
+    }
+  }
 }
 
 export const onlineDataEnricher = new OnlineDataEnricher();
 export default onlineDataEnricher;
+

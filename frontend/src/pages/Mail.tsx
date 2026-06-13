@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Mail as MailIcon,
   RefreshCw,
@@ -92,6 +92,13 @@ const STATUS_BADGE: Record<string, { label: string; badgeCls: string; iconCls: s
 
 const Mail = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const prefillState = location.state as {
+    searchDistributor?: string;
+    searchProduct?: string;
+    orderId?: number;
+  } | null;
+
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -103,6 +110,12 @@ const Mail = () => {
   const [processResult, setProcessResult] = useState<any>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const syncInProgress = useRef(false);
+
+  const [searchTerm, setSearchTerm] = useState(() => {
+    return prefillState?.searchDistributor || prefillState?.searchProduct || '';
+  });
+
+  const prefillSelectionDone = useRef(false);
 
   // Listen for online/offline events
   useEffect(() => {
@@ -226,6 +239,25 @@ const Mail = () => {
       .finally(() => setLoadingAttachments(false));
   };
 
+  const filteredEmails = emails.filter(email => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      email.from.toLowerCase().includes(term) ||
+      email.subject.toLowerCase().includes(term) ||
+      (email.body && email.body.toLowerCase().includes(term)) ||
+      (email.distributorName && email.distributorName.toLowerCase().includes(term))
+    );
+  });
+
+  // Auto-select first matching email if prefilled search is active
+  useEffect(() => {
+    if (searchTerm && filteredEmails.length > 0 && !prefillSelectionDone.current && !selectedEmail) {
+      prefillSelectionDone.current = true;
+      handleSelectEmail(filteredEmails[0]);
+    }
+  }, [filteredEmails, searchTerm, selectedEmail]);
+
   const toggleAttachment = (filename: string) => {
     setAttachments((prev) =>
       prev.map((a) => (a.filename === filename ? { ...a, isSelected: !a.isSelected } : a))
@@ -252,12 +284,23 @@ const Mail = () => {
       const selectedFiles = attachments.filter((a) => a.isSelected);
       const allItems: any[] = [];
       const results: any[] = [];
+      
+      let parsedDistributorName = '';
+      let parsedInvoiceNo = '';
+      let parsedInvoiceDate = '';
+      let parsedTotalAmount = 0;
+      let parsedGlobalCdPer = 0;
 
       for (const file of selectedFiles) {
         const res = await api.parseAttachment(file.filename, false);
         results.push({ filename: file.filename, ...res });
         if (res && res.success && Array.isArray(res.items)) {
           allItems.push(...res.items);
+          if (res.distributor_name && !parsedDistributorName) parsedDistributorName = res.distributor_name;
+          if (res.invoice_no && !parsedInvoiceNo) parsedInvoiceNo = res.invoice_no;
+          if (res.invoice_date && !parsedInvoiceDate) parsedInvoiceDate = res.invoice_date;
+          if (res.total_amount && !parsedTotalAmount) parsedTotalAmount = res.total_amount;
+          if (res.global_cd_per && !parsedGlobalCdPer) parsedGlobalCdPer = res.global_cd_per;
         }
       }
 
@@ -284,9 +327,14 @@ const Mail = () => {
       navigate('/manual-purchase', {
         state: {
           prefilledPurchase: {
-            distributorName: selectedEmail.distributorName || '',
-            invoiceNo: invoiceNoMatch ? invoiceNoMatch[0] : '',
-            date: selectedEmail.date ? new Date(selectedEmail.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            distributorName: parsedDistributorName || selectedEmail.distributorName || '',
+            invoiceNo: parsedInvoiceNo || (invoiceNoMatch ? invoiceNoMatch[0] : ''),
+            date: parsedInvoiceDate || (selectedEmail.date ? new Date(selectedEmail.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            totalAmount: parsedTotalAmount || 0,
+            globalCdPer: parsedGlobalCdPer || 0,
+            source_filename: selectedFiles[0]?.filename || '',
+            source_file_headers: results[0]?.headers || [],
+            mapping_config: results[0]?.mapping_config || {},
             items: allItems.map(item => ({
               medicine_name: item.name || '',
               qty: item.quantity || 0,
@@ -295,13 +343,17 @@ const Mail = () => {
               mrp: item.mrp || 0,
               batch_no: item.batch_no || '',
               expiry_date: item.expiry_date || '',
+              cgst_per: item.cgst_per || 0,
+              sgst_per: item.sgst_per || 0,
+              cd_per: item.cd_per || 0,
+              cd_rs: item.cd_rs || 0,
             }))
           },
           emailSource: {
             from: selectedEmail.from,
             subject: selectedEmail.subject,
             date: selectedEmail.date,
-            distributorName: selectedEmail.distributorName || '',
+            distributorName: parsedDistributorName || selectedEmail.distributorName || '',
             medicineNames: allItems.map(item => item.name || '').filter(Boolean),
             attachmentCount: selectedFiles.length,
           }
@@ -405,7 +457,7 @@ const Mail = () => {
         <div className="lg:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border">
           <div className="p-3 border-b border-glass-border bg-black/10 text-xs font-bold text-muted uppercase tracking-wider select-none flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span>Inbox ({emails.length})</span>
+              <span>Inbox ({filteredEmails.length !== emails.length ? `${filteredEmails.length}/${emails.length}` : emails.length})</span>
               {(loading || syncing) && emails.length > 0 && (
                 <span className="text-[10px] text-primary font-bold uppercase tracking-widest flex items-center gap-1.5 animate-pulse ml-2">
                   <Loader size={10} className="animate-spin" />
@@ -413,15 +465,52 @@ const Mail = () => {
                 </span>
               )}
             </div>
-            {selectedEmail && (
+            {(selectedEmail || searchTerm) && (
               <button
-                onClick={() => { setSelectedEmail(null); setAttachments([]); setProcessResult(null); }}
+                onClick={() => {
+                  setSelectedEmail(null);
+                  setAttachments([]);
+                  setProcessResult(null);
+                  setSearchTerm('');
+                }}
                 className="text-primary hover:text-blue-400 normal-case tracking-normal"
               >
-                Clear Selection
+                Clear Filters
               </button>
             )}
           </div>
+
+          {/* Search/Filter input field */}
+          <div className="p-2 border-b border-glass-border bg-bg3/20 flex items-center gap-2 relative shrink-0">
+            <input
+              type="text"
+              placeholder="Search distributor, subject, body..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-black/25 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text placeholder:text-muted focus:outline-none focus:border-primary/50"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-4 text-muted hover:text-text text-xs font-semibold"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Prefill Banner when special order linking is active */}
+          {prefillState && searchTerm === (prefillState.searchDistributor || prefillState.searchProduct) && (
+            <div className="bg-primary/10 border-b border-glass-border p-2.5 text-xs text-sky flex items-center justify-between shrink-0 font-medium">
+              <span> Prefilled filters active for Special Order Request.</span>
+              <button
+                onClick={() => setSearchTerm('')}
+                className="underline text-[10px] hover:text-white"
+              >
+                Show All
+              </button>
+            </div>
+          )}
 
           {/* Slim progress bar during sync/load */}
           <div className="relative">
@@ -446,8 +535,19 @@ const Mail = () => {
                   : 'No emails yet. Syncing from Gmail...'}
                 {syncing && <Loader size={16} className="animate-spin text-primary mt-2" />}
               </div>
+            ) : filteredEmails.length === 0 ? (
+              <div className="p-16 text-center text-muted flex flex-col items-center gap-2 italic text-xs">
+                <MailIcon size={28} className="opacity-50" />
+                No emails found matching "{searchTerm}"
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="mt-2 text-primary hover:text-blue-400 font-bold not-italic"
+                >
+                  Clear search query
+                </button>
+              </div>
             ) : (
-              emails.map((email, idx) => {
+              filteredEmails.map((email, idx) => {
                 const status = getEmailStatus(email);
                 const s = STATUS_BADGE[status];
                 return (
@@ -465,8 +565,9 @@ const Mail = () => {
                     </div>
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-text truncate flex items-center gap-1">
-                          <User size={12} className="text-muted flex-shrink-0" /> {email.from}
+                        <span className="text-xs font-bold text-text truncate flex items-center gap-1" title={email.from}>
+                          <User size={12} className="text-muted flex-shrink-0" /> 
+                          {email.from}
                         </span>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <span className={`text-[9px] px-1.5 py-0.5 rounded-md border font-bold uppercase select-none ${s.badgeCls}`}>
@@ -511,7 +612,9 @@ const Mail = () => {
                 <div className="space-y-1 text-xs">
                   <div>
                     <span className="font-bold text-muted mr-1.5">From:</span>
-                    <span className="font-semibold text-text">{selectedEmail.from}</span>
+                    <span className="font-semibold text-text">
+                      {selectedEmail.from}
+                    </span>
                   </div>
                   <div>
                     <span className="font-bold text-muted mr-1.5">Subject:</span>

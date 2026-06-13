@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { checkAllRefills } from '../services/refillService.js';
@@ -34,7 +33,7 @@ router.post('/', async (req, res) => {
 
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     // Calculate next refill date
     const intervalDays = parseIntervalDays(refill_interval_days);
@@ -51,10 +50,8 @@ router.post('/', async (req, res) => {
     // Run a check immediately in case the medicine is already in stock!
     await checkAllRefills(db);
 
-    await db.close();
-    res.json({ success: true, message: 'Refill registered successfully', interval_days: intervalDays });
+        res.json({ success: true, message: 'Refill registered successfully', interval_days: intervalDays });
   } catch (err) {
-    if (db) await db.close();
     console.error('Failed to register refill:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -64,16 +61,14 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const refills = await db.all(
       `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
        JOIN medicines m ON pr.medicine_id = m.id
        ORDER BY pr.next_refill_date ASC`
     );
-    await db.close();
-    res.json(refills);
+        res.json(refills);
   } catch (err) {
-    if (db) await db.close();
     console.error('Failed to fetch refills:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -83,12 +78,10 @@ router.get('/', async (req, res) => {
 router.post('/check', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     await checkAllRefills(db);
-    await db.close();
-    res.json({ success: true, message: 'Refill check complete' });
+        res.json({ success: true, message: 'Refill check complete' });
   } catch (err) {
-    if (db) await db.close();
     console.error('Failed to check refills:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -101,13 +94,12 @@ router.put('/:id', async (req, res) => {
 
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     // Check if refill exists
     const refill = await db.get('SELECT * FROM patient_refills WHERE id = ?', [id]);
     if (!refill) {
-      await db.close();
-      return res.status(404).json({ error: 'Refill not found' });
+            return res.status(404).json({ error: 'Refill not found' });
     }
 
     const updatedName = patient_name !== undefined ? patient_name : refill.patient_name;
@@ -130,10 +122,8 @@ router.put('/:id', async (req, res) => {
       await checkAllRefills(db);
     }
 
-    await db.close();
-    res.json({ success: true, message: 'Refill updated successfully', interval_days: updatedInterval });
+        res.json({ success: true, message: 'Refill updated successfully', interval_days: updatedInterval });
   } catch (err) {
-    if (db) await db.close();
     console.error('Failed to update refill:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -144,18 +134,16 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     const result = await db.run('DELETE FROM patient_refills WHERE id = ?', [id]);
-    await db.close();
-    
+        
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Refill not found' });
     }
     
     res.json({ success: true, message: 'Refill cancelled successfully' });
   } catch (err) {
-    if (db) await db.close();
     console.error('Failed to delete refill:', err);
     res.status(500).json({ error: 'Internal server error' });
   }

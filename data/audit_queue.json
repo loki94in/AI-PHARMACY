@@ -394,5 +394,167 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-06-05T17:15:15.041Z"
+  },
+  {
+    "id": "audit_1780984423645",
+    "imagePath": "data\\audit_images\\audit_1780984423645.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T05:53:43.671Z"
+  },
+  {
+    "id": "audit_1780984556555",
+    "imagePath": "data\\audit_images\\audit_1780984556555.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T05:55:56.610Z"
+  },
+  {
+    "id": "audit_1780984580177",
+    "imagePath": "data\\audit_images\\audit_1780984580177.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T05:56:20.229Z"
+  },
+  {
+    "id": "audit_1780984836721",
+    "imagePath": "data\\audit_images\\audit_1780984836721.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T06:00:36.729Z"
+  },
+  {
+    "id": "audit_1780985354855",
+    "imagePath": "data\\audit_images\\audit_1780985354855.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T06:09:14.867Z"
+  },
+  {
+    "id": "audit_1780985603552",
+    "imagePath": "data\\audit_images\\audit_1780985603552.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T06:13:23.600Z"
+  },
+  {
+    "id": "audit_1780989660219",
+    "imagePath": "data\\audit_images\\audit_1780989660219.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T07:21:00.262Z"
+  },
+  {
+    "id": "audit_1780990088515",
+    "imagePath": "data\\audit_images\\audit_1780990088515.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-09T07:28:08.688Z"
+  },
+  {
+    "id": "audit_1781066837530",
+    "imagePath": "data\\audit_images\\audit_1781066837530.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-10T04:47:17.632Z"
+  },
+  {
+    "id": "audit_1781087671354",
+    "imagePath": "data\\audit_images\\audit_1781087671354.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-10T10:34:31.415Z"
+  },
+  {
+    "id": "audit_1781089100669",
+    "imagePath": "data\\audit_images\\audit_1781089100669.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-10T10:58:20.720Z"
+  },
+  {
+    "id": "audit_1781091032594",
+    "imagePath": "data\\audit_images\\audit_1781091032594.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-10T11:30:32.616Z"
+  },
+  {
+    "id": "audit_1781165498378",
+    "imagePath": "data\\audit_images\\audit_1781165498378.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-11T08:11:38.392Z"
+  },
+  {
+    "id": "audit_1781190352559",
+    "imagePath": "data\\audit_images\\audit_1781190352559.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-11T15:05:52.623Z"
+  },
+  {
+    "id": "audit_1781271948956",
+    "imagePath": "data\\audit_images\\audit_1781271948956.jpg",
+    "rawOcrText": "FC V\nAs f Al\n1 IN   yf\nLW NV\n i J\n",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-12T13:45:49.250Z"
+  },
+  {
+    "id": "audit_1781275142310",
+    "imagePath": "data\\audit_images\\audit_1781275142310.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-12T14:39:02.335Z"
+  },
+  {
+    "id": "audit_1781275623879",
+    "imagePath": "data\\audit_images\\audit_1781275623879.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-12T14:47:03.992Z"
+  },
+  {
+    "id": "audit_1781275805825",
+    "imagePath": "data\\audit_images\\audit_1781275805825.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-12T14:50:05.873Z"
   }
 ]

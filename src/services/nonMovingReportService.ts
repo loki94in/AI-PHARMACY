@@ -1,7 +1,5 @@
 import { Database } from 'sqlite';
 import { dbManager } from '../database/connection.js';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { sendMessage } from '../whatsappClient.js';
 import { telegramBotService } from '../telegramBot.js';
 import path from 'path';

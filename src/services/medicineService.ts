@@ -1,6 +1,6 @@
 import { Database } from 'sqlite';
 import { dbManager } from '../database/connection.js';
-import { config } from '../config';
+import { config } from '../config/index.js';
 
 export interface MedicineData {
   name: string;

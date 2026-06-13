@@ -1,21 +1,18 @@
+import './database/sqlitePatch.js';
 import express from 'express';
-import crypto from 'crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import multer from 'multer';
 import { exec } from 'child_process';
 import { authenticateApiKey } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { dbManager } from './database/connection.js';
-import { extractFromPdf, extractFromCsv } from './extractor.js';
 import { startWorker as startCatalogWorker } from './worker/catalogWorker.js';
 import { ensureSchema } from './database.js';
-import { eventService } from './services/eventService.js';
 import { startEmailPoller } from './worker/emailPoller.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,6 +31,7 @@ import inventoryRouter from './routes/inventory.js';
 import dashboardRouter from './routes/dashboard.js';
 import purchasesRouter from './routes/purchases.js';
 import returnsRouter from './routes/returns.js';
+import customerReturnsRouter from './routes/customerReturns.js';
 import ordersRouter from './routes/orders.js';
 import expiryRouter from './routes/expiry.js';
 import reportsRouter from './routes/reports.js';
@@ -41,6 +39,7 @@ import complianceRouter from './routes/compliance.js';
 import emailRouter from './routes/email.js';
 import migrationRouter from './routes/migration.js';
 import settingsRouter from './routes/settings.js';
+import pharmarackRouter from './routes/pharmarack.js';
 import dispatchRouter from './routes/dispatch.js';
 import archiveRouter from './routes/archive.js';
 import learningRouter from './routes/learning.js';
@@ -49,10 +48,18 @@ import aiCameraRouter from './routes/aiCamera.js';
 import telegramPrescriptionRouter from './routes/telegramPrescription.js';
 import refillsRouter from './routes/refills.js';
 import waBusinessRouter from './routes/whatsappBusiness.js';
+import licenseRouter from './routes/license.js';
+import uploadRouter from './routes/upload.js';
+import catalogRouter from './routes/catalog.js';
+import medicinesRouter from './routes/medicines.js';
+import enrichmentRouter from './routes/enrichment.js';
+import distributorsRouter from './routes/distributors.js';
+import notificationsRouter from './routes/notifications.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
 import { checkAllRefills } from './services/refillService.js';
 import { checkOverdueCreditNotes, reconcileCreditNote } from './services/creditNoteService.js';
+import { activityTracker } from './utils/activityTracker.js';
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
@@ -63,9 +70,15 @@ process.on('uncaughtException', (error) => {
 
 const app = express();
 
+app.use((req, res, next) => {
+  activityTracker.recordActivity();
+  next();
+});
+
 // Ensure uploads and temp directories exist
 const UPLOAD_DIR = path.resolve(__dirname, '..', 'uploads');
 const TEMP_DIR = path.join(UPLOAD_DIR, 'temp');
+const RAW_DIR = path.resolve(__dirname, '..', 'catalogue', 'raw');
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -73,41 +86,28 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
+if (!fs.existsSync(RAW_DIR)) {
+  fs.mkdirSync(RAW_DIR, { recursive: true });
+}
 
-// Multer storage config
-const ALLOWED_UPLOAD_EXTENSIONS = /\.(csv|xlsx?|pdf|zip|jpg|jpeg|png|gif|bmp|tiff?)$/i;
-const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (_req, file, cb) => {
-    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, Date.now() + '-' + crypto.randomBytes(4).toString('hex') + '-' + sanitized);
-  }
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: MAX_UPLOAD_SIZE },
-  fileFilter: (_req, file, cb) => {
-    if (ALLOWED_UPLOAD_EXTENSIONS.test(file.originalname)) {
-      cb(null, true);
-    } else {
-      cb(new Error('File type not allowed'));
-    }
-  }
-});
 
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: false // Disable CSP so inline scripts and styles in index.html can run
 }));
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',  // Vite dev server
+  'http://localhost:3000',  // Production build
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+];
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Reflect the request origin back, or allow if no origin (e.g., server-to-server/mobile)
+    // Allow server-to-server requests with no origin (e.g., mobile, Postman)
     if (!origin) return callback(null, true);
-    callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },
   credentials: true
 }));
@@ -118,7 +118,7 @@ app.use(rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' }
 }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 
 app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads')));
@@ -132,206 +132,6 @@ app.use('/api/wa-business/webhook', waBusinessRouter);
 // Session token auth for all other API routes
 app.use('/api', authenticateApiKey);
 
-// File upload endpoint (Now async for background processing)
-app.post('/api/upload', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-    const fullPath = req.file.path;
-    const originalName = req.file.originalname || path.basename(fullPath);
-    
-    const db = await dbManager.getConnection();
-    const result = await db.run(
-      `INSERT INTO catalog_jobs (file_path, original_filename, status) VALUES (?, ?, 'pending')`,
-      [fullPath, originalName]
-    );
-    await dbManager.close();
-
-    res.json({ success: true, message: 'Processing in background', jobId: result.lastID });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'Internal server error during upload' });
-  }
-});
-
-app.get('/api/catalog/job/:id', async (req, res) => {
-  try {
-    const db = await dbManager.getConnection();
-    const job = await db.get(`SELECT * FROM catalog_jobs WHERE id = ?`, req.params.id);
-    await dbManager.close();
-    
-    if (!job) return res.status(404).json({ error: 'Job not found' });
-    if (job.status !== 'done' && job.status !== 'ready_for_review') {
-      return res.status(400).json({ error: 'Job is not ready yet', status: job.status });
-    }
-    
-    res.json({ 
-      success: true, 
-      jobId: job.id, 
-      extractedData: job.extracted_data ? JSON.parse(job.extracted_data) : [],
-      original_filename: job.original_filename
-    });
-  } catch (error) {
-    console.error('Fetch job error:', error);
-    res.status(500).json({ error: 'Internal server error fetching job' });
-  }
-});
-
-// New Catalog Import Endpoint (Receives confirmed preview data)
-app.post('/api/catalog/import', async (req, res) => {
-  const { medicines } = req.body;
-  if (!Array.isArray(medicines)) {
-    return res.status(400).json({ error: 'Invalid payload, expected array of medicines' });
-  }
-  
-  try {
-    const db = await dbManager.getConnection();
-    
-    for (const med of medicines) {
-      if (!med.name) continue;
-      
-      const existing = await db.get(`SELECT id FROM medicines WHERE lower(name) = lower(?)`, med.name);
-      if (existing) {
-        const updates = [];
-        const params = [];
-        
-        if (med.manufacturer) { updates.push("manufacturer = COALESCE(NULLIF(manufacturer, ''), ?)"); params.push(med.manufacturer); }
-        if (med.marketed_by) { updates.push("marketed_by = COALESCE(NULLIF(marketed_by, ''), ?)"); params.push(med.marketed_by); }
-        if (med.api_reference) { updates.push("api_reference = COALESCE(NULLIF(api_reference, ''), ?)"); params.push(med.api_reference); }
-        if (med.strength) { updates.push("strength = COALESCE(NULLIF(strength, ''), ?)"); params.push(med.strength); }
-        if (med.packaging_type) { updates.push("packaging = COALESCE(NULLIF(packaging, ''), ?)"); params.push(med.packaging_type); }
-        
-        if (updates.length > 0) {
-            params.push(existing.id);
-            const setClause = updates.join(', ');
-            await db.run(`UPDATE medicines SET ${setClause} WHERE id = ?`, ...params);
-        }
-      } else {
-        await db.run(
-          `INSERT INTO medicines (name, api_reference, strength, packaging, manufacturer, marketed_by) VALUES (?, ?, ?, ?, ?, ?)`,
-          med.name,
-          med.api_reference || null,
-          med.strength || null,
-          med.packaging_type || null,
-          med.manufacturer || null,
-          med.marketed_by || null
-        );
-      }
-    }
-    
-    await dbManager.close();
-    res.json({ success: true, message: 'Catalog imported successfully' });
-  } catch (error) {
-    await dbManager.close();
-    console.error('Import error:', error);
-    res.status(500).json({ error: 'Internal server error during import' });
-  }
-});
-
-// Medicines endpoint
-app.get('/api/medicines', async (req, res) => {
-  try {
-    const db = await dbManager.getConnection();
-    const medicines = await db.all('SELECT * FROM medicines ORDER BY id DESC');
-    await dbManager.close();
-    res.json(medicines);
-  } catch (error) {
-    await dbManager.close();
-    console.error('Failed to fetch medicines:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.post('/api/medicines', async (req, res) => {
-  const { name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code } = req.body;
-  if (!name) return res.status(400).json({ error: 'Medicine name is required' });
-  try {
-    const db = await dbManager.getConnection();
-    const result = await db.run(
-      `INSERT INTO medicines (name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name, generic_name || '', manufacturer || '', marketed_by || '', pack_unit || '', strength || '', parseFloat(cgst_per) || 0, parseFloat(sgst_per) || 0, hsn_code || '']
-    );
-    const id = result.lastID;
-    const savedMed = await db.get('SELECT * FROM medicines WHERE id = ?', [id]);
-    await dbManager.close();
-    res.json({ success: true, data: savedMed });
-  } catch (error) {
-    await dbManager.close();
-    console.error('Failed to create medicine:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Purchases Engine APIs
-app.get('/api/distributors', async (req, res) => {
-  try {
-    const db = await dbManager.getConnection();
-    const distributors = await db.all('SELECT * FROM distributors ORDER BY name');
-    await dbManager.close();
-    res.json(distributors);
-  } catch (error) {
-    await dbManager.close();
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.post('/api/purchases', async (req, res) => {
-  const { distributor, invoice_no, total_amount } = req.body;
-  try {
-    const db = await dbManager.getConnection();
-    // Upsert distributor
-    await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', distributor);
-    const distRow = await db.get('SELECT id FROM distributors WHERE name = ?', distributor);
-
-    // Insert purchase
-    await db.run('INSERT INTO purchases (distributor_id, invoice_no, total_amount) VALUES (?, ?, ?)',
-      [distRow.id, invoice_no, total_amount]);
-
-    await dbManager.close();
-
-    // Trigger checking refills now that new purchase stock is saved
-    // This would be handled via events or services in a more complete refactor
-
-    res.json({ success: true, message: 'Purchase saved' });
-  } catch (error) {
-    await dbManager.close();
-    console.error('Failed to save purchase:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.post('/api/returns/reconcile-credit', async (req, res) => {
-  const { distributor_id, actual_credit_amount, purchase_id } = req.body;
-  if (!distributor_id || actual_credit_amount === undefined) {
-    return res.status(400).json({ error: 'distributor_id and actual_credit_amount are required' });
-  }
-  try {
-    const db = await dbManager.getConnection();
-    const result = await reconcileCreditNote(db, distributor_id, actual_credit_amount, purchase_id);
-    await dbManager.close();
-    res.json(result);
-  } catch (error) {
-    await dbManager.close();
-    console.error('Failed to reconcile credit note:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// API to fetch all catalog jobs
-app.get('/api/jobs', async (req, res) => {
-  try {
-    const db = await dbManager.getConnection();
-    const jobs = await db.all('SELECT * FROM catalog_jobs ORDER BY created_at DESC');
-    await dbManager.close();
-    res.json(jobs);
-  } catch (error) {
-    await dbManager.close();
-    console.error('Failed to fetch jobs:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 // Mount Agent 2 Routers
 app.use('/api/crm', crmRouter);
@@ -340,6 +140,7 @@ app.use('/api/security', securityRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/migration', migrationRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/pharmarack', pharmarackRouter);
 app.use('/api/dispatch', dispatchRouter);
 app.use('/api/archive', archiveRouter);
 app.use('/api/learning', learningRouter);
@@ -354,47 +155,21 @@ app.use('/api/inventory', inventoryRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/purchases', purchasesRouter);
 app.use('/api/returns', returnsRouter);
+app.use('/api/customer-returns', customerReturnsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/expiry', expiryRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/compliance', complianceRouter);
+app.use('/api/license', licenseRouter);
 
-// Real-time notifications SSE Stream
-app.get('/api/notifications/stream', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
+app.use('/api', uploadRouter);
+app.use('/api', catalogRouter);
+app.use('/api', medicinesRouter);
+app.use('/api', enrichmentRouter);
+app.use('/api', distributorsRouter);
+app.use('/api', notificationsRouter);
 
-  const listener = (eventData: any) => {
-    res.write(`data: ${JSON.stringify(eventData)}\n\n`);
-  };
 
-  eventService.on('server_event', listener);
-
-  req.on('close', () => {
-    eventService.removeListener('server_event', listener);
-  });
-
-  res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Connected to notifications stream' })}\n\n`);
-});
-
-// Manual refill reminder endpoint
-app.post('/api/patients/send-refill', async (req, res) => {
-  const { whatsapp_number, name } = req.body;
-  if (!whatsapp_number) {
-    return res.status(400).json({ error: 'WhatsApp number required' });
-  }
-  try {
-    // Simple reminder text – can be templated later
-    const message = `Hello ${name || ''}, your medication refill is due soon. Please visit the pharmacy.`;
-    // This would use a notification/WhatsApp service
-    res.json({ success: true, message: 'Reminder sent (placeholder)' });
-  } catch (err) {
-    console.error('WhatsApp send error:', err);
-    res.status(500).json({ error: 'Failed to send reminder' });
-  }
-});
 
 // Initialize services that need startup logic
 // These would be initialized via dependency injection in a complete refactor
@@ -408,58 +183,104 @@ const PORT = process.env.PORT || 3000;
 ensureSchema(DB_PATH).then(() => {
   app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}/test`);
-    // Pre-initialize WhatsApp Client in the background only if enabled in settings
+    // Pre-initialize background services if automation is enabled in settings
     dbManager.getConnection()
       .then(async (db) => {
-        const row = await db.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
+        await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+        const row = await db.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
         await dbManager.close();
+
         if (row && row.value === 'true') {
-          console.log('WhatsApp is enabled, pre-initializing client in the background...');
-          const { initClient } = await import('./whatsappClient.js');
-          await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
+          console.log('Background automation is ENABLED in settings. Initializing background services...');
+          
+          // 1. WhatsApp Pre-initialization
+          const waRow = await dbManager.getConnection().then(async (innerDb) => {
+            const r = await innerDb.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
+            await dbManager.close();
+            return r;
+          });
+          if (waRow && waRow.value === 'true') {
+            console.log('WhatsApp is enabled, pre-initializing client in the background...');
+            const { initClient } = await import('./whatsappClient.js');
+            await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
+          }
+
+          // 2. WhatsApp Queue Worker
+          whatsappQueue.startWorker();
+
+          // 3. Startup catch-up expiry scan (checks for downtime near-expiry alerts)
+          import('./services/expiryAlertService.js')
+            .then(m => m.checkAndRunScheduledExpiryScan(90))
+            .catch(err => console.error('Failed running startup catch-up scan check:', err));
+
+          // 4. Startup catch-up daily check (refills & overdue credit notes)
+          dbManager.getConnection().then(async (innerDb) => {
+            const d = new Date();
+            const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const lastCheckRow = await innerDb.get("SELECT value FROM app_settings WHERE key = 'last_daily_check_date'");
+            
+            if (!lastCheckRow || lastCheckRow.value !== todayStr) {
+              console.log(`Daily check was missed today (${todayStr}). Running startup catch-up daily check...`);
+              try {
+                await checkAllRefills(innerDb);
+                await checkOverdueCreditNotes(innerDb);
+                await innerDb.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
+                console.log('Startup catch-up daily check complete.');
+              } catch (err) {
+                console.error('Failed running startup catch-up daily check:', err);
+              }
+            } else {
+              console.log(`Daily check has already been run today (${todayStr}). Skipping startup catch-up.`);
+            }
+            await dbManager.close();
+          }).catch(err => console.error('Failed to run startup catch-up daily check database connection:', err));
+
+          // 5. Daily check at 9:00 AM for patient refills & overdue credit notes
+          cron.schedule('0 9 * * *', async () => {
+            console.log('Running daily patient refill & overdue credit notes check...');
+            try {
+              const db = await dbManager.getConnection();
+              await checkAllRefills(db);
+              await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+              await checkOverdueCreditNotes(db);
+              const d = new Date();
+              const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
+              await dbManager.close();
+            } catch (err) {
+              console.error('Failed running daily check cron:', err);
+            }
+          });
+
+          // 6. Automatic near-expiry inventory scan & alerts (Every 15 days at 9:00 AM)
+          cron.schedule('0 9 1,16 * *', async () => {
+            console.log('Running automatic 15-day near-expiry inventory scan...');
+            try {
+              const { runExpiryScanAndAlert } = await import('./services/expiryAlertService.js');
+              await runExpiryScanAndAlert(90);
+            } catch (err) {
+              console.error('Failed running 15-day expiry scan cron:', err);
+            }
+          });
         } else {
-          console.log('WhatsApp is disabled in settings. Skipping background initialization.');
+          console.log('Background automation is DISABLED in settings. Skipping background services.');
         }
       })
-      .catch(err => console.error('Background WhatsApp init check failed:', err));
-      
-    // NOTE: Enable below line in production to send WhatsApp refill reminders via queue
-    whatsappQueue.startWorker();
-    startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));
+      .catch(err => console.error('Background automation init check failed:', err));
+
+    // Email poller is always enabled
     try {
       startEmailPoller();
     } catch (err) {
       console.error('Failed to start email poller:', err);
     }
 
-    // Run startup catch-up check for the 15-day expiry scan (handles PC downtime/off times)
-    import('./services/expiryAlertService.js')
-      .then(m => m.checkAndRunScheduledExpiryScan(90))
-      .catch(err => console.error('Failed running startup catch-up scan check:', err));
-
-  // Daily check at 9:00 AM for patient refills & overdue credit notes
-  cron.schedule('0 9 * * *', async () => {
-    console.log('Running daily patient refill & overdue credit notes check...');
+    // Catalog background worker is always enabled
     try {
-      const db = await dbManager.getConnection();
-      await checkAllRefills(db);
-      await checkOverdueCreditNotes(db);
-      await dbManager.close();
+      startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));
     } catch (err) {
-      console.error('Failed running daily check cron:', err);
+      console.error('Failed to start catalog worker:', err);
     }
-  });
-
-  // Automatic inventory near-expiry scan & WhatsApp alerts (Every 15 days at 9:00 AM)
-  cron.schedule('0 9 1,16 * *', async () => {
-    console.log('Running automatic 15-day near-expiry inventory scan...');
-    try {
-      const { runExpiryScanAndAlert } = await import('./services/expiryAlertService.js');
-      await runExpiryScanAndAlert(90);
-    } catch (err) {
-      console.error('Failed running 15-day expiry scan cron:', err);
-    }
-  });
 
   // Daily licensing tasks disabled permanently
   });

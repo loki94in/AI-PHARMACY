@@ -2,6 +2,7 @@
 import express from 'express';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -10,6 +11,7 @@ import AdmZip from 'adm-zip';
 import * as XLSX from 'xlsx';
 import { migrationStatus, runManualMigration } from '../worker/migrationWorker.js';
 import csvParser from 'csv-parser';
+import zlib from 'zlib';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -135,18 +137,19 @@ router.post('/run', async (req, res) => {
     return res.status(400).json({ error: 'fileName required' });
   }
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['MIGRATION', `Requested manual migration for: ${fileName}`]
     );
-    await db.close();
     
-    // Call the worker and wait for completion
+    // Call the worker in the background
     const skipCount = parseInt(skipLines) || 0;
-    await runManualMigration(fileName, mapping, skipCount);
+    runManualMigration(fileName, mapping, skipCount).catch(error => {
+      console.error('Background migration error:', error);
+    });
 
-    res.json({ success: true, message: `Migration for ${fileName} completed successfully` });
+    res.json({ success: true, message: `Migration for ${fileName} started in the background` });
   } catch (error: any) {
     console.error('Migration error:', error);
     res.status(500).json({ error: error.message || 'Failed to start migration' });
@@ -247,53 +250,81 @@ router.post('/analyze-zip', async (req, res) => {
     return res.status(400).json({ error: 'Not a ZIP file' });
   }
   try {
-    const zip = new AdmZip(filePath);
-    const entries = zip.getEntries();
-    const supportedExts = ['.csv', '.xlsx', '.xls', '.sql'];
+    const buffer = fs.readFileSync(filePath);
+    const isGzip = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+    
     const files: any[] = [];
-
-    for (const entry of entries) {
-      if (entry.isDirectory) continue;
-      const name = path.basename(entry.entryName);
-      const ext = path.extname(name).toLowerCase();
-      if (!supportedExts.includes(ext)) continue;
-
-      // Extract this file to MIGRATION_DIR so it can be analyzed/processed
-      const extractedName = `zip_${Date.now()}_${name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    
+    if (isGzip) {
+      // Decompress GZIP in memory
+      const decompressed = zlib.gunzipSync(buffer);
+      
+      // Determine a reasonable filename for the inner SQL file
+      const baseName = fileName.replace(/\.zip$/i, '').replace(/\.gz$/i, '');
+      const innerName = baseName.toLowerCase().endsWith('.sql') ? baseName : `${baseName}.sql`;
+      
+      const extractedName = `zip_${Date.now()}_${innerName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const extractedPath = path.join(MIGRATION_DIR, extractedName);
-      fs.writeFileSync(extractedPath, entry.getData());
+      fs.writeFileSync(extractedPath, decompressed);
 
-      let headers: string[] = [];
-      let samples: any[] = [];
-      let sheetNames: string[] = [];
-
-      try {
-        if (ext === '.csv') {
-          const r = await readCsvHeaders(extractedPath);
-          headers = r.headers;
-          samples = r.samples;
-        } else if (ext === '.xlsx' || ext === '.xls') {
-          const r = readExcelHeaders(extractedPath);
-          headers = r.headers;
-          samples = r.samples;
-          sheetNames = r.sheetNames;
-        } else if (ext === '.sql') {
-          headers = ['[SQL file — will be auto-imported]'];
-          samples = [];
-        }
-      } catch (_) { /* keep going even if one file fails */ }
-
-      const detected = autoDetectFileType(headers);
       files.push({
-        originalName: name,
+        originalName: innerName,
         extractedFileName: extractedName,
-        ext: ext.replace('.', ''),
-        headers,
-        samples: samples.slice(0, 3),
-        sheetNames,
-        detected,
-        rowCount: null, // unknown without full parse
+        ext: 'sql',
+        headers: ['[SQL file — will be auto-imported]'],
+        samples: [],
+        sheetNames: [],
+        detected: { type: 'inventory', confidence: 50 },
+        rowCount: null,
       });
+    } else {
+      const zip = new AdmZip(filePath);
+      const entries = zip.getEntries();
+      const supportedExts = ['.csv', '.xlsx', '.xls', '.sql'];
+
+      for (const entry of entries) {
+        if (entry.isDirectory) continue;
+        const name = path.basename(entry.entryName);
+        const ext = path.extname(name).toLowerCase();
+        if (!supportedExts.includes(ext)) continue;
+
+        // Extract this file to MIGRATION_DIR so it can be analyzed/processed
+        const extractedName = `zip_${Date.now()}_${name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const extractedPath = path.join(MIGRATION_DIR, extractedName);
+        fs.writeFileSync(extractedPath, entry.getData());
+
+        let headers: string[] = [];
+        let samples: any[] = [];
+        let sheetNames: string[] = [];
+
+        try {
+          if (ext === '.csv') {
+            const r = await readCsvHeaders(extractedPath);
+            headers = r.headers;
+            samples = r.samples;
+          } else if (ext === '.xlsx' || ext === '.xls') {
+            const r = readExcelHeaders(extractedPath);
+            headers = r.headers;
+            samples = r.samples;
+            sheetNames = r.sheetNames;
+          } else if (ext === '.sql') {
+            headers = ['[SQL file — will be auto-imported]'];
+            samples = [];
+          }
+        } catch (_) { /* keep going even if one file fails */ }
+
+        const detected = autoDetectFileType(headers);
+        files.push({
+          originalName: name,
+          extractedFileName: extractedName,
+          ext: ext.replace('.', ''),
+          headers,
+          samples: samples.slice(0, 3),
+          sheetNames,
+          detected,
+          rowCount: null, // unknown without full parse
+        });
+      }
     }
 
     res.json({ zipFile: fileName, files });
@@ -311,7 +342,7 @@ router.delete('/staging/rollback', async (_req, res) => {
       fs.unlinkSync(STAGING_DB_PATH_LOCAL);
     }
     // Reset migration status
-    Object.assign(migrationStatus, { active: false, progress: 0, message: 'Idle', file: null, isStagingReady: false });
+    Object.assign(migrationStatus, { active: false, progress: 0, message: 'Idle', file: null, isStagingReady: false, errorCount: 0 });
     res.json({ success: true, message: 'Staging cleared. Ready for a fresh migration.' });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to rollback staging', details: err.message });
@@ -321,6 +352,20 @@ router.delete('/staging/rollback', async (_req, res) => {
 // --- STAGING APIS ---
 
 const STAGING_DB_PATH = path.resolve(__dirname, '..', '..', 'data', 'staging.db');
+
+router.get('/staging/errors', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all(`
+      SELECT id, file_name, row_index, raw_data, error_message, created_at 
+      FROM migration_errors 
+      ORDER BY id DESC LIMIT 500
+    `);
+    await db.close();
+    res.json(rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 
 router.get('/staging/inventory', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);

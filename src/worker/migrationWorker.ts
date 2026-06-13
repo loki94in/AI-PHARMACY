@@ -59,6 +59,7 @@ export const migrationStatus = new Proxy({
   message: 'Idle',
   file: null as string | null,
   isStagingReady: false,
+  errorCount: 0,
 }, {
   set(target: any, prop: string, value: any) {
     target[prop] = value;
@@ -66,6 +67,63 @@ export const migrationStatus = new Proxy({
     return true;
   }
 });
+
+async function ensureMigrationErrorsTable(db: any) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS migration_errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_name TEXT,
+      row_index INTEGER,
+      raw_data TEXT,
+      error_message TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  await db.run('DELETE FROM migration_errors');
+}
+
+function validateAndCleanCSVRow(row: any, mapping?: Record<string, string>): { isValid: boolean; errors: string[]; cleaned: any } {
+  const errors: string[] = [];
+  const cleaned = { ...row };
+
+  if (mapping) {
+    for (const [rawKey, targetCol] of Object.entries(mapping)) {
+      if (targetCol === 'IGNORE' || !targetCol) continue;
+      const rawVal = row[rawKey];
+      if (rawVal === undefined || rawVal === null) continue;
+
+      if (targetCol === 'quantity') {
+        const valStr = String(rawVal).trim();
+        const parsed = parseInt(valStr, 10);
+        if (valStr !== '' && (isNaN(parsed) || parsed < 0)) {
+          errors.push(`Quantity must be a non-negative integer: "${rawVal}"`);
+        } else if (valStr !== '') {
+          cleaned[rawKey] = parsed;
+        }
+      }
+      else if (targetCol === 'mrp' || targetCol === 'cost_price' || targetCol === 'total_amount') {
+        const valStr = String(rawVal).trim();
+        const parsed = parseFloat(valStr);
+        if (valStr !== '' && (isNaN(parsed) || parsed < 0)) {
+          errors.push(`${targetCol} must be a non-negative decimal: "${rawVal}"`);
+        } else if (valStr !== '') {
+          cleaned[rawKey] = parsed;
+        }
+      }
+      else if (targetCol === 'expiry_date') {
+        const valStr = String(rawVal).trim();
+        if (valStr !== '') {
+          const date = new Date(valStr);
+          if (isNaN(date.getTime())) {
+            errors.push(`Invalid date format for expiry: "${rawVal}"`);
+          }
+        }
+      }
+    }
+  }
+
+  return { isValid: errors.length === 0, errors, cleaned };
+}
 
 // Ensure directories exist
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
@@ -96,7 +154,7 @@ async function processMigrationFile(filePath: string, mapping?: Record<string, s
   try {
     const ext = path.extname(filePath).toLowerCase();
     const basename = path.basename(filePath);
-    Object.assign(migrationStatus, { active: true, progress: 0, message: 'Processing migration file...', file: basename });
+    Object.assign(migrationStatus, { active: true, progress: 0, message: 'Processing migration file...', file: basename, errorCount: 0 });
 
     const archiveDir = path.join(PROJECT_ROOT, 'data', 'archived_migrations');
     if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
@@ -281,6 +339,8 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   await db.run('PRAGMA journal_mode = WAL');
   await db.run('PRAGMA synchronous = NORMAL');
   await db.run('PRAGMA cache_size = -64000'); // 64MB cache
+
+  await ensureMigrationErrorsTable(db);
 
   // Clear all maps for a fresh import
   clearAllMaps();
@@ -521,6 +581,7 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
   migrationStatus.message = 'Parsing and Importing SQL Data (legacy format)...';
 
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
+  await ensureMigrationErrorsTable(db);
 
   const fileStream = fs.createReadStream(sqlPath);
   const rl = readline.createInterface({
@@ -533,6 +594,12 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
 
   for await (const line of rl) {
     const trimmedLine = line.trim();
+    
+    // Yield every 500 lines to keep event loop free
+    if (linesProcessed % 500 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+
     if (!trimmedLine) {
       linesProcessed++;
       if (linesProcessed % 1000 === 0) {
@@ -544,17 +611,26 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
 
     let migrated = false;
 
-    if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_RETURNS')) {
-      migrated = await processReturnsLine(trimmedLine, db);
-    }
-    else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_STOCK') ||
-             trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_BATCHES')) {
-      migrated = await processInventoryLine(trimmedLine, db);
-    }
-    else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALES') ||
-             trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALEITEMS') ||
-             trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALE_ITEMS')) {
-      migrated = await processSalesLine(trimmedLine, db);
+    try {
+      if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_RETURNS')) {
+        migrated = await processReturnsLine(trimmedLine, db);
+      }
+      else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_STOCK') ||
+               trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_BATCHES')) {
+        migrated = await processInventoryLine(trimmedLine, db);
+      }
+      else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALES') ||
+               trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALEITEMS') ||
+               trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALE_ITEMS')) {
+        migrated = await processSalesLine(trimmedLine, db);
+      }
+    } catch (err: any) {
+      migrationStatus.errorCount++;
+      const errMsg = err.message || 'Unknown processing error';
+      await db.run(
+        'INSERT INTO migration_errors (file_name, row_index, raw_data, error_message) VALUES (?, ?, ?, ?)',
+        [path.basename(sqlPath), linesProcessed, trimmedLine.slice(0, 1000), errMsg]
+      );
     }
 
     if (migrated) {
@@ -578,6 +654,7 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
  */
 async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?: Record<string, string>, skipLines: number = 0) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
+  await ensureMigrationErrorsTable(db);
   
   const tableInfo = await db.all('PRAGMA table_info(inventory_master)');
   const existingCols = tableInfo.map(c => c.name.toLowerCase());
@@ -628,7 +705,26 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?
         try {
           let insertCount = 0;
           for (const row of results) {
-            const medName = row['Medicine'] || 'Unknown Product';
+            // Yield every 200 rows to keep event loop free
+            if (insertCount % 200 === 0) {
+              await new Promise(resolve => setImmediate(resolve));
+            }
+
+            // Perform dynamic schema validation
+            const validation = validateAndCleanCSVRow(row, mapping);
+            if (!validation.isValid) {
+              migrationStatus.errorCount++;
+              const errorMsg = validation.errors.join('; ');
+              await db.run(
+                'INSERT INTO migration_errors (file_name, row_index, raw_data, error_message) VALUES (?, ?, ?, ?)',
+                [path.basename(csvPath), insertCount + skipLines + 1, JSON.stringify(row), errorMsg]
+              );
+              insertCount++;
+              continue;
+            }
+
+            const cleanRow = validation.cleaned;
+            const medName = cleanRow['Medicine'] || 'Unknown Product';
             let med = await db.get('SELECT id FROM medicines WHERE name = ?', [medName]);
             if (!med) {
               const result = await db.run('INSERT INTO medicines (name) VALUES (?)', [medName]);
@@ -639,7 +735,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?
             const valuesToInsert = [med.id];
             const placeholders = ['?'];
 
-            for (const [key, val] of Object.entries(row)) {
+            for (const [key, val] of Object.entries(cleanRow)) {
               const rawColName = key.trim();
               let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
               
@@ -674,6 +770,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, mapping?
           await db.close();
         }
       })
+      .on('end', () => {}) // Dummy end callback to satisfy event typing if needed
       .on('error', reject);
   });
 }

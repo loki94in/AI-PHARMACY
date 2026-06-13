@@ -1,6 +1,6 @@
 import express from 'express';
-import { open, Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { Database } from 'sqlite';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -28,12 +28,10 @@ const generateInvoiceNo = async (db: Database) => {
 router.get('/next-invoice', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const invoice_no = await generateInvoiceNo(db);
-    await db.close();
-    res.json({ invoice_no });
+        res.json({ invoice_no });
   } catch (error) {
-    if (db) await db.close();
     const err = error as Error;
     console.error(JSON.stringify({
       message: 'Failed to get next invoice',
@@ -67,7 +65,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Discount must be a valid non-negative number.' });
     }
 
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     // Start transaction to enforce atomicity
     await db.run('BEGIN TRANSACTION');
@@ -109,19 +107,39 @@ router.post('/', async (req, res) => {
     // Insert invoice
     const invoiceDateValue = sale_date ? new Date(sale_date).toISOString() : new Date().toISOString();
     const result = await db.run(
-      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [invoice_no, customerId, total, tax, paymentMedium, paymentStatus, invoiceDateValue]
+      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status, date, discount, subtotal, doctor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [invoice_no, customerId, total, tax, paymentMedium, paymentStatus, invoiceDateValue, Number(discount), subtotal, doctor_id || null]
     );
     const invoiceId = result.lastID;
+    if (!invoiceId) {
+      throw new Error('Failed to retrieve inserted invoice ID.');
+    }
 
     // Insert line items and update inventory
     for (const item of items) {
       const { inventory_id, quantity, unit_price, loose_qty = 0 } = item;
       
       // Stock Level Verification before processing decrement
-      const currentStock = await db.get('SELECT quantity FROM inventory_master WHERE id = ?', [inventory_id]);
+      const currentStock = await db.get('SELECT quantity, expiry_date FROM inventory_master WHERE id = ?', [inventory_id]);
       if (!currentStock || currentStock.quantity < Number(quantity)) {
         throw new Error(`Insufficient stock for inventory item ID ${inventory_id}. Available: ${currentStock ? currentStock.quantity : 0}, Requested: ${quantity}`);
+      }
+
+      // Expiry validation
+      if (currentStock.expiry_date) {
+        let expDate;
+        if (currentStock.expiry_date.includes('/')) {
+          const parts = currentStock.expiry_date.split('/');
+          let year = parseInt(parts[1], 10);
+          const month = parseInt(parts[0], 10) - 1;
+          if (year < 100) year += 2000;
+          expDate = new Date(year, month + 1, 0);
+        } else {
+          expDate = new Date(currentStock.expiry_date);
+        }
+        if (expDate < new Date()) {
+          throw new Error(`Cannot sell expired product. Inventory ID ${inventory_id} expired on ${currentStock.expiry_date}.`);
+        }
       }
 
       await db.run(
@@ -152,8 +170,7 @@ router.post('/', async (req, res) => {
 
     // Commit transaction
     await db.run('COMMIT');
-    await db.close();
-
+    
     // Trigger WhatsApp invoice sending if requested
     if (sendWhatsApp) {
       import('../services/whatsappInvoiceService.js')
@@ -173,8 +190,7 @@ router.post('/', async (req, res) => {
       } catch (rbErr) {
         console.error('Rollback failed:', rbErr);
       }
-      await db.close();
-    }
+          }
     const err = error as Error;
     console.error(JSON.stringify({
       message: 'Failed to create sale (rolled back)',
@@ -193,7 +209,7 @@ router.post('/hold', async (req, res) => {
     if (!req.body) {
       return res.status(400).json({ error: 'Request body required' });
     }
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     
     // Extract fields from body
     const { 
@@ -229,6 +245,23 @@ router.post('/hold', async (req, res) => {
 
     const holdInvoiceNo = await generateInvoiceNo(db);
     
+    await db.run('BEGIN TRANSACTION');
+
+    const parsedItems = typeof finalCartData === 'string' ? JSON.parse(finalCartData) : finalCartData;
+    for (const item of parsedItems) {
+      if (item.id && typeof item.id === 'number' && item.id < 1000000) {
+        const inventory_id = item.id;
+        const qty = Number(item.qty || 0);
+        if (qty > 0) {
+          const currentStock = await db.get('SELECT quantity FROM inventory_master WHERE id = ?', [inventory_id]);
+          if (!currentStock || currentStock.quantity < qty) {
+            throw new Error(`Insufficient stock for hold bill item ID ${inventory_id}.`);
+          }
+          await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [qty, inventory_id]);
+        }
+      }
+    }
+    
     await db.run(
       `INSERT INTO held_bills (
         invoice_no, temp_label, patient_name, patient_phone, doctor_name, 
@@ -247,10 +280,12 @@ router.post('/hold', async (req, res) => {
       ]
     );
 
-    await db.close();
-    res.json({ success: true, message: 'Bill held successfully', invoice_no: holdInvoiceNo });
+    await db.run('COMMIT');
+        res.json({ success: true, message: 'Bill held successfully', invoice_no: holdInvoiceNo });
   } catch (error) {
-    if (db) await db.close();
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch(e){}
+          }
     const err = error as Error;
     console.error('Failed to hold bill:', err);
     res.status(500).json({ error: 'Failed to hold bill' });
@@ -266,7 +301,7 @@ router.get('/recommend-quantity', async (req, res) => {
 
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     // Look up matching medicine first
     const med = await db.get(
       'SELECT id, name FROM medicines WHERE name LIKE ? LIMIT 1',
@@ -274,8 +309,7 @@ router.get('/recommend-quantity', async (req, res) => {
     );
 
     if (!med) {
-      await db.close();
-      return res.json({ recommendedQty: 1, type: 'strip', message: 'No matching history found' });
+            return res.json({ recommendedQty: 1, type: 'strip', message: 'No matching history found' });
     }
 
     // Query historical sales quantities for this medicine
@@ -290,8 +324,7 @@ router.get('/recommend-quantity', async (req, res) => {
       med.id
     );
 
-    await db.close();
-
+    
     if (history.length > 0) {
       const mostFrequent = history[0];
       const qty = mostFrequent.quantity;
@@ -319,7 +352,6 @@ router.get('/recommend-quantity', async (req, res) => {
 
     res.json({ recommendedQty: 1, type: 'strip', message: 'Default: 1 strip recommended' });
   } catch (error) {
-    if (db) await db.close();
     console.error('Failed to get recommendation:', error);
     res.status(500).json({ error: 'Failed to analyze previous sales data' });
   }
@@ -331,25 +363,31 @@ router.get('/recommend-quantity', async (req, res) => {
 router.get('/list', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const { search, date_from, date_to, batch } = req.query;
 
     let query = `
       SELECT 
         si.id, si.invoice_no, si.date, si.total_amount, si.tax_amount,
-        si.payment_medium, si.payment_status, si.roff,
+        si.payment_medium, si.payment_status, si.roff, si.discount, si.subtotal,
         si.cgst_value, si.sgst_value, si.igst_value,
-        c.name as customer_name, c.phone as customer_phone
+        c.name as customer_name, c.phone as customer_phone,
+        d.name as doctor_name
       FROM sales_invoices si
       LEFT JOIN customers c ON si.customer_id = c.id
+      LEFT JOIN doctors d ON si.doctor_id = d.id
       WHERE 1=1
     `;
     const params: any[] = [];
 
     if (search) {
-      query += ` AND (si.invoice_no LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)`;
+      query += ` AND (si.invoice_no LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR EXISTS (
+        SELECT 1 FROM sale_items sale_it 
+        JOIN inventory_master inv_m ON sale_it.inventory_id = inv_m.id 
+        WHERE sale_it.invoice_id = si.id AND inv_m.batch_no LIKE ?
+      ))`;
       const s = `%${search}%`;
-      params.push(s, s, s);
+      params.push(s, s, s, s);
     }
     if (date_from) {
       query += ` AND DATE(si.date) >= DATE(?)`;
@@ -360,7 +398,7 @@ router.get('/list', async (req, res) => {
       params.push(date_to);
     }
 
-    query += ` ORDER BY si.date DESC`;
+    query += ` ORDER BY si.date DESC LIMIT 30`;
 
     const invoices = await db.all(query, params);
 
@@ -370,7 +408,7 @@ router.get('/list', async (req, res) => {
       const filtered = [];
       for (const inv of invoices) {
         const items = await db.all(
-          `SELECT si.*, im.batch_no as batch_number, m.name as medicine_name
+          `SELECT si.*, im.batch_no as batch_number, m.name as medicine_name, m.id as medicine_id
            FROM sale_items si
            JOIN inventory_master im ON si.inventory_id = im.id
            JOIN medicines m ON im.medicine_id = m.id
@@ -382,14 +420,13 @@ router.get('/list', async (req, res) => {
           filtered.push(inv);
         }
       }
-      await db.close();
-      return res.json(filtered);
+            return res.json(filtered);
     }
 
     // Attach items for each invoice
     for (const inv of invoices) {
       inv.items = await db.all(
-        `SELECT si.*, im.batch_no as batch_number, im.expiry_date, m.name as medicine_name, m.mrp, 10 as pack_size
+        `SELECT si.*, im.batch_no as batch_number, im.expiry_date, m.name as medicine_name, m.mrp, 10 as pack_size, m.id as medicine_id
          FROM sale_items si
          JOIN inventory_master im ON si.inventory_id = im.id
          JOIN medicines m ON im.medicine_id = m.id
@@ -398,13 +435,135 @@ router.get('/list', async (req, res) => {
       );
     }
 
-    await db.close();
-    res.json(invoices);
+        res.json(invoices);
   } catch (error) {
-    if (db) await db.close();
     const err = error as Error;
     console.error(JSON.stringify({ message: 'Failed to list sales', error: err.message, timestamp: new Date().toISOString() }));
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Search medicine in inventory by Name, Batch, or MRP
+router.get('/search-medicine', async (req, res) => {
+  const query = req.query.q as string;
+  if (!query || query.trim().length < 2) {
+    return res.json([]);
+  }
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const likeQuery = `%${query}%`;
+    
+    // Strictly in-stock inventory search query (available in inventory with qty > 0 and unexpired)
+    const sql = `
+      SELECT 
+        m.id AS medicine_id, 
+        m.name AS medicine_name, 
+        m.api_reference,
+        im.id AS inventory_id, 
+        im.batch_no, 
+        im.expiry_date, 
+        im.quantity, 
+        COALESCE(im.mrp, m.mrp, 0) AS mrp, 
+        im.unit_price, 
+        COALESCE(im.cost_price, 0) AS cost_price,
+        m.cgst, 
+        m.sgst, 
+        m.igst, 
+        m.hsn_code,
+        0 AS is_out_of_stock
+      FROM inventory_master im
+      JOIN medicines m ON im.medicine_id = m.id
+      WHERE (m.name LIKE ? 
+         OR im.batch_no LIKE ? 
+         OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?)
+        AND im.quantity > 0
+        AND date(im.expiry_date) >= date('now')
+      ORDER BY m.name ASC
+      LIMIT 30
+    `;
+    const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery]);
+    
+    // Map SQLite numeric values back to boolean for is_out_of_stock compatibility
+    for (const row of rows) {
+      row.is_out_of_stock = false;
+    }
+    
+    // Fetch alternatives in a single batched query
+    const apiRefs = [...new Set(rows.map(r => r.api_reference).filter(a => a && a.trim() !== ''))];
+    let alternativesMap: Record<string, any[]> = {};
+    
+    if (apiRefs.length > 0) {
+      const placeholders = apiRefs.map(() => '?').join(',');
+      const altSql = `
+        SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
+               im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
+               m.cgst, m.sgst, m.igst, m.hsn_code
+        FROM inventory_master im
+        JOIN medicines m ON im.medicine_id = m.id
+        WHERE m.api_reference IN (${placeholders})
+          AND im.quantity > 0
+          AND date(im.expiry_date) >= date('now')
+        LIMIT 100
+      `;
+      const allAlts = await db.all(altSql, apiRefs);
+      for (const alt of allAlts) {
+        if (!alternativesMap[alt.api_reference]) alternativesMap[alt.api_reference] = [];
+        alternativesMap[alt.api_reference].push(alt);
+      }
+    }
+
+    // Attach alternatives
+    for (const row of rows) {
+      const alts = alternativesMap[row.api_reference] || [];
+      // Filter out self alternatives
+      row.alternatives = alts.filter(a => a.medicine_id !== row.medicine_id).slice(0, 5);
+    }
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Failed to search medicine:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Universal search for medicine and substitutes (same composition)
+router.get('/universal-search', async (req, res) => {
+  const query = req.query.q as string;
+  if (!query) {
+    return res.json([]);
+  }
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const likeQuery = `%${query}%`;
+    
+    // Find medicines matching name or composition
+    const matchedMeds = await db.all(`
+      SELECT m.id, m.name, m.api_reference, m.mrp,
+             COALESCE((SELECT SUM(quantity) FROM inventory_master WHERE medicine_id = m.id), 0) as stock_qty
+      FROM medicines m
+      WHERE m.name LIKE ? OR m.api_reference LIKE ?
+      LIMIT 30
+    `, [likeQuery, likeQuery]);
+    
+        res.json(matchedMeds);
+  } catch (error) {
+    console.error('Universal search failed:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// List all held bills
+router.get('/hold', async (req, res) => {
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const rows = await db.all('SELECT * FROM held_bills ORDER BY date DESC');
+        res.json(rows);
+  } catch (error) {
+    console.error('Failed to retrieve held bills:', error);
+    res.status(500).json({ error: 'Failed to retrieve held bills' });
   }
 });
 
@@ -412,25 +571,25 @@ router.get('/list', async (req, res) => {
 router.get('/:id', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const { id } = req.params;
 
     const invoice = await db.get(
-      `SELECT si.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address
+      `SELECT si.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address, d.name as doctor_name
        FROM sales_invoices si
        LEFT JOIN customers c ON si.customer_id = c.id
+       LEFT JOIN doctors d ON si.doctor_id = d.id
        WHERE si.id = ?`,
       [id]
     );
 
     if (!invoice) {
-      await db.close();
-      return res.status(404).json({ error: 'Invoice not found' });
+            return res.status(404).json({ error: 'Invoice not found' });
     }
 
     invoice.items = await db.all(
       `SELECT si.*, im.batch_no as batch_number, im.expiry_date, im.mrp as item_mrp, 10 as pack_size,
-              m.name as medicine_name, m.mrp as medicine_mrp
+              m.name as medicine_name, m.mrp as medicine_mrp, m.id as medicine_id
        FROM sale_items si
        JOIN inventory_master im ON si.inventory_id = im.id
        JOIN medicines m ON im.medicine_id = m.id
@@ -438,10 +597,8 @@ router.get('/:id', async (req, res) => {
       [id]
     );
 
-    await db.close();
-    res.json(invoice);
+        res.json(invoice);
   } catch (error) {
-    if (db) await db.close();
     const err = error as Error;
     console.error(JSON.stringify({ message: 'Failed to get sale', error: err.message, timestamp: new Date().toISOString() }));
     res.status(500).json({ error: 'Internal server error' });
@@ -452,15 +609,17 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const { id } = req.params;
-    const { items, patient_name, patient_phone, discount = 0, paymentMedium, paymentStatus } = req.body;
+    const { items, patient_name, patient_phone, discount = 0, paymentMedium, paymentStatus, doctor_id } = req.body;
+
+    await db.run('BEGIN TRANSACTION');
 
     // Check invoice exists
     const existing = await db.get('SELECT * FROM sales_invoices WHERE id = ?', [id]);
     if (!existing) {
-      await db.close();
-      return res.status(404).json({ error: 'Invoice not found' });
+      await db.run('ROLLBACK');
+            return res.status(404).json({ error: 'Invoice not found' });
     }
 
     // Resolve customer
@@ -490,6 +649,29 @@ router.put('/:id', async (req, res) => {
       let subtotal = 0;
       for (const item of items) {
         const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0 } = item;
+        
+        // Stock Level & Expiry Verification
+        const currentStock = await db.get('SELECT quantity, expiry_date FROM inventory_master WHERE id = ?', [inventory_id]);
+        if (!currentStock || currentStock.quantity < Number(quantity)) {
+          throw new Error(`Insufficient stock for inventory item ID ${inventory_id}. Available: ${currentStock ? currentStock.quantity : 0}, Requested: ${quantity}`);
+        }
+
+        if (currentStock.expiry_date) {
+          let expDate;
+          if (currentStock.expiry_date.includes('/')) {
+            const parts = currentStock.expiry_date.split('/');
+            let year = parseInt(parts[1], 10);
+            const month = parseInt(parts[0], 10) - 1;
+            if (year < 100) year += 2000;
+            expDate = new Date(year, month + 1, 0);
+          } else {
+            expDate = new Date(currentStock.expiry_date);
+          }
+          if (expDate < new Date()) {
+            throw new Error(`Cannot sell expired product. Inventory ID ${inventory_id} expired on ${currentStock.expiry_date}.`);
+          }
+        }
+
         await db.run('INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)', [id, inventory_id, quantity, unit_price, loose_qty]);
         await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
         subtotal += quantity * unit_price;
@@ -500,21 +682,23 @@ router.put('/:id', async (req, res) => {
       const total = Math.round(subtotal + tax - discount);
 
       await db.run(
-        'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status) WHERE id = ?',
-        [customerId, total, tax, paymentMedium || null, paymentStatus || null, id]
+        'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status), discount = ?, subtotal = ?, doctor_id = ? WHERE id = ?',
+        [customerId, total, tax, paymentMedium || null, paymentStatus || null, Number(discount), subtotal, doctor_id || null, id]
       );
     } else {
       // Just update customer/discount
       await db.run('UPDATE sales_invoices SET customer_id = ? WHERE id = ?', [customerId, id]);
     }
 
-    await db.close();
-    res.json({ success: true, message: 'Invoice updated' });
+    await db.run('COMMIT');
+        res.json({ success: true, message: 'Invoice updated' });
   } catch (error) {
-    if (db) await db.close();
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch(e){}
+          }
     const err = error as Error;
     console.error(JSON.stringify({ message: 'Failed to update sale', error: err.message, timestamp: new Date().toISOString() }));
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
@@ -522,13 +706,12 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const { id } = req.params;
 
     const existing = await db.get('SELECT * FROM sales_invoices WHERE id = ?', [id]);
     if (!existing) {
-      await db.close();
-      return res.status(404).json({ error: 'Invoice not found' });
+            return res.status(404).json({ error: 'Invoice not found' });
     }
 
     // Reverse stock
@@ -541,28 +724,11 @@ router.delete('/:id', async (req, res) => {
     await db.run('DELETE FROM sale_items WHERE invoice_id = ?', [id]);
     await db.run('DELETE FROM sales_invoices WHERE id = ?', [id]);
 
-    await db.close();
-    res.json({ success: true, message: 'Invoice deleted, stock restored' });
+        res.json({ success: true, message: 'Invoice deleted, stock restored' });
   } catch (error) {
-    if (db) await db.close();
     const err = error as Error;
     console.error(JSON.stringify({ message: 'Failed to delete sale', error: err.message, timestamp: new Date().toISOString() }));
     res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// List all held bills
-router.get('/hold', async (req, res) => {
-  let db;
-  try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
-    const rows = await db.all('SELECT * FROM held_bills ORDER BY date DESC');
-    await db.close();
-    res.json(rows);
-  } catch (error) {
-    if (db) await db.close();
-    console.error('Failed to retrieve held bills:', error);
-    res.status(500).json({ error: 'Failed to retrieve held bills' });
   }
 });
 
@@ -571,12 +737,29 @@ router.delete('/hold/:id', async (req, res) => {
   const { id } = req.params;
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
+    await db.run('BEGIN TRANSACTION');
+    
+    // Restore stock
+    const heldBill = await db.get('SELECT cart_data FROM held_bills WHERE id = ?', [id]);
+    if (heldBill && heldBill.cart_data) {
+      try {
+        const items = JSON.parse(heldBill.cart_data);
+        for (const item of items) {
+          if (item.id && typeof item.id === 'number' && item.id < 1000000) {
+            await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [Number(item.qty || 0), item.id]);
+          }
+        }
+      } catch (e) { console.error('Failed to parse held bill cart_data:', e); }
+    }
+
     await db.run('DELETE FROM held_bills WHERE id = ?', id);
-    await db.close();
-    res.json({ success: true, message: 'Held bill removed' });
+    await db.run('COMMIT');
+        res.json({ success: true, message: 'Held bill removed' });
   } catch (error) {
-    if (db) await db.close();
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch(e){}
+          }
     console.error('Failed to delete held bill:', error);
     res.status(500).json({ error: 'Failed to delete held bill' });
   }

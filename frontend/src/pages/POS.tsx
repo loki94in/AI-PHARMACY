@@ -1,52 +1,24 @@
 import { useState, useEffect } from 'react';
-import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Calendar, UserCheck } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { UniversalMedicineEditModal } from '../components/UniversalMedicineEditModal';
+import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Calendar, UserCheck, Edit } from 'lucide-react';
 import AICamera from '../components/AICamera';
 import BrandBanner from '../components/POS/BrandBanner';
 import { api, apiClient } from '../services/api';
 
 // We will fetch common combinations dynamically instead of using hardcoded constants
 
-const POS = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showCamera, setShowCamera] = useState(false);
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const [patientName, setPatientName] = useState('');
-  const [patientPhone, setPatientPhone] = useState('');
-  const [patientId] = useState('P-' + Math.floor(100000 + Math.random() * 900000));
-  const [refillEnabled, setRefillEnabled] = useState(false);
-  const [refillDays, setRefillDays] = useState(30);
-  const [showPatientModal, setShowPatientModal] = useState(false);
-  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
-  const [lastSavedInvoiceNo, setLastSavedInvoiceNo] = useState('');
-  const [lastSavedItems, setLastSavedItems] = useState<any[]>([]);
-  const [doctor, setDoctor] = useState('');
-  const [isDoctorDropdownOpen, setIsDoctorDropdownOpen] = useState(false);
-  const [doctorHighlightIndex, setDoctorHighlightIndex] = useState(-1);
-  const [isManualDoctor, setIsManualDoctor] = useState(false);
-  
-  // Doctor Modal state
-  const [showDoctorModal, setShowDoctorModal] = useState(false);
-  const [newDoctorName, setNewDoctorName] = useState('');
-  const [newDoctorSpecialty, setNewDoctorSpecialty] = useState('');
-  const [newDoctorPhone, setNewDoctorPhone] = useState('');
-  const [newDoctorClinic, setNewDoctorClinic] = useState('');
-  const [newDoctorRegNo, setNewDoctorRegNo] = useState('');
-  // Patient autocomplete
-  const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
-  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
-  const [patientHighlightIndex, setPatientHighlightIndex] = useState(-1);
-  const [discount, setDiscount] = useState(0);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [cart, setCart] = useState<any[]>([]);
-  const [sendWhatsApp, setSendWhatsApp] = useState(false); // DEFAULT: OFF
-  const [paymentMedium, setPaymentMedium] = useState<string>('CASH'); // DEFAULT: CASH
-  const [specialOrders, setSpecialOrders] = useState<any[]>([]);
-  const [rowBatchesList, setRowBatchesList] = useState<any[]>([]);
-  const [activeBatchRowId, setActiveBatchRowId] = useState<number | null>(null);
-  const [commonCombinations, setCommonCombinations] = useState<any[]>([]);
-
-  // Multi-cart tab states
-  const [tabs, setTabs] = useState<any[]>([
+const getInitialPOSTabs = () => {
+  const saved = localStorage.getItem('pos_draft_tabs');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {
+      console.error('Failed to parse saved POS tabs:', e);
+    }
+  }
+  return [
     {
       id: 'default',
       name: 'Cart 1',
@@ -61,161 +33,207 @@ const POS = () => {
       sendWhatsApp: false,
       paymentMedium: 'CASH'
     }
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>('default');
+  ];
+};
+
+const getInitialPOSActiveTabId = (initialTabs: any[]) => {
+  const saved = localStorage.getItem('pos_active_tab_id');
+  if (saved && initialTabs.some(t => t.id === saved)) return saved;
+  return initialTabs[0]?.id || 'default';
+};
+
+const POS = () => {
+  const initialTabs = getInitialPOSTabs();
+  const initialActiveTabId = getInitialPOSActiveTabId(initialTabs);
+  const initialActiveTab = initialTabs.find(t => t.id === initialActiveTabId) || initialTabs[0];
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showCamera, setShowCamera] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [patientName, setPatientName] = useState(initialActiveTab.patientName || '');
+  const [patientPhone, setPatientPhone] = useState(initialActiveTab.patientPhone || '');
+  const [patientId] = useState('P-' + Math.floor(100000 + Math.random() * 900000));
+  const [refillEnabled, setRefillEnabled] = useState(initialActiveTab.refillEnabled || false);
+  const [refillDays, setRefillDays] = useState(initialActiveTab.refillDays || 30);
+  const [showPatientModal, setShowPatientModal] = useState(false);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [lastSavedInvoiceNo, setLastSavedInvoiceNo] = useState('');
+  const [lastSavedItems, setLastSavedItems] = useState<any[]>([]);
+  const [doctor, setDoctor] = useState(initialActiveTab.doctor || '');
+  const [isDoctorDropdownOpen, setIsDoctorDropdownOpen] = useState(false);
+  const [doctorHighlightIndex, setDoctorHighlightIndex] = useState(-1);
+  const [isManualDoctor, setIsManualDoctor] = useState(initialActiveTab.isManualDoctor || false);
+  
+  // Doctor Modal state
+  const [showDoctorModal, setShowDoctorModal] = useState(false);
+  const [newDoctorName, setNewDoctorName] = useState('');
+  const [newDoctorSpecialty, setNewDoctorSpecialty] = useState('');
+  const [newDoctorPhone, setNewDoctorPhone] = useState('');
+  const [newDoctorClinic, setNewDoctorClinic] = useState('');
+  const [newDoctorRegNo, setNewDoctorRegNo] = useState('');
+  // Patient autocomplete
+  const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
+  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
+  const [patientHighlightIndex, setPatientHighlightIndex] = useState(-1);
+  const [discount, setDiscount] = useState(initialActiveTab.discount || 0);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [cart, setCart] = useState<any[]>(initialActiveTab.items || []);
+  const [sendWhatsApp, setSendWhatsApp] = useState(initialActiveTab.sendWhatsApp || false); // DEFAULT: OFF
+  const [paymentMedium, setPaymentMedium] = useState<string>(initialActiveTab.paymentMedium || 'CASH'); // DEFAULT: CASH
+  const [specialOrders, setSpecialOrders] = useState<any[]>([]);
+  const [rowBatchesList, setRowBatchesList] = useState<any[]>([]);
+  const [activeBatchRowId, setActiveBatchRowId] = useState<number | null>(null);
+  const [commonCombinations, setCommonCombinations] = useState<any[]>([]);
+
+  // Multi-cart tab states
+  const [tabs, setTabs] = useState<any[]>(initialTabs);
+  const [activeTabId, setActiveTabId] = useState<string>(initialActiveTabId);
+
+  // Synchronize active states with the active tab in the tabs list
+  useEffect(() => {
+    setTabs(prev => {
+      const idx = prev.findIndex(t => t.id === activeTabId);
+      if (idx === -1) return prev;
+      const t = prev[idx];
+      if (
+        t.items !== cart ||
+        t.patientName !== patientName ||
+        t.patientPhone !== patientPhone ||
+        t.refillEnabled !== refillEnabled ||
+        t.refillDays !== refillDays ||
+        t.doctor !== doctor ||
+        t.isManualDoctor !== isManualDoctor ||
+        t.discount !== discount ||
+        t.sendWhatsApp !== sendWhatsApp ||
+        t.paymentMedium !== paymentMedium
+      ) {
+        const next = [...prev];
+        next[idx] = {
+          ...t,
+          items: cart,
+          patientName,
+          patientPhone,
+          refillEnabled,
+          refillDays,
+          doctor,
+          isManualDoctor,
+          discount,
+          sendWhatsApp,
+          paymentMedium
+        };
+        return next;
+      }
+      return prev;
+    });
+  }, [cart, patientName, patientPhone, refillEnabled, refillDays, doctor, isManualDoctor, discount, sendWhatsApp, paymentMedium, activeTabId]);
+
+  // Save tabs and activeTabId to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('pos_draft_tabs', JSON.stringify(tabs));
+  }, [tabs]);
+
+  // Clean up any potential legacy conflicting local storage keys to ensure robust cache
+  useEffect(() => {
+    localStorage.removeItem('pos_tabs');
+    localStorage.removeItem('pos_active_tab');
+    localStorage.removeItem('pos_draft_tab_id');
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('pos_active_tab_id', activeTabId);
+  }, [activeTabId]);
 
   const switchTab = (newTabId: string) => {
     if (newTabId === activeTabId) return;
-
-    // Save current states into active tab first
-    setTabs(prev => {
-      const updated = prev.map(t => {
-        if (t.id === activeTabId) {
-          return {
-            ...t,
-            items: cart,
-            patientName,
-            patientPhone,
-            refillEnabled,
-            refillDays,
-            doctor,
-            discount,
-            sendWhatsApp,
-            paymentMedium
-          };
-        }
-        return t;
-      });
-
-      // Load new active tab states
-      const target = updated.find(t => t.id === newTabId);
-      if (target) {
-        setCart(target.items);
-        setPatientName(target.patientName);
-        setPatientPhone(target.patientPhone || '');
-        setRefillEnabled(target.refillEnabled);
-        setRefillDays(target.refillDays);
-        setDoctor(target.doctor);
-        setIsManualDoctor(target.isManualDoctor || false);
-        setDiscount(target.discount);
-        setSendWhatsApp(target.sendWhatsApp);
-        setPaymentMedium(target.paymentMedium || 'CASH');
-        setActiveTabId(newTabId);
-      }
-
-      return updated;
-    });
+    const target = tabs.find(t => t.id === newTabId);
+    if (target) {
+      setCart(target.items || []);
+      setPatientName(target.patientName || '');
+      setPatientPhone(target.patientPhone || '');
+      setRefillEnabled(target.refillEnabled || false);
+      setRefillDays(target.refillDays || 30);
+      setDoctor(target.doctor || '');
+      setIsManualDoctor(target.isManualDoctor || false);
+      setDiscount(target.discount || 0);
+      setSendWhatsApp(target.sendWhatsApp || false);
+      setPaymentMedium(target.paymentMedium || 'CASH');
+      setActiveTabId(newTabId);
+    }
   };
 
   const addNewTab = () => {
-    setTabs(prev => {
-      const saved = prev.map(t => {
-        if (t.id === activeTabId) {
-          return {
-            ...t,
-            items: cart,
-            patientName,
-            patientPhone,
-            refillEnabled,
-            refillDays,
-            doctor,
-            isManualDoctor,
-            discount,
-            sendWhatsApp,
-            paymentMedium
-          };
-        }
-        return t;
-      });
+    const nextNum = tabs.length + 1;
+    const newId = 'cart_' + Date.now();
+    const newTab = {
+      id: newId,
+      name: `Cart ${nextNum}`,
+      items: [],
+      patientName: '',
+      patientPhone: '',
+      refillEnabled: false,
+      refillDays: 30,
+      doctor: '',
+      isManualDoctor: false,
+      discount: 0,
+      sendWhatsApp: false,
+      paymentMedium: 'CASH'
+    };
 
-      const nextNum = saved.length + 1;
-      const newId = 'cart_' + Date.now();
-      const newTab = {
-        id: newId,
-        name: `Cart ${nextNum}`,
-        items: [],
-        patientName: '',
-        patientPhone: '',
-        refillEnabled: false,
-        refillDays: 30,
-        doctor: '',
-        isManualDoctor: false,
-        discount: 0,
-        sendWhatsApp: false,
-        paymentMedium: 'CASH'
-      };
-
-      setCart([]);
-      setPatientName('');
-      setPatientPhone('');
-      setRefillEnabled(false);
-      setRefillDays(30);
-      setDoctor('');
-      setIsManualDoctor(false);
-      setDiscount(0);
-      setSendWhatsApp(false);
-      setPaymentMedium('CASH');
-      setActiveTabId(newId);
-
-      return [...saved, newTab];
-    });
+    setCart([]);
+    setPatientName('');
+    setPatientPhone('');
+    setRefillEnabled(false);
+    setRefillDays(30);
+    setDoctor('');
+    setIsManualDoctor(false);
+    setDiscount(0);
+    setSendWhatsApp(false);
+    setPaymentMedium('CASH');
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newId);
   };
 
   const closeTab = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (tabs.length === 1) return;
 
-    setTabs(prev => {
-      const filtered = prev.filter(t => t.id !== tabId);
-      if (activeTabId === tabId) {
-        const fallback = filtered[filtered.length - 1];
-        setCart(fallback.items);
-        setPatientName(fallback.patientName);
-        setPatientPhone(fallback.patientPhone);
-        setRefillEnabled(fallback.refillEnabled);
-        setRefillDays(fallback.refillDays);
-        setDoctor(fallback.doctor);
-        setIsManualDoctor(fallback.isManualDoctor || false);
-        setDiscount(fallback.discount);
-        setSendWhatsApp(fallback.sendWhatsApp);
-        setPaymentMedium(fallback.paymentMedium || 'CASH');
-        setActiveTabId(fallback.id);
-      }
-      return filtered.map((t, idx) => ({
-        ...t,
-        name: t.name.startsWith('Cart ') ? `Cart ${idx + 1}` : t.name
-      }));
-    });
+    const filtered = tabs.filter(t => t.id !== tabId);
+    if (activeTabId === tabId) {
+      const fallback = filtered[filtered.length - 1];
+      setCart(fallback.items || []);
+      setPatientName(fallback.patientName || '');
+      setPatientPhone(fallback.patientPhone || '');
+      setRefillEnabled(fallback.refillEnabled || false);
+      setRefillDays(fallback.refillDays || 30);
+      setDoctor(fallback.doctor || '');
+      setIsManualDoctor(fallback.isManualDoctor || false);
+      setDiscount(fallback.discount || 0);
+      setSendWhatsApp(fallback.sendWhatsApp || false);
+      setPaymentMedium(fallback.paymentMedium || 'CASH');
+      setActiveTabId(fallback.id);
+    }
+    setTabs(filtered.map((t, idx) => ({
+      ...t,
+      name: t.name.startsWith('Cart ') ? `Cart ${idx + 1}` : t.name
+    })));
   };
 
   const getTabItemsCount = (tab: any) => {
     if (tab.id === activeTabId) {
       return cart.length;
     }
-    return tab.items.length;
+    return tab.items ? tab.items.length : 0;
   };
 
   const updateCart = (newCartOrFn: any[] | ((prev: any[]) => any[])) => {
     setCart(prev => {
       const next = typeof newCartOrFn === 'function' ? newCartOrFn(prev) : newCartOrFn;
-      setTabs(prevTabs => prevTabs.map(t => {
-        if (t.id === activeTabId) {
-          return { ...t, items: next };
-        }
-        return t;
-      }));
       return next;
     });
   };
 
   const updatePatientName = (name: string) => {
     setPatientName(name);
-    setTabs(prev => prev.map(t => {
-      if (t.id === activeTabId) {
-        return { ...t, patientName: name };
-      }
-      return t;
-    }));
   };
   
   const [doctorsList, setDoctorsList] = useState<any[]>([]);
@@ -377,6 +395,9 @@ const POS = () => {
 
   // Manual Billing Row States
   const [manualName, setManualName] = useState('');
+
+  // Universal Edit state
+  const [editMedicineId, setEditMedicineId] = useState<number | null>(null);
   const [manualBatch, setManualBatch] = useState('');
   const [manualExpiry, setManualExpiry] = useState('');
   const [manualQty, setManualQty] = useState(1);
@@ -387,6 +408,25 @@ const POS = () => {
   const [manualCostPrice, setManualCostPrice] = useState(0);
 
   const addToCart = (med: any) => {
+    // Expiry check
+    const expiryStr = med.expiry || med.expiry_date || '';
+    if (expiryStr) {
+      let expDate: Date;
+      if (expiryStr.includes('/')) {
+        const parts = expiryStr.split('/');
+        let year = parseInt(parts[1], 10);
+        const month = parseInt(parts[0], 10) - 1;
+        if (year < 100) year += 2000;
+        expDate = new Date(year, month + 1, 0);
+      } else {
+        expDate = new Date(expiryStr);
+      }
+      if (expDate < new Date()) {
+        alert(`❌ CANNOT ADD EXPIRED PRODUCT!\n\n${med.name} expired on ${expiryStr}.\nPlease remove it from physical inventory.`);
+        return;
+      }
+    }
+
     // Check if added item has special order request
     const pendingMatches = specialOrders.filter(
       o => o.product.toLowerCase().trim() === med.name.toLowerCase().trim() ||
@@ -666,6 +706,27 @@ const POS = () => {
       alert('Patient/Customer Name is required for Credit transactions to track outstanding balance!');
       return;
     }
+
+    // Expiry check
+    for (const item of cart) {
+      const expiryStr = item.expiry || '';
+      if (expiryStr) {
+        let expDate: Date;
+        if (expiryStr.includes('/')) {
+          const parts = expiryStr.split('/');
+          let year = parseInt(parts[1], 10);
+          const month = parseInt(parts[0], 10) - 1;
+          if (year < 100) year += 2000;
+          expDate = new Date(year, month + 1, 0);
+        } else {
+          expDate = new Date(expiryStr);
+        }
+        if (expDate < new Date()) {
+          alert(`❌ CRITICAL SAFETY BLOCK:\n\nCart contains EXPIRED product: ${item.name} (${expiryStr}).\nCannot proceed with checkout.`);
+          return;
+        }
+      }
+    }
     
     try {
       const salesItems = cart.map(item => {
@@ -781,326 +842,387 @@ const POS = () => {
 
   return (
     <div className="h-full flex flex-col fade-in space-y-4 overflow-hidden pb-4">
-      {/* Brand & System Status Banner */}
-      <BrandBanner />
 
-      {/* Patient & Transaction Bar (All in One Horizontal Line) */}
-      <div className="glass-panel p-3.5 flex flex-wrap items-center gap-4 bg-white/5 border-glass-border text-xs w-full relative z-20">
-        {/* Patient Name Group */}
-        <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-          <span className="font-bold text-muted whitespace-nowrap">👤 Pt:</span>
-          <div className="flex-1 flex gap-1 items-center w-full relative">
-            <input 
-              type="text" 
-              className="premium-input text-xs py-1.5 px-2 flex-1 w-full" 
-              placeholder="Walk-in Customer" 
-              value={patientName}
-              onChange={e => { updatePatientName(e.target.value); setPatientHighlightIndex(-1); }}
-              onFocus={() => { if (patientSuggestions.length > 0) setShowPatientSuggestions(true); }}
-              onBlur={() => setTimeout(() => setShowPatientSuggestions(false), 180)}
-              onKeyDown={e => {
-                if (!showPatientSuggestions || patientSuggestions.length === 0) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setPatientHighlightIndex(i => Math.min(i + 1, patientSuggestions.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setPatientHighlightIndex(i => Math.max(i - 1, 0));
-                } else if (e.key === 'Enter' && patientHighlightIndex >= 0) {
-                  e.preventDefault();
-                  const sel = patientSuggestions[patientHighlightIndex];
-                  updatePatientName(sel.name);
-                  setPatientPhone(sel.phone || '');
-                  setShowPatientSuggestions(false);
-                  setPatientHighlightIndex(-1);
-                } else if (e.key === 'Escape') {
-                  setShowPatientSuggestions(false);
-                  setPatientHighlightIndex(-1);
-                }
-              }}
-              aria-label="Patient Name"
-            />
-            {/* Patient suggestions dropdown */}
-            {showPatientSuggestions && (
-              <div className="absolute left-0 top-full z-[99999] mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden w-full max-h-44 overflow-y-auto shadow-2xl">
-                {patientSuggestions.map((c, idx) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onMouseDown={() => {
-                      updatePatientName(c.name);
-                      setPatientPhone(c.phone || '');
+      {/* 1. Sleek Two-Column Patient & Prescriber Context Section */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 relative z-20 shrink-0">
+        
+        {/* Customer / Patient Card */}
+        <div className="glass-panel p-4 flex flex-wrap items-center gap-4 bg-glass-bg border-glass-border">
+          <div className="flex items-center gap-3 flex-1 min-w-[240px]">
+            <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary font-bold">👤</span>
+            <div className="flex-1 relative">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Patient / Customer</label>
+              <div className="flex gap-1 items-center">
+                <input 
+                  type="text" 
+                  className="premium-input text-xs h-10 px-3 flex-1 w-full" 
+                  placeholder="Walk-in Customer" 
+                  value={patientName}
+                  onChange={e => { updatePatientName(e.target.value); setPatientHighlightIndex(-1); }}
+                  onFocus={() => { if (patientSuggestions.length > 0) setShowPatientSuggestions(true); }}
+                  onBlur={() => setTimeout(() => setShowPatientSuggestions(false), 180)}
+                  onKeyDown={e => {
+                    if (!showPatientSuggestions || patientSuggestions.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setPatientHighlightIndex(i => Math.min(i + 1, patientSuggestions.length - 1));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setPatientHighlightIndex(i => Math.max(i - 1, 0));
+                    } else if (e.key === 'Enter' && patientHighlightIndex >= 0) {
+                      e.preventDefault();
+                      const sel = patientSuggestions[patientHighlightIndex];
+                      updatePatientName(sel.name);
+                      setPatientPhone(sel.phone || '');
                       setShowPatientSuggestions(false);
                       setPatientHighlightIndex(-1);
-                    }}
-                    className={`w-full text-left px-3 py-1.5 text-xs border-b border-glass-border/10 transition-all flex items-center justify-between gap-2 ${
-                      idx === patientHighlightIndex
-                        ? 'bg-primary/25 text-white'
-                        : 'text-text hover:bg-primary/15'
-                    }`}
-                  >
-                    <span className="font-semibold truncate">{c.name}</span>
-                    {c.phone && <span className="text-muted font-mono text-[10px] shrink-0">{c.phone}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-            <button 
-              onClick={() => setShowPatientModal(true)}
-              className="h-8 w-8 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary transition-all flex items-center justify-center shrink-0"
-              title="Manage Patient Profile & Refills"
-            >
-              <Plus size={13} className="stroke-[3]" />
-            </button>
-          </div>
-        </div>
-
-        {/* WhatsApp ON/OFF Switch */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button 
-            onClick={() => setSendWhatsApp(!sendWhatsApp)}
-            className={`h-8 px-3 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none ${
-              sendWhatsApp 
-                ? 'bg-green/15 border-green/40 text-green hover:bg-green/25' 
-                : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
-            }`}
-            title={sendWhatsApp ? "WhatsApp Active" : "WhatsApp Inactive"}
-          >
-            {sendWhatsApp ? (
-              <>
-                <span className="h-1.5 w-1.5 rounded-full bg-green animate-ping" />
-                <span>WA: ON</span>
-              </>
-            ) : (
-              <span>WA: OFF</span>
-            )}
-          </button>
-        </div>
-
-        {/* Phone Number Group */}
-        <div className="flex items-center gap-2 flex-1 min-w-[160px] max-w-[200px]">
-          <span className="font-bold text-muted whitespace-nowrap">📞 No:</span>
-          <input 
-            type="text" 
-            className="premium-input text-xs py-1.5 px-2 w-full font-mono text-text" 
-            placeholder="9876543210"
-            value={patientPhone}
-            onChange={e => setPatientPhone(e.target.value)}
-            aria-label="Phone Number"
-          />
-        </div>
-
-        {/* Doctor Dropdown Group */}
-        <div className="flex items-center gap-2 flex-1 min-w-[260px] relative">
-          <span className="font-bold text-muted whitespace-nowrap">🥼 Dr:</span>
-          <div className="relative flex-1 flex gap-1">
-            <div className="relative flex-1">
-              <input 
-              type="text"
-              className="premium-input text-xs py-1.5 pl-2 pr-7 bg-bg2 w-full text-text focus:border-sky"
-              placeholder="Type or Select Doctor..."
-              value={doctor}
-              onChange={e => { setDoctor(e.target.value); setDoctorHighlightIndex(-1); }}
-              onFocus={() => setIsDoctorDropdownOpen(true)}
-              onBlur={() => setTimeout(() => setIsDoctorDropdownOpen(false), 200)}
-              onKeyDown={e => {
-                if (!isDoctorDropdownOpen || filteredDoctors.length === 0) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setDoctorHighlightIndex(i => Math.min(i + 1, filteredDoctors.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setDoctorHighlightIndex(i => Math.max(i - 1, 0));
-                } else if (e.key === 'Enter' && doctorHighlightIndex >= 0) {
-                  e.preventDefault();
-                  setDoctor(filteredDoctors[doctorHighlightIndex].name);
-                  setIsDoctorDropdownOpen(false);
-                  setDoctorHighlightIndex(-1);
-                } else if (e.key === 'Escape') {
-                  setIsDoctorDropdownOpen(false);
-                  setDoctorHighlightIndex(-1);
-                }
-              }}
-              title="Select or Type Doctor Name"
-            />
-            {/* Custom chevron indicator */}
-            <span className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-muted">
-              <svg className="w-3 h-3 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
-              </svg>
-            </span>
-            
-            {/* Custom Dropdown List */}
-            {isDoctorDropdownOpen && (
-              <div className="absolute left-0 right-0 z-[99999] mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
-                {filteredDoctors.length > 0 ? (
-                  filteredDoctors.map((doc, idx) => (
-                    <button
-                      key={doc.id}
-                      type="button"
-                      onMouseDown={() => {
-                        setDoctor(doc.name);
-                        setIsDoctorDropdownOpen(false);
-                        setDoctorHighlightIndex(-1);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs border-b border-glass-border/10 transition-all font-semibold ${
-                        idx === doctorHighlightIndex
-                          ? 'bg-sky/25 text-white'
-                          : 'text-text hover:bg-sky/20 hover:text-white'
-                      }`}
-                    >
-                      {doc.name}
-                    </button>
-                  ))
-                ) : (
-                  <div className="px-3 py-2 text-xs text-muted italic">
-                    Press Enter to add custom: "{doctor}"
+                    } else if (e.key === 'Escape') {
+                      setShowPatientSuggestions(false);
+                      setPatientHighlightIndex(-1);
+                    }
+                  }}
+                  aria-label="Patient Name"
+                />
+                {/* Patient suggestions dropdown */}
+                {showPatientSuggestions && (
+                  <div className="absolute left-0 right-0 top-full z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-2xl">
+                    {patientSuggestions.map((c, idx) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onMouseDown={() => {
+                          updatePatientName(c.name);
+                          setPatientPhone(c.phone || '');
+                          setShowPatientSuggestions(false);
+                          setPatientHighlightIndex(-1);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-xs border-b border-glass-border/10 transition-all flex items-center justify-between gap-2 ${
+                          idx === patientHighlightIndex
+                            ? 'bg-primary/20 text-text font-bold'
+                            : 'text-text hover:bg-primary/10'
+                        }`}
+                      >
+                        <span className="font-semibold truncate">{c.name}</span>
+                        {c.phone && <span className="text-muted font-mono text-[10px] shrink-0">{c.phone}</span>}
+                      </button>
+                    ))}
                   </div>
                 )}
+                <button 
+                  onClick={() => setShowPatientModal(true)}
+                  className="h-10 w-10 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary transition-all flex items-center justify-center shrink-0"
+                  title="Manage Patient Profile & Refills"
+                >
+                  <Plus size={14} className="stroke-[3]" />
+                </button>
               </div>
-            )}
+            </div>
           </div>
-          <button 
-            onClick={() => setShowDoctorModal(true)}
-            className="h-8 w-8 rounded-lg bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky transition-all flex items-center justify-center shrink-0"
-            title="Register New Doctor"
-          >
-            <Plus size={13} className="stroke-[3]" />
-          </button>
-        </div>
-      </div>
 
-        {/* Date Stamp Group */}
-        <div className="flex items-center gap-2 flex-1 min-w-[140px] max-w-[180px]">
-          <span className="font-bold text-muted whitespace-nowrap">📅:</span>
-          <input 
-            type="date" 
-            className="premium-input text-xs py-1.5 px-2 text-text w-full" 
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            aria-label="Transaction Date"
-          />
+          <div className="flex items-center gap-3 min-w-[180px]">
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">WhatsApp Number</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  className="premium-input text-xs h-10 px-3 w-full font-mono text-text" 
+                  placeholder="9876543210"
+                  value={patientPhone}
+                  onChange={e => setPatientPhone(e.target.value)}
+                  aria-label="Phone Number"
+                />
+                {/* WhatsApp active state */}
+                <button 
+                  onClick={() => setSendWhatsApp(!sendWhatsApp)}
+                  className={`h-10 px-3 rounded-xl border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none shrink-0 ${
+                    sendWhatsApp 
+                      ? 'bg-green/15 border-green/40 text-green hover:bg-green/25' 
+                      : 'bg-bg border-glass-border text-muted hover:text-text hover:bg-bg3'
+                  }`}
+                  title={sendWhatsApp ? "WhatsApp Notifications Active" : "WhatsApp Notifications Inactive"}
+                >
+                  {sendWhatsApp ? (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-green animate-pulse" />
+                      <span>WA: ON</span>
+                    </>
+                  ) : (
+                    <span>WA: OFF</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* Search Medicine Section */}
-      <div className="glass-panel p-4 flex flex-col gap-3.5 bg-white/5 border-glass-border relative z-10">
-        <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-4">
-          <h3 className="font-bold flex items-center gap-2 text-base whitespace-nowrap">
-            <Search size={18} className="text-primary" /> 
-            Search Medicine
-          </h3>
-          <div className="flex-1 flex gap-4 max-w-3xl w-full">
-            <div className="relative flex-1">
-              <input 
-                type="text" 
-                placeholder="Search medicine by name, batch, composition, or MRP..." 
-                className="premium-input w-full text-base p-2.5"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-              
-              {/* Search results dropdown */}
-              {searchResults.length > 0 && (
-                <div className="absolute left-0 right-0 z-[99999] mt-1.5 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-60 overflow-y-auto shadow-2xl">
-                  <div className="p-2 border-b border-glass-border/30 bg-black/20 text-[10px] font-bold text-muted uppercase tracking-wider">
-                    Matching Inventory Batch Records:
+        {/* Prescriber / Session Details Card */}
+        <div className="glass-panel p-4 flex flex-wrap items-center gap-4 bg-glass-bg border-glass-border">
+          <div className="flex items-center gap-3 flex-1 min-w-[240px] relative">
+            <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-sky/10 text-sky font-bold">🥼</span>
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Prescribing Doctor</label>
+              <div className="flex gap-1 relative">
+                <input 
+                  type="text"
+                  className="premium-input text-xs h-10 pl-3 pr-7 bg-bg2 w-full text-text focus:border-sky"
+                  placeholder="Type or Select Doctor..."
+                  value={doctor}
+                  onChange={e => { setDoctor(e.target.value); setDoctorHighlightIndex(-1); }}
+                  onFocus={() => setIsDoctorDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setIsDoctorDropdownOpen(false), 200)}
+                  onKeyDown={e => {
+                    if (!isDoctorDropdownOpen || filteredDoctors.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setDoctorHighlightIndex(i => Math.min(i + 1, filteredDoctors.length - 1));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setDoctorHighlightIndex(i => Math.max(i - 1, 0));
+                    } else if (e.key === 'Enter' && doctorHighlightIndex >= 0) {
+                      e.preventDefault();
+                      setDoctor(filteredDoctors[doctorHighlightIndex].name);
+                      setIsDoctorDropdownOpen(false);
+                      setDoctorHighlightIndex(-1);
+                    } else if (e.key === 'Escape') {
+                      setIsDoctorDropdownOpen(false);
+                      setDoctorHighlightIndex(-1);
+                    }
+                  }}
+                  title="Select or Type Doctor Name"
+                />
+                <span className="absolute inset-y-0 right-12 pr-2 flex items-center pointer-events-none text-muted">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+                  </svg>
+                </span>
+                
+                {isDoctorDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
+                    {filteredDoctors.length > 0 ? (
+                      filteredDoctors.map((doc, idx) => (
+                        <button
+                          key={doc.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setDoctor(doc.name);
+                            setIsDoctorDropdownOpen(false);
+                            setDoctorHighlightIndex(-1);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs border-b border-glass-border/10 transition-all font-semibold ${
+                            idx === doctorHighlightIndex
+                              ? 'bg-sky/20 text-text font-bold'
+                              : 'text-text hover:bg-sky/10'
+                          }`}
+                        >
+                          {doc.name}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-xs text-muted italic">
+                        Press Enter to add custom: "{doctor}"
+                      </div>
+                    )}
                   </div>
-                  <div className="flex flex-col">
-                    {searchResults.map((med: any) => {
+                )}
+                <button 
+                  onClick={() => setShowDoctorModal(true)}
+                  className="h-10 w-10 rounded-xl bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky transition-all flex items-center justify-center shrink-0"
+                  title="Register New Doctor"
+                >
+                  <Plus size={14} className="stroke-[3]" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 min-w-[140px] max-w-[180px]">
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Billing Date</label>
+              <input 
+                type="date" 
+                className="premium-input text-xs h-10 px-3 text-text w-full font-mono" 
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                aria-label="Transaction Date"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Search & Scan Medicine Area */}
+      <div className="glass-panel p-4 flex flex-col gap-3 bg-glass-bg border-glass-border relative z-10 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted">
+              <Search size={18} />
+            </span>
+            <input 
+              type="text" 
+              placeholder="Search medicine by name, composition, batch, or price..." 
+              className="premium-input w-full text-base py-2 pl-10 pr-4"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+            
+            {/* Search results dropdown */}
+            {searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-[99999] mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
+                <div className="p-2 border-b border-glass-border/30 bg-black/20 text-[10px] font-bold text-muted uppercase tracking-wider">
+                  Matching Inventory Records:
+                </div>
+                <div className="flex flex-col">
+                  {searchResults.map((med: any) => {
+                    const renderMedicineItem = (item: any, isAlt = false) => {
                       const pendingMatches = specialOrders.filter(
-                        o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
-                             med.medicine_name.toLowerCase().includes(o.product.toLowerCase().trim())
+                        o => o.product.toLowerCase().trim() === item.medicine_name.toLowerCase().trim() ||
+                             item.medicine_name.toLowerCase().includes(o.product.toLowerCase().trim())
                       );
                       const hasPending = pendingMatches.length > 0;
                       return (
                         <button
-                          key={med.inventory_id}
+                          key={item.inventory_id || `item_${item.medicine_id}_${Math.random()}`}
                           type="button"
                           onClick={() => {
                             addToCart({
-                              id: med.inventory_id,
-                              name: med.medicine_name,
-                              batch: med.batch_no,
-                              expiry: med.expiry_date,
-                              mrp: med.mrp,
-                              costPrice: med.cost_price,
-                              salts: med.salts || med.hsn_code || 'Generic',
-                              packSize: med.pack_size || 10
+                              id: item.inventory_id,
+                              medicine_id: item.medicine_id,
+                              name: item.medicine_name,
+                              batch: item.batch_no,
+                              expiry: item.expiry_date,
+                              mrp: item.mrp,
+                              costPrice: item.cost_price,
+                              salts: item.salts || item.hsn_code || 'Generic',
+                              packSize: item.pack_size || 10
                             });
                             setSearchTerm('');
                             setSearchResults([]);
                           }}
-                          className="flex items-center justify-between p-2.5 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                          className={`flex items-center justify-between p-3 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full group ${isAlt ? 'pl-8 bg-sky/5' : ''}`}
                         >
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-text group-hover:text-primary transition-all">{med.medicine_name}</span>
+                              {isAlt && <span className="text-[9px] bg-sky/20 text-sky px-1.5 py-0.5 rounded font-bold mr-1">ALT</span>}
+                              <span className="font-semibold text-text group-hover:text-primary transition-all">{item.medicine_name}</span>
                               {hasPending && (
                                 <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[9px] font-bold animate-pulse">
                                   ⚠️ Request: {pendingMatches[0].requester} ({pendingMatches[0].qty})
                                 </span>
                               )}
                             </div>
-                            <span className="text-[9px] text-muted">Batch: <span className="font-mono text-text">{med.batch_no}</span> | Exp: <span className="font-mono text-text">{med.expiry_date}</span></span>
+                            <span className="text-[9px] text-muted">Batch: <span className="font-mono text-text">{item.batch_no}</span> | Exp: <span className="font-mono text-text">{item.expiry_date}</span></span>
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <div className="font-mono text-sky font-bold">MRP: ₹{Math.round(med.mrp)}</div>
-                              <div className="text-[9px] text-muted">Stock: {med.quantity} units</div>
+                              <div className="font-mono text-green font-bold">MRP: ₹{Math.round(item.mrp)}</div>
+                              <div className="text-[9px] text-muted">{item.quantity} units in stock</div>
                             </div>
-                            <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditMedicineId(item.medicine_id);
+                                }}
+                                className="p-1.5 rounded-lg bg-bg border border-glass-border/40 text-muted hover:text-text hover:bg-bg3 transition-all"
+                                title="Quick Edit Medicine"
+                              >
+                                <Edit size={12} />
+                              </button>
+                              <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
+                            </div>
                           </div>
                         </button>
                       );
-                    })}
-                  </div>
+                    };
+
+                    if (med.is_out_of_stock) {
+                      return (
+                        <div key={`oos_${med.medicine_id}`} className="flex flex-col border-b border-glass-border/10">
+                          <div className="p-2.5 bg-red-500/10 text-xs w-full flex flex-col gap-1 border-l-2 border-red-500">
+                             <div className="flex items-center justify-between">
+                               <div>
+                                 <span className="font-bold text-red-400 line-through mr-2">{med.medicine_name}</span>
+                                 <span className="text-[9px] text-red-400 font-bold uppercase border border-red-500/30 px-1.5 py-0.5 rounded bg-red-500/10">Out of Stock</span>
+                               </div>
+                             </div>
+                             {med.alternatives && med.alternatives.length > 0 && (
+                               <div className="text-[10px] text-sky font-bold flex items-center gap-1.5 mt-1">
+                                 <span className="h-1.5 w-1.5 bg-sky rounded-full animate-ping"></span> 
+                                 Alternatives in stock (same composition):
+                               </div>
+                             )}
+                          </div>
+                          {med.alternatives && med.alternatives.map((alt: any) => renderMedicineItem(alt, true))}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={`in_stock_${med.inventory_id}`} className="flex flex-col">
+                        {renderMedicineItem(med, false)}
+                        {med.alternatives && med.alternatives.length > 0 && (
+                          <div className="flex flex-col border-l-2 border-sky/30 ml-2 bg-black/20">
+                            <div className="px-6 py-1 bg-sky/5 text-[9px] text-sky font-bold uppercase tracking-wider flex items-center gap-1">
+                              <span className="rotate-90">↱</span> Substitutes Available:
+                            </div>
+                            {med.alternatives.map((alt: any) => renderMedicineItem(alt, true))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-            <button 
-              type="button"
-              onClick={() => setShowCamera(true)}
-              className="premium-btn bg-black/40 border border-primary/30 text-primary hover:bg-primary/20 transition-all flex items-center gap-2 px-6"
-            >
-              <Camera size={20} />
-              <span>AI Scan</span>
-            </button>
+              </div>
+            )}
           </div>
+          
+          <button 
+            type="button"
+            onClick={() => setShowCamera(true)}
+            className="premium-btn bg-primary text-text shadow-[0_4px_14px_rgba(59,130,246,0.3)] hover:bg-teal-500 transition-all flex items-center gap-2 px-5 h-11 shrink-0"
+          >
+            <Camera size={18} />
+            <span>AI Camera Scan</span>
+          </button>
         </div>
 
-        {/* Quick Add / Common Combinations scrolling pills */}
-        <div className="border-t border-glass-border/30 pt-3 flex flex-col gap-2">
-          <span className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1.5 select-none">
-            ⚡ Quick-Add Combinations (Most Sold prescription bundles):
-          </span>
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-            {commonCombinations.map(med => (
-              <button
-                key={med.id}
-                onClick={() => addToCart(med)}
-                className="flex items-center gap-3 bg-white/5 border border-glass-border/50 hover:border-primary/40 hover:bg-primary/5 px-3 py-1.5 rounded-full transition-all group whitespace-nowrap"
-              >
-                <span className="text-xs font-bold text-text group-hover:text-primary transition-all">
-                  {med.name}
-                  {med.recommendationMsg && (
-                    <span className="text-[10px] text-sky ml-1.5 font-mono">
-                      ({med.recommendedQty > 0 ? `${med.recommendedQty} Str` : `${med.recommendedLooseQty} Tab`})
-                    </span>
-                  )}
-                </span>
-                <span className="text-[10px] text-primary opacity-60 group-hover:opacity-100 font-bold">+</span>
-              </button>
-            ))}
+        {/* Quick Add Combinations */}
+        {commonCombinations.length > 0 && (
+          <div className="border-t border-glass-border/30 pt-2 flex flex-col gap-1.5">
+            <span className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1.5 select-none">
+              ⚡ Quick Add (Frequently Sold):
+            </span>
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+              {commonCombinations.map(med => (
+                <button
+                  key={med.id}
+                  onClick={() => addToCart(med)}
+                  className="flex items-center gap-2.5 bg-bg2 border border-glass-border/60 hover:border-primary/40 hover:bg-primary/5 px-3 py-1.5 rounded-full transition-all group whitespace-nowrap"
+                >
+                  <span className="text-xs font-semibold text-text group-hover:text-primary transition-all">
+                    {med.name}
+                    {med.recommendationMsg && (
+                      <span className="text-[9px] text-sky ml-1.5 font-mono font-bold">
+                        ({med.recommendedQty > 0 ? `${med.recommendedQty} Str` : `${med.recommendedLooseQty} Tab`})
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[10px] text-primary font-bold">+</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Cart & Actions Grid (75% / 25% Split Column Layout) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 overflow-hidden">
-        {/* LEFT: CART TABLE (75% / 3/4 Column Width) */}
-        <div className="lg:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border">
-          <div className="p-2 border-b border-glass-border flex items-center justify-between gap-3 bg-black/10 flex-nowrap">
+      {/* 3. Main Workspace Grid */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 overflow-hidden min-h-0">
+        
+        {/* LEFT: Cart Panel (3/4 Columns) */}
+        <div className="lg:col-span-3 glass-panel flex flex-col overflow-hidden bg-glass-bg border-glass-border h-full">
+          {/* Cart Header / Tab System */}
+          <div className="p-2 border-b border-glass-border flex items-center justify-between gap-3 bg-black/20 flex-nowrap shrink-0">
             <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 scrollbar-thin py-0.5">
               {tabs.map((t) => {
                 const isActive = t.id === activeTabId;
@@ -1110,9 +1232,9 @@ const POS = () => {
                   <div
                     key={t.id}
                     onClick={() => switchTab(t.id)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-semibold text-xs transition-all select-none cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-xs transition-all select-none cursor-pointer flex-shrink-0 whitespace-nowrap ${
                       isActive 
-                        ? 'bg-primary/20 border-primary text-primary font-bold' 
+                        ? 'bg-primary/10 border-primary text-primary shadow-[inset_0_0_12px_rgba(59,130,246,0.15)]' 
                         : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
                     }`}
                   >
@@ -1122,7 +1244,7 @@ const POS = () => {
                       <span 
                         onClick={(e) => closeTab(t.id, e)}
                         className="hover:bg-white/15 rounded-full p-0.5 ml-1 transition-all cursor-pointer flex items-center justify-center text-muted hover:text-text"
-                        title="Close Cart"
+                        title="Close Tab"
                       >
                         <X size={10} />
                       </span>
@@ -1132,28 +1254,29 @@ const POS = () => {
               })}
               <button
                 onClick={addNewTab}
-                className="flex items-center justify-center flex-shrink-0 p-1.5 rounded-lg border border-dashed border-glass-border text-muted hover:text-text hover:border-text transition-all bg-white/5 hover:bg-white/10 h-[30px] w-[30px]"
+                className="flex items-center justify-center flex-shrink-0 p-1.5 rounded-lg border border-dashed border-glass-border text-muted hover:text-text hover:border-text transition-all bg-white/5 hover:bg-white/10 h-[28px] w-[28px]"
                 title="Add New Cart"
               >
-                <Plus size={14} />
+                <Plus size={12} />
               </button>
             </div>
             
             <button 
               onClick={clearCart}
-              className="premium-btn bg-red/10 border border-red/20 text-red text-xs py-1.5 px-3 hover:bg-red/25 transition-all flex items-center gap-1.5 ml-auto"
+              className="premium-btn bg-red/10 border border-red/20 text-red text-xs py-1.5 px-3 hover:bg-red/20 transition-all flex items-center gap-1.5 ml-auto"
             >
               <Trash2 size={12} /> Clear Cart
             </button>
           </div>
-          <div className="flex-1 overflow-auto bg-black/20">
+
+          {/* Cart Table Container */}
+          <div className="flex-1 overflow-auto bg-black/10">
             <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
+              <thead className="sticky top-0 bg-bg3/95 backdrop-blur z-10">
                 <tr>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Medicine</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Batch</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Expiry</th>
-
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Qty (Str)</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Loose Qty</th>
                   <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Disc %</th>
@@ -1166,20 +1289,38 @@ const POS = () => {
                 {cart.map(item => {
                   const unitRate = item.packSize > 0 ? item.mrp / item.packSize : item.mrp;
                   const itemTotal = ((item.mrp * item.qty) + (unitRate * (item.looseQty || 0))) * (1 - (item.discount || 0) / 100);
+                  
+                  // Near expiry highlight
+                  let expBadgeClass = "bg-bg2 border border-glass-border text-text";
+                  if (item.expiry) {
+                    const parts = item.expiry.split('/');
+                    if (parts.length === 2) {
+                      let year = parseInt(parts[1], 10);
+                      const month = parseInt(parts[0], 10) - 1;
+                      if (year < 100) year += 2000;
+                      const expDate = new Date(year, month + 1, 0);
+                      const diffMs = expDate.getTime() - new Date().getTime();
+                      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                      if (diffDays <= 90) {
+                        expBadgeClass = "bg-amber-500/10 border border-amber-500/35 text-amber-500 font-bold";
+                      }
+                    }
+                  }
+
                   return (
                     <tr key={item.id} className="border-b border-glass-border/20 hover:bg-white/5 transition-all">
-                      {/* Medicine Name (Changeable Autocomplete Search) */}
+                      {/* Medicine Search/Change */}
                       <td className="p-2 min-w-[150px] relative">
                         <div className="flex items-center">
                           {item.scanImage && (
-                            <div className="relative group/thumb shrink-0 mr-2 select-none animate-in fade-in slide-in-from-left-2 duration-200">
+                            <div className="relative group/thumb shrink-0 mr-2 select-none animate-in fade-in duration-200">
                               <img 
                                 src={item.scanImage} 
                                 alt="Scan thumbnail" 
                                 className="w-8 h-8 object-cover rounded-md border border-glass-border/60 hover:border-primary/60 transition-all cursor-zoom-in shadow-md"
                                 onClick={() => setZoomedImage(item.scanImage)}
                               />
-                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover/thumb:block z-[99999] bg-[#18181b]/98 border border-glass-border rounded-xl p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-48 animate-in fade-in zoom-in-95 duration-150">
+                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover/thumb:block z-[99999] bg-bg3 border border-glass-border rounded-xl p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-48 animate-in fade-in duration-150">
                                 <img src={item.scanImage} alt="Scan preview" className="w-full h-auto rounded-lg object-contain" />
                                 <div className="text-[8px] text-muted text-center mt-1 font-semibold">Click to enlarge</div>
                               </div>
@@ -1188,66 +1329,66 @@ const POS = () => {
                           <div className="flex-1 relative">
                             <input 
                               type="text" 
-                              className="w-full bg-transparent border-0 border-b border-transparent hover:border-glass-border/30 focus:border-primary/40 focus:ring-0 text-xs font-semibold text-text ml-1.5 py-0.5"
+                              className="w-full bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/40 focus:ring-0 text-xs font-semibold text-text py-0.5"
                               value={activeRowSearchIndex === cart.indexOf(item) ? rowSearchTerm : item.name}
-                            onChange={e => {
-                              const val = e.target.value;
-                              const idx = cart.indexOf(item);
-                              setActiveRowSearchIndex(idx);
-                              setRowSearchTerm(val);
-                            }}
-                            onFocus={() => {
-                              const idx = cart.indexOf(item);
-                              setActiveRowSearchIndex(idx);
-                              setRowSearchTerm(item.name);
-                            }}
-                            placeholder="Change medicine..."
-                          />
-                          
-                          {activeRowSearchIndex === cart.indexOf(item) && rowSearchResults.length > 0 && (
-                            <div className="absolute left-0 right-0 z-[99999] mt-1 bg-[#18181b]/98 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64 shadow-2xl">
-                              {rowSearchResults.map((med: any) => {
-                                const rowPendingMatches = specialOrders.filter(
-                                  o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
-                                       med.medicine_name.toLowerCase().includes(o.product.toLowerCase().trim())
-                                );
-                                const rowHasPending = rowPendingMatches.length > 0;
-                                return (
-                                  <button
-                                    key={med.inventory_id}
-                                    type="button"
-                                    onClick={() => {
-                                      const idx = cart.indexOf(item);
-                                      changeRowMedicine(idx, med);
-                                    }}
-                                    className="flex flex-col p-2 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full"
-                                  >
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-semibold text-text">{med.medicine_name}</span>
-                                      {rowHasPending && (
-                                        <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1 py-0.5 rounded text-[8px] font-bold animate-pulse">
-                                          ⚠️ {rowPendingMatches[0].requester} ({rowPendingMatches[0].qty})
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-[9px] text-muted font-mono mt-0.5">Batch: {med.batch_no} | Exp: {med.expiry_date}</span>
-                                    <span className="text-[9px] text-sky font-bold font-mono mt-0.5">MRP: ₹{Math.round(med.mrp)} | Stock: {med.quantity}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
+                              onChange={e => {
+                                const val = e.target.value;
+                                const idx = cart.indexOf(item);
+                                setActiveRowSearchIndex(idx);
+                                setRowSearchTerm(val);
+                              }}
+                              onFocus={() => {
+                                const idx = cart.indexOf(item);
+                                setActiveRowSearchIndex(idx);
+                                setRowSearchTerm(item.name);
+                              }}
+                              placeholder="Change medicine..."
+                            />
+                            
+                            {activeRowSearchIndex === cart.indexOf(item) && rowSearchResults.length > 0 && (
+                              <div className="absolute left-0 right-0 z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64 shadow-2xl">
+                                {rowSearchResults.map((med: any) => {
+                                  const rowPendingMatches = specialOrders.filter(
+                                    o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
+                                         med.medicine_name.toLowerCase().includes(o.product.toLowerCase().trim())
+                                  );
+                                  const rowHasPending = rowPendingMatches.length > 0;
+                                  return (
+                                    <button
+                                      key={med.inventory_id}
+                                      type="button"
+                                      onClick={() => {
+                                        const idx = cart.indexOf(item);
+                                        changeRowMedicine(idx, med);
+                                      }}
+                                      className="flex flex-col p-2.5 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full"
+                                    >
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-semibold text-text">{med.medicine_name}</span>
+                                        {rowHasPending && (
+                                          <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1 py-0.5 rounded text-[8px] font-bold animate-pulse">
+                                            ⚠️ {rowPendingMatches[0].requester} ({rowPendingMatches[0].qty})
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-[9px] text-muted font-mono mt-0.5">Batch: {med.batch_no} | Exp: {med.expiry_date}</span>
+                                      <span className="text-[9px] text-green font-bold font-mono mt-0.5">MRP: ₹{Math.round(med.mrp)} | Stock: {med.quantity}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-[9px] text-muted ml-1.5 mt-0.5 truncate max-w-[160px]">{item.salts || 'Generic Salts'}</div>
-                    </td>
+                        <div className="text-[9px] text-muted ml-1.5 mt-0.5 truncate max-w-[160px]">{item.salts || 'Generic Salts'}</div>
+                      </td>
 
-                      {/* Batch */}
+                      {/* Batch Selection */}
                       <td className="p-2 relative">
                         <div className="relative">
                           <input
                             type="text"
-                            className="premium-input font-mono text-xs font-semibold py-1 px-1.5 w-24 text-center bg-white/5 border-glass-border/60 ml-1 cursor-pointer"
+                            className="w-24 text-center bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/40 focus:ring-0 text-xs font-mono font-semibold py-0.5"
                             value={item.batch || ''}
                             placeholder="Batch"
                             onChange={e => updateCartItem(item.id, 'batch', e.target.value)}
@@ -1256,7 +1397,6 @@ const POS = () => {
                               api.searchMedicine(item.name)
                                 .then(data => {
                                   if (Array.isArray(data)) {
-                                    // filter matching name exactly
                                     const matches = data.filter(med => med.medicine_name.toLowerCase().trim() === item.name.toLowerCase().trim());
                                     setRowBatchesList(matches.length > 0 ? matches : data);
                                   }
@@ -1273,7 +1413,7 @@ const POS = () => {
                           />
                           
                           {activeBatchRowId === item.id && rowBatchesList.length > 1 && (
-                            <div className="absolute left-1 z-[99999] mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
+                            <div className="absolute left-1 z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
                               <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
                                 Switch Batch:
                               </div>
@@ -1296,7 +1436,7 @@ const POS = () => {
                                     }));
                                     setActiveBatchRowId(null);
                                   }}
-                                  className={`w-full text-left px-2.5 py-1.5 hover:bg-sky/20 hover:text-text border-b border-glass-border/10 text-[10px] font-mono transition-all block ${b.batch_no === item.batch ? 'bg-sky/10 text-sky' : 'text-text'}`}
+                                  className={`w-full text-left px-2.5 py-1.5 hover:bg-sky/15 border-b border-glass-border/10 text-[10px] font-mono transition-all block ${b.batch_no === item.batch ? 'bg-sky/10 text-sky' : 'text-text'}`}
                                 >
                                   <span className="font-bold block">{b.batch_no}</span>
                                   <span className="text-muted block text-[8px]">Exp: {b.expiry_date} | Stock: {b.quantity} | MRP: ₹{b.mrp}</span>
@@ -1308,17 +1448,15 @@ const POS = () => {
                       </td>
                       
                       {/* Expiry */}
-                      <td className="p-2 text-center select-none">
-                        <div className="font-mono text-xs font-semibold text-text bg-white/5 px-2 py-1 rounded border border-glass-border/30 inline-block">{item.expiry}</div>
+                      <td className="p-2 text-center">
+                        <div className={`font-mono text-xs font-semibold px-2 py-0.5 rounded inline-block ${expBadgeClass}`}>{item.expiry}</div>
                       </td>
 
-
-
-                      {/* Quantity (Str) */}
+                      {/* Qty (Strips) */}
                       <td className="p-2 text-center">
                         <input 
                           type="number" 
-                          className="premium-input text-xs py-1 px-1.5 w-10 text-center font-mono font-bold text-text bg-white/5 border-glass-border/60" 
+                          className="w-11 text-center font-mono font-bold text-text bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/45 focus:ring-0 py-0.5" 
                           value={item.qty}
                           onChange={e => updateCartItem(item.id, 'qty', Math.max(0, Number(e.target.value)))}
                           min="0"
@@ -1329,18 +1467,18 @@ const POS = () => {
                       <td className="p-2 text-center">
                         <input 
                           type="number" 
-                          className="premium-input text-xs py-1 px-1.5 w-10 text-center font-mono font-bold border-amber-500/30 focus:border-amber-500 bg-amber-500/5 text-amber-200" 
+                          className="w-11 text-center font-mono font-bold text-amber-500 bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-amber-45 focus:ring-0 py-0.5" 
                           value={item.looseQty || 0}
                           onChange={e => updateCartItem(item.id, 'looseQty', Math.max(0, Number(e.target.value)))}
                           min="0"
                         />
                       </td>
 
-                      {/* Discount */}
+                      {/* Disc % */}
                       <td className="p-2 text-center">
                         <input 
                           type="number" 
-                          className="premium-input text-xs py-1 px-1.5 w-12 text-center font-mono font-bold text-sky bg-sky/5 border-sky/30 focus:border-sky" 
+                          className="w-12 text-center font-mono font-bold text-sky bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-sky/45 focus:ring-0 py-0.5" 
                           value={item.discount || 0}
                           onChange={e => updateCartItem(item.id, 'discount', Math.min(100, Math.max(0, Number(e.target.value))))}
                           min="0"
@@ -1352,42 +1490,59 @@ const POS = () => {
                       <td className="p-2 text-right">
                         <input 
                           type="number" 
-                          className="premium-input text-xs font-mono py-1 px-1.5 w-16 text-right bg-white/5 border-glass-border/60" 
+                          className="w-16 text-right font-mono bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/40 focus:ring-0 py-0.5" 
                           value={item.mrp || ''}
                           placeholder="0.00"
                           onChange={e => updateCartItem(item.id, 'mrp', Math.max(0, Number(e.target.value)))}
                         />
                       </td>
 
-                      <td className="p-2 text-right text-xs font-mono font-bold text-primary">
-                        <div className="font-mono text-sm text-green font-bold">
+                      {/* Total */}
+                      <td className="p-2 text-right">
+                        <div className="font-mono text-xs font-bold text-green">
                           ₹{Math.round(itemTotal)}
                         </div>
                       </td>
+
+                      {/* Actions */}
                       <td className="p-2 text-center">
-                        <button 
-                          onClick={() => removeFromCart(item.id)}
-                          className="p-1 hover:bg-red/10 text-muted hover:text-red rounded-lg transition-all"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (item.medicine_id) setEditMedicineId(item.medicine_id);
+                            }}
+                            disabled={!item.medicine_id}
+                            className={`p-1 rounded-lg transition-all ${item.medicine_id ? 'hover:bg-sky/10 text-muted hover:text-sky' : 'opacity-30 cursor-not-allowed text-muted'}`}
+                            title="Quick Edit Medicine"
+                          >
+                            <Edit size={13} />
+                          </button>
+                          <button 
+                            onClick={() => removeFromCart(item.id)}
+                            className="p-1 hover:bg-red/10 text-muted hover:text-red rounded-lg transition-all"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
 
-                {/* MANUAL BILLING ROW AT THE BOTTOM */}
+                {/* MANUAL BILLING ROW */}
                 <tr className="bg-white/5 border-t-2 border-primary/20 hover:bg-white/10 transition-all">
                   <td className="p-2">
                     <div className="relative">
-                      <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                        <Plus size={11} className="text-sky animate-pulse stroke-[3]" />
+                      <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Plus size={13} className="text-sky animate-pulse stroke-[3]" />
                       </span>
                       <input 
                         id="manual-medicine-name-input"
                         type="text" 
                         placeholder="Add Next Medicine / Custom Entry..." 
-                        className="premium-input text-xs py-1 pl-7 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
+                        className="premium-input text-xs py-2 pl-8 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
                         value={manualName}
                         onChange={e => setManualName(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
@@ -1398,7 +1553,7 @@ const POS = () => {
                     <input 
                       type="text" 
                       placeholder="Batch" 
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-full bg-white/5" 
+                      className="premium-input text-xs font-mono py-2 px-1.5 w-full bg-white/5" 
                       value={manualBatch}
                       onChange={e => setManualBatch(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
@@ -1408,78 +1563,67 @@ const POS = () => {
                     <input 
                       type="text" 
                       placeholder="MM/YY" 
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-12 text-center bg-white/5" 
+                      className="premium-input text-xs font-mono py-2 px-1.5 w-12 text-center bg-white/5" 
                       value={manualExpiry}
                       onChange={e => setManualExpiry(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
-
-                  {/* Quantity */}
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
-                      className={`premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5 transition-all ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
+                      className={`premium-input text-xs font-mono py-2 px-1.5 w-10 text-center font-bold bg-white/5 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
                       value={manualQty}
                       onChange={e => setManualQty(Math.max(0, Number(e.target.value)))}
                       min="0"
                       disabled={!manualName.trim()}
-                      title={!manualName.trim() ? 'Please enter medicine name first' : ''}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
-                  {/* Loose Quantity */}
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
-                      className={`premium-input text-xs font-mono py-1 px-1.5 w-10 text-center font-bold bg-white/5 text-amber-200 border-amber-500/30 transition-all ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
+                      className={`premium-input text-xs font-mono py-2 px-1.5 w-10 text-center font-bold bg-white/5 text-amber-500 border-amber-500/30 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
                       value={manualLooseQty}
                       onChange={e => setManualLooseQty(Math.max(0, Number(e.target.value)))}
                       min="0"
                       disabled={!manualName.trim()}
-                      title={!manualName.trim() ? 'Please enter medicine name first' : ''}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
-                  {/* Discount */}
                   <td className="p-2 text-center">
                     <input 
                       type="number" 
-                      placeholder="%"
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-12 text-center font-bold bg-sky/5 border-sky/30 focus:border-sky text-sky" 
-                      value={manualDiscount || ''}
+                      className={`premium-input text-xs font-mono py-2 px-1.5 w-12 text-center font-bold bg-white/5 text-sky border-sky/30 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
+                      value={manualDiscount}
                       onChange={e => setManualDiscount(Math.min(100, Math.max(0, Number(e.target.value))))}
                       min="0"
                       max="100"
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                    />
-                  </td>
-                  {/* MRP */}
-                  <td className="p-2">
-                    <input 
-                      type="number" 
-                      placeholder="MRP"
-                      className="premium-input text-xs font-mono py-1 px-1.5 w-16 text-right bg-white/5" 
-                      value={manualMrp || ''}
-                      onChange={e => {
-                        const val = Math.max(0, Number(e.target.value));
-                        setManualMrp(val);
-                        setManualCostPrice(prev => prev === 0 || prev === manualMrp * 0.7 ? val * 0.7 : prev);
-                      }}
-                      min="0"
+                      disabled={!manualName.trim()}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                     />
                   </td>
                   <td className="p-2 text-right">
-                    <div className="font-mono text-sm text-green font-bold bg-green/10 border border-green/20 rounded-md px-2 py-1 w-full text-right shadow-inner">
+                    <input 
+                      type="number" 
+                      placeholder="0.00" 
+                      className={`premium-input text-xs font-mono py-2 px-1.5 w-16 text-right bg-white/5 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
+                      value={manualMrp || ''}
+                      onChange={e => setManualMrp(Math.max(0, Number(e.target.value)))}
+                      disabled={!manualName.trim()}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
+                    />
+                  </td>
+                  <td className="p-2 text-right">
+                    <div className="font-mono text-xs font-bold text-green bg-green/10 border border-green/20 rounded px-2 py-1.5 text-right">
                       ₹{Math.round(((manualMrp * manualQty) + ((manualPackSize > 0 ? manualMrp / manualPackSize : manualMrp) * (manualLooseQty || 0))) * (1 - (manualDiscount || 0) / 100))}
                     </div>
                   </td>
                   <td className="p-2 text-center">
                     <button 
                       onClick={addManualItem}
-                      className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/35 active:scale-95 cursor-pointer"
-                      title="Add Next Medicine to Cart"
+                      className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/30 active:scale-95 cursor-pointer"
+                      title="Add to Invoice"
                       onKeyDown={e => {
                         if (e.key === 'Tab' && !e.shiftKey) {
                           e.preventDefault();
@@ -1487,7 +1631,7 @@ const POS = () => {
                         }
                       }}
                     >
-                      <Plus size={14} className="stroke-[3]" />
+                      <Plus size={13} className="stroke-[3]" />
                     </button>
                   </td>
                 </tr>
@@ -1495,15 +1639,15 @@ const POS = () => {
             </table>
           </div>
 
-          <div className="p-3.5 border-t border-glass-border bg-black/40 flex flex-wrap items-center justify-between gap-4">
-             {/* Calculations readout */}
-             <div className="flex flex-wrap items-center gap-5 text-xs font-semibold text-muted">
+          {/* Cart Bottom Summary Panel */}
+          <div className="p-4 border-t border-glass-border bg-black/40 flex flex-wrap items-center justify-between gap-4 shrink-0">
+             <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-muted">
                 <div>
-                  Subtotal: <span className="font-mono text-sm text-text ml-1">₹{Math.round(subtotal)}</span>
+                  Subtotal: <span className="font-mono text-text text-sm ml-1">₹{Math.round(subtotal)}</span>
                 </div>
                 
                 {discountAmount > 0 && (
-                  <div className="text-amber-500 font-mono text-sm font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                  <div className="text-amber-500 font-mono text-xs font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
                     Saved: -₹{Math.round(discountAmount)}
                   </div>
                 )}
@@ -1512,7 +1656,7 @@ const POS = () => {
                   <span>Disc %:</span>
                   <input 
                     type="number" 
-                    className="premium-input text-xs py-0.5 px-1.5 w-12 text-right font-mono" 
+                    className="premium-input text-xs py-0.5 px-1.5 w-12 text-center font-mono" 
                     value={discount}
                     onChange={e => setDiscount(Number(e.target.value))}
                     min="0"
@@ -1520,90 +1664,103 @@ const POS = () => {
                   />
                 </div>
                 
-                <div className="flex items-center gap-1.5">
-                  <span>Pay Via:</span>
-                  <select 
-                    className="premium-input text-xs py-0.5 px-1.5 bg-[#18181b]/50 border-glass-border font-bold text-text cursor-pointer"
-                    value={paymentMedium}
-                    onChange={e => setPaymentMedium(e.target.value)}
-                    aria-label="Payment Method"
-                  >
-                    <option value="CASH" className="bg-[#18181b] text-text font-semibold">💵 Cash</option>
-                    <option value="UPI" className="bg-[#18181b] text-text font-semibold">📱 UPI / QR</option>
-                    <option value="CREDIT" className="bg-[#18181b] text-text font-semibold text-amber-300">💳 Credit (Khata)</option>
-                  </select>
+                {/* Premium Button-based Payment Selector */}
+                <div className="flex items-center gap-1 bg-bg2 border border-glass-border rounded-lg p-0.5">
+                  {[
+                    { id: 'CASH', label: '💵 Cash', color: 'peer-checked:bg-green/20 peer-checked:text-green peer-checked:border-green/30 border-transparent border' },
+                    { id: 'UPI', label: '📱 UPI', color: 'peer-checked:bg-primary/20 peer-checked:text-primary peer-checked:border-primary/30 border-transparent border' },
+                    { id: 'CREDIT', label: '💳 Credit', color: 'peer-checked:bg-amber-500/20 peer-checked:text-amber-500 peer-checked:border-amber-500/30 border-transparent border' }
+                  ].map(item => (
+                    <label key={item.id} className="relative cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="payment_medium" 
+                        value={item.id} 
+                        checked={paymentMedium === item.id} 
+                        onChange={e => setPaymentMedium(e.target.value)}
+                        className="sr-only peer"
+                      />
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-wider block transition-all hover:bg-white/5 ${paymentMedium === item.id ? item.color : 'text-muted'}`}>
+                        {item.label}
+                      </span>
+                    </label>
+                  ))}
                 </div>
                 
-                <div className="text-sm font-extrabold text-sky">
-                  Grand Total: <span className="font-mono text-base ml-1">₹{grandTotal}</span>
+                <div className="text-sm font-extrabold text-primary">
+                  Grand Total: <span className="font-mono text-lg ml-1">₹{grandTotal}</span>
                 </div>
-
              </div>
 
-             {/* Action trigger button */}
              <button 
                onClick={handleCompleteSale}
                disabled={cart.length === 0}
-               className={`premium-btn text-white py-2 px-6 text-sm flex items-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all ${
+               className={`premium-btn text-text py-2 px-6 text-sm flex items-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all shadow-[0_4px_14px_rgba(16,185,129,0.3)] ${
                  cart.length === 0 
                    ? 'bg-white/5 border border-glass-border text-muted cursor-not-allowed' 
-                   : 'bg-green hover:bg-emerald-600'
+                   : 'bg-green hover:bg-emerald-600 animate-pulse-subtle'
                }`}
              >
-               <CheckCircle size={16} /> Complete Sale
+               <CheckCircle size={16} /> Complete Invoice
              </button>
           </div>
         </div>
 
-        {/* RIGHT COLUMN: AI SCANNER & DOCTOR SUGGESTIONS (25% / 1/4 Column Width, Equal-Height Alignment) */}
-        <div className="flex flex-col gap-4 overflow-hidden lg:col-span-1">
-          {/* AI Camera Preview widget */}
-          <div className="glass-panel p-4 flex flex-col bg-white/5 border-glass-border flex-1">
-            <h3 className="font-bold flex items-center gap-2 mb-3 text-sm text-text">
-              <Camera size={16} className="text-green" />
-              AI Scanner Preview
+        {/* RIGHT: AI Copilot Sidebar (1/4 Columns) */}
+        <div className="flex flex-col gap-4 lg:col-span-1 h-full overflow-hidden shrink-0">
+          {/* High-Tech Radar AI Scanner card */}
+          <div className="glass-panel p-4 flex flex-col bg-glass-bg border-glass-border flex-1 min-h-0 overflow-hidden">
+            <h3 className="font-bold flex items-center gap-2 mb-3 text-xs text-text uppercase tracking-wider shrink-0">
+              <Camera size={15} className="text-green" />
+              AI Assistant Viewport
             </h3>
-            <div className="relative w-full flex-1 bg-black/50 border border-glass-border rounded-xl flex flex-col items-center justify-center gap-2 overflow-hidden select-none min-h-[140px]">
-              <Camera className="text-green opacity-80 animate-pulse" size={24} />
-              <span className="text-xs text-muted font-mono uppercase">AI camera preview active</span>
+            <div className="relative w-full flex-1 bg-black/60 border border-glass-border rounded-xl flex flex-col items-center justify-center gap-2.5 overflow-hidden select-none min-h-[120px]">
+              {/* Sleek scanner animation grid */}
+              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(16,185,129,0.05)_1px,transparent_1px)] bg-[size:100%_8px] animate-scan-slow" />
+              <div className="absolute left-0 right-0 h-0.5 bg-green/40 shadow-[0_0_12px_rgba(16,185,129,0.8)] animate-scan-bar" />
+              <Camera className="text-green opacity-90 animate-pulse relative z-10" size={26} />
+              <span className="text-[10px] text-green/80 font-mono font-bold tracking-widest uppercase relative z-10">AI Camera Feed Ready</span>
             </div>
           </div>
 
-          {/* Doctor suggestions widget */}
-          <div className="glass-panel p-4 flex flex-col bg-white/5 border-glass-border flex-1">
-            <h3 className="font-bold flex items-center gap-2 mb-3 text-sm text-text">
-              <UserCheck size={16} className="text-primary" />
-              🥼 Dr. Suggestions
+          {/* Doctor Companion Recommendations */}
+          <div className="glass-panel p-4 flex flex-col bg-glass-bg border-glass-border flex-1 min-h-0 overflow-hidden">
+            <h3 className="font-bold flex items-center gap-2 mb-3 text-xs text-text uppercase tracking-wider shrink-0">
+              <UserCheck size={15} className="text-primary" />
+              Clinical Assistance
             </h3>
-            <div className="flex-1 flex flex-col gap-2 overflow-y-auto min-h-[140px] justify-center">
+            <div className="flex-1 overflow-y-auto min-h-[120px] scrollbar-thin">
               {doctor ? (
-                <div className="space-y-2">
-                  {commonCombinations.slice(0, 2).map((med, idx) => (
+                <div className="space-y-2.5">
+                  {commonCombinations.slice(0, 3).map((med, idx) => (
                     <button 
                       key={`dr-sugg-${idx}`}
                       onClick={() => addToCart(med)}
-                      className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 border border-glass-border/40 hover:border-primary/40 hover:bg-primary/5 text-left text-xs transition-all"
+                      className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/5 border border-glass-border/40 hover:border-primary/40 hover:bg-primary/5 text-left text-xs transition-all duration-200 hover:translate-x-1"
                     >
                       <div>
                         <span className="font-semibold block text-text">
                           {med.name}
                           {med.recommendationMsg && (
-                            <span className="text-[10px] text-sky ml-1.5 font-mono">
+                            <span className="text-[9px] text-sky ml-1.5 font-mono font-bold">
                               ({med.recommendedQty > 0 ? `${med.recommendedQty} Str` : `${med.recommendedLooseQty} Tab`})
                             </span>
                           )}
                         </span>
-                        <span className="text-[9px] text-muted">Co-prescribed ({Math.floor(Math.random() * 20 + 75)}% match)</span>
+                        <span className="text-[9px] text-primary/80 font-semibold block mt-0.5">Co-prescribed ({Math.floor(Math.random() * 15 + 80)}% confidence)</span>
                       </div>
-                      <span className="text-[10px] text-primary font-bold">+ Add</span>
+                      <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold hover:bg-primary hover:text-text transition-all">+ Add</span>
                     </button>
                   ))}
                   {commonCombinations.length === 0 && (
-                    <span className="text-xs text-muted text-center italic block">No suggestions available</span>
+                    <span className="text-xs text-muted text-center italic block py-4">No suggestions found</span>
                   )}
                 </div>
               ) : (
-                <span className="text-xs text-muted text-center italic">Select a doctor to view companion recommendations</span>
+                <div className="h-full flex flex-col items-center justify-center text-center p-3">
+                  <div className="text-xl mb-1.5">🥼</div>
+                  <span className="text-[10px] text-muted font-bold uppercase tracking-wider">Select a doctor to view prescriptions insights</span>
+                </div>
               )}
             </div>
           </div>
@@ -1617,7 +1774,7 @@ const POS = () => {
         />
       )}
 
-      {zoomedImage && (
+      {zoomedImage && createPortal(
         <div 
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999999] flex items-center justify-center p-4 cursor-pointer animate-in fade-in duration-200"
           onClick={() => setZoomedImage(null)}
@@ -1625,20 +1782,21 @@ const POS = () => {
           <div className="relative max-w-3xl max-h-[85vh] bg-bg2 border border-glass-border rounded-2xl overflow-hidden p-2 shadow-2xl animate-in zoom-in-95 duration-200">
             <img src={zoomedImage} alt="Zoomed medicine scan" className="max-w-full max-h-[80vh] object-contain rounded-lg" />
             <button 
-              className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-all"
+              className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-text rounded-full p-2 transition-all"
               onClick={() => setZoomedImage(null)}
               aria-label="Close zoomed image"
             >
               <X size={20} />
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Patient Profile & Auto-Refills Modal */}
-      {showPatientModal && (
+      {showPatientModal && createPortal(
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[99999] p-4 animate-fade-in">
-          <div className="glass-panel max-w-md w-full p-6 space-y-5 border-glass-border bg-[#18181b]/95 rounded-2xl relative">
+          <div className="glass-panel max-w-md w-full p-6 space-y-5 border-glass-border bg-bg2/95 rounded-2xl relative">
             {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-glass-border pb-3">
               <h3 className="font-bold flex items-center gap-2 text-lg text-text">
@@ -1731,6 +1889,7 @@ const POS = () => {
                           {[30, 60, 90].map(days => (
                             <button
                               key={days}
+                              type="button"
                               onClick={() => setRefillDays(days)}
                               className={`text-xs py-1 px-2.5 rounded-lg border font-mono transition-all flex-1 ${refillDays === days ? 'bg-primary/20 border-primary text-primary' : 'bg-white/5 border-glass-border text-muted hover:text-text'}`}
                             >
@@ -1770,11 +1929,12 @@ const POS = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Doctor Registration Modal */}
-      {showDoctorModal && (
+      {showDoctorModal && createPortal(
         <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in">
           <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
             <div className="px-5 py-4 border-b border-glass-border bg-white/5 flex items-center justify-between">
@@ -1782,7 +1942,7 @@ const POS = () => {
                 <Plus size={18} />
                 Register New Doctor
               </h3>
-              <button onClick={() => setShowDoctorModal(false)} className="text-muted hover:text-white transition-colors">
+              <button onClick={() => setShowDoctorModal(false)} className="text-muted hover:text-text transition-colors">
                 <X size={18} />
               </button>
             </div>
@@ -1850,24 +2010,25 @@ const POS = () => {
             <div className="px-5 py-4 border-t border-glass-border bg-black/20 flex justify-end gap-3">
               <button 
                 onClick={() => setShowDoctorModal(false)}
-                className="px-4 py-2 rounded-xl text-sm font-bold text-muted hover:text-white hover:bg-white/5 transition-all"
+                className="px-4 py-2 rounded-xl text-sm font-bold text-muted hover:text-text hover:bg-white/5 transition-all"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleRegisterDoctor}
                 disabled={!newDoctorName}
-                className="px-4 py-2 rounded-xl text-sm font-bold bg-sky text-white hover:bg-sky/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(14,165,233,0.3)]"
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-sky text-text hover:bg-sky/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(14,165,233,0.3)]"
               >
                 <CheckCircle size={16} /> Save Doctor
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Barcode Print Prompt Modal */}
-      {showBarcodeModal && (
+      {showBarcodeModal && createPortal(
         <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/70 backdrop-blur-md fade-in">
           <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
             <div className="text-center space-y-2">
@@ -1922,7 +2083,7 @@ const POS = () => {
                   }
                   setShowBarcodeModal(false);
                 }}
-                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-sky text-white hover:bg-sky/90 transition-all shadow-[0_4px_12px_rgba(14,165,233,0.2)] flex items-center justify-center gap-2"
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-sky text-text hover:bg-sky/90 transition-all shadow-[0_4px_12px_rgba(14,165,233,0.2)] flex items-center justify-center gap-2"
               >
                 Create Bill Barcode
               </button>
@@ -1931,14 +2092,26 @@ const POS = () => {
                 onClick={() => {
                   setShowBarcodeModal(false);
                 }}
-                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 border border-glass-border/60 text-muted hover:text-white hover:bg-white/10 transition-all"
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 border border-glass-border/60 text-muted hover:text-text hover:bg-white/10 transition-all"
               >
                 No / Skip
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
+      
+      {editMedicineId && (
+        <UniversalMedicineEditModal 
+          medicineId={editMedicineId} 
+          onClose={() => setEditMedicineId(null)} 
+          onSave={() => {
+            // Optional: Re-fetch or update local search results state if needed
+          }} 
+        />
+      )}
+
     </div>
   );
 };

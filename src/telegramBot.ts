@@ -4,8 +4,7 @@ import fs from 'fs';
 import axios from 'axios';
 import { normalizeDistributorName, formatInvoiceWithFY } from './utils/migrationValidation.js';
 import { fileURLToPath } from 'url';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from './database/connection.js';
 import { ensureSchema } from './database.js';
 import { telegramPrescriptionService } from './services/telegramPrescriptionService.js';
 import { aiCameraService } from './services/aiCameraService.js';
@@ -107,10 +106,9 @@ class TelegramBotService {
     this.bot.onText(/^\/?status/i, async (msg) => {
       const chatId = msg.chat.id;
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         const result = await db.get('SELECT COUNT(*) as total FROM medicines');
-        await db.close();
-
+        
         this.bot?.sendMessage(chatId,
           `🤖 AI Pharmacy Bot Status: Online\n` +
           `📊 Database: Connected (${result.total} medicines registered)\n` +
@@ -127,7 +125,7 @@ class TelegramBotService {
     this.bot.onText(/\/stockalerts/, async (msg) => {
       const chatId = msg.chat.id;
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         
         // Check current status
         const setting = await db.get("SELECT value FROM app_settings WHERE key = 'telegram_stock_alerts_enabled'");
@@ -140,8 +138,7 @@ class TelegramBotService {
           [newStatus ? 'true' : 'false']
         );
         
-        await db.close();
-        
+                
         this.bot?.sendMessage(chatId,
           `🔔 *Telegram Stock Alerts:* ${newStatus ? 'ENABLED ✅' : 'DISABLED ❌'}\n\nYou will ${newStatus ? 'now' : 'no longer'} receive automated low-stock warnings.`,
           { parse_mode: 'Markdown' }
@@ -159,7 +156,7 @@ class TelegramBotService {
       const days = type === 'monthly' ? 30 : 7;
       
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         
         const dateLimit = new Date();
         dateLimit.setDate(dateLimit.getDate() - days);
@@ -168,8 +165,7 @@ class TelegramBotService {
         const sales = await db.get(`SELECT SUM(total_amount) as total FROM sells WHERE date >= ?`, [dateStr]);
         const purchases = await db.get(`SELECT SUM(total_amount) as total FROM purchases WHERE date >= ?`, [dateStr]);
         
-        await db.close();
-
+        
         const salesTotal = (sales?.total || 0).toFixed(2);
         const purchasesTotal = (purchases?.total || 0).toFixed(2);
         
@@ -190,7 +186,7 @@ class TelegramBotService {
     this.bot.onText(/^\/?(away_summary|away summary)/i, async (msg) => {
       const chatId = msg.chat.id;
       try {
-        const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const db = await dbManager.getConnection();
         
         const dateLimit = new Date();
         dateLimit.setDate(dateLimit.getDate() - 1);
@@ -200,8 +196,7 @@ class TelegramBotService {
         const purchasesCount = await db.get(`SELECT COUNT(*) as count FROM purchases WHERE date >= ?`, [dateStr]);
         const lowStockCount = await db.get(`SELECT COUNT(*) as count FROM inventory_master WHERE quantity <= reorder_level`);
         
-        await db.close();
-        
+                
         this.bot?.sendMessage(chatId,
           `📝 *"While You Were Away" Summary (Last 24h)*\n\n` +
           `✅ Sales made: ${salesCount?.count || 0}\n` +
@@ -397,7 +392,7 @@ class TelegramBotService {
                     medicines.push({ name: potentialName, quantity: 10 });
                   }
 
-                  const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+                  const db = await dbManager.getConnection();
                   
                   let distributorName = 'TELEGRAM IMPORT';
                   const distMatch = ocrTextLower.match(/(nitin agency|cipla|alkem|abbott|cadila|zydus|intas|lupin)/i);
@@ -457,8 +452,7 @@ class TelegramBotService {
                     'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
                     ['TELEGRAM_BILL_IMPORTED', `Imported invoice ${invoiceNo} from distributor ${distributorName}`]
                   );
-                  await db.close();
-
+                  
                   notificationManager.broadcast({
                     type: 'telegram_bill',
                     title: 'Telegram Bill Processed',
@@ -588,7 +582,7 @@ class TelegramBotService {
   // Query medicine availability from inventory
   private async handleMedicineQuery(chatId: number, medicineName: string): Promise<void> {
     try {
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
       const medicine = await db.get(
         `SELECT m.id, m.name, m.item_type, m.mrp as m_mrp, im.quantity, im.mrp as i_mrp 
          FROM medicines m
@@ -600,8 +594,7 @@ class TelegramBotService {
 
       if (!medicine) {
         this.bot?.sendMessage(chatId, `❌ Medicine "${medicineName}" not found in our system.`);
-        await db.close();
-        return;
+                return;
       }
 
       const mrp = medicine.i_mrp || medicine.m_mrp || 'N/A';
@@ -639,8 +632,7 @@ class TelegramBotService {
         
         this.bot?.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
       }
-      await db.close();
-    } catch (error) {
+          } catch (error) {
       console.error('handleMedicineQuery error:', error);
       this.bot?.sendMessage(chatId, '❌ Error looking up medicine. Please try again.');
     }

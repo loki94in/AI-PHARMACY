@@ -21,23 +21,113 @@ router.get('/next-invoice', asyncHandler(async (req: express.Request, res: expre
 // Search medicine in inventory by Name, Batch, or MRP
 router.get('/search-medicine', asyncHandler(async (req: express.Request, res: express.Response) => {
   const query = req.query.q as string;
-  if (!query) {
+  if (!query || query.trim().length < 2) {
     return res.json([]);
   }
   const db = await dbManager.getConnection();
+  const likeQuery = `%${query}%`;
+  
+  // 1. Fetch in-stock inventory matching query
   const sql = `
-    SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, 
+    SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
            im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
            m.cgst, m.sgst, m.igst, m.hsn_code
     FROM inventory_master im
     JOIN medicines m ON im.medicine_id = m.id
-    WHERE m.name LIKE ? 
+    WHERE (m.name LIKE ? 
        OR im.batch_no LIKE ? 
-       OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?
+       OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?)
+      AND im.quantity > 0
+      AND date(im.expiry_date) >= date('now')
     LIMIT 20
   `;
-  const likeQuery = `%${query}%`;
   const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery]);
+  
+  // Map found medicine_ids to easily exclude them from out-of-stock lookup
+  const foundMedIds = new Set(rows.map(r => r.medicine_id));
+  
+  // 2. Fetch alternatives in a single batched query
+  const apiRefs = [...new Set(rows.map(r => r.api_reference).filter(a => a && a.trim() !== ''))];
+  let alternativesMap: Record<string, any[]> = {};
+  
+  if (apiRefs.length > 0) {
+    const placeholders = apiRefs.map(() => '?').join(',');
+    const altSql = `
+      SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
+             im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
+             m.cgst, m.sgst, m.igst, m.hsn_code
+      FROM inventory_master im
+      JOIN medicines m ON im.medicine_id = m.id
+      WHERE m.api_reference IN (${placeholders})
+        AND im.quantity > 0
+        AND date(im.expiry_date) >= date('now')
+      LIMIT 100
+    `;
+    const allAlts = await db.all(altSql, apiRefs);
+    for (const alt of allAlts) {
+      if (!alternativesMap[alt.api_reference]) alternativesMap[alt.api_reference] = [];
+      alternativesMap[alt.api_reference].push(alt);
+    }
+  }
+
+  // Attach alternatives
+  for (const row of rows) {
+    const alts = alternativesMap[row.api_reference] || [];
+    row.alternatives = alts.filter(a => a.medicine_id !== row.medicine_id).slice(0, 5);
+  }
+
+  // 3. Fallback for Out-of-Stock items (optimized)
+  // Only query if we need more results
+  if (rows.length < 15) {
+    const outOfStockSql = `
+      SELECT id, name, api_reference 
+      FROM medicines 
+      WHERE name LIKE ? 
+      LIMIT 15
+    `;
+    const extraMeds = await db.all(outOfStockSql, [likeQuery]);
+    const outOfStockMeds = extraMeds.filter(m => !foundMedIds.has(m.id)).slice(0, 5);
+    
+    if (outOfStockMeds.length > 0) {
+      const oosApiRefs = [...new Set(outOfStockMeds.map(m => m.api_reference).filter(a => a && a.trim() !== ''))];
+      if (oosApiRefs.length > 0) {
+        const placeholders = oosApiRefs.map(() => '?').join(',');
+        const oosAltSql = `
+          SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
+                 im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
+                 m.cgst, m.sgst, m.igst, m.hsn_code
+          FROM inventory_master im
+          JOIN medicines m ON im.medicine_id = m.id
+          WHERE m.api_reference IN (${placeholders})
+            AND im.quantity > 0
+            AND date(im.expiry_date) >= date('now')
+          LIMIT 50
+        `;
+        const oosAllAlts = await db.all(oosAltSql, oosApiRefs);
+        
+        let oosAltMap: Record<string, any[]> = {};
+        for (const alt of oosAllAlts) {
+          if (!oosAltMap[alt.api_reference]) oosAltMap[alt.api_reference] = [];
+          oosAltMap[alt.api_reference].push(alt);
+        }
+
+        for (const med of outOfStockMeds) {
+          const alts = oosAltMap[med.api_reference] || [];
+          const filteredAlts = alts.filter(a => a.medicine_id !== med.id).slice(0, 5);
+          if (filteredAlts.length > 0) {
+            rows.push({
+              is_out_of_stock: true,
+              medicine_id: med.id,
+              medicine_name: med.name,
+              api_reference: med.api_reference,
+              alternatives: filteredAlts
+            });
+          }
+        }
+      }
+    }
+  }
+
   await dbManager.close();
   res.json(rows);
 }));
@@ -129,10 +219,20 @@ router.post('/hold', asyncHandler(async (req: express.Request, res: express.Resp
   const holdData = JSON.stringify(req.body);
 
   const holdInvoiceNo = await invoiceService.generateInvoiceNo(db);
+  
+  // Reserve stock for items being held
+  if (req.body.items && Array.isArray(req.body.items)) {
+    for (const item of req.body.items) {
+      if (item.inventory_id && item.quantity) {
+        await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [item.quantity, item.inventory_id]);
+      }
+    }
+  }
+
   await db.run('INSERT INTO held_bills (invoice_no, data) VALUES (?, ?)', [holdInvoiceNo, holdData]);
 
   await dbManager.close();
-  res.json({ success: true, message: 'Bill held', invoice_no: holdInvoiceNo });
+  res.json({ success: true, message: 'Bill held and stock reserved', invoice_no: holdInvoiceNo });
 }));
 
 // Get recommended quantity for a medicine based on sales history mode
@@ -208,9 +308,27 @@ router.get('/hold', asyncHandler(async (req: express.Request, res: express.Respo
 router.delete('/hold/:id', asyncHandler(async (req: express.Request, res: express.Response) => {
   const { id } = req.params;
   const db = await dbManager.getConnection();
-  await db.run('DELETE FROM held_bills WHERE id = ?', id);
+  
+  // Retrieve the held bill to restore stock
+  const heldBill = await db.get('SELECT data FROM held_bills WHERE id = ?', [id]);
+  if (heldBill && heldBill.data) {
+    try {
+      const parsedData = JSON.parse(heldBill.data);
+      if (parsedData.items && Array.isArray(parsedData.items)) {
+        for (const item of parsedData.items) {
+          if (item.inventory_id && item.quantity) {
+            await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [item.quantity, item.inventory_id]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to restore stock for held bill', err);
+    }
+  }
+
+  await db.run('DELETE FROM held_bills WHERE id = ?', [id]);
   await dbManager.close();
-  res.json({ success: true, message: 'Held bill removed' });
+  res.json({ success: true, message: 'Held bill removed and stock restored' });
 }));
 
 // Get sales invoice history
@@ -331,7 +449,7 @@ router.get('/list', asyncHandler(async (req: express.Request, res: express.Respo
     params.push(date_to as string);
   }
 
-  query += ` ORDER BY si.date DESC`;
+  query += ` ORDER BY si.date DESC LIMIT 30`;
 
   const invoices = await db.all(query, params);
 
@@ -419,7 +537,7 @@ router.get('/:id', asyncHandler(async (req: express.Request, res: express.Respon
 // Update a sale invoice (items, customer, discount, etc.)
 router.put('/:id', asyncHandler(async (req: express.Request, res: express.Response) => {
   const { id } = req.params;
-  const { items, patient_name, patient_phone, discount = 0, paymentMedium, paymentStatus } = req.body;
+  const { items, patient_name, patient_phone, discount = 0, paymentMedium, paymentStatus, updated_at } = req.body;
   const db = await dbManager.getConnection();
 
   // Check invoice exists
@@ -428,6 +546,13 @@ router.put('/:id', asyncHandler(async (req: express.Request, res: express.Respon
     await dbManager.close();
     return res.status(404).json({ error: 'Invoice not found' });
   }
+
+  // Concurrent edit protection
+  if (updated_at && existing.updated_at && new Date(updated_at).getTime() !== new Date(existing.updated_at).getTime()) {
+    await dbManager.close();
+    return res.status(409).json({ error: 'This invoice has been modified by another user. Please refresh and try again.' });
+  }
+
 
   // Resolve customer
   let customerId = existing.customer_id;
@@ -469,12 +594,12 @@ router.put('/:id', asyncHandler(async (req: express.Request, res: express.Respon
     const total = Math.round(subtotal + tax - discount);
 
     await db.run(
-      'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status) WHERE id = ?',
+      'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [customerId, total, tax, paymentMedium || null, paymentStatus || null, id]
     );
   } else {
     // Just update customer/discount
-    await db.run('UPDATE sales_invoices SET customer_id = ? WHERE id = ?', [customerId, id]);
+    await db.run('UPDATE sales_invoices SET customer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [customerId, id]);
   }
 
   await dbManager.close();

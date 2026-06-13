@@ -106,7 +106,7 @@ const Dispatch = () => {
   }).length;
 
   return (
-    <div className="h-full flex flex-col fade-in space-y-6 overflow-y-auto pb-8">
+    <div className="h-full flex flex-col p-6 gap-3 pb-4 animate-in fade-in duration-500">
       {/* Toast */}
       {notification && (
         <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-semibold

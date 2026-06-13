@@ -1,10 +1,12 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Download, Edit, Camera, CheckCircle, Mail, Package, TrendingDown, X } from 'lucide-react';
+import { Download, Edit, Camera, CheckCircle, Mail, Package, TrendingDown, X, Plus, BookOpen, AlertTriangle, ShieldAlert, Factory, RefreshCw } from 'lucide-react';
 import { api, apiClient } from '../services/api';
-import AICamera from '../components/AICamera';
 import { PriceIntelPanel } from '../components/PriceIntelPanel';
+import { HoverPriceIntelTable } from '../components/HoverPriceIntelTable';
+import { createPortal } from 'react-dom';
+import { UniversalMedicineEditModal } from '../components/UniversalMedicineEditModal';
 
 interface Medicine {
   id: number;
@@ -37,6 +39,7 @@ interface BillItem {
   sgst_per: number;
   cd_rs: number;
   cd_per: number;
+  additional_discount: number;
   amount: number;
   scheme_paid: number;
   scheme_free: number;
@@ -45,6 +48,7 @@ interface BillItem {
 interface Distributor {
   id: number;
   name: string;
+  distributor_name?: string;
   phone: string;
   email: string;
   address: string;
@@ -59,24 +63,369 @@ interface PurchaseHistory {
   total_amount: number;
 }
 
+const getInitialPurchasesTabs = () => {
+  const saved = localStorage.getItem('purchase_tabs');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const validTabs = parsed.filter(t => t && typeof t === 'object');
+        if (validTabs.length > 0) return validTabs;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved Purchases tabs:', e);
+    }
+  }
+  const initialId = 'default';
+  return [
+    {
+      id: initialId,
+      name: 'Bill 1',
+      selectedDistributor: null,
+      distributorSearch: '',
+      invoiceNo: '',
+      grnNo: `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`,
+      invoiceDate: new Date().toISOString().split('T')[0],
+      globalCdPer: '',
+      extraCredit: '',
+      items: [
+        {
+          id: crypto.randomUUID(),
+          medicine_id: null,
+          medicine_name: '',
+          batch_no: '',
+          expiry_date: '01/12',
+          qty: '',
+          free_qty: '',
+          rate: '',
+          mrp: '',
+          cgst_per: '',
+          sgst_per: '',
+          cd_rs: '',
+          cd_per: '',
+          additional_discount: '',
+          amount: 0,
+          scheme_paid: 0,
+          scheme_free: 0,
+        }
+      ],
+      sourceFilename: '',
+      sourceFileHeaders: [],
+      mappingConfig: {},
+      editPurchaseId: null
+    }
+  ];
+};
+
+const getInitialPurchasesActiveTabId = (initialTabs: any[]) => {
+  const saved = localStorage.getItem('purchase_active_tab_id');
+  if (saved && initialTabs.some(t => t && t.id === saved)) return saved;
+  return initialTabs[0]?.id || 'default';
+};
+
+const INDIAN_STATE_CODES = [
+  { code: '35', name: 'ANDAMAN AND NICOBAR ISLANDS' },
+  { code: '28', name: 'ANDHRA PRADESH' },
+  { code: '37', name: 'ANDHRA PRADESH (NEW)' },
+  { code: '12', name: 'ARUNACHAL PRADESH' },
+  { code: '18', name: 'ASSAM' },
+  { code: '10', name: 'BIHAR' },
+  { code: '04', name: 'CHANDIGARH' },
+  { code: '22', name: 'CHATTISGARH' },
+  { code: '26', name: 'DADRA AND NAGAR HAVELI' },
+  { code: '25', name: 'DAMAN AND DIU' },
+  { code: '07', name: 'DELHI' },
+  { code: '30', name: 'GOA' },
+  { code: '24', name: 'GUJARAT' },
+  { code: '06', name: 'HARYANA' },
+  { code: '02', name: 'HIMACHAL PRADESH' },
+  { code: '01', name: 'JAMMU AND KASHMIR' },
+  { code: '20', name: 'JHARKHAND' },
+  { code: '29', name: 'KARNATAKA' },
+  { code: '32', name: 'KERALA' },
+  { code: '31', name: 'LAKSHADWEEP ISLANDS' },
+  { code: '23', name: 'MADHYA PRADESH' },
+  { code: '27', name: 'MAHARASHTRA' },
+  { code: '14', name: 'MANIPUR' },
+  { code: '17', name: 'MEGHALAYA' },
+  { code: '15', name: 'MIZORAM' },
+  { code: '13', name: 'NAGALAND' },
+  { code: '21', name: 'ODISHA' },
+  { code: '34', name: 'PONDICHERRY' },
+  { code: '03', name: 'PUNJAB' },
+  { code: '08', name: 'RAJASTHAN' },
+  { code: '11', name: 'SIKKIM' },
+  { code: '33', name: 'TAMIL NADU' },
+  { code: '36', name: 'TELANGANA' },
+  { code: '16', name: 'TRIPURA' },
+  { code: '09', name: 'UTTAR PRADESH' },
+  { code: '05', name: 'UTTARAKHAND' },
+  { code: '19', name: 'WEST BENGAL' }
+];
+
 const Purchases: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+
+  const initialTabs = getInitialPurchasesTabs();
+  const initialActiveTabId = getInitialPurchasesActiveTabId(initialTabs);
+  const initialActiveTab = initialTabs.find(t => t && t.id === initialActiveTabId) || initialTabs[0] || {};
+
+  const [tabs, setTabs] = useState<any[]>(initialTabs);
+  const [activeTabId, setActiveTabId] = useState<string>(initialActiveTabId);
+
   const [distributors, setDistributors] = useState<Distributor[]>([]);
-  const [selectedDistributor, setSelectedDistributor] = useState<number | null>(null);
-  const [distributorSearch, setDistributorSearch] = useState('');
+  const [selectedDistributor, setSelectedDistributor] = useState<number | null>(initialActiveTab?.selectedDistributor || null);
+  const [distributorSearch, setDistributorSearch] = useState(initialActiveTab?.distributorSearch || '');
   const [showDistributorDropdown, setShowDistributorDropdown] = useState(false);
-  const [invoiceNo, setInvoiceNo] = useState('');
-  const [grnNo, setGrnNo] = useState(`GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`);
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
-  const [globalCdPer, setGlobalCdPer] = useState(0);
-  const [extraCredit, setExtraCredit] = useState(0);
-  const [items, setItems] = useState<BillItem[]>([createEmptyItem()]);
+  const [invoiceNo, setInvoiceNo] = useState(initialActiveTab?.invoiceNo || '');
+  const [grnNo, setGrnNo] = useState(initialActiveTab?.grnNo || '');
+  const [invoiceDate, setInvoiceDate] = useState(initialActiveTab?.invoiceDate || '');
+  const [globalCdPer, setGlobalCdPer] = useState(initialActiveTab?.globalCdPer !== undefined && initialActiveTab?.globalCdPer !== 0 ? initialActiveTab.globalCdPer : '');
+  const [extraCredit, setExtraCredit] = useState(initialActiveTab?.extraCredit !== undefined && initialActiveTab?.extraCredit !== 0 ? initialActiveTab.extraCredit : '');
+  const [items, setItems] = useState<BillItem[]>(initialActiveTab?.items || []);
   const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistory[]>([]);
+  const [sourceFilename, setSourceFilename] = useState(initialActiveTab?.sourceFilename || '');
+  const [sourceFileHeaders, setSourceFileHeaders] = useState<string[]>(initialActiveTab?.sourceFileHeaders || []);
+  const [mappingConfig, setMappingConfig] = useState<Record<string, string>>(initialActiveTab?.mappingConfig || {});
+  const [editPurchaseId, setEditPurchaseId] = useState<number | null>(initialActiveTab?.editPurchaseId || null);
   // emailSource: set when navigating from Mail page
   const emailSource = location.state?.emailSource || null;
   // Track which row has the price intel panel open (by item id)
   const [openIntelPanels, setOpenIntelPanels] = useState<Record<string, boolean>>({});
+  
+  const [universalEditMedicineId, setUniversalEditMedicineId] = useState<number | null>(null);
+
+  const handleGlobalCdChange = (newVal: number) => {
+    setGlobalCdPer(newVal);
+    setItems(prevItems => prevItems.map(item => {
+      const updated = { ...item, cd_per: newVal };
+      updated.amount = calculateItemAmount(updated);
+      return updated;
+    }));
+  };
+
+  // Sync current active inputs into tabs array
+  useEffect(() => {
+    setTabs(prev => {
+      const idx = prev.findIndex(t => t.id === activeTabId);
+      if (idx === -1) return prev;
+      const t = prev[idx];
+      if (
+        t.selectedDistributor !== selectedDistributor ||
+        t.distributorSearch !== distributorSearch ||
+        t.invoiceNo !== invoiceNo ||
+        t.grnNo !== grnNo ||
+        t.invoiceDate !== invoiceDate ||
+        t.globalCdPer !== globalCdPer ||
+        t.extraCredit !== extraCredit ||
+        t.items !== items ||
+        t.sourceFilename !== sourceFilename ||
+        t.sourceFileHeaders !== sourceFileHeaders ||
+        t.mappingConfig !== mappingConfig ||
+        t.editPurchaseId !== editPurchaseId
+      ) {
+        const next = [...prev];
+        next[idx] = {
+          ...t,
+          selectedDistributor,
+          distributorSearch,
+          invoiceNo,
+          grnNo,
+          invoiceDate,
+          globalCdPer,
+          extraCredit,
+          items,
+          sourceFilename,
+          sourceFileHeaders,
+          mappingConfig,
+          editPurchaseId
+        };
+        return next;
+      }
+      return prev;
+    });
+  }, [
+    selectedDistributor,
+    distributorSearch,
+    invoiceNo,
+    grnNo,
+    invoiceDate,
+    globalCdPer,
+    extraCredit,
+    items,
+    sourceFilename,
+    sourceFileHeaders,
+    mappingConfig,
+    activeTabId
+  ]);
+
+  // Persist tabs and activeTabId to localStorage
+  useEffect(() => {
+    localStorage.setItem('purchase_tabs', JSON.stringify(tabs));
+  }, [tabs]);
+
+  useEffect(() => {
+    localStorage.setItem('purchase_active_tab_id', activeTabId);
+  }, [activeTabId]);
+
+  // Clean up legacy conflicting local storage keys
+  useEffect(() => {
+    localStorage.removeItem('purchases_draft_tabs');
+    localStorage.removeItem('purchases_active_tab_id');
+  }, []);
+
+  const switchTab = (newTabId: string) => {
+    if (newTabId === activeTabId) return;
+    const target = tabs.find(t => t.id === newTabId);
+    if (target) {
+      setSelectedDistributor(target.selectedDistributor || null);
+      setDistributorSearch(target.distributorSearch || '');
+      setInvoiceNo(target.invoiceNo || '');
+      setGrnNo(target.grnNo || '');
+      setInvoiceDate(target.invoiceDate || '');
+      setGlobalCdPer(target.globalCdPer !== undefined && target.globalCdPer !== 0 ? target.globalCdPer : '');
+      setExtraCredit(target.extraCredit !== undefined && target.extraCredit !== 0 ? target.extraCredit : '');
+      setItems(target.items || [createEmptyItem()]);
+      setSourceFilename(target.sourceFilename || '');
+      setSourceFileHeaders(target.sourceFileHeaders || []);
+      setMappingConfig(target.mappingConfig || {});
+      setEditPurchaseId(target.editPurchaseId || null);
+      setActiveTabId(newTabId);
+    }
+  };
+
+  const addNewTab = () => {
+    const nextNum = tabs.length + 1;
+    const newId = 'bill_' + Date.now();
+    const newTab = {
+      id: newId,
+      name: `Bill ${nextNum}`,
+      selectedDistributor: null,
+      distributorSearch: '',
+      invoiceNo: '',
+      grnNo: `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`,
+      invoiceDate: new Date().toISOString().split('T')[0],
+      globalCdPer: '',
+      extraCredit: '',
+      items: [createEmptyItem()],
+      sourceFilename: '',
+      sourceFileHeaders: [],
+      mappingConfig: {},
+      editPurchaseId: null
+    };
+
+    setSelectedDistributor(null);
+    setDistributorSearch('');
+    setInvoiceNo('');
+    setGrnNo(newTab.grnNo);
+    setInvoiceDate(newTab.invoiceDate);
+    setGlobalCdPer('');
+    setExtraCredit('');
+    setItems([createEmptyItem()]);
+    setSourceFilename('');
+    setSourceFileHeaders([]);
+    setMappingConfig({});
+    setEditPurchaseId(null);
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newId);
+  };
+
+  const closeTab = (tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (tabs.length === 1) {
+      // Just clear it
+      setSelectedDistributor(null);
+      setDistributorSearch('');
+      setInvoiceNo('');
+      setGlobalCdPer('');
+      setExtraCredit('');
+      setItems([createEmptyItem()]);
+      setSourceFilename('');
+      setSourceFileHeaders([]);
+      setMappingConfig({});
+      setTabs([{
+        id: tabs[0].id,
+        name: 'Bill 1',
+        selectedDistributor: null,
+        distributorSearch: '',
+        invoiceNo: '',
+        grnNo: `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`,
+        invoiceDate: new Date().toISOString().split('T')[0],
+        globalCdPer: '',
+        extraCredit: '',
+        items: [createEmptyItem()],
+        sourceFilename: '',
+        sourceFileHeaders: [],
+        mappingConfig: {}
+      }]);
+      setGrnNo(`GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`);
+      return;
+    }
+
+    const filtered = tabs.filter(t => t.id !== tabId);
+    if (activeTabId === tabId) {
+      const fallback = filtered[filtered.length - 1];
+      setSelectedDistributor(fallback.selectedDistributor || null);
+      setDistributorSearch(fallback.distributorSearch || '');
+      setInvoiceNo(fallback.invoiceNo || '');
+      setGrnNo(fallback.grnNo || '');
+      setInvoiceDate(fallback.invoiceDate || '');
+      setGlobalCdPer(fallback.globalCdPer !== undefined && fallback.globalCdPer !== 0 ? fallback.globalCdPer : '');
+      setExtraCredit(fallback.extraCredit !== undefined && fallback.extraCredit !== 0 ? fallback.extraCredit : '');
+      setItems(fallback.items || [createEmptyItem()]);
+      setSourceFilename(fallback.sourceFilename || '');
+      setSourceFileHeaders(fallback.sourceFileHeaders || []);
+      setMappingConfig(fallback.mappingConfig || {});
+      setActiveTabId(fallback.id);
+    }
+    setTabs(filtered.map((t, idx) => ({
+      ...t,
+      name: t.name.startsWith('Bill ') ? `Bill ${idx + 1}` : t.name
+    })));
+  };
+
+  // Keyboard shortcut listener for Walk-In / Camera OCR activation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && (
+        active.tagName === 'INPUT' || 
+        active.tagName === 'SELECT' || 
+        active.tagName === 'TEXTAREA' || 
+        active.isContentEditable
+      )) return;
+
+      if (e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        // Trigger generic OCR or camera if needed
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  function createEmptyItem(): BillItem {
+    return {
+      id: crypto.randomUUID(),
+      medicine_id: null,
+      medicine_name: '',
+      batch_no: '',
+      expiry_date: '01/12',
+      qty: '',
+      free_qty: '',
+      rate: '',
+      mrp: '',
+      cgst_per: '',
+      sgst_per: '',
+      cd_rs: '',
+      cd_per: globalCdPer || '',
+      additional_discount: '',
+      amount: 0,
+      scheme_paid: 0,
+      scheme_free: 0,
+    };
+  }
 
   // Helper to get date N days ago in YYYY-MM-DD format
   const getNDaysAgo = (n: number) => {
@@ -103,6 +452,7 @@ const Purchases: React.FC = () => {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [schemeMatchStatus, setSchemeMatchStatus] = useState<{ [key: string]: string }>({});
   const [showDistributorModal, setShowDistributorModal] = useState(false);
+  const [editDistributorId, setEditDistributorId] = useState<number | null>(null);
   const [editingPurchase, setEditingPurchase] = useState<any>(null);
   const [newDistributor, setNewDistributor] = useState({
     name: '',
@@ -130,74 +480,39 @@ const Purchases: React.FC = () => {
   });
   const [savingMedicine, setSavingMedicine] = useState(false);
   const [activeMedicineIndex, setActiveMedicineIndex] = useState<number | null>(null);
-  const [showCamera, setShowCamera] = useState(false);
-  const [cameraTargetIndex, setCameraTargetIndex] = useState<number | null>(null);
 
-  const handleCameraScanResult = (result: any) => {
-    if (cameraTargetIndex === null) return;
-    const info = result.medicineInfo || {};
-    const newItems = [...items];
-    const item = newItems[cameraTargetIndex];
+  // Enrichment Drawer States
+  const [selectedEnrichedItem, setSelectedEnrichedItem] = useState<any>(null);
+  const [enrichedData, setEnrichedData] = useState<any>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
 
-    if (info.potentialName) {
-      item.medicine_name = info.potentialName;
+  const handleOpenEnrichment = (item: BillItem) => {
+    if (!item.medicine_id) {
+      alert('Please select a valid medicine from the catalog first to view details.');
+      return;
     }
-    if (info.batchNumber) {
-      item.batch_no = info.batchNumber;
-    }
-    if (info.expiryDate) {
-      // Map formatting from DD/MM/YYYY or similar if needed, default copy
-      item.expiry_date = info.expiryDate;
-    }
-    if (info.mrp) {
-      item.mrp = info.mrp;
-    }
-    
-    // Check if there is a matching medicine in catalog to load rate/gst defaults
-    const resolveScannedDetails = async () => {
-      try {
-        const res = await api.catalogSearch(item.medicine_name);
-        const list = res || [];
-        const match = list.find((m: any) => m.name.toLowerCase() === item.medicine_name.toLowerCase());
-        if (match) {
-          item.medicine_id = match.id;
-          item.mrp = match.mrp || item.mrp || 0;
-          item.rate = match.rate || item.rate || 0;
-          item.cgst_per = match.cgst_per || 0;
-          item.sgst_per = match.sgst_per || 0;
+    setSelectedEnrichedItem(item);
+    setPanelOpen(true);
+    setDetailsLoading(true);
+    setEnrichedData(null);
+
+    api.getEnrichedMedicine(item.medicine_id)
+      .then((res: any) => {
+        if (res.success) {
+          setEnrichedData(res.enrichment);
         }
-        item.amount = calculateItemAmount(item);
-        setItems(newItems);
-      } catch (err) {
-        console.error('Failed to match scanned medicine to database:', err);
-      }
-    };
-    
-    resolveScannedDetails();
-    setShowCamera(false);
-    setCameraTargetIndex(null);
+        setDetailsLoading(false);
+      })
+      .catch((err: any) => {
+        console.error('Error fetching enrichment data:', err);
+        setDetailsLoading(false);
+      });
   };
 
-  function createEmptyItem(): BillItem {
-    return {
-      id: crypto.randomUUID(),
-      medicine_id: null,
-      medicine_name: '',
-      batch_no: '',
-      expiry_date: '01/12',
-      qty: 0,
-      free_qty: 0,
-      rate: 0,
-      mrp: 0,
-      cgst_per: 0,
-      sgst_per: 0,
-      cd_rs: 0,
-      cd_per: 0,
-      amount: 0,
-      scheme_paid: 0,
-      scheme_free: 0,
-    };
-  }
+
+
+
 
   useEffect(() => {
     fetchDistributors();
@@ -220,7 +535,7 @@ const Purchases: React.FC = () => {
       // STRICT RULE: Only show last 100
       setPurchaseHistory(Array.isArray(list) ? list.slice(0, 100) : []);
     } catch (err) {
-      console.error('Error fetching purchase history:', error);
+      console.error('Error fetching purchase history:', err);
     }
   };
 
@@ -232,14 +547,22 @@ const Purchases: React.FC = () => {
 
     setSavingDistributor(true);
     try {
-      const response = await apiClient.post('/settings/distributors', newDistributor);
-      const saved = response.data.data;
-      
-      setDistributors([...distributors, saved]);
-      setSelectedDistributor(saved.id);
-      setDistributorSearch(saved.name);
+      if (editDistributorId) {
+        const response = await apiClient.put(`/settings/distributors/${editDistributorId}`, newDistributor);
+        const saved = response.data.data || response.data;
+        setDistributors(distributors.map(d => d.id === editDistributorId ? saved : d));
+        setSelectedDistributor(saved.id);
+        setDistributorSearch(saved.name);
+      } else {
+        const response = await apiClient.post('/settings/distributors', newDistributor);
+        const saved = response.data.data || response.data;
+        setDistributors([...distributors, saved]);
+        setSelectedDistributor(saved.id);
+        setDistributorSearch(saved.name);
+      }
       
       setNewDistributor({ name: '', phone: '', email: '', address: '', state_code: '' });
+      setEditDistributorId(null);
       setShowDistributorModal(false);
     } catch (error) {
       console.error('Error saving distributor:', error);
@@ -291,20 +614,53 @@ const Purchases: React.FC = () => {
     }
   };
 
-  const searchMedicines = useCallback(async (term: string, index: number) => {
+  const searchTimeoutRef = React.useRef<any>(null);
+
+  const searchMedicines = useCallback((term: string, index: number) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
     if (term.length < 2) {
       setSearchResults([]);
+      setActiveSearchIndex(null);
       return;
     }
 
-    try {
-      const response = await api.catalogSearch(term);
-      setSearchResults(response.data || []);
-      setActiveSearchIndex(index);
-      setActiveMedicineIndex(index);
-    } catch (error) {
-      console.error('Error searching medicines:', error);
+    if (term.length === 2) {
+      // Prefetch 2 characters in background, no dropdown
+      setActiveSearchIndex(null);
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await api.catalogSearch(term);
+          setSearchResults(response || []);
+        } catch (error) {
+          console.error('Error prefetching medicines:', error);
+        }
+      }, 150);
+      return;
     }
+
+    // >= 3 characters: show dropdown immediately
+    setActiveSearchIndex(index);
+    setActiveMedicineIndex(index);
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await api.catalogSearch(term);
+        setSearchResults(response || []);
+      } catch (error) {
+        console.error('Error searching medicines:', error);
+      }
+    }, 250);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, []);
 
   const fetchPriceHistory = async (medicineName: string) => {
@@ -319,6 +675,10 @@ const Purchases: React.FC = () => {
   };
 
   const selectMedicine = async (medicine: Medicine, index: number) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
     const newItems = [...items];
     const item = newItems[index];
 
@@ -331,16 +691,24 @@ const Purchases: React.FC = () => {
     item.scheme_paid = medicine.scheme_paid;
     item.scheme_free = medicine.scheme_free;
 
+    if (item.original_name && item.original_name !== medicine.name) {
+      try {
+        await api.createMedicineAlias(item.original_name, medicine.id);
+      } catch (e) {
+        console.error('Failed to create alias:', e);
+      }
+    }
+
     try {
       const response = await api.getLastPurchase(medicine.name, selectedDistributor || undefined);
-      if (response.data) {
-        const lastPurchase = response.data;
+      if (response && response.found) {
+        const lastPurchase = response;
         item.batch_no = lastPurchase.batch_no || '';
         item.expiry_date = lastPurchase.expiry_date || '';
         item.rate = lastPurchase.rate || medicine.rate;
         item.mrp = lastPurchase.mrp || medicine.mrp;
-        item.cgst_per = lastPurchase.cgst_per || medicine.cgst_per;
-        item.sgst_per = lastPurchase.sgst_per || medicine.sgst_per;
+        item.cgst_per = lastPurchase.cgst_per !== undefined ? lastPurchase.cgst_per : medicine.cgst_per;
+        item.sgst_per = lastPurchase.sgst_per !== undefined ? lastPurchase.sgst_per : medicine.sgst_per;
       }
     } catch (error) {
       console.log('No last purchase found for this medicine');
@@ -354,33 +722,46 @@ const Purchases: React.FC = () => {
   };
 
   const calculateItemAmount = (item: BillItem): number => {
-    const baseAmount = item.qty * item.rate;
-    const discountAmount = item.cd_rs + (baseAmount * item.cd_per / 100);
+    const qty = parseFloat(item.qty as any) || 0;
+    const rate = parseFloat(item.rate as any) || 0;
+    const cd_rs = parseFloat(item.cd_rs as any) || 0;
+    const cd_per = parseFloat(item.cd_per as any) || 0;
+    const additional_discount = parseFloat(item.additional_discount as any) || 0;
+    const cgst_per = parseFloat(item.cgst_per as any) || 0;
+    const sgst_per = parseFloat(item.sgst_per as any) || 0;
+
+    const baseAmount = qty * rate;
+    const discountAmount = cd_rs + additional_discount + (baseAmount * cd_per / 100);
     const taxableAmount = baseAmount - discountAmount;
-    const cgstAmount = taxableAmount * item.cgst_per / 100;
-    const sgstAmount = taxableAmount * item.sgst_per / 100;
+    const cgstAmount = taxableAmount * cgst_per / 100;
+    const sgstAmount = taxableAmount * sgst_per / 100;
     return taxableAmount + cgstAmount + sgstAmount;
   };
 
   // Handle prefilled purchase data from navigation state (e.g. from Mail page)
   useEffect(() => {
     if (location.state?.prefilledPurchase) {
-      const { distributorName, invoiceNo: prefInvoiceNo, date: prefDate, items: prefilledItems } = location.state.prefilledPurchase;
+      const { editPurchaseId, distributorName, invoiceNo: prefInvoiceNo, date: prefDate, items: prefilledItems, globalCdPer: prefGlobalCdPer, totalAmount: prefTotalAmount, source_filename, source_file_headers, mapping_config } = location.state.prefilledPurchase;
       
+      if (editPurchaseId) setEditPurchaseId(editPurchaseId);
       if (prefInvoiceNo) setInvoiceNo(prefInvoiceNo);
       if (prefDate) setInvoiceDate(prefDate);
+      if (prefGlobalCdPer !== undefined) setGlobalCdPer(prefGlobalCdPer);
+      if (source_filename) setSourceFilename(source_filename);
+      if (source_file_headers) setSourceFileHeaders(source_file_headers);
+      if (mapping_config) setMappingConfig(mapping_config);
       
       // Try to find matching distributor in distributors list
       if (distributorName) {
         setDistributorSearch(distributorName);
         if (distributors.length > 0) {
           const matched = distributors.find(
-            (d) => d.name.toLowerCase().includes(distributorName.toLowerCase()) || 
-                   distributorName.toLowerCase().includes(d.name.toLowerCase())
+            (d) => d.name && d.name.toLowerCase().includes(distributorName.toLowerCase()) ||
+                   distributorName && distributorName.toLowerCase().includes(d.name && d.name.toLowerCase())
           );
           if (matched) {
             setSelectedDistributor(matched.id);
-            setDistributorSearch(matched.name);
+            setDistributorSearch(matched.name || '');
           }
         }
       }
@@ -393,20 +774,58 @@ const Purchases: React.FC = () => {
           original_name: item.medicine_name || '',
           batch_no: item.batch_no || '',
           expiry_date: item.expiry_date || '',
-          qty: item.qty || 0,
-          free_qty: item.free_qty || 0,
-          rate: item.rate || 0,
-          mrp: item.mrp || 0,
-          cgst_per: 0,
-          sgst_per: 0,
-          cd_rs: 0,
-          cd_per: 0,
-          amount: (item.qty || 0) * (item.rate || 0),
+          qty: item.qty || '',
+          free_qty: item.free_qty || '',
+          rate: item.rate || '',
+          mrp: item.mrp || '',
+          cgst_per: item.cgst_per || '',
+          sgst_per: item.sgst_per || '',
+          cd_rs: item.cd_rs || '',
+          cd_per: item.cd_per !== undefined ? (item.cd_per || '') : (prefGlobalCdPer || ''),
+          additional_discount: item.additional_discount || '',
+          amount: 0,
           scheme_paid: 0,
           scheme_free: 0,
         }));
+
+        loadedItems.forEach(item => {
+          item.amount = calculateItemAmount(item);
+        });
         
         setItems(loadedItems);
+
+        const calculateAndSetExtraCredit = (currentItems: BillItem[]) => {
+          if (prefTotalAmount !== undefined && prefTotalAmount > 0) {
+            let subtotal = 0;
+            let totalCgst = 0;
+            let totalSgst = 0;
+            currentItems.forEach((item: any) => {
+              const qty = parseFloat(item.qty as any) || 0;
+              const rate = parseFloat(item.rate as any) || 0;
+              const cd_rs = parseFloat(item.cd_rs as any) || 0;
+              const cd_per = parseFloat(item.cd_per as any) || 0;
+              const additional_discount = parseFloat(item.additional_discount as any) || 0;
+              const cgst_per = parseFloat(item.cgst_per as any) || 0;
+              const sgst_per = parseFloat(item.sgst_per as any) || 0;
+
+              const baseAmount = qty * rate;
+              const discountAmount = cd_rs + additional_discount + (baseAmount * cd_per / 100);
+              const taxableAmount = baseAmount - discountAmount;
+              const cgstAmount = taxableAmount * cgst_per / 100;
+              const sgstAmount = taxableAmount * sgst_per / 100;
+
+              subtotal += taxableAmount;
+              totalCgst += cgstAmount;
+              totalSgst += sgstAmount;
+            });
+
+            const calculatedGrandTotal = subtotal + totalCgst + totalSgst;
+            const diff = calculatedGrandTotal - prefTotalAmount;
+            setExtraCredit(diff === 0 ? '' : parseFloat(diff.toFixed(2)));
+          } else {
+            setExtraCredit('');
+          }
+        };
         
         // Auto-resolve medicine IDs for the loaded items
         const resolveMedicines = async () => {
@@ -423,10 +842,10 @@ const Purchases: React.FC = () => {
                 const match = learned.medicine;
                 updatedItems[i].medicine_id = match.id;
                 updatedItems[i].medicine_name = match.name;
-                updatedItems[i].mrp = match.mrp || 0;
-                updatedItems[i].rate = match.rate || updatedItems[i].rate;
-                updatedItems[i].cgst_per = match.cgst_per || 0;
-                updatedItems[i].sgst_per = match.sgst_per || 0;
+                updatedItems[i].mrp = updatedItems[i].mrp || match.mrp || 0;
+                updatedItems[i].rate = updatedItems[i].rate || match.rate || 0;
+                updatedItems[i].cgst_per = updatedItems[i].cgst_per || match.cgst_per || 0;
+                updatedItems[i].sgst_per = updatedItems[i].sgst_per || match.sgst_per || 0;
                 updatedItems[i].amount = calculateItemAmount(updatedItems[i]);
                 hasChanges = true;
                 continue;
@@ -436,14 +855,14 @@ const Purchases: React.FC = () => {
               const res = await api.catalogSearch(mName);
               const matchedList = res || [];
               if (matchedList.length > 0) {
-                const match = matchedList.find((m: any) => m.name.toLowerCase() === mName.toLowerCase());
+                const match = matchedList.find((m: any) => m.name && m.name.toLowerCase() === mName.toLowerCase());
                 if (match) {
                   updatedItems[i].medicine_id = match.id;
                   updatedItems[i].medicine_name = match.name;
-                  updatedItems[i].mrp = match.mrp || 0;
-                  updatedItems[i].rate = match.rate || updatedItems[i].rate;
-                  updatedItems[i].cgst_per = match.cgst_per || 0;
-                  updatedItems[i].sgst_per = match.sgst_per || 0;
+                  updatedItems[i].mrp = updatedItems[i].mrp || match.mrp || 0;
+                  updatedItems[i].rate = updatedItems[i].rate || match.rate || 0;
+                  updatedItems[i].cgst_per = updatedItems[i].cgst_per || match.cgst_per || 0;
+                  updatedItems[i].sgst_per = updatedItems[i].sgst_per || match.sgst_per || 0;
                   updatedItems[i].amount = calculateItemAmount(updatedItems[i]);
                   hasChanges = true;
                 } else {
@@ -466,6 +885,9 @@ const Purchases: React.FC = () => {
           }
           if (hasChanges) {
             setItems(updatedItems);
+            calculateAndSetExtraCredit(updatedItems);
+          } else {
+            calculateAndSetExtraCredit(loadedItems);
           }
         };
         
@@ -482,7 +904,7 @@ const Purchases: React.FC = () => {
     const item = newItems[index];
 
     if (field === 'qty' || field === 'free_qty' || field === 'rate' || field === 'mrp' || 
-        field === 'cgst_per' || field === 'sgst_per' || field === 'cd_rs' || field === 'cd_per') {
+        field === 'cgst_per' || field === 'sgst_per' || field === 'cd_rs' || field === 'cd_per' || field === 'additional_discount') {
       const parsedVal = parseFloat(value);
       (item as any)[field] = isNaN(parsedVal) ? 0 : parsedVal;
       
@@ -492,13 +914,31 @@ const Purchases: React.FC = () => {
       } else if (field === 'cgst_per') {
         item.sgst_per = item.cgst_per;
       }
+    } else if (field === 'expiry_date') {
+      let val = value.replace(/\s+/g, '');
+      if (/^\d{4}$/.test(val)) {
+        const mm = val.substring(0, 2);
+        const yy = val.substring(2, 4);
+        val = `${mm}/20${yy}`;
+      } else if (/^\d{6}$/.test(val)) {
+        const mm = val.substring(0, 2);
+        const yyyy = val.substring(2, 6);
+        val = `${mm}/${yyyy}`;
+      } else if (/^\d{2}\/\d{2}$/.test(val)) {
+        const mm = val.substring(0, 2);
+        const yy = val.substring(3, 5);
+        val = `${mm}/20${yy}`;
+      }
+      (item as any)[field] = val;
     } else {
       (item as any)[field] = value;
     }
 
     if (field === 'qty' && item.scheme_paid > 0) {
-      const expectedFree = Math.floor(item.qty / item.scheme_paid) * item.scheme_free;
-      if (item.free_qty > expectedFree) {
+      const qty = parseFloat(item.qty as any) || 0;
+      const expectedFree = Math.floor(qty / item.scheme_paid) * item.scheme_free;
+      const freeQty = parseFloat(item.free_qty as any) || 0;
+      if (freeQty > expectedFree) {
         setSchemeMatchStatus(prev => ({
           ...prev,
           [item.id]: `Free qty reduced to ${expectedFree} (scheme: ${item.scheme_paid}+${item.scheme_free})`
@@ -518,9 +958,23 @@ const Purchases: React.FC = () => {
   };
 
   const removeItem = (index: number) => {
-    if (items.length === 1) return;
+    const itemToRemove = items[index];
+    if (items.length === 1) {
+      setItems([createEmptyItem()]);
+      setSchemeMatchStatus(prev => {
+        const next = { ...prev };
+        delete next[itemToRemove.id];
+        return next;
+      });
+      return;
+    }
     const newItems = items.filter((_, i) => i !== index);
     setItems(newItems);
+    setSchemeMatchStatus(prev => {
+      const next = { ...prev };
+      delete next[itemToRemove.id];
+      return next;
+    });
   };
 
   const addNewItem = () => {
@@ -528,33 +982,43 @@ const Purchases: React.FC = () => {
   };
 
   const calculateTotals = () => {
-    let subtotal = 0;
+    let grossAmount = 0;
+    let totalCd = 0;
+    let subtotal = 0; // Taxable Amount (after CD)
     let totalCgst = 0;
     let totalSgst = 0;
-    let totalCd = 0;
 
     items.forEach(item => {
-      const baseAmount = item.qty * item.rate;
-      const discountAmount = item.cd_rs + (baseAmount * item.cd_per / 100);
-      const taxableAmount = baseAmount - discountAmount;
-      const cgstAmount = taxableAmount * item.cgst_per / 100;
-      const sgstAmount = taxableAmount * item.sgst_per / 100;
+      const qty = parseFloat(item.qty as any) || 0;
+      const rate = parseFloat(item.rate as any) || 0;
+      const cd_rs = parseFloat(item.cd_rs as any) || 0;
+      const cd_per = parseFloat(item.cd_per as any) || 0;
+      const additional_discount = parseFloat(item.additional_discount as any) || 0;
+      const cgst_per = parseFloat(item.cgst_per as any) || 0;
+      const sgst_per = parseFloat(item.sgst_per as any) || 0;
 
+      const baseAmount = qty * rate;
+      const discountAmount = cd_rs + additional_discount + (baseAmount * cd_per / 100);
+      const taxableAmount = baseAmount - discountAmount;
+      const cgstAmount = taxableAmount * cgst_per / 100;
+      const sgstAmount = taxableAmount * sgst_per / 100;
+
+      grossAmount += baseAmount;
+      totalCd += discountAmount;
       subtotal += taxableAmount;
       totalCgst += cgstAmount;
       totalSgst += sgstAmount;
-      totalCd += discountAmount;
     });
 
-    const globalDiscount = subtotal * globalCdPer / 100;
-    const grandTotal = subtotal + totalCgst + totalSgst - globalDiscount - extraCredit;
+    const extra = parseFloat(extraCredit as any) || 0;
+    const grandTotal = subtotal + totalCgst + totalSgst - extra;
 
     return {
+      grossAmount,
+      totalCd,
       subtotal,
       totalCgst,
       totalSgst,
-      totalCd,
-      globalDiscount,
       grandTotal,
     };
   };
@@ -565,7 +1029,10 @@ const Purchases: React.FC = () => {
       return;
     }
 
-    const validItems = items.filter(item => item.medicine_id && item.qty > 0);
+    const validItems = items.filter(item => {
+      const qty = parseFloat(item.qty as any) || 0;
+      return (item.medicine_id || (item.medicine_name && item.medicine_name.trim())) && qty > 0;
+    });
     if (validItems.length === 0) {
       alert('Please add at least one medicine with quantity');
       return;
@@ -573,28 +1040,42 @@ const Purchases: React.FC = () => {
 
     setSaving(true);
     try {
-      const response = await api.createManualPurchase({
+      const payload = {
         distributor_id: selectedDistributor,
         invoice_no: invoiceNo,
         date: invoiceDate,
-        cd_per: globalCdPer,
-        extra_credit: extraCredit,
+        cd_per: parseFloat(globalCdPer as any) || 0,
+        extra_credit: parseFloat(extraCredit as any) || 0,
+        source_filename: sourceFilename,
+        source_file_headers: sourceFileHeaders,
+        mapping_config: mappingConfig,
         items: validItems.map(item => ({
           medicine_id: item.medicine_id,
           medicine: item.medicine_name,
           original_name: item.original_name,
           batch_no: item.batch_no,
           expiry_date: item.expiry_date,
-          qty: item.qty,
-          free_qty: item.free_qty,
-          rate: item.rate,
-          mrp: item.mrp,
-          cgst_per: item.cgst_per,
-          sgst_per: item.sgst_per,
-          cd_rs: item.cd_rs,
-          cd_per: item.cd_per,
+          qty: parseFloat(item.qty as any) || 0,
+          free_qty: parseFloat(item.free_qty as any) || 0,
+          rate: parseFloat(item.rate as any) || 0,
+          mrp: parseFloat(item.mrp as any) || 0,
+          cgst_per: parseFloat(item.cgst_per as any) || 0,
+          sgst_per: parseFloat(item.sgst_per as any) || 0,
+          cd_rs: parseFloat(item.cd_rs as any) || 0,
+          cd_per: parseFloat(item.cd_per as any) || 0,
+          additional_discount: parseFloat(item.additional_discount as any) || 0,
         })),
-      });
+      };
+
+      let response;
+      if (editPurchaseId) {
+        response = await api.updatePurchase(editPurchaseId, {
+          ...payload,
+          distributor: distributorSearch
+        });
+      } else {
+        response = await api.createManualPurchase(payload);
+      }
 
       const savedInvoiceNo = response?.app_invoice_no || invoiceNo;
       setLastSavedInvoiceNo(savedInvoiceNo);
@@ -604,12 +1085,18 @@ const Purchases: React.FC = () => {
       })));
       setShowBarcodeModal(true);
       
+      const nextGrn = `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`;
       setItems([createEmptyItem()]);
       setSelectedDistributor(null);
       setDistributorSearch('');
       setInvoiceNo('');
-      setGlobalCdPer(0);
-      setExtraCredit(0);
+      setGrnNo(nextGrn);
+      setGlobalCdPer('');
+      setExtraCredit('');
+      setSourceFilename('');
+      setSourceFileHeaders([]);
+      setMappingConfig({});
+      setEditPurchaseId(null);
       fetchPurchaseHistory();
     } catch (error) {
       console.error('Error saving purchase:', error);
@@ -627,25 +1114,79 @@ const Purchases: React.FC = () => {
 
     try {
       const response = await apiClient.post('/purchases/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': undefined },
       });
 
       const parsedItems = response.data.data;
-      const newItems = parsedItems.map((item: any) => ({
+      const parsedGlobalCdPer = response.data.global_cd_per || '';
+      let newItems = parsedItems.map((item: any) => ({
         ...createEmptyItem(),
         medicine_name: item.name,
-        qty: item.qty || item.quantity || 0,
-        free_qty: item.free_qty || 0,
-        rate: item.price || item.rate || 0,
+        original_name: item.name,
+        qty: item.qty || item.quantity || '',
+        free_qty: item.free_qty || '',
+        rate: item.price || item.rate || '',
         batch_no: item.batch_no || '',
         expiry_date: item.expiry_date || '01/12',
-        mrp: item.mrp || 0,
-        cgst_per: item.cgst_per || 0,
-        sgst_per: item.sgst_per || 0,
+        mrp: item.mrp || '',
+        cgst_per: item.cgst_per || '',
+        sgst_per: item.sgst_per || '',
         hsn_code: item.hsn_code || '',
-        cd_per: item.cd_per || 0,
-        cd_rs: item.cd_rs || 0,
+        cd_per: item.cd_per !== undefined ? (item.cd_per || '') : (parsedGlobalCdPer || ''),
+        cd_rs: item.cd_rs || '',
+        additional_discount: item.additional_discount || '',
       }));
+
+      if (newItems.length === 0) {
+        newItems = [createEmptyItem()];
+      }
+
+      // Auto-resolve medicine IDs and names for the uploaded items
+      for (let i = 0; i < newItems.length; i++) {
+        const mName = newItems[i].original_name;
+        if (!mName) continue;
+        try {
+          // 1. Check for learned mapping first
+          const learned = await api.getLearnedMapping(mName);
+          if (learned && learned.success && learned.mapped && learned.medicine) {
+            const match = learned.medicine;
+            newItems[i].medicine_id = match.id;
+            newItems[i].medicine_name = match.name;
+            newItems[i].mrp = newItems[i].mrp || match.mrp || 0;
+            newItems[i].rate = newItems[i].rate || match.rate || 0;
+            newItems[i].cgst_per = newItems[i].cgst_per || match.cgst_per || 0;
+            newItems[i].sgst_per = newItems[i].sgst_per || match.sgst_per || 0;
+            continue;
+          }
+
+          // 2. Fallback to catalog search for EXACT matches
+          const res = await api.catalogSearch(mName);
+          const matchedList = res || [];
+          if (matchedList.length > 0) {
+            const match = matchedList.find((m: any) => m.name && m.name.toLowerCase() === mName.toLowerCase());
+            if (match) {
+              newItems[i].medicine_id = match.id;
+              newItems[i].medicine_name = match.name;
+              newItems[i].mrp = newItems[i].mrp || match.mrp || 0;
+              newItems[i].rate = newItems[i].rate || match.rate || 0;
+              newItems[i].cgst_per = newItems[i].cgst_per || match.cgst_per || 0;
+              newItems[i].sgst_per = newItems[i].sgst_per || match.sgst_per || 0;
+            } else {
+              newItems[i].medicine_id = null;
+              newItems[i].medicine_name = '';
+            }
+          } else {
+            newItems[i].medicine_id = null;
+            newItems[i].medicine_name = '';
+          }
+        } catch (err) {
+          console.error('Error auto-resolving uploaded medicine:', mName, err);
+        }
+      }
+
+      newItems.forEach((item: any) => {
+        item.amount = calculateItemAmount(item);
+      });
 
       setItems(newItems);
 
@@ -663,12 +1204,12 @@ const Purchases: React.FC = () => {
       }
 
       if (response.data.global_cd_per !== undefined) {
-        setGlobalCdPer(response.data.global_cd_per);
+        setGlobalCdPer(response.data.global_cd_per || '');
       }
 
       if (response.data.distributor_name) {
         setDistributorSearch(response.data.distributor_name);
-        const match = distributors.find((d: any) => d.name.toLowerCase() === response.data.distributor_name.toLowerCase());
+        const match = distributors.find((d: any) => d.name && d.name.toLowerCase() === response.data.distributor_name.toLowerCase());
         if (match) {
           setSelectedDistributor(match.id);
         } else {
@@ -682,24 +1223,40 @@ const Purchases: React.FC = () => {
         let totalCgst = 0;
         let totalSgst = 0;
         newItems.forEach((item: any) => {
-          const baseAmount = item.qty * item.rate;
-          const discountAmount = item.cd_rs + (baseAmount * item.cd_per / 100);
+          const qty = parseFloat(item.qty as any) || 0;
+          const rate = parseFloat(item.rate as any) || 0;
+          const cd_rs = parseFloat(item.cd_rs as any) || 0;
+          const cd_per = parseFloat(item.cd_per as any) || 0;
+          const additional_discount = parseFloat(item.additional_discount as any) || 0;
+          const cgst_per = parseFloat(item.cgst_per as any) || 0;
+          const sgst_per = parseFloat(item.sgst_per as any) || 0;
+
+          const baseAmount = qty * rate;
+          const discountAmount = cd_rs + additional_discount + (baseAmount * cd_per / 100);
           const taxableAmount = baseAmount - discountAmount;
-          const cgstAmount = taxableAmount * item.cgst_per / 100;
-          const sgstAmount = taxableAmount * item.sgst_per / 100;
+          const cgstAmount = taxableAmount * cgst_per / 100;
+          const sgstAmount = taxableAmount * sgst_per / 100;
 
           subtotal += taxableAmount;
           totalCgst += cgstAmount;
           totalSgst += sgstAmount;
         });
 
-        const globalCdPerVal = response.data.global_cd_per || 0;
-        const globalDiscount = subtotal * globalCdPerVal / 100;
-        const calculatedGrandTotal = subtotal + totalCgst + totalSgst - globalDiscount;
+        const calculatedGrandTotal = subtotal + totalCgst + totalSgst;
         const diff = calculatedGrandTotal - response.data.total_amount;
-        setExtraCredit(parseFloat(diff.toFixed(2)));
+        setExtraCredit(diff === 0 ? '' : parseFloat(diff.toFixed(2)));
       } else {
-        setExtraCredit(0);
+        setExtraCredit('');
+      }
+
+      if (response.data.source_filename) {
+        setSourceFilename(response.data.source_filename);
+      }
+      if (response.data.headers) {
+        setSourceFileHeaders(response.data.headers);
+      }
+      if (response.data.mapping_config) {
+        setMappingConfig(response.data.mapping_config);
       }
 
       setShowUploadModal(false);
@@ -776,21 +1333,8 @@ const Purchases: React.FC = () => {
   const totals = calculateTotals();
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex flex-col md:flex-row justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Record Supplier Purchases</h1>
-          <p className="text-gray-400">Manage invoices, GRN creation, and inventory incoming</p>
-        </div>
-        <div className="flex gap-2 text-xs flex-wrap max-w-lg">
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Purchase entry</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GRN creation</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Batch management</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Expiry capture</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ Cost tracking</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded">✓ GST input tracking</span>
-        </div>
-      </div>
+    <div className="h-full flex flex-col px-6 pt-0 pb-0 animate-in fade-in duration-500">
+
 
       {/* ── Email Source Banner ── */}
       {emailSource && (
@@ -834,10 +1378,49 @@ const Purchases: React.FC = () => {
       )}
 
       {/* Header Section */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
-        <div className="flex items-center gap-3">
+      <div className="relative z-30 bg-white/10 backdrop-blur-lg rounded-t-xl p-4 pb-3 border border-white/20 border-b-0">
+        {/* Purchases Tabs Bar */}
+        <div className="p-2 border-b border-glass-border/30 flex items-center justify-between gap-3 bg-black/10 flex-nowrap mb-3 rounded-lg">
+          <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 scrollbar-thin py-0.5">
+            {tabs.map((t) => {
+              const isActive = t.id === activeTabId;
+              const count = t.items ? t.items.length : 0;
+              const displayName = t.distributorSearch && t.distributorSearch.trim() ? `${t.distributorSearch}` : t.name;
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => switchTab(t.id)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-semibold text-xs transition-all select-none cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                    isActive 
+                      ? 'bg-primary/20 border-primary text-primary font-bold' 
+                      : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
+                  }`}
+                >
+                  <Package size={12} className={isActive ? 'text-primary' : 'text-muted'} />
+                  <span>{displayName} ({count})</span>
+                  <span 
+                    onClick={(e) => closeTab(t.id, e)}
+                    className="hover:bg-white/15 rounded-full p-0.5 ml-1 transition-all cursor-pointer flex items-center justify-center text-muted hover:text-text"
+                    title="Close Bill"
+                  >
+                    <X size={10} />
+                  </span>
+                </div>
+              );
+            })}
+            <button
+              onClick={addNewTab}
+              className="flex items-center justify-center flex-shrink-0 p-1.5 rounded-lg border border-dashed border-glass-border text-muted hover:text-text hover:border-text transition-all bg-white/5 hover:bg-white/10 h-[30px] w-[30px]"
+              title="Add New Bill"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
           {/* Distributor */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-[280px] max-w-sm">
             <label className="block text-sm font-medium text-gray-300 mb-1">Distributor *</label>
             <div className="flex gap-1">
               <div className="flex-1 min-w-0 relative">
@@ -856,38 +1439,99 @@ const Purchases: React.FC = () => {
                   className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Type to search distributor..."
                 />
-                {showDistributorDropdown && distributorSearch && (
-                  <div className="absolute z-[99999] w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {distributors
-                      .filter((d) => d.name.toLowerCase().includes(distributorSearch.toLowerCase()))
-                      .map((dist) => (
+                {showDistributorDropdown && (
+                  <div className="absolute z-[99999] w-full mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-60 overflow-y-auto shadow-2xl">
+                    {distributorSearch === '' ? (
+                      distributors.slice(0, 50).map((dist) => {
+                        const distName = dist.name || dist.distributor_name || 'Unnamed Distributor';
+                        return (
                         <button
                           key={dist.id}
                           onMouseDown={(e) => {
                             e.preventDefault();
                             setSelectedDistributor(dist.id);
-                            setDistributorSearch(dist.name);
+                            setDistributorSearch(distName);
                             setShowDistributorDropdown(false);
                           }}
-                          className="w-full text-left px-4 py-2 hover:bg-white/10 text-white text-sm"
+                          className="w-full text-left px-4 py-2 hover:bg-white/10 text-text text-sm"
                         >
-                          {dist.name}
+                          {distName}
                           {dist.phone && <span className="text-gray-400 ml-2">({dist.phone})</span>}
                         </button>
-                      ))}
-                    {distributors.filter((d) => d.name.toLowerCase().includes(distributorSearch.toLowerCase())).length === 0 && (
-                      <div className="px-4 py-2 text-gray-400 text-sm">No match found. Click + to add.</div>
+                        );
+                      })
+                    ) : (
+                      // Filter distributors when search has value
+                      distributors
+                        .filter((d) => {
+                          const distName = d.name || d.distributor_name || '';
+                          return distName.toLowerCase().includes(distributorSearch.toLowerCase());
+                        })
+                        .map((dist) => {
+                          const distName = dist.name || dist.distributor_name || 'Unnamed Distributor';
+                          return (
+                          <button
+                            key={dist.id}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setSelectedDistributor(dist.id);
+                              setDistributorSearch(distName);
+                              setShowDistributorDropdown(false);
+                            }}
+                            className="w-full text-left px-4 py-2 hover:bg-white/10 text-text text-sm"
+                          >
+                            {distName}
+                            {dist.phone && <span className="text-gray-400 ml-2">({dist.phone})</span>}
+                          </button>
+                          );
+                        })
                     )}
+                    {distributorSearch === ''
+                      ? (distributors.length === 0 && (
+                        <div className="px-4 py-2 text-muted text-sm">No distributors available</div>
+                      ))
+                      : (distributors.filter((d) => {
+                        const distName = d.name || d.distributor_name || '';
+                        return distName.toLowerCase().includes(distributorSearch.toLowerCase());
+                      }).length === 0 && (
+                        <div className="px-4 py-2 text-muted text-sm">No match found. Click + to add.</div>
+                      ))}
                   </div>
                 )}
               </div>
               <button
-                onClick={() => setShowDistributorModal(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white w-9 h-9 rounded-lg font-bold flex-shrink-0"
+                onClick={() => {
+                  setEditDistributorId(null);
+                  setNewDistributor({ name: '', phone: '', email: '', address: '', state_code: '' });
+                  setShowDistributorModal(true);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white w-9 h-9 rounded-lg font-bold flex-shrink-0 flex items-center justify-center"
                 title="Add new distributor"
               >
-                +
+                <Plus size={16} />
               </button>
+              {selectedDistributor && (
+                <button
+                  onClick={() => {
+                    const dist = distributors.find(d => d.id === selectedDistributor);
+                    if (dist) {
+                      setEditDistributorId(dist.id);
+                      setNewDistributor({
+                        name: dist.name || dist.distributor_name || '',
+                        phone: dist.phone || '',
+                        email: dist.email || '',
+                        address: dist.address || '',
+                        state_code: dist.state_code || ''
+                      });
+                      setShowDistributorModal(true);
+                    }
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 text-white w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                  title="Edit selected distributor"
+                >
+                  <Edit size={16} />
+                </button>
+              )}
             </div>
           </div>
 
@@ -931,8 +1575,8 @@ const Purchases: React.FC = () => {
             <label className="block text-sm font-medium text-gray-300 mb-1">CD %</label>
             <input
               type="number"
-              value={globalCdPer}
-              onChange={(e) => setGlobalCdPer(parseFloat(e.target.value) || 0)}
+              value={globalCdPer === 0 ? '' : globalCdPer}
+              onChange={(e) => handleGlobalCdChange(parseFloat(e.target.value) || 0)}
               className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               min="0"
               max="100"
@@ -944,15 +1588,15 @@ const Purchases: React.FC = () => {
             <label className="block text-sm font-medium text-gray-300 mb-1">Extra Credit</label>
             <input
               type="number"
-              value={extraCredit}
+              value={extraCredit === 0 ? '' : extraCredit}
               onChange={(e) => setExtraCredit(parseFloat(e.target.value) || 0)}
               className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               min="0"
             />
           </div>
 
-          {/* Upload Button */}
-          <div className="flex-shrink-0 pt-5">
+          {/* Upload button */}
+          <div className="flex-shrink-0 flex gap-2">
             <button
               onClick={() => setShowUploadModal(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm"
@@ -964,43 +1608,59 @@ const Purchases: React.FC = () => {
       </div>
 
       {/* Items Table */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-white">Line Items</h2>
-          <button
-            onClick={addNewItem}
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
-          >
-            + Add Row
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
+      <div className="bg-white/10 backdrop-blur-lg rounded-none p-4 pt-3 border border-white/20 flex-1 flex flex-col min-h-0">
+        <div className="flex-1 overflow-auto">
           <table className="w-full">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-[#18181b]/95 backdrop-blur-sm shadow-sm">
               <tr className="text-left text-gray-300 border-b border-white/20">
-                <th className="pb-3">#</th>
-                <th className="pb-3">Medicine</th>
-                <th className="pb-3">Batch</th>
-                <th className="pb-3">Exp</th>
-                <th className="pb-3">Rate</th>
-                <th className="pb-3">MRP</th>
-                <th className="pb-3">Qty</th>
-                <th className="pb-3">Free</th>
-                <th className="pb-3" title="Input CGST">CGST%</th>
-                <th className="pb-3" title="Input SGST">SGST%</th>
-                <th className="pb-3">CD ₹</th>
-                <th className="pb-3">CD %</th>
-                <th className="pb-3">Amount</th>
+                <th className="pb-3">
+                  <button
+                    onClick={addNewItem}
+                    className="bg-green-600 hover:bg-green-700 text-white p-1 rounded-md flex items-center justify-center transition-colors shadow-sm"
+                    title="Add Row"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </th>
+                <th className="pb-3 text-xs uppercase tracking-wider">Medicine Name</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">Batch</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">Exp</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">Rate</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">MRP</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">Qty</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">Free</th>
+                <th className="pb-3 text-xs uppercase tracking-wider" title="Input SGST">SGST%</th>
+                <th className="pb-3 text-xs uppercase tracking-wider" title="Input CGST">CGST%</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">CD %</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">CD ₹</th>
+                <th className="pb-3 text-xs uppercase tracking-wider" title="Additional Discount in Rupees">Add. Disc. (₹)</th>
+                <th className="pb-3 text-xs uppercase tracking-wider">Amount</th>
                 <th className="pb-3"></th>
               </tr>
             </thead>
             <tbody>
-              {items.map((item, index) => (
-                <tr key={item.id} className="border-b border-white/10">
+              {items.map((item, index) => {
+                const qtyVal = parseFloat(item.qty as any) || 0;
+                const rateVal = parseFloat(item.rate as any) || 0;
+                const mrpVal = parseFloat(item.mrp as any) || 0;
+                const cdRsVal = parseFloat(item.cd_rs as any) || 0;
+                const cdPerVal = parseFloat(item.cd_per as any) || 0;
+                const addDiscVal = parseFloat(item.additional_discount as any) || 0;
+                const cgstPerVal = parseFloat(item.cgst_per as any) || 0;
+                const sgstPerVal = parseFloat(item.sgst_per as any) || 0;
+                const baseAmount = qtyVal * rateVal;
+                const discountAmount = cdRsVal + addDiscVal + (baseAmount * cdPerVal / 100);
+                const taxableAmount = baseAmount - discountAmount;
+                return (
+                  <tr key={item.id} className="border-b border-white/10">
                   <td className="py-3 text-gray-300">{index + 1}</td>
                   <td className="py-3">
-                    <div className="relative">
+                    <div className="relative group/search">
+                      {item.original_name && (
+                        <div className="absolute z-[99999] bottom-full left-0 mb-1.5 hidden group-focus-within/search:block group-hover/search:block bg-gray-900 border border-blue-500 rounded-lg px-3 py-1.5 shadow-xl text-xs text-blue-300 font-mono select-none whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 duration-150">
+                          📄 Original Bill Name: <span className="text-white font-bold">{item.original_name}</span>
+                        </div>
+                      )}
                       <div className="flex gap-1">
                         <input
                           type="text"
@@ -1009,7 +1669,7 @@ const Purchases: React.FC = () => {
                             updateItem(index, 'medicine_name', e.target.value);
                             searchMedicines(e.target.value, index);
                           }}
-                          className="flex-1 min-w-0 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                          className="flex-1 min-w-[150px] bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                           placeholder="Search medicine..."
                         />
                         {item.medicine_name && (
@@ -1022,14 +1682,16 @@ const Purchases: React.FC = () => {
                           </button>
                         )}
                         <button
-                          onClick={() => {
-                            setCameraTargetIndex(index);
-                            setShowCamera(true);
-                          }}
-                          className="bg-sky/20 hover:bg-sky/40 border border-sky/30 text-sky w-7 h-7 rounded text-sm flex-shrink-0 flex items-center justify-center"
-                          title="Scan drug package using AI Camera"
+                          onClick={() => handleOpenEnrichment(item)}
+                          disabled={!item.medicine_id}
+                          className={`w-7 h-7 rounded text-sm flex-shrink-0 flex items-center justify-center border transition-all ${
+                            item.medicine_id 
+                              ? 'bg-purple-500/20 hover:bg-purple-500/40 border-purple-500/30 text-purple-400' 
+                              : 'bg-white/5 border-glass-border text-muted cursor-not-allowed opacity-50'
+                          }`}
+                          title={item.medicine_id ? "View Medical Profile & Information" : "Select medicine first"}
                         >
-                          <Camera size={14} />
+                          <BookOpen size={14} />
                         </button>
                         <button
                           onClick={() => {
@@ -1042,37 +1704,43 @@ const Purchases: React.FC = () => {
                           +
                         </button>
                       </div>
-                      {activeSearchIndex === index && searchResults.length > 0 && (
-                        <div className="absolute z-[99999] w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {activeSearchIndex === index && (
+                        <div className="absolute z-[99999] w-full mt-1 bg-bg2 border border-glass-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {item.original_name && (
+                            <div className="px-4 py-2 bg-blue-500/10 border-b border-glass-border/30 text-xs text-blue-300 font-bold select-none flex items-center gap-1.5 font-mono">
+                              📄 Original Bill Name: {item.original_name}
+                            </div>
+                          )}
                           {searchResults.map((medicine) => (
                             <button
                               key={medicine.id}
                               onClick={() => selectMedicine(medicine, index)}
-                              className="w-full text-left px-4 py-2 hover:bg-white/10 text-white"
+                              className="w-full text-left px-4 py-2 hover:bg-white/10 text-text"
                             >
                               {medicine.name} - ₹{medicine.mrp}
                             </button>
                           ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMedicineIndex(index);
+                              setNewMedicine(prev => ({
+                                ...prev,
+                                name: item.medicine_name || item.original_name || ''
+                              }));
+                              setShowMedicineModal(true);
+                              setSearchResults([]);
+                              setActiveSearchIndex(null);
+                            }}
+                            className="w-full text-left px-4 py-2 hover:bg-white/10 text-green-400 font-bold border-t border-glass-border/30 flex items-center gap-1.5"
+                          >
+                            ➕ Add New Medicine
+                          </button>
                         </div>
                       )}
                     </div>
-                    {item.original_name && (
-                      <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-1 select-none">
-                        <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-medium border border-blue-500/20">Parsed Name:</span>
-                        <span className="font-mono truncate max-w-[200px]" title={item.original_name}>{item.original_name}</span>
-                      </div>
-                    )}
                     {schemeMatchStatus[item.id] && (
                       <p className="text-yellow-400 text-xs mt-1">{schemeMatchStatus[item.id]}</p>
-                    )}
-                    {/* Inline Price Intelligence Panel */}
-                    {item.medicine_name && item.medicine_name.length >= 2 && (
-                      <PriceIntelPanel
-                        medicineName={item.medicine_name}
-                        currentRate={item.rate > 0 ? item.rate : undefined}
-                        currentDistributorId={selectedDistributor}
-                        defaultExpanded={!!emailSource && (openIntelPanels[item.id] !== false)}
-                      />
                     )}
                   </td>
                   <td className="py-3">
@@ -1080,7 +1748,7 @@ const Purchases: React.FC = () => {
                       type="text"
                       value={item.batch_no}
                       onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
-                      className="w-20 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
                     />
                   </td>
                   <td className="py-3">
@@ -1089,52 +1757,40 @@ const Purchases: React.FC = () => {
                       placeholder="MM/YY"
                       value={item.expiry_date}
                       onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
-                      className="w-20 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm font-mono text-center"
                     />
                   </td>
                   <td className="py-3 relative group/btn">
                     <input
                       type="number"
-                      value={item.rate === 0 ? '' : item.rate}
+                      value={item.rate}
                       onChange={(e) => updateItem(index, 'rate', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-14 bg-white/10 border border-white/20 rounded px-1.5 py-1 text-white text-sm text-right"
                     />
-                    {item.medicine_name && item.rate > 0 && (
-                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block w-56">
-                        <div className="bg-gray-900 border border-blue-500 rounded-lg p-3 shadow-xl">
-                          <p className="text-white font-semibold text-sm mb-2">{item.medicine_name}</p>
-                          <div className="space-y-1 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">MRP:</span>
-                              <span className="text-white">₹{item.mrp.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Rate:</span>
-                              <span className="text-green-400">₹{item.rate.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Margin:</span>
-                              <span className="text-yellow-400">₹{(item.mrp - item.rate).toFixed(2)} ({item.mrp > 0 ? (((item.mrp - item.rate) / item.mrp) * 100).toFixed(1) : 0}%)</span>
-                            </div>
-                            <div className="border-t border-gray-700 my-1"></div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Taxable:</span>
-                              <span className="text-white">₹{(item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">CGST ({item.cgst_per}%):</span>
-                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.cgst_per / 100).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">SGST ({item.sgst_per}%):</span>
-                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.sgst_per / 100).toFixed(2)}</span>
-                            </div>
-                            <div className="border-t border-gray-700 my-1"></div>
-                            <div className="flex justify-between font-bold">
-                              <span className="text-gray-300">Total:</span>
-                              <span className="text-white">₹{item.amount.toFixed(2)}</span>
-                            </div>
-                          </div>
+                    {mrpVal > 0 && (
+                      <div className="text-[9px] mt-1 font-bold select-none leading-none text-center">
+                        {(() => {
+                          const marginPercent = ((mrpVal - rateVal) / mrpVal) * 100;
+                          return (
+                            <span className={`px-0.5 py-0.2 rounded border inline-block ${
+                              marginPercent > 20 
+                                ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                                : marginPercent > 10 
+                                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                  : marginPercent > 0 
+                                    ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                            }`}>
+                              {marginPercent.toFixed(1)}%
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    {item.medicine_name && rateVal > 0 && (
+                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block min-w-[320px]">
+                        <div className="bg-gray-900 border border-blue-500 rounded-lg p-2 shadow-xl">
+                          <HoverPriceIntelTable medicineName={item.medicine_name} />
                         </div>
                       </div>
                     )}
@@ -1142,151 +1798,143 @@ const Purchases: React.FC = () => {
                   <td className="py-3 relative group/btn">
                     <input
                       type="number"
-                      value={item.mrp === 0 ? '' : item.mrp}
+                      value={item.mrp}
                       onChange={(e) => updateItem(index, 'mrp', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-14 bg-white/10 border border-white/20 rounded px-1.5 py-1 text-white text-sm text-right"
                     />
-                    {item.medicine_name && item.mrp > 0 && (
-                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block w-56">
-                        <div className="bg-gray-900 border border-purple-500 rounded-lg p-3 shadow-xl">
-                          <p className="text-white font-semibold text-sm mb-2">{item.medicine_name}</p>
-                          <div className="space-y-1 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">MRP:</span>
-                              <span className="text-purple-400">₹{item.mrp.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Rate:</span>
-                              <span className="text-green-400">₹{item.rate.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Margin:</span>
-                              <span className="text-yellow-400">₹{(item.mrp - item.rate).toFixed(2)} ({item.mrp > 0 ? (((item.mrp - item.rate) / item.mrp) * 100).toFixed(1) : 0}%)</span>
-                            </div>
-                            <div className="border-t border-gray-700 my-1"></div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">Taxable:</span>
-                              <span className="text-white">₹{(item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">CGST ({item.cgst_per}%):</span>
-                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.cgst_per / 100).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-400">SGST ({item.sgst_per}%):</span>
-                              <span className="text-orange-400">₹{((item.qty * item.rate - item.cd_rs - (item.qty * item.rate * item.cd_per / 100)) * item.sgst_per / 100).toFixed(2)}</span>
-                            </div>
-                            <div className="border-t border-gray-700 my-1"></div>
-                            <div className="flex justify-between font-bold">
-                              <span className="text-gray-300">Total:</span>
-                              <span className="text-white">₹{item.amount.toFixed(2)}</span>
-                            </div>
-                          </div>
+                    {item.medicine_name && mrpVal > 0 && (
+                      <div className="absolute z-[99999] bottom-full left-0 mb-2 hidden group-hover/btn:block min-w-[320px]">
+                        <div className="bg-gray-900 border border-purple-500 rounded-lg p-2 shadow-xl">
+                          <HoverPriceIntelTable medicineName={item.medicine_name} />
                         </div>
                       </div>
                     )}
                   </td>
+
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.qty === 0 ? '' : item.qty}
+                      value={item.qty}
                       onChange={(e) => updateItem(index, 'qty', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-12 bg-white/10 border border-white/20 rounded px-1 py-1 text-white text-sm text-center"
                     />
                   </td>
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.free_qty === 0 ? '' : item.free_qty}
+                      value={item.free_qty}
                       onChange={(e) => updateItem(index, 'free_qty', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-12 bg-white/10 border border-white/20 rounded px-1 py-1 text-white text-sm text-center"
                     />
                   </td>
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.cgst_per === 0 ? '' : item.cgst_per}
-                      onChange={(e) => updateItem(index, 'cgst_per', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
-                    />
-                  </td>
-                  <td className="py-3">
-                    <input
-                      type="number"
-                      value={item.sgst_per === 0 ? '' : item.sgst_per}
+                      value={item.sgst_per}
                       onChange={(e) => updateItem(index, 'sgst_per', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-12 bg-white/10 border border-white/20 rounded px-1 py-1 text-white text-sm text-center"
                     />
                   </td>
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.cd_rs === 0 ? '' : item.cd_rs}
-                      onChange={(e) => updateItem(index, 'cd_rs', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      value={item.cgst_per}
+                      onChange={(e) => updateItem(index, 'cgst_per', e.target.value)}
+                      className="w-12 bg-white/10 border border-white/20 rounded px-1 py-1 text-white text-sm text-center"
                     />
                   </td>
                   <td className="py-3">
                     <input
                       type="number"
-                      value={item.cd_per === 0 ? '' : item.cd_per}
+                      value={item.cd_per}
                       onChange={(e) => updateItem(index, 'cd_per', e.target.value)}
-                      className="w-16 bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-sm"
+                      className="w-12 bg-white/10 border border-white/20 rounded px-1 py-1 text-white text-sm text-center"
                     />
                   </td>
-                  <td className="py-3 text-white font-medium">
-                    ₹{item.amount.toFixed(2)}
+                  <td className="py-3">
+                    <input
+                      type="number"
+                      value={item.cd_rs}
+                      onChange={(e) => updateItem(index, 'cd_rs', e.target.value)}
+                      className="w-14 bg-white/10 border border-white/20 rounded px-1.5 py-1 text-white text-sm text-right"
+                    />
                   </td>
                   <td className="py-3">
-                    <button
-                      onClick={() => removeItem(index)}
-                      className="text-red-400 hover:text-red-300"
-                    >
-                      ✕
-                    </button>
+                    <input
+                      type="number"
+                      value={item.additional_discount}
+                      onChange={(e) => updateItem(index, 'additional_discount', e.target.value)}
+                      className="w-14 bg-white/10 border border-white/20 rounded px-1.5 py-1 text-white text-sm text-right"
+                      placeholder="0"
+                    />
+                  </td>
+                  <td className="py-3 text-white font-medium text-right pr-2">
+                    ₹{Math.round(item.amount)}
+                  </td>
+                  <td className="py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          if (item.medicine_id) setUniversalEditMedicineId(item.medicine_id);
+                        }}
+                        disabled={!item.medicine_id}
+                        className={`p-1 rounded transition-colors ${item.medicine_id ? 'text-sky-400 hover:text-sky-300' : 'text-gray-600 cursor-not-allowed'}`}
+                        title="Quick Edit Medicine"
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={() => removeItem(index)}
+                        className="text-red-400 hover:text-red-300 p-1"
+                        title="Remove Row"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
       {/* ── Auto-updating Bill Summary ── */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 mb-6 overflow-hidden">
+      <div className="bg-white/10 backdrop-blur-lg rounded-b-xl border border-white/20 border-t-0 overflow-hidden shrink-0 mt-0">
         {/* Summary rows */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-white/10">
-          {/* Subtotal */}
-          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Subtotal</span>
-            <span className="text-lg font-bold text-white">₹{totals.subtotal.toFixed(2)}</span>
+          {/* Gross Amount */}
+          <div className="flex flex-col items-center justify-center py-2 px-3 gap-0.5">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Gross Amt</span>
+            <span className="text-base font-bold text-white">₹{totals.grossAmount.toFixed(2)}</span>
+          </div>
+          {/* Cash Discount */}
+          <div className="flex flex-col items-center justify-center py-2 px-3 gap-0.5">
+            <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">
+              Discount (CD)
+            </span>
+            <span className="text-base font-bold text-red-400">-₹{totals.totalCd.toFixed(2)}</span>
+          </div>
+          {/* Taxable Subtotal */}
+          <div className="flex flex-col items-center justify-center py-2 px-3 gap-0.5">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Taxable Value</span>
+            <span className="text-base font-bold text-white">₹{totals.subtotal.toFixed(2)}</span>
           </div>
           {/* CGST */}
-          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+          <div className="flex flex-col items-center justify-center py-2 px-3 gap-0.5">
             <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">CGST</span>
-            <span className="text-lg font-bold text-white">₹{totals.totalCgst.toFixed(2)}</span>
+            <span className="text-base font-bold text-white">₹{totals.totalCgst.toFixed(2)}</span>
           </div>
           {/* SGST */}
-          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+          <div className="flex flex-col items-center justify-center py-2 px-3 gap-0.5">
             <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">SGST</span>
-            <span className="text-lg font-bold text-white">₹{totals.totalSgst.toFixed(2)}</span>
-          </div>
-          {/* Item CD */}
-          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
-            <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">Item CD</span>
-            <span className="text-lg font-bold text-red-400">-₹{totals.totalCd.toFixed(2)}</span>
-          </div>
-          {/* Global CD */}
-          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
-            <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">
-              Global CD {globalCdPer > 0 ? `(${globalCdPer}%)` : ''}
-            </span>
-            <span className="text-lg font-bold text-red-400">-₹{totals.globalDiscount.toFixed(2)}</span>
+            <span className="text-base font-bold text-white">₹{totals.totalSgst.toFixed(2)}</span>
           </div>
           {/* Extra Credit */}
-          <div className="flex flex-col items-center justify-center py-4 px-3 gap-1">
+          <div className="flex flex-col items-center justify-center py-2 px-3 gap-0.5">
             <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Extra Credit</span>
-            <span className="text-lg font-bold text-red-400">-₹{extraCredit.toFixed(2)}</span>
+            <span className="text-base font-bold text-red-400">-₹{(parseFloat(extraCredit as any) || 0).toFixed(2)}</span>
           </div>
         </div>
 
@@ -1295,7 +1943,7 @@ const Purchases: React.FC = () => {
           <div>
             <p className="text-xs text-gray-400 mb-0.5">Grand Total (incl. GST)</p>
             <p className="text-3xl font-extrabold text-white tracking-tight">
-              ₹{totals.grandTotal.toFixed(2)}
+              ₹{Math.round(totals.grandTotal)}
             </p>
           </div>
           <button
@@ -1309,7 +1957,7 @@ const Purchases: React.FC = () => {
       </div>
 
       {/* Upload Modal */}
-      {showUploadModal && (
+      {showUploadModal && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Upload or Capture Invoice</h3>
@@ -1359,14 +2007,15 @@ const Purchases: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Add Distributor Modal */}
-      {showDistributorModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-white mb-4">Add New Distributor</h3>
+      {/* Add/Edit Distributor Modal */}
+      {showDistributorModal && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-semibold text-white mb-4">{editDistributorId ? 'Edit Distributor' : 'Add New Distributor'}</h3>
             
             <div className="space-y-4">
               <div>
@@ -1415,14 +2064,18 @@ const Purchases: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">State Code</label>
-                <input
-                  type="text"
+                <select
                   value={newDistributor.state_code}
                   onChange={(e) => setNewDistributor({ ...newDistributor, state_code: e.target.value })}
                   className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. 27 (Maharashtra)"
-                  maxLength={2}
-                />
+                >
+                  <option value="" disabled>Select State Code</option>
+                  {INDIAN_STATE_CODES.sort((a, b) => a.name.localeCompare(b.name)).map((state) => (
+                    <option key={state.code} value={state.code}>
+                      {state.code} - {state.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1438,18 +2091,29 @@ const Purchases: React.FC = () => {
                 disabled={savingDistributor || !newDistributor.name}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
               >
-                {savingDistributor ? 'Saving...' : 'Add Distributor'}
+                {savingDistributor ? 'Saving...' : editDistributorId ? 'Save Changes' : 'Add Distributor'}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Add Medicine Modal */}
-      {showMedicineModal && (
+      {showMedicineModal && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-lg">
             <h3 className="text-lg font-semibold text-white mb-4">Add New Medicine</h3>
+            
+            {activeMedicineIndex !== null && items[activeMedicineIndex]?.original_name && (
+              <div className="mb-4 p-3 bg-blue-500/10 border border-glass-border/30 rounded-lg flex items-start gap-2 text-xs text-blue-300 font-mono">
+                <span className="text-base select-none">📄</span>
+                <div>
+                  <span className="font-bold text-gray-300 block mb-0.5 font-sans">Reference Name from Bill:</span>
+                  <span className="text-white font-semibold">{items[activeMedicineIndex].original_name}</span>
+                </div>
+              </div>
+            )}
             
             <div className="grid grid-cols-2 gap-4">
               {/* Row 1 - Full width */}
@@ -1595,11 +2259,12 @@ const Purchases: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Price History Modal */}
-      {showPriceHistoryModal && (
+      {showPriceHistoryModal && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-white mb-2">Price History</h3>
@@ -1651,11 +2316,12 @@ const Purchases: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Edit Purchase Modal */}
-      {editingPurchase && (
+      {editingPurchase && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Edit Purchase</h3>
@@ -1720,18 +2386,14 @@ const Purchases: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showCamera && (
-        <AICamera 
-          onClose={() => { setShowCamera(false); setCameraTargetIndex(null); }}
-          onScanResult={handleCameraScanResult}
-        />
-      )}
+
 
       {/* Barcode Print Prompt Modal */}
-      {showBarcodeModal && (
+      {showBarcodeModal && createPortal(
         <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/70 backdrop-blur-md fade-in text-left">
           <div className="bg-gray-900 border border-white/20 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
             <div className="text-center space-y-2">
@@ -1801,7 +2463,118 @@ const Purchases: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Sliding Details Drawer for OpenFDA Enrichment */}
+      {createPortal(
+        <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-[999999] flex flex-col pt-16 ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          {selectedEnrichedItem && (
+            <>
+              {/* Header */}
+              <div className="p-6 border-b border-glass-border flex justify-between items-center bg-white/5">
+                <div className="min-w-0 flex-1 mr-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-purple-400 px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 mb-1 inline-block">
+                    Medical Profile
+                  </span>
+                  <h4 className="text-xl font-bold mt-1 text-white truncate" title={selectedEnrichedItem.medicine_name}>{selectedEnrichedItem.medicine_name}</h4>
+                </div>
+                <button 
+                  onClick={() => setPanelOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-muted hover:text-white transition-colors shrink-0"
+                  aria-label="Close panel"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Enrichment Section */}
+                <div className="space-y-5">
+                  <h5 className="text-xs font-bold uppercase tracking-widest text-muted border-b border-glass-border pb-2">openFDA Intelligence</h5>
+
+                  {detailsLoading ? (
+                    <div className="flex flex-col items-center justify-center py-10 space-y-3">
+                      <RefreshCw className="animate-spin text-purple-500" size={24} />
+                      <span className="text-sm text-muted">Retrieving OpenFDA monographs...</span>
+                    </div>
+                  ) : enrichedData ? (
+                    <div className="space-y-5 fade-in">
+                      {/* Active Ingredients */}
+                      <div>
+                        <span className="text-xs text-muted uppercase font-bold block mb-2">Active Ingredients</span>
+                        <div className="flex flex-wrap gap-2">
+                          {enrichedData.activeIngredients && enrichedData.activeIngredients.length > 0 ? (
+                            enrichedData.activeIngredients.map((ing: string, i: number) => (
+                              <span key={i} className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                {ing}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-muted italic">Generic formula not indexed.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Indications */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs text-muted uppercase font-bold flex items-center gap-1.5 text-sky-400">
+                          <BookOpen size={14} className="text-sky-400" /> Indications & Usage
+                        </span>
+                        <div className="bg-white/5 p-3 rounded-lg border border-glass-border text-sm text-muted leading-relaxed max-h-48 overflow-y-auto">
+                          {enrichedData.indications || 'Not available.'}
+                        </div>
+                      </div>
+
+                      {/* Warnings */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs text-muted uppercase font-bold flex items-center gap-1.5 text-yellow-500">
+                          <AlertTriangle size={14} /> Warnings & Precautions
+                        </span>
+                        <div className="bg-yellow-500/5 p-3 rounded-lg border border-yellow-500/20 text-sm text-yellow-200/80 leading-relaxed max-h-48 overflow-y-auto">
+                          {enrichedData.warnings || 'No active drug safety warnings.'}
+                        </div>
+                      </div>
+
+                      {/* Side Effects */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs text-muted uppercase font-bold flex items-center gap-1.5 text-red-500">
+                          <ShieldAlert size={14} /> Adverse Reactions
+                        </span>
+                        <div className="bg-red-500/5 p-3 rounded-lg border border-red-500/20 text-sm text-red-300 leading-relaxed max-h-48 overflow-y-auto">
+                          {enrichedData.sideEffects || 'No common adverse reactions logged.'}
+                        </div>
+                      </div>
+
+                      {/* Source and Manufacturer */}
+                      <div className="pt-2 flex justify-between items-center text-xs text-muted">
+                        <span className="flex items-center gap-1"><Factory size={12} /> Mfg: {enrichedData.manufacturer || 'Unknown'}</span>
+                        <span className="px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-500 font-bold uppercase text-[10px] tracking-wide">
+                          Source: {enrichedData.enrichmentSource || 'FDA'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-muted italic">No enrichment profile found.</div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>,
+        document.body
+      )}
+
+      {universalEditMedicineId && (
+        <UniversalMedicineEditModal 
+          medicineId={universalEditMedicineId} 
+          onClose={() => setUniversalEditMedicineId(null)} 
+          onSave={() => {
+            // Optional: You can trigger a refetch of items here if needed, or rely on next search
+          }} 
+        />
       )}
     </div>
   );

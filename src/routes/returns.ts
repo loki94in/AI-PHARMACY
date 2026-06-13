@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
@@ -18,13 +17,11 @@ const router = express.Router();
 router.get('/', async (_req, res) => {
   let db;
   try {
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const rows = await db.all('SELECT * FROM returns ORDER BY date DESC');
-    await db.close();
-    res.json(rows);
+        res.json(rows);
   } catch (err: any) {
-    if (db) await db.close();
-    console.error(JSON.stringify({
+    if (db)     console.error(JSON.stringify({
       message: 'Returns fetch error',
       error: err.message,
       stack: err.stack,
@@ -45,10 +42,10 @@ router.post('/', async (req, res) => {
     if (!original_invoice_id) {
       return res.status(400).json({ error: 'original_invoice_id is required' });
     }
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     const result = await db.run(
-      'INSERT INTO returns (return_no, original_invoice_id, type, total_amount, distributor_id) VALUES (?,?,?,?,?)',
-      [return_no, original_invoice_id, type || null, total_amount || 0, distributor_id || null]
+      'INSERT INTO returns (return_no, original_invoice_id, type, total_amount, distributor_id, reason) VALUES (?,?,?,?,?,?)',
+      [return_no, original_invoice_id, type || null, total_amount || 0, distributor_id || null, req.body.reason || 'Supplier Return']
     );
     
     if (type === 'purchase' && is_expiry && distributor_id) {
@@ -56,11 +53,9 @@ router.post('/', async (req, res) => {
       await trackExpiryReturn(db, result.lastID as number, distributor_id as number, total_amount || 0, loss_percentage || 3.0);
     }
 
-    await db.close();
-    res.json({ success: true, message: 'Return recorded' });
+        res.json({ success: true, message: 'Return recorded' });
   } catch (err: any) {
-    if (db) await db.close();
-    console.error(JSON.stringify({
+    if (db)     console.error(JSON.stringify({
       message: 'Create return error',
       error: err.message,
       stack: err.stack,
@@ -77,7 +72,7 @@ router.get('/near-expiry', async (req, res) => {
     const monthsStr = (req.query.months as string) || '6';
     const months = parseInt(monthsStr, 10);
     
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     // Fetch all stock > 0 and try to join with purchase history to find the distributor
     const rows = await db.all(`
       SELECT im.id as inventory_id, im.batch_no, im.expiry_date, im.quantity, im.cost_price, im.mrp,
@@ -91,8 +86,7 @@ router.get('/near-expiry', async (req, res) => {
       GROUP BY im.id
     `);
     
-    await db.close();
-
+    
     const now = new Date();
     const thresholdDate = new Date();
     thresholdDate.setMonth(now.getMonth() + months);
@@ -129,7 +123,6 @@ router.get('/near-expiry', async (req, res) => {
 
     res.json(Object.values(grouped));
   } catch (err: any) {
-    if (db) await db.close();
     console.error('Near expiry fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -222,13 +215,12 @@ router.get('/lookup-purchases', async (req, res) => {
     if (!name) {
       return res.status(400).json({ error: 'Medicine name query is required' });
     }
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
 
     // Fuzzy matching for medicine names
     const medicines = await db.all('SELECT id, name FROM medicines WHERE name LIKE ? LIMIT 10', [`%${name}%`]);
     if (medicines.length === 0) {
-      await db.close();
-      return res.json([]);
+            return res.json([]);
     }
 
     const medicineIds = medicines.map(m => m.id);
@@ -251,10 +243,8 @@ router.get('/lookup-purchases', async (req, res) => {
     query += ` ORDER BY p.date DESC`;
 
     const purchaseRecords = await db.all(query, params);
-    await db.close();
-    res.json(purchaseRecords);
+        res.json(purchaseRecords);
   } catch (err: any) {
-    if (db) await db.close();
     console.error('Error looking up purchases:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -269,7 +259,7 @@ router.post('/process-returns', async (req, res) => {
       return res.status(400).json({ error: 'A non-empty list of return items is required' });
     }
 
-    db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
 
     const returnNo = 'RET-' + Date.now();
@@ -311,13 +301,11 @@ router.post('/process-returns', async (req, res) => {
     }
 
     await db.run('COMMIT');
-    await db.close();
-    res.json({ success: true, message: 'Returns successfully processed', returnNo });
+        res.json({ success: true, message: 'Returns successfully processed', returnNo });
   } catch (err: any) {
     if (db) {
       await db.run('ROLLBACK');
-      await db.close();
-    }
+          }
     console.error('Error processing returns:', err);
     res.status(500).json({ error: 'Internal server error' });
   }

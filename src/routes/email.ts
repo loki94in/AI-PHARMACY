@@ -1,7 +1,6 @@
 // Email Parser API (Agent 2)
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { emailService } from '../services/emailService.js';
@@ -25,13 +24,12 @@ router.post('/', async (req, res) => {
   }
   try {
     // Log the basic email info
-    const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['EMAIL_RECEIVED', `From: ${from}, Subject: ${subject}`]
     );
-    await db.close();
-
+    
     // Process the email content using our email service
     const emailData = {
       from,
@@ -41,13 +39,12 @@ router.post('/', async (req, res) => {
     };
 
     // Log the email receipt (more detailed)
-    const db2 = await open({ filename: getDbPath(), driver: sqlite3.Database });
+    const db2 = await dbManager.getConnection();
     await db2.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['EMAIL_RECEIVED_PROCESSED', `From: ${from}, Subject: ${subject}`]
     );
-    await db2.close();
-
+    
     // Process the email using our EmailService
     await emailService.processEmail(emailData);
 
@@ -240,10 +237,9 @@ router.delete('/attachments/cache', async (req, res) => {
 // Initiate Google OAuth for Gmail
 router.get('/auth/google', async (req, res) => {
   try {
-    const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const clientIdRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_id'");
-    await db.close();
-
+    
     const clientId = clientIdRow?.value;
     if (!clientId) {
       return res.status(400).send('Please configure Google Client ID in settings first.');
@@ -273,7 +269,7 @@ router.get('/auth/google/callback', async (req, res) => {
   }
 
   try {
-    const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     const clientIdRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_id'");
     const clientSecretRow = await db.get("SELECT value FROM app_settings WHERE key = 'google_client_secret'");
     const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
@@ -283,8 +279,7 @@ router.get('/auth/google/callback', async (req, res) => {
     const emailUser = userRow?.value;
 
     if (!clientId || !clientSecret) {
-      await db.close();
-      return res.status(400).send('Google OAuth configuration incomplete on backend');
+            return res.status(400).send('Google OAuth configuration incomplete on backend');
     }
 
     const redirectUri = `${req.protocol}://${req.get('host')}/api/email/auth/google/callback`;
@@ -305,8 +300,7 @@ router.get('/auth/google/callback', async (req, res) => {
 
     const tokenData = await response.json() as any;
     if (tokenData.error) {
-      await db.close();
-      throw new Error(tokenData.error_description || tokenData.error);
+            throw new Error(tokenData.error_description || tokenData.error);
     }
 
     const { access_token, refresh_token, expires_in } = tokenData;
@@ -335,8 +329,7 @@ router.get('/auth/google/callback', async (req, res) => {
       }
     }
 
-    await db.close();
-
+    
     res.send(`
       <html>
         <head>

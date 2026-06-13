@@ -1,5 +1,4 @@
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -10,7 +9,7 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 export async function runExpiryScanAndAlert(days = 90): Promise<boolean> {
   console.log(`[ExpiryScan] Executing automatic 15-day near-expiry inventory scan (horizon: ${days} days)...`);
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
     
     // Fetch items nearing expiry / already expired
@@ -26,29 +25,26 @@ export async function runExpiryScanAndAlert(days = 90): Promise<boolean> {
 
     if (rows.length === 0) {
       console.log('[ExpiryScan] No near-expiry items found to report.');
-      await db.close();
-      return true; // No items is a successful scan
+            return true; // No items is a successful scan
     }
 
     // Load owner/pharmacist phone number from settings
     const phoneRow = await db.get("SELECT value FROM app_settings WHERE key = 'owner_phone'");
     const nameRow = await db.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
-    await db.close();
-
+    
     const targetPhone = phoneRow?.value;
     const medicalName = nameRow?.value || 'AI Pharmacy';
 
     if (!targetPhone) {
       console.warn('[ExpiryScan] Expiry scan completed, but no `owner_phone` is configured in app_settings. WhatsApp alert skipped.');
       // Fallback: log system alert
-      const dbLog = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const dbLog = await dbManager.getConnection();
       await dbLog.run(
         "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
         'AUTOMATION_ALERT',
         `❌ Expiry Alert Failure: Owner WhatsApp number not configured. Expiring list contains ${rows.length} item(s).`
       );
-      await dbLog.close();
-      return false; // Not fully successful (skipped notification)
+            return false; // Not fully successful (skipped notification)
     }
 
     // Load WhatsApp client and send message
@@ -75,14 +71,13 @@ export async function runExpiryScanAndAlert(days = 90): Promise<boolean> {
   } catch (err: any) {
     console.error('[ExpiryScan] Error running automatic expiry scan:', err);
     try {
-      const dbLog = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const dbLog = await dbManager.getConnection();
       await dbLog.run(
         "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
         'AUTOMATION_ALERT',
         `❌ Expiry Alert Failure: WhatsApp message failed to dispatch. Technical Error: ${err.message || 'Unknown network error'}`
       );
-      await dbLog.close();
-    } catch (_) {}
+          } catch (_) {}
     return false;
   }
 }
@@ -90,13 +85,12 @@ export async function runExpiryScanAndAlert(days = 90): Promise<boolean> {
 export async function checkAndRunScheduledExpiryScan(days = 90) {
   console.log('[ExpiryScan] Checking if scheduled 15-day expiry scan is overdue...');
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
     
     // Check last scan timestamp
     const lastScanRow = await db.get("SELECT value FROM app_settings WHERE key = 'last_expiry_scan_timestamp'");
-    await db.close();
-
+    
     const now = new Date();
     let shouldRun = false;
 
@@ -125,10 +119,9 @@ export async function checkAndRunScheduledExpiryScan(days = 90) {
       
       if (success) {
         // Update database timestamp to current time only after a successful run
-        const dbUpdate = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const dbUpdate = await dbManager.getConnection();
         await dbUpdate.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", ['last_expiry_scan_timestamp', now.toISOString()]);
-        await dbUpdate.close();
-        console.log('[ExpiryScan] Execution timestamp successfully updated in database.');
+                console.log('[ExpiryScan] Execution timestamp successfully updated in database.');
       } else {
         console.warn('[ExpiryScan] Expiry scan skipped or failed to send notification. Database timestamp not updated (will retry next check).');
       }

@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -58,7 +57,7 @@ router.post('/audit/resolve', async (req, res) => {
       }
 
       // 2. Open DB and insert medicine
-      const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+      const db = await dbManager.getConnection();
 
       // Check if medicine already exists
       let med = await db.get('SELECT id FROM medicines WHERE name = ?', [name.trim()]);
@@ -82,8 +81,7 @@ router.post('/audit/resolve', async (req, res) => {
         );
       }
 
-      await db.close();
-
+      
       // NEW: Learn from this correction for future OCR recognition
       // We need to get the original OCR text from the audit entry to learn from it
       try {

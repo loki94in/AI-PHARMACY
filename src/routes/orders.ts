@@ -1,6 +1,5 @@
 import express from 'express';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sendMessage } from '../whatsappClient.js';
@@ -22,26 +21,45 @@ async function initOrdersTable(db: any) {
       priority TEXT,
       status TEXT DEFAULT 'Pending',
       date DATETIME DEFAULT CURRENT_TIMESTAMP,
-      notified INTEGER DEFAULT 0
+      notified INTEGER DEFAULT 0,
+      pharmarack_distributor TEXT,
+      pharmarack_rate REAL,
+      pharmarack_mrp REAL,
+      pharmarack_mapped INTEGER DEFAULT 0,
+      pharmarack_scheme TEXT
     )
   `);
-  // Try adding phone and notified columns if they do not exist
+  // Try adding columns if they do not exist
   try {
     await db.exec('ALTER TABLE special_orders ADD COLUMN phone TEXT');
   } catch (_) {}
   try {
     await db.exec('ALTER TABLE special_orders ADD COLUMN notified INTEGER DEFAULT 0');
   } catch (_) {}
+  try {
+    await db.exec('ALTER TABLE special_orders ADD COLUMN pharmarack_distributor TEXT');
+  } catch (_) {}
+  try {
+    await db.exec('ALTER TABLE special_orders ADD COLUMN pharmarack_rate REAL');
+  } catch (_) {}
+  try {
+    await db.exec('ALTER TABLE special_orders ADD COLUMN pharmarack_mrp REAL');
+  } catch (_) {}
+  try {
+    await db.exec('ALTER TABLE special_orders ADD COLUMN pharmarack_mapped INTEGER DEFAULT 0');
+  } catch (_) {}
+  try {
+    await db.exec('ALTER TABLE special_orders ADD COLUMN pharmarack_scheme TEXT');
+  } catch (_) {}
 }
 
 // List special requests / orders
 router.get('/', async (_req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await initOrdersTable(db);
     const orders = await db.all('SELECT * FROM special_orders ORDER BY date DESC');
-    await db.close();
-    res.json(orders);
+        res.json(orders);
   } catch (err) {
     console.error('Orders fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -50,19 +68,38 @@ router.get('/', async (_req, res) => {
 
 // Log a new request / order
 router.post('/', async (req, res) => {
-  const { product, requester, phone, qty, priority, status } = req.body;
+  const { 
+    product, requester, phone, qty, priority, status,
+    pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped,
+    pharmarack_scheme
+  } = req.body;
   if (!product) {
     return res.status(400).json({ error: 'Product name is required' });
   }
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await initOrdersTable(db);
     await db.run(
-      'INSERT INTO special_orders (product, requester, phone, qty, priority, status) VALUES (?, ?, ?, ?, ?, ?)',
-      [product, requester || 'Anonymous', phone || '', qty || 1, priority || 'Normal', status || 'Pending']
+      `INSERT INTO special_orders (
+        product, requester, phone, qty, priority, status,
+        pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped,
+        pharmarack_scheme
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        product, 
+        requester || 'Anonymous', 
+        phone || '', 
+        qty || 1, 
+        priority || 'Normal', 
+        status || 'Pending',
+        pharmarack_distributor || null,
+        pharmarack_rate !== undefined ? pharmarack_rate : null,
+        pharmarack_mrp !== undefined ? pharmarack_mrp : null,
+        pharmarack_mapped ? 1 : 0,
+        pharmarack_scheme || null
+      ]
     );
-    await db.close();
-
+    
     // Auto send confirmation message to customer via WhatsApp
     if (phone) {
       try {
@@ -70,7 +107,7 @@ router.post('/', async (req, res) => {
         const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
         let medicalName = 'XYZ MEDICAL';
-        const dbConf = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        const dbConf = await dbManager.getConnection();
         const nameRow = await dbConf.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
         await dbConf.close();
         if (nameRow && nameRow.value) {
@@ -83,7 +120,7 @@ router.post('/', async (req, res) => {
       } catch (wsError: any) {
         console.error(`Failed to send special order confirmation WhatsApp to ${requester}:`, wsError);
         try {
-          const dbAlert = await open({ filename: DB_PATH, driver: sqlite3.Database });
+          const dbAlert = await dbManager.getConnection();
           await dbAlert.run(
             "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
             'AUTOMATION_ALERT',
@@ -104,7 +141,7 @@ router.post('/', async (req, res) => {
 // Route to fetch uncollected orders (not collected for 2-3 days) and send auto reminders
 router.get('/uncollected-alerts', async (_req, res) => {
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await initOrdersTable(db);
     
     // Fetch orders ready or pending collection that are 2 days or older (2-3 days ago) and not collected
@@ -144,8 +181,7 @@ router.get('/uncollected-alerts', async (_req, res) => {
       }
     }
 
-    await db.close();
-    res.json(alertedOrders);
+        res.json(alertedOrders);
   } catch (err) {
     console.error('Fetch uncollected alerts error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -155,15 +191,17 @@ router.get('/uncollected-alerts', async (_req, res) => {
 // Update order status/details
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { status, priority, qty, product, requester, phone } = req.body;
+  const { 
+    status, priority, qty, product, requester, phone,
+    pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped
+  } = req.body;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await initOrdersTable(db);
     
     const existing = await db.get('SELECT * FROM special_orders WHERE id = ?', id);
     if (!existing) {
-      await db.close();
-      return res.status(404).json({ error: 'Order not found' });
+            return res.status(404).json({ error: 'Order not found' });
     }
 
     const newStatus = status !== undefined ? status : existing.status;
@@ -172,12 +210,17 @@ router.put('/:id', async (req, res) => {
     const newProduct = product !== undefined ? product : existing.product;
     const newRequester = requester !== undefined ? requester : existing.requester;
     const newPhone = phone !== undefined ? phone : existing.phone;
+    const newDistributor = pharmarack_distributor !== undefined ? pharmarack_distributor : existing.pharmarack_distributor;
+    const newRate = pharmarack_rate !== undefined ? pharmarack_rate : existing.pharmarack_rate;
+    const newMrp = pharmarack_mrp !== undefined ? pharmarack_mrp : existing.pharmarack_mrp;
+    const newMapped = pharmarack_mapped !== undefined ? (pharmarack_mapped ? 1 : 0) : existing.pharmarack_mapped;
 
     await db.run(
       `UPDATE special_orders 
-       SET status = ?, priority = ?, qty = ?, product = ?, requester = ?, phone = ? 
+       SET status = ?, priority = ?, qty = ?, product = ?, requester = ?, phone = ?,
+           pharmarack_distributor = ?, pharmarack_rate = ?, pharmarack_mrp = ?, pharmarack_mapped = ?
        WHERE id = ?`,
-      [newStatus, newPriority, newQty, newProduct, newRequester, newPhone, id]
+      [newStatus, newPriority, newQty, newProduct, newRequester, newPhone, newDistributor, newRate, newMrp, newMapped, id]
     );
 
     // If status changes to 'Ready' and the customer wasn't notified, auto send WhatsApp
@@ -198,8 +241,7 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    await db.close();
-    res.json({ success: true, message: 'Order updated successfully' });
+        res.json({ success: true, message: 'Order updated successfully' });
   } catch (err) {
     console.error('Update order error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -210,12 +252,11 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    const db = await dbManager.getConnection();
     await initOrdersTable(db);
     
     const result = await db.run('DELETE FROM special_orders WHERE id = ?', id);
-    await db.close();
-    
+        
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }

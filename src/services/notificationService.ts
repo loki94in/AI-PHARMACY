@@ -1,7 +1,7 @@
 import { sendMessage } from '../whatsappClient.js';
 import { telegramBotService } from '../telegramBot.js';
 import { whatsappBusinessService } from './whatsappBusinessService.js';
-import { config } from '../config';
+import { config } from '../config/index.js';
 
 export interface NotificationData {
   type: 'whatsapp' | 'whatsapp_business' | 'telegram' | 'email';

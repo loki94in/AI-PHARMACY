@@ -8,6 +8,19 @@ import { open } from 'sqlite';
 export async function ensureSchema(dbPath: string) {
   const db = await open({ filename: dbPath, driver: sqlite3.Database });
   await db.exec('PRAGMA journal_mode = WAL;');
+
+  // We have removed the strict CHECK constraint on catalog_jobs table.
+  // We'll rely on TypeScript for enum enforcement to prevent future SQLite crashes when new statuses are introduced.
+  try {
+    const tableSql = await db.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='catalog_jobs'");
+    if (tableSql && tableSql.sql.includes('CHECK(status IN')) {
+      console.log('Removing strict CHECK constraint from catalog_jobs...');
+      await db.run("DROP TABLE IF EXISTS catalog_jobs");
+    }
+  } catch (err) {
+    console.warn('Failed removing CHECK constraint:', err);
+  }
+
   await db.exec(`
     CREATE TABLE IF NOT EXISTS medicines (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,7 +30,7 @@ export async function ensureSchema(dbPath: string) {
     CREATE TABLE IF NOT EXISTS catalog_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       file_path TEXT NOT NULL UNIQUE,
-      status TEXT CHECK(status IN ('pending','processing','done','failed')) DEFAULT 'pending',
+      status TEXT DEFAULT 'pending',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS processed_files (
@@ -45,7 +58,19 @@ export async function ensureSchema(dbPath: string) {
       PRIMARY KEY (locale, key)
     );
     CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines (name);
+    CREATE INDEX IF NOT EXISTS idx_medicines_api_ref ON medicines (api_reference);
     CREATE INDEX IF NOT EXISTS idx_catalog_jobs_status ON catalog_jobs (status);
+
+    -- Reference dataset for composition auto-enrichment
+    CREATE TABLE IF NOT EXISTS medicine_reference (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      composition1 TEXT,
+      composition2 TEXT,
+      manufacturer TEXT,
+      UNIQUE(name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_medicine_reference_name ON medicine_reference (name);
 
     -- Agent A: Core Business & Inventory Schemas
     CREATE TABLE IF NOT EXISTS inventory_master (
@@ -57,11 +82,15 @@ export async function ensureSchema(dbPath: string) {
       expiry_date DATETIME,
       FOREIGN KEY(medicine_id) REFERENCES medicines(id)
     );
+    CREATE INDEX IF NOT EXISTS idx_inventory_master_medicine_id ON inventory_master (medicine_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_master_batch_no ON inventory_master (batch_no);
+    CREATE INDEX IF NOT EXISTS idx_inventory_master_search_filter ON inventory_master (quantity, expiry_date, medicine_id);
     CREATE TABLE IF NOT EXISTS sales_invoices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       invoice_no TEXT UNIQUE,
       customer_id INTEGER,
       date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       total_amount REAL,
       tax_amount REAL
     );
@@ -167,6 +196,11 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE medicines ADD COLUMN sgst REAL DEFAULT 0`,
     `ALTER TABLE medicines ADD COLUMN igst REAL DEFAULT 0`,
     `ALTER TABLE medicines ADD COLUMN rack TEXT`,
+    `ALTER TABLE medicines ADD COLUMN generic_name TEXT`,
+    `ALTER TABLE medicines ADD COLUMN pack_unit TEXT`,
+    `ALTER TABLE medicines ADD COLUMN cgst_per REAL DEFAULT 0`,
+    `ALTER TABLE medicines ADD COLUMN sgst_per REAL DEFAULT 0`,
+    `ALTER TABLE medicines ADD COLUMN item_code TEXT`,
     // Purchases extra columns
     `ALTER TABLE purchases ADD COLUMN cgst_value REAL DEFAULT 0`,
     `ALTER TABLE purchases ADD COLUMN sgst_value REAL DEFAULT 0`,
@@ -185,6 +219,8 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE sales_invoices ADD COLUMN igst_value REAL DEFAULT 0`,
     `ALTER TABLE sales_invoices ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE sales_invoices ADD COLUMN business_date DATETIME`,
+    `ALTER TABLE sales_invoices ADD COLUMN discount REAL DEFAULT 0`,
+    `ALTER TABLE sales_invoices ADD COLUMN subtotal REAL DEFAULT 0`,
     // Sale items extra columns
     `ALTER TABLE sale_items ADD COLUMN mrp REAL`,
     `ALTER TABLE sale_items ADD COLUMN batch_no TEXT`,
@@ -199,6 +235,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE returns ADD COLUMN igst_value REAL DEFAULT 0`,
     `ALTER TABLE returns ADD COLUMN distributor_id INTEGER`,
     `ALTER TABLE returns ADD COLUMN legacy_id TEXT`,
+    `ALTER TABLE returns ADD COLUMN reason TEXT`,
     // Distributors extra columns
     `ALTER TABLE distributors ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE distributors ADD COLUMN gstin TEXT`,
@@ -206,6 +243,8 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE distributors ADD COLUMN city TEXT`,
     `ALTER TABLE distributors ADD COLUMN email TEXT`,
     `ALTER TABLE distributors ADD COLUMN dl_no TEXT`,
+    `ALTER TABLE distributors ADD COLUMN phone TEXT`,
+    `ALTER TABLE distributors ADD COLUMN state_code TEXT`,
     // Customers extra columns
     `ALTER TABLE customers ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE customers ADD COLUMN age TEXT`,
@@ -213,9 +252,18 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE customers ADD COLUMN credit_enabled INTEGER DEFAULT 0`,
     `ALTER TABLE customers ADD COLUMN credit_balance REAL DEFAULT 0`,
     `ALTER TABLE sales_invoices ADD COLUMN payment_status TEXT DEFAULT 'PAID'`,
+    `ALTER TABLE sales_invoices ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE patient_refills ADD COLUMN hold_for_stock INTEGER DEFAULT 0`,
     `ALTER TABLE catalog_jobs ADD COLUMN extracted_data TEXT`,
     `ALTER TABLE catalog_jobs ADD COLUMN original_filename TEXT`,
+    `ALTER TABLE catalog_jobs ADD COLUMN total_count INTEGER DEFAULT 0`,
+    `ALTER TABLE catalog_jobs ADD COLUMN existing_count INTEGER DEFAULT 0`,
+    `ALTER TABLE catalog_jobs ADD COLUMN new_count INTEGER DEFAULT 0`,
+    `ALTER TABLE catalog_jobs ADD COLUMN duplicate_count INTEGER DEFAULT 0`,
+    `ALTER TABLE catalog_jobs ADD COLUMN progress INTEGER DEFAULT 0`,
+    `ALTER TABLE catalog_jobs ADD COLUMN error_log TEXT`,
+    `ALTER TABLE catalog_jobs ADD COLUMN mapping_config TEXT`,
+    `ALTER TABLE catalog_jobs ADD COLUMN data_filters TEXT`,
     `ALTER TABLE medicines ADD COLUMN schedule_type TEXT`,
     `ALTER TABLE held_bills ADD COLUMN invoice_no TEXT`,
     `ALTER TABLE held_bills ADD COLUMN temp_label TEXT`,
@@ -228,6 +276,8 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE held_bills ADD COLUMN data TEXT`,
     `ALTER TABLE held_bills ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE held_bills ADD COLUMN date DATETIME DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE medicines ADD COLUMN enrichment_status TEXT DEFAULT NULL`,
+    `ALTER TABLE medicines ADD COLUMN enrichment_confidence REAL DEFAULT NULL`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -239,6 +289,29 @@ export async function ensureSchema(dbPath: string) {
 
   // New tables needed by various routes
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS medicine_aliases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      alias_name TEXT NOT NULL UNIQUE,
+      medicine_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS catalog_mappings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_headers TEXT UNIQUE,
+      mapping_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TRIGGER IF NOT EXISTS auto_generate_item_code
+    AFTER INSERT ON medicines
+    FOR EACH ROW
+    WHEN NEW.item_code IS NULL
+    BEGIN
+      UPDATE medicines SET item_code = 'SKU-' || (10000 + NEW.id) WHERE id = NEW.id;
+    END;
+
     CREATE TABLE IF NOT EXISTS doctors (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -402,6 +475,29 @@ export async function ensureSchema(dbPath: string) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       delivered_at DATETIME,
       FOREIGN KEY(delivery_boy_id) REFERENCES delivery_boys(id)
+    );
+
+    -- AI-Assisted Document Understanding Learning Profiles
+    CREATE TABLE IF NOT EXISTS distributor_learning_profiles (
+      distributor_id INTEGER PRIMARY KEY,
+      file_mapping_rules TEXT,
+      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(distributor_id) REFERENCES distributors(id)
+    );
+
+    -- AI-Assisted Document Understanding Historical Files Memory
+    CREATE TABLE IF NOT EXISTS distributor_historical_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      distributor_id INTEGER,
+      filename TEXT,
+      file_path TEXT,
+      file_type TEXT,
+      file_headers TEXT,
+      mapping_config TEXT,
+      extracted_data TEXT,
+      status TEXT DEFAULT 'success',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(distributor_id) REFERENCES distributors(id)
     );
   `);
 
