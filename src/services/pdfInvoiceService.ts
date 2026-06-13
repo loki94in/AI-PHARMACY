@@ -57,13 +57,13 @@ export class PdfInvoiceService {
         doc.pipe(stream);
 
         // Header / Business Info
-        doc.fontSize(20).fillColor('#0284c7').text(shopName, { align: 'center', font: 'Helvetica-Bold' });
-        doc.fontSize(9).fillColor('#64748b').text(shopAddress, { align: 'center' });
+        doc.font('Helvetica-Bold').fontSize(20).fillColor('#0284c7').text(shopName, { align: 'center' });
+        doc.font('Helvetica').fontSize(9).fillColor('#64748b').text(shopAddress, { align: 'center' });
         doc.text(`Phone: ${shopPhone} | Licence: ${shopLicence}`, { align: 'center' });
         doc.moveDown(1.5);
 
         // Divider
-        doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor('#e2e8f0').strokeWidth(1).stroke();
+        doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor('#e2e8f0').lineWidth(1).stroke();
         doc.moveDown(1);
 
         // Invoice Metadata & Customer Info
@@ -71,13 +71,13 @@ export class PdfInvoiceService {
         doc.fontSize(10).fillColor('#0f172a');
         
         // Left Column: Invoice Details
-        doc.text(`Invoice No: ${invoice.invoice_no}`, 40, infoTop, { font: 'Helvetica-Bold' });
-        doc.text(`Date: ${new Date(invoice.date).toLocaleString()}`, 40, doc.y + 4);
+        doc.font('Helvetica-Bold').text(`Invoice No: ${invoice.invoice_no}`, 40, infoTop);
+        doc.font('Helvetica').text(`Date: ${new Date(invoice.date).toLocaleString()}`, 40, doc.y + 4);
         doc.text(`Payment: ${invoice.payment_medium || 'CASH'} (${invoice.payment_status || 'PAID'})`, 40, doc.y + 4);
 
         // Right Column: Customer Details
-        doc.text('Billed To:', 300, infoTop, { font: 'Helvetica-Bold' });
-        doc.text(`Name: ${invoice.customer_name || 'Walk-in Customer'}`, 300, doc.y + 4);
+        doc.font('Helvetica-Bold').text('Billed To:', 300, infoTop);
+        doc.font('Helvetica').text(`Name: ${invoice.customer_name || 'Walk-in Customer'}`, 300, doc.y + 4);
         if (invoice.customer_phone) {
           doc.text(`Phone: ${invoice.customer_phone}`, 300, doc.y + 4);
         }
@@ -95,7 +95,7 @@ export class PdfInvoiceService {
         doc.text('Unit Price', 380, tableTop, { width: 80, align: 'right' });
         doc.text('Total', 480, tableTop, { width: 70, align: 'right' });
         
-        doc.moveTo(40, tableTop + 12).lineTo(550, tableTop + 12).strokeColor('#cbd5e1').strokeWidth(1).stroke();
+        doc.moveTo(40, tableTop + 12).lineTo(550, tableTop + 12).strokeColor('#cbd5e1').lineWidth(1).stroke();
         doc.moveDown(1);
 
         // Line Items
@@ -114,16 +114,16 @@ export class PdfInvoiceService {
         const subtotal = invoice.total_amount - invoice.tax_amount;
         doc.fontSize(9).fillColor('#64748b');
         doc.text('Subtotal:', 380, doc.y, { width: 80, align: 'right' });
-        doc.text(`₹${subtotal.toFixed(2)}`, 480, doc.y - 9, { width: 70, align: 'right', fillColor: '#0f172a' });
+        doc.fillColor('#0f172a').text(`₹${subtotal.toFixed(2)}`, 480, doc.y - 9, { width: 70, align: 'right' });
         
         doc.moveDown(0.5);
-        doc.text('Tax (5%):', 380, doc.y, { width: 80, align: 'right' });
-        doc.text(`₹${(invoice.tax_amount || 0).toFixed(2)}`, 480, doc.y - 9, { width: 70, align: 'right' });
+        doc.fillColor('#64748b').text('Tax (5%):', 380, doc.y, { width: 80, align: 'right' });
+        doc.fillColor('#0f172a').text(`₹${(invoice.tax_amount || 0).toFixed(2)}`, 480, doc.y - 9, { width: 70, align: 'right' });
         
         doc.moveDown(0.8);
-        doc.fontSize(12).fillColor('#0f172a');
-        doc.text('Grand Total:', 360, doc.y, { width: 100, align: 'right', font: 'Helvetica-Bold' });
-        doc.text(`₹${(invoice.total_amount || 0).toFixed(2)}`, 480, doc.y - 12, { width: 70, align: 'right', font: 'Helvetica-Bold' });
+        doc.fontSize(12).fillColor('#0f172a').font('Helvetica-Bold');
+        doc.text('Grand Total:', 360, doc.y, { width: 100, align: 'right' });
+        doc.text(`₹${(invoice.total_amount || 0).toFixed(2)}`, 480, doc.y - 12, { width: 70, align: 'right' });
 
         // Check if custom stamp/signature files exist (only draw if includeStampAndSig is true)
         const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
@@ -144,16 +144,16 @@ export class PdfInvoiceService {
             doc.circle(0, 0, 42).stroke();
             doc.circle(0, 0, 38).stroke();
             
-            doc.fillColor(stampColor).fontSize(7);
+            doc.fillColor(stampColor).fontSize(7).font('Helvetica');
             doc.text(shopName, -35, -20, { width: 70, align: 'center' });
             
             doc.fontSize(8);
             if (invoice.payment_status === 'UNPAID') {
-              doc.text('CREDIT ACCOUNT', -35, -3, { width: 70, align: 'center', font: 'Helvetica-Bold' });
-              doc.fontSize(7).text('PAYMENT PENDING', -35, 12, { width: 70, align: 'center' });
+              doc.font('Helvetica-Bold').text('CREDIT ACCOUNT', -35, -3, { width: 70, align: 'center' });
+              doc.font('Helvetica').fontSize(7).text('PAYMENT PENDING', -35, 12, { width: 70, align: 'center' });
             } else {
-              doc.text('PAID & VERIFIED', -35, -3, { width: 70, align: 'center', font: 'Helvetica-Bold' });
-              doc.fontSize(7).text('THANK YOU', -35, 12, { width: 70, align: 'center' });
+              doc.font('Helvetica-Bold').text('PAID & VERIFIED', -35, -3, { width: 70, align: 'center' });
+              doc.font('Helvetica').fontSize(7).text('THANK YOU', -35, 12, { width: 70, align: 'center' });
             }
             
             doc.restore();

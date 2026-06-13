@@ -7,7 +7,7 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { processJob } from '../src/worker/catalogWorker.js';
+import { runCatalogImport } from '../src/worker/catalogWorker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,7 +19,7 @@ describe('Catalog pipeline', () => {
     // Initialize schema for the test database
     process.env.DB_PATH = DB_PATH;
     const { ensureSchema } = await import('../src/database.js');
-    await ensureSchema();
+    await ensureSchema(DB_PATH);
   });
 
   test('enqueue adds a job', () => {
@@ -38,9 +38,13 @@ describe('Catalog pipeline', () => {
 
   test('worker processes job and stores medicine', async () => {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    await db.run(
+      "UPDATE catalog_jobs SET mapping_config = ? WHERE status='pending'",
+      JSON.stringify({ name: 'name', api: 'api_reference' })
+    );
     const job = await db.get(`SELECT * FROM catalog_jobs WHERE status='pending' LIMIT 1`);
     expect(job).toBeDefined();
-    await processJob(job);
+    await runCatalogImport(job.id);
     const meds = await db.all('SELECT * FROM medicines');
     expect(meds.length).toBeGreaterThan(0);
     expect(meds[0].name).toBe('TestMed');

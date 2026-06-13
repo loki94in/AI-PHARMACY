@@ -559,7 +559,7 @@ function parseItemsFromTextLines(content: string, global_cd_per: number): any[] 
   return items;
 }
 
-function parseShriyashInvoice(content: string, globalCdPer: number): { items: any[]; invoice_no: string; invoice_date: string; total_amount: number } {
+function parseShriyashInvoice(content: string, globalCdPer: number): { items: any[]; invoice_no: string; invoice_date: string; total_amount: number; distributor_name: string } {
   const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const items: any[] = [];
   let invoice_no = '';
@@ -709,7 +709,7 @@ function decomposeShriyashConcatenatedLine(line: string): { batch: string; expir
   return { batch, expiry, mrp, rate, gst, amount };
 }
 
-function parseNitinInvoice(content: string, globalCdPer: number): { items: any[]; invoice_no: string; invoice_date: string; total_amount: number } {
+function parseNitinInvoice(content: string, globalCdPer: number): { items: any[]; invoice_no: string; invoice_date: string; total_amount: number; distributor_name: string } {
   const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const items: any[] = [];
   let invoice_no = '';

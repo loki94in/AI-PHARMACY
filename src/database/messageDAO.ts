@@ -1,9 +1,9 @@
-import { Database } from 'better-sqlite3';
+import Database from 'better-sqlite3';
 
 const db = new Database('./data/app.db', { readonly: false });
 
 export function getTemplate(locale: string, key: string): string | null {
-  const row = db.prepare('SELECT value FROM message_templates WHERE locale = ? AND key = ?').get(locale, key);
+  const row = db.prepare('SELECT value FROM message_templates WHERE locale = ? AND key = ?').get(locale, key) as { value: string } | undefined;
   return row ? row.value : null;
 }
 

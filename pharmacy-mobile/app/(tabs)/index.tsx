@@ -63,7 +63,7 @@ export default function AssistantScreen() {
         body: 'This is a test push notification from your Pharmacy Genius Assistant!',
         data: { screen: 'Dashboard' },
       },
-      trigger: { seconds: 1 },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 },
     });
   };
 
@@ -465,8 +465,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
-    color: '#fff',
     ...typography.body,
+    color: '#fff',
     marginRight: spacing.sm,
     borderWidth: 1,
     borderColor: colors.divider,

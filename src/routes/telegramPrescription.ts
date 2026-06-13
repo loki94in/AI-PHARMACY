@@ -175,7 +175,7 @@ router.post('/bill/generate', async (req, res) => {
       'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status) VALUES (?, ?, ?, ?, ?, ?)',
       [invoice_no, finalPatientId, total, tax, paymentMedium, paymentStatus]
     );
-    const invoiceId = result.lastID;
+    const invoiceId = result.lastID!;
 
     // Update customer credit balance if CREDIT
     if (paymentMedium === 'CREDIT') {
@@ -200,7 +200,7 @@ router.post('/bill/generate', async (req, res) => {
     telegramPrescriptionService.clearCart(parsedChatId);
 
     // Trigger WhatsApp delivery asynchronously
-    import('../../services/whatsappInvoiceService.js').then(({ whatsappInvoiceService }) => {
+    import('../services/whatsappInvoiceService.js').then(({ whatsappInvoiceService }) => {
       whatsappInvoiceService.sendInvoiceViaWhatsApp(invoiceId).catch(console.error);
     });
 

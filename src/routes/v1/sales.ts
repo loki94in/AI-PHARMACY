@@ -393,7 +393,7 @@ router.get('/invoice/:id/pdf', asyncHandler(async (req: express.Request, res: ex
   const tempPath = path.resolve(__dirname, '..', '..', '..', 'uploads', `temp-invoice-${id}-${Date.now()}.pdf`);
   
   try {
-    await pdfInvoiceService.generateInvoicePdf(parseInt(id), tempPath, includeStamp);
+    await pdfInvoiceService.generateInvoicePdf(parseInt(id as string), tempPath, includeStamp);
     
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="invoice_${id}.pdf"`);

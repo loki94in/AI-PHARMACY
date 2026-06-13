@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { getTemplate } from '../database.js';
+import { getTemplate } from '../database/messageDAO.js';
 
 // Load the whole JSON once at module init
 const messagesPath = join(process.cwd(), 'src', 'i18n', 'messages.json');
@@ -20,7 +20,7 @@ export function getMessage(
 ): string {
   // Try DB override first
   const dbValue = getTemplate(lang, path);
-  let template: string | undefined;
+  let template = '';
   if (dbValue !== null) {
     template = dbValue;
   } else {

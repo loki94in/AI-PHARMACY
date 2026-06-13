@@ -48,7 +48,7 @@ export default function MoreScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Save',
-          onPress: async (pin) => {
+          onPress: async (pin?: string) => {
             if (pin && pin.length === 4 && /^\d+$/.test(pin)) {
               await SecureStore.setItemAsync('app_lock_pin', pin);
               Alert.alert('PIN Updated', 'Your security code has been changed successfully.');
