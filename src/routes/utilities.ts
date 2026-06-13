@@ -13,28 +13,72 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 
-// Trigger backup
-router.post('/backup', async (req, res) => {
+import {
+  createBackup,
+  listBackups,
+  deleteBackup,
+  restoreBackup,
+  getScheduleConfig,
+  setScheduleConfig,
+} from '../services/backupService.js';
+
+// Trigger manual backup
+router.post('/backup', async (_req, res) => {
   try {
-    const backupDir = path.resolve(__dirname, '..', '..', 'backup');
-    if (!fs.existsSync(backupDir)) {
-      fs.mkdirSync(backupDir, { recursive: true });
-    }
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupFilename = `app_backup_${timestamp}.db`;
-    const backupPath = path.join(backupDir, backupFilename);
-    
-    // Copy the database file
-    fs.copyFileSync(DB_PATH, backupPath);
-    
-    // Log the action
-    const db = await dbManager.getConnection();
-    await db.run('INSERT INTO action_logs (action_type, description) VALUES (?, ?)', ['BACKUP', `Manual backup created: ${backupFilename}`]);
-    
-    res.json({ success: true, message: 'Backup created successfully', backupFilename });
+    const result = await createBackup('Manual');
+    res.json({ success: true, message: 'Backup created successfully', backupFilename: result.filename });
   } catch (error) {
     console.error('Backup failed:', error);
     res.status(500).json({ error: 'Failed to create backup' });
+  }
+});
+
+// List all backups
+router.get('/backup/list', async (_req, res) => {
+  try {
+    const backups = listBackups();
+    res.json({ success: true, backups });
+  } catch (error) {
+    console.error('Listing backups failed:', error);
+    res.status(500).json({ error: 'Failed to list backups' });
+  }
+});
+
+// Delete a specific backup
+router.delete('/backup/:filename', async (req, res) => {
+  try {
+    // Security: path.basename is applied inside deleteBackup()
+    deleteBackup(req.params.filename);
+    res.json({ success: true, message: 'Backup deleted' });
+  } catch (error: any) {
+    console.error('Delete backup failed:', error);
+    res.status(400).json({ error: error.message || 'Failed to delete backup' });
+  }
+});
+
+// Get backup schedule config
+router.get('/backup/schedule', async (_req, res) => {
+  try {
+    const frequency = await getScheduleConfig();
+    res.json({ success: true, frequency });
+  } catch (error) {
+    console.error('Get schedule failed:', error);
+    res.status(500).json({ error: 'Failed to get backup schedule' });
+  }
+});
+
+// Set backup schedule config
+router.post('/backup/schedule', async (req, res) => {
+  try {
+    const { frequency } = req.body;
+    if (!frequency) {
+      return res.status(400).json({ error: 'frequency is required (off, 3h, 6h)' });
+    }
+    await setScheduleConfig(frequency);
+    res.json({ success: true, message: `Backup schedule set to: ${frequency}` });
+  } catch (error: any) {
+    console.error('Set schedule failed:', error);
+    res.status(400).json({ error: error.message || 'Failed to set backup schedule' });
   }
 });
 
@@ -174,77 +218,35 @@ router.post('/cloud/push', async (req, res) => {
   }
 });
 
-// Restore latest backup
+// Restore a backup (accepts { filename } in body, or restores latest)
 router.post('/backup/restore', async (req, res) => {
   try {
-    const backupDir = path.resolve(__dirname, '..', '..', 'backup');
-    if (!fs.existsSync(backupDir)) {
-      return res.status(400).json({ error: 'No backups directory found' });
+    let { filename } = req.body || {};
+    if (!filename) {
+      // Default to latest backup
+      const backups = listBackups();
+      if (backups.length === 0) {
+        return res.status(400).json({ error: 'No backup files found to restore' });
+      }
+      filename = backups[0].filename;
     }
-    
-    // Find the latest backup file matching app_backup_*.db or backup_*.db
-    const files = fs.readdirSync(backupDir)
-      .filter(f => (f.startsWith('app_backup_') || f.startsWith('backup_') || f.startsWith('app_')) && f.endsWith('.db'))
-      .sort((a, b) => b.localeCompare(a)); // Sort descending for latest timestamp
-
-    if (files.length === 0) {
-      return res.status(400).json({ error: 'No backup files found to restore' });
-    }
-
-    const latestBackup = files[0];
-    const backupPath = path.join(backupDir, latestBackup);
-
-    // Close active connection
-    const { dbManager } = await import('../database/connection.js');
-    await dbManager.close();
-
-    // Copy backup to DB_PATH
-    fs.copyFileSync(backupPath, DB_PATH);
-
-    // Re-open database connection to log action
-    const db = await dbManager.getConnection();
-    await db.run(
-      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)', 
-      ['RESTORE_BACKUP', `Database successfully restored from backup: ${latestBackup}`]
-    );
-    
-    res.json({ success: true, message: `Backup restored successfully from: ${latestBackup}` });
+    await restoreBackup(filename);
+    res.json({ success: true, message: `Backup restored successfully from: ${filename}` });
   } catch (e: any) {
     console.error('Backup restore error:', e);
     res.status(500).json({ error: 'Failed to restore backup: ' + e.message });
   }
 });
 
-router.post('/restore', async (req, res) => {
+// Legacy restore endpoint (restores latest backup)
+router.post('/restore', async (_req, res) => {
   try {
-    const backupDir = path.resolve(__dirname, '..', '..', 'backup');
-    if (!fs.existsSync(backupDir)) {
-      return res.status(400).json({ error: 'No backups directory found' });
-    }
-    
-    const files = fs.readdirSync(backupDir)
-      .filter(f => (f.startsWith('app_backup_') || f.startsWith('backup_') || f.startsWith('app_')) && f.endsWith('.db'))
-      .sort((a, b) => b.localeCompare(a));
-
-    if (files.length === 0) {
+    const backups = listBackups();
+    if (backups.length === 0) {
       return res.status(400).json({ error: 'No backup files found to restore' });
     }
-
-    const latestBackup = files[0];
-    const backupPath = path.join(backupDir, latestBackup);
-
-    const { dbManager } = await import('../database/connection.js');
-    await dbManager.close();
-
-    fs.copyFileSync(backupPath, DB_PATH);
-
-    const db = await dbManager.getConnection();
-    await db.run(
-      'INSERT INTO action_logs (action_type, description) VALUES (?, ?)', 
-      ['RESTORE_BACKUP', `Database successfully restored from backup: ${latestBackup}`]
-    );
-    
-    res.json({ success: true, message: `Backup restored successfully from: ${latestBackup}` });
+    await restoreBackup(backups[0].filename);
+    res.json({ success: true, message: `Backup restored successfully from: ${backups[0].filename}` });
   } catch (e: any) {
     console.error('Restore error:', e);
     res.status(500).json({ error: 'Failed to restore backup: ' + e.message });

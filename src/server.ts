@@ -60,6 +60,7 @@ import cron from 'node-cron';
 import { checkAllRefills } from './services/refillService.js';
 import { checkOverdueCreditNotes, reconcileCreditNote } from './services/creditNoteService.js';
 import { activityTracker } from './utils/activityTracker.js';
+import { createBackup, initBackupScheduler } from './services/backupService.js';
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
@@ -262,11 +263,25 @@ ensureSchema(DB_PATH).then(() => {
               console.error('Failed running 15-day expiry scan cron:', err);
             }
           });
+
+          // 7. Nightly 9:30 PM backup (pharmacy closing time)
+          cron.schedule('30 21 * * *', async () => {
+            console.log('[Backup] Running nightly 9:30 PM backup...');
+            try {
+              const result = await createBackup('Nightly 9:30 PM');
+              console.log(`[Backup] Nightly backup created: ${result.filename}`);
+            } catch (err) {
+              console.error('[Backup] Nightly backup failed:', err);
+            }
+          });
         } else {
           console.log('Background automation is DISABLED in settings. Skipping background services.');
         }
       })
       .catch(err => console.error('Background automation init check failed:', err));
+
+    // Backup scheduler is always enabled (reads frequency from app_settings)
+    initBackupScheduler().catch(err => console.error('Failed to init backup scheduler:', err));
 
     // Email poller is always enabled
     try {
@@ -289,9 +304,18 @@ ensureSchema(DB_PATH).then(() => {
   process.exit(1);
 });
 
-// For graceful shutdown (handled manually for now)
-process.on('SIGINT', async () => {
-  console.log('Shutting down gracefully...');
+// Graceful shutdown with auto-backup
+async function gracefulShutdown(signal: string) {
+  console.log(`${signal} received. Creating shutdown backup...`);
+  try {
+    const result = await createBackup(`Shutdown (${signal})`);
+    console.log(`[Backup] Shutdown backup created: ${result.filename}`);
+  } catch (err) {
+    console.error('[Backup] Shutdown backup failed:', err);
+  }
   await dbManager.close();
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

@@ -20,6 +20,12 @@ import {
   Mail,
   LogIn,
   LogOut,
+  Clock,
+  Download,
+  RotateCcw,
+  History,
+  Shield,
+  AlertTriangle,
 } from 'lucide-react';
 import { toastEvent } from '../services/events';
 
@@ -77,6 +83,16 @@ const Settings = () => {
   const [waBusinessWebhookVerifyToken, setWaBusinessWebhookVerifyToken] = useState('');
   const [waBusinessTestResult, setWaBusinessTestResult] = useState<{ success?: boolean; phone?: string; name?: string; error?: string } | null>(null);
   const [waBusinessTesting, setWaBusinessTesting] = useState(false);
+
+  // Backup & Restore state
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupFrequency, setBackupFrequency] = useState('off');
+  const [backupList, setBackupList] = useState<{ filename: string; sizeBytes: number; createdAt: string }[]>([]);
+  const [backupListLoading, setBackupListLoading] = useState(false);
+  const [restoringFile, setRestoringFile] = useState<string | null>(null);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -329,6 +345,97 @@ const Settings = () => {
     } finally {
       setIsOpeningWaWindow(false);
     }
+  };
+
+  // Backup handlers
+  const fetchBackupList = async () => {
+    setBackupListLoading(true);
+    try {
+      const { data } = await apiClient.get('/utilities/backup/list');
+      setBackupList(data.backups || []);
+    } catch {
+      console.error('Failed to fetch backup list');
+    } finally {
+      setBackupListLoading(false);
+    }
+  };
+
+  const fetchBackupSchedule = async () => {
+    try {
+      const { data } = await apiClient.get('/utilities/backup/schedule');
+      setBackupFrequency(data.frequency || 'off');
+    } catch {
+      console.error('Failed to fetch backup schedule');
+    }
+  };
+
+  useEffect(() => {
+    fetchBackupList();
+    fetchBackupSchedule();
+  }, []);
+
+  const handleBackupNow = async () => {
+    setBackupLoading(true);
+    try {
+      await apiClient.post('/utilities/backup');
+      toastEvent.trigger('Backup created successfully!', 'success');
+      fetchBackupList();
+    } catch {
+      toastEvent.trigger('Failed to create backup', 'error');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const handleScheduleChange = async (freq: string) => {
+    setBackupFrequency(freq);
+    try {
+      await apiClient.post('/utilities/backup/schedule', { frequency: freq });
+      toastEvent.trigger(`Backup schedule set to: ${freq === 'off' ? 'Off' : `Every ${freq}`}`, 'success');
+    } catch {
+      toastEvent.trigger('Failed to update backup schedule', 'error');
+    }
+  };
+
+  const handleDeleteBackup = async (filename: string) => {
+    setDeletingFile(filename);
+    try {
+      await apiClient.delete(`/utilities/backup/${encodeURIComponent(filename)}`);
+      toastEvent.trigger('Backup deleted', 'success');
+      setConfirmDelete(null);
+      fetchBackupList();
+    } catch {
+      toastEvent.trigger('Failed to delete backup', 'error');
+    } finally {
+      setDeletingFile(null);
+    }
+  };
+
+  const handleRestoreBackup = async (filename: string) => {
+    setRestoringFile(filename);
+    try {
+      await apiClient.post('/utilities/backup/restore', { filename });
+      toastEvent.trigger(`Restored from: ${filename}`, 'success');
+      setConfirmRestore(null);
+    } catch {
+      toastEvent.trigger('Failed to restore backup', 'error');
+    } finally {
+      setRestoringFile(null);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
   };
 
   const handleTestWaBusiness = async () => {
@@ -1233,6 +1340,201 @@ const Settings = () => {
         </div>
       </div>
 
+      {/* ─── Backup & Restore ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Shield size={18} className="text-primary" />
+          Backup & Restore
+        </h3>
+
+        {/* Top controls row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {/* Backup Now */}
+          <button
+            id="backup-now-btn"
+            onClick={handleBackupNow}
+            disabled={backupLoading}
+            className="premium-btn bg-primary text-white shadow-[0_4px_14px_rgba(59,130,246,0.4)] hover:bg-blue-600 flex items-center justify-center gap-2 w-full py-3 disabled:opacity-50"
+          >
+            {backupLoading ? (
+              <><RefreshCw size={16} className="animate-spin" /> Creating Backup...</>
+            ) : (
+              <><Database size={16} /> Backup Now</>
+            )}
+          </button>
+
+          {/* Auto-Backup Frequency */}
+          <div className="space-y-1.5">
+            <label htmlFor="backupFrequency" className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-1.5">
+              <Clock size={12} /> Auto-Backup Frequency
+            </label>
+            <select
+              id="backupFrequency"
+              className="premium-input w-full"
+              value={backupFrequency}
+              onChange={(e) => handleScheduleChange(e.target.value)}
+            >
+              <option value="off">Off</option>
+              <option value="3h">Every 3 Hours</option>
+              <option value="6h">Every 6 Hours</option>
+            </select>
+          </div>
+
+          {/* Restore latest */}
+          <div className="space-y-1.5">
+            <label htmlFor="dbRestore" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Restore from File
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="dbRestore"
+                type="file"
+                className="premium-input w-full text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-700 file:text-zinc-300 hover:file:bg-zinc-600 file:cursor-pointer"
+                accept=".db,.sqlite"
+                aria-label="Choose database backup file"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Status badges row */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-green/10 text-green border border-green/20">
+            <Clock size={12} /> Nightly Backup: 9:30 PM
+          </div>
+          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-sky/10 text-sky border border-sky/20">
+            <Download size={12} /> Shutdown Backup: Active
+          </div>
+          {backupFrequency !== 'off' && (
+            <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-amber/10 text-amber border border-amber/20">
+              <RefreshCw size={12} /> Scheduled: Every {backupFrequency}
+            </div>
+          )}
+          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+            <HardDrive size={12} /> Max 20 Backups (Auto-cleanup)
+          </div>
+        </div>
+
+        {/* Backup History Table */}
+        <div className="border border-glass-border/40 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 bg-bg2/50 border-b border-glass-border/30">
+            <h4 className="font-bold text-sm flex items-center gap-2">
+              <History size={14} className="text-sky" /> Backup History
+              <span className="text-xs text-muted font-normal">({backupList.length} backups)</span>
+            </h4>
+            <button
+              onClick={fetchBackupList}
+              disabled={backupListLoading}
+              className="text-xs font-bold text-sky hover:text-sky/80 flex items-center gap-1 transition-colors"
+            >
+              <RefreshCw size={12} className={backupListLoading ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
+
+          {backupListLoading && backupList.length === 0 ? (
+            <div className="p-8 text-center text-muted text-sm">
+              <RefreshCw size={20} className="animate-spin mx-auto mb-2 opacity-50" />
+              Loading backups...
+            </div>
+          ) : backupList.length === 0 ? (
+            <div className="p-8 text-center text-muted text-sm">
+              <Database size={24} className="mx-auto mb-2 opacity-30" />
+              No backups found. Click "Backup Now" to create your first backup.
+            </div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-bg2/90 backdrop-blur-sm">
+                  <tr className="text-xs text-muted uppercase tracking-wider">
+                    <th className="text-left px-4 py-2.5 font-bold">Filename</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Size</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Date & Time</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {backupList.map((b, i) => (
+                    <tr key={b.filename} className={`border-t border-glass-border/20 hover:bg-bg3/30 transition-colors ${i === 0 ? 'bg-green/5' : ''}`}>
+                      <td className="px-4 py-3 font-mono text-xs truncate max-w-[260px]" title={b.filename}>
+                        {i === 0 && <span className="inline-block mr-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-green/20 text-green rounded">LATEST</span>}
+                        {b.filename}
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatFileSize(b.sizeBytes)}</td>
+                      <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatDate(b.createdAt)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Restore */}
+                          {confirmRestore === b.filename ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-amber font-bold mr-1">Confirm?</span>
+                              <button
+                                onClick={() => handleRestoreBackup(b.filename)}
+                                disabled={restoringFile === b.filename}
+                                className="text-[10px] font-bold bg-amber/20 text-amber px-2 py-1 rounded hover:bg-amber/30 transition-all disabled:opacity-50"
+                              >
+                                {restoringFile === b.filename ? 'Restoring...' : 'Yes'}
+                              </button>
+                              <button
+                                onClick={() => setConfirmRestore(null)}
+                                className="text-[10px] font-bold bg-bg3/50 text-muted px-2 py-1 rounded hover:bg-bg3 transition-all"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmRestore(b.filename)}
+                              className="text-[10px] font-bold bg-sky/15 text-sky px-2.5 py-1 rounded-full hover:bg-sky/25 transition-all flex items-center gap-1"
+                              title="Restore this backup"
+                            >
+                              <RotateCcw size={10} /> Restore
+                            </button>
+                          )}
+
+                          {/* Delete */}
+                          {confirmDelete === b.filename ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-red font-bold mr-1">Delete?</span>
+                              <button
+                                onClick={() => handleDeleteBackup(b.filename)}
+                                disabled={deletingFile === b.filename}
+                                className="text-[10px] font-bold bg-red/20 text-red px-2 py-1 rounded hover:bg-red/30 transition-all disabled:opacity-50"
+                              >
+                                {deletingFile === b.filename ? 'Deleting...' : 'Yes'}
+                              </button>
+                              <button
+                                onClick={() => setConfirmDelete(null)}
+                                className="text-[10px] font-bold bg-bg3/50 text-muted px-2 py-1 rounded hover:bg-bg3 transition-all"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDelete(b.filename)}
+                              className="text-[10px] font-bold bg-red/10 text-red/70 px-2.5 py-1 rounded-full hover:bg-red/20 hover:text-red transition-all flex items-center gap-1"
+                              title="Delete this backup"
+                            >
+                              <Trash2 size={10} /> Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <p className="text-[11px] text-muted mt-4 leading-relaxed">
+          <AlertTriangle size={11} className="inline mr-1 text-amber" />
+          <strong>Restoring</strong> a backup will replace your current database. A backup of the current state is recommended before restoring.
+          Backups older than the 20 most recent are automatically removed.
+        </p>
+      </div>
+
       {/* ─── System ─── */}
       <div className="glass-panel p-6">
         <h3 className="font-bold flex items-center gap-2 mb-6">
@@ -1241,38 +1543,14 @@ const Settings = () => {
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          <div className="flex flex-col gap-3">
-            <button className="premium-btn bg-primary text-white shadow-[0_4px_14px_rgba(59,130,246,0.4)] hover:bg-blue-600 flex items-center gap-2 w-full justify-center">
-              <Database size={16} />
-              Database Backup
-            </button>
+          <button className="premium-btn bg-red text-white shadow-[0_4px_14px_rgba(239,68,68,0.4)] hover:bg-red-600 flex items-center gap-2 w-full justify-center">
+            <Trash2 size={16} />
+            Clear Cache
+          </button>
 
-            <div className="space-y-2">
-              <label htmlFor="dbRestore" className="text-xs font-bold text-muted uppercase tracking-wider">
-                Database Restore
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="dbRestore"
-                  type="file"
-                  className="premium-input w-full text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-700 file:text-zinc-300 hover:file:bg-zinc-600 file:cursor-pointer"
-                  accept=".sql,.bak,.db,.sqlite"
-                  aria-label="Choose database backup file"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <button className="premium-btn bg-red text-white shadow-[0_4px_14px_rgba(239,68,68,0.4)] hover:bg-red-600 flex items-center gap-2 w-full justify-center">
-              <Trash2 size={16} />
-              Clear Cache
-            </button>
-
-            <div className="glass-panel p-4 flex items-center justify-between bg-white/5 border border-glass-border">
-              <span className="text-xs font-bold text-muted uppercase tracking-wider">App Version</span>
-              <span className="text-sm font-semibold text-sky">v2.0.0</span>
-            </div>
+          <div className="glass-panel p-4 flex items-center justify-between bg-bg3/30 border border-glass-border">
+            <span className="text-xs font-bold text-muted uppercase tracking-wider">App Version</span>
+            <span className="text-sm font-semibold text-sky">v2.0.0</span>
           </div>
         </div>
       </div>
