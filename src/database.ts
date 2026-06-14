@@ -291,6 +291,26 @@ export async function ensureSchema(dbPath: string) {
 
   // New tables needed by various routes
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS staged_sales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_name TEXT,
+      patient_phone TEXT,
+      discount REAL DEFAULT 0,
+      sale_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      items_json TEXT,
+      status TEXT CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending'
+    );
+
+    CREATE TABLE IF NOT EXISTS staged_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      distributor_name TEXT,
+      invoice_no TEXT,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      total_amount REAL,
+      items_json TEXT,
+      status TEXT CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending'
+    );
+
     CREATE TABLE IF NOT EXISTS medicine_aliases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       alias_name TEXT NOT NULL UNIQUE,
@@ -500,6 +520,14 @@ export async function ensureSchema(dbPath: string) {
       status TEXT DEFAULT 'success',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(distributor_id) REFERENCES distributors(id)
+    );
+
+    -- Push Notification Registered Tokens Registry
+    CREATE TABLE IF NOT EXISTS push_tokens (
+      token TEXT PRIMARY KEY,
+      device_name TEXT,
+      os TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 

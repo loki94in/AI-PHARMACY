@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../lib/theme';
+import DeviceStatusHeader from '../../components/DeviceStatusHeader';
 
 export default function TabLayout() {
   return (
@@ -25,6 +26,7 @@ export default function TabLayout() {
         },
         headerTintColor: colors.textPrimary,
         headerShadowVisible: false,
+        headerRight: () => <DeviceStatusHeader />,
       }}
     >
       <Tabs.Screen
@@ -53,6 +55,13 @@ export default function TabLayout() {
         options={{
           title: 'Purchases',
           tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="inbox"
+        options={{
+          title: 'Inbox',
+          tabBarIcon: ({ color, size }) => <Ionicons name="mail-unread-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

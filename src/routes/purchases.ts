@@ -1728,4 +1728,179 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Synchronize offline purchases from mobile
+router.post('/sync', async (req, res) => {
+  let db;
+  try {
+    const { purchases = [] } = req.body;
+    if (!Array.isArray(purchases)) {
+      return res.status(400).json({ error: 'Purchases array required for synchronization' });
+    }
+
+    db = await dbManager.getConnection();
+    await db.run('BEGIN TRANSACTION');
+
+    let stagedCount = 0;
+    for (const pur of purchases) {
+      const { distributor_name = '', invoice_no = '', date = new Date().toISOString(), total_amount = 0, items = [] } = pur;
+      if (!Array.isArray(items) || items.length === 0) continue;
+
+      await db.run(
+        `INSERT INTO staged_purchases (distributor_name, invoice_no, date, total_amount, items_json) VALUES (?, ?, ?, ?, ?)`,
+        [distributor_name, invoice_no, date, Number(total_amount), JSON.stringify(items)]
+      );
+      stagedCount++;
+    }
+    await db.run('COMMIT');
+
+    // Broadcast update notification to dashboard via SSE
+    try {
+      const { eventService } = await import('../services/eventService.js');
+      eventService.broadcast('purchases_sync', { success: true, count: stagedCount });
+    } catch (sseErr) {
+      console.warn('Could not broadcast sync update:', sseErr);
+    }
+
+    res.json({ success: true, count: stagedCount });
+  } catch (error: any) {
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Failed to sync offline purchases:', error);
+    res.status(500).json({ error: error.message || 'Failed to sync offline purchases' });
+  }
+});
+
+// Retrieve pending staged purchases
+router.get('/staged', async (req, res) => {
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const rows = await db.all(`SELECT * FROM staged_purchases WHERE status = 'pending' ORDER BY date DESC`);
+    const parsed = rows.map(r => ({
+      ...r,
+      items: JSON.parse(r.items_json)
+    }));
+    res.json(parsed);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to retrieve staged purchases' });
+  }
+});
+
+// Approve a staged purchase
+router.post('/staged/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const { items, distributor_name, invoice_no, date, total_amount } = req.body;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    
+    const staged = await db.get(`SELECT * FROM staged_purchases WHERE id = ? AND status = 'pending'`, [id]);
+    if (!staged) {
+      return res.status(404).json({ error: 'Staged purchase not found' });
+    }
+
+    const itemsToProcess = items || JSON.parse(staged.items_json);
+    const finalDistName = distributor_name !== undefined ? distributor_name : staged.distributor_name;
+    const finalInvoiceNo = invoice_no !== undefined ? invoice_no : staged.invoice_no;
+    const finalDate = date !== undefined ? date : staged.date;
+    const finalTotalAmt = total_amount !== undefined ? total_amount : staged.total_amount;
+
+    await db.run('BEGIN TRANSACTION');
+
+    // Resolve/create distributor
+    let distId = null;
+    if (finalDistName) {
+      await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [finalDistName]);
+      const dbDist = await db.get('SELECT id FROM distributors WHERE name = ?', [finalDistName]);
+      distId = dbDist.id;
+    }
+
+    // Save main purchase bill
+    const purchRes = await db.run(
+      `INSERT INTO purchases (distributor_id, invoice_no, date, total_amount) VALUES (?, ?, ?, ?)`,
+      [distId, finalInvoiceNo, finalDate, finalTotalAmt]
+    );
+    const purchaseId = purchRes.lastID;
+
+    // Save items and increment stock
+    for (const item of itemsToProcess) {
+      let medId = null;
+      const aliasRow = await db.get('SELECT medicine_id FROM medicine_aliases WHERE alias_name = ?', [item.name]);
+      if (aliasRow) {
+        medId = aliasRow.medicine_id;
+      } else {
+        let med = await db.get('SELECT id FROM medicines WHERE name LIKE ? LIMIT 1', [`%${item.name}%`]);
+        if (med) {
+          medId = med.id;
+        } else {
+          const medResult = await db.run('INSERT INTO medicines (name) VALUES (?)', [item.name]);
+          medId = medResult.lastID;
+        }
+      }
+
+      const rawBatch = item.batch_no || 'B-OFFLINE';
+      const rawExpiry = item.expiry_date || null;
+      const qty = Number(item.quantity || item.qty || 0);
+      const freeQty = Number(item.free_qty || 0);
+      const rate = Number(item.cost_price || item.rate || 0);
+      const mrp = Number(item.mrp || 0);
+      const cgstPer = Number(item.cgst_per || 0);
+      const sgstPer = Number(item.sgst_per || 0);
+      const cdValue = Number(item.cd_value || 0);
+
+      const taxable = qty * rate;
+      const cgstVal = taxable * (cgstPer / 100);
+      const sgstVal = taxable * (sgstPer / 100);
+
+      await db.run(`
+        INSERT INTO purchase_items 
+        (purchase_id, medicine_id, batch_no, expiry_date, quantity, free_qty, cost_price, mrp, cgst_per, cgst_value, sgst_per, sgst_value, cd_value)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [purchaseId, medId, rawBatch, rawExpiry, qty, freeQty, rate, mrp, cgstPer, cgstVal, sgstPer, sgstVal, cdValue]);
+
+      // Update stock level
+      const totalQty = qty + freeQty;
+      const invRow = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [medId, rawBatch]);
+      if (invRow) {
+        await db.run('UPDATE inventory_master SET quantity = quantity + ?, cost_price = ?, mrp = ?, expiry_date = ? WHERE id = ?', 
+          [totalQty, rate, mrp, rawExpiry, invRow.id]);
+      } else {
+        await db.run(`
+          INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, cost_price, mrp)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [medId, totalQty, rawBatch, rawExpiry, rate, mrp]);
+      }
+    }
+
+    // Mark staged as approved
+    await db.run(`UPDATE staged_purchases SET status = 'approved' WHERE id = ?`, [id]);
+
+    await db.run('COMMIT');
+    res.json({ success: true, purchase_id: purchaseId });
+  } catch (error: any) {
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Approve staged purchase error:', error);
+    res.status(500).json({ error: error.message || 'Failed to approve staged purchase' });
+  }
+});
+
+// Reject a staged purchase
+router.post('/staged/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const result = await db.run(`UPDATE staged_purchases SET status = 'rejected' WHERE id = ? AND status = 'pending'`, [id]);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Staged purchase not found or already processed' });
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to reject staged purchase' });
+  }
+});
+
 export default router;

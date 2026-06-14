@@ -32,7 +32,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toastEvent, quickOrderEvent } from './services/events';
 import type { ToastEventDetail } from './services/events';
 import { QuickOrderModal } from './components/QuickOrderModal';
-import { apiClient } from './services/api';
+import { StagedReviewModal } from './components/StagedReviewModal';
+import { api, apiClient } from './services/api';
 import { Agentation } from 'agentation';
 
 import Dashboard from './pages/Dashboard';
@@ -56,6 +57,8 @@ import Sells from './pages/Sells';
 import Learning from './pages/Learning';
 import DatabasePage from './pages/Database';
 import CompositionQueue from './pages/CompositionQueue';
+import CustomerReturn from './pages/CustomerReturn';
+import CustomerReturnHistory from './pages/CustomerReturnHistory';
 
 // ──────────────────────────────────────────────
 // Notification Types
@@ -72,7 +75,15 @@ interface AppNotification {
 // ──────────────────────────────────────────────
 // Sidebar
 // ──────────────────────────────────────────────
-const Sidebar = () => {
+const Sidebar = ({
+  stagedSalesCount = 0,
+  stagedPurchasesCount = 0,
+  onOpenReview,
+}: {
+  stagedSalesCount?: number;
+  stagedPurchasesCount?: number;
+  onOpenReview?: () => void;
+}) => {
   const location = useLocation();
   const menuItems = [
     { path: '/pos', label: 'Sales / POS', icon: <ShoppingCart size={18} /> },
@@ -123,12 +134,47 @@ const Sidebar = () => {
           </div>
         </div>
       </div>
+
+      {/* Sync Review Indicator */}
+      {(stagedSalesCount > 0 || stagedPurchasesCount > 0) && (
+        <button
+          onClick={onOpenReview}
+          className="mx-4 my-2.5 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between text-left hover:bg-amber-500/20 transition-all duration-300 animate-pulse cursor-pointer shrink-0"
+        >
+          <div className="flex-1 min-w-0 pr-1">
+            <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Sync Reviews Pending</div>
+            <div className="text-[9px] text-muted truncate mt-0.5">
+              {stagedSalesCount > 0 ? `${stagedSalesCount} sales ` : ''}
+              {stagedSalesCount > 0 && stagedPurchasesCount > 0 ? '& ' : ''}
+              {stagedPurchasesCount > 0 ? `${stagedPurchasesCount} purchases` : ''}
+            </div>
+          </div>
+          <ChevronRight size={14} className="text-amber-500 shrink-0" />
+        </button>
+      )}
       
       <div className="py-4 flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
         <div className="px-5 mb-2 text-[10px] font-bold tracking-[0.15em] uppercase text-muted/70">Main Menu</div>
         <nav className="flex flex-col gap-1">
           {menuItems.map((item) => {
             const isActive = location.pathname === item.path;
+            
+            // Staged sync count badges
+            let badge = null;
+            if (item.path === '/sells' && stagedSalesCount > 0) {
+              badge = (
+                <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary text-[9px] font-black text-white px-1 border border-black/40 animate-pulse">
+                  {stagedSalesCount}
+                </span>
+              );
+            } else if (item.path === '/purchases' && stagedPurchasesCount > 0) {
+              badge = (
+                <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-accent text-[9px] font-black text-black px-1 border border-black/40 animate-pulse">
+                  {stagedPurchasesCount}
+                </span>
+              );
+            }
+
             return (
               <Link
                 key={item.path}
@@ -143,19 +189,14 @@ const Sidebar = () => {
                 <span className={`${isActive ? 'text-primary drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''}`}>
                   {item.icon}
                 </span>
-                {item.label}
+                <span className="flex-1 truncate">{item.label}</span>
+                {badge}
               </Link>
             );
           })}
         </nav>
       </div>
 
-      <div className="p-4 border-t border-glass-border shrink-0">
-        <div className="flex items-center gap-3 px-3 py-2 text-sm text-muted">
-          <Activity size={16} className="text-green" />
-          <span>System Online</span>
-        </div>
-      </div>
     </div>
   );
 };
@@ -163,7 +204,15 @@ const Sidebar = () => {
 // ──────────────────────────────────────────────
 // Flash Toast — small pop at top-center
 // ──────────────────────────────────────────────
-const FlashToast = ({ toast, onDismiss }: { toast: (ToastEventDetail & { id: number }) | null; onDismiss: () => void }) => {
+const FlashToast = ({
+  toast,
+  onDismiss,
+  onOpenReview,
+}: {
+  toast: (ToastEventDetail & { id: number }) | null;
+  onDismiss: () => void;
+  onOpenReview: () => void;
+}) => {
   if (!toast) return null;
 
   const cfg = {
@@ -171,6 +220,8 @@ const FlashToast = ({ toast, onDismiss }: { toast: (ToastEventDetail & { id: num
     error:   { bg: 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400',                 icon: <AlertTriangle size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(239,68,68,0.15)]' },
     info:    { bg: 'bg-sky-500/10 border-sky-500/30 text-sky-600 dark:text-sky-400',                 icon: <Info size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(14,165,233,0.15)]' },
   }[toast.type];
+
+  const isStagedSync = toast.message.toLowerCase().includes('sync') || toast.message.toLowerCase().includes('staged');
 
   return (
     <div
@@ -180,15 +231,26 @@ const FlashToast = ({ toast, onDismiss }: { toast: (ToastEventDetail & { id: num
         flex items-center gap-2.5 px-4 py-2.5 rounded-2xl
         border backdrop-blur-2xl ${cfg.bg} ${cfg.glow}
         animate-in slide-in-from-top-3 fade-in duration-300
-        min-w-[260px] max-w-[420px]
+        min-w-[260px] max-w-[450px]
       `}
       style={{ animation: 'slideInDown 0.3s ease' }}
     >
       {cfg.icon}
       <span className="text-sm font-semibold flex-1 leading-snug">{toast.message}</span>
+      {isStagedSync && (
+        <button
+          onClick={() => {
+            onOpenReview();
+            onDismiss();
+          }}
+          className="ml-2 bg-primary hover:bg-primary/80 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors shrink-0"
+        >
+          Proceed
+        </button>
+      )}
       <button
         onClick={onDismiss}
-        className="ml-1 opacity-50 hover:opacity-100 transition-opacity shrink-0"
+        className="ml-1.5 opacity-50 hover:opacity-100 transition-opacity shrink-0"
         aria-label="Dismiss"
       >
         <X size={13} />
@@ -396,6 +458,7 @@ const Topbar = ({
   onClearAll,
   onClearOne,
   onMarkRead,
+  onOpenStagedReview,
 }: {
   theme: string;
   setTheme: React.Dispatch<React.SetStateAction<string>>;
@@ -405,6 +468,7 @@ const Topbar = ({
   onClearAll: () => void;
   onClearOne: (id: number) => void;
   onMarkRead: (id: number) => void;
+  onOpenStagedReview: () => void;
 }) => {
   const location = useLocation();
   const [showPanel, setShowPanel] = useState(false);
@@ -453,6 +517,16 @@ const Topbar = ({
               toastEvent.trigger('Catalogue ingestion completed successfully!', 'success', '/catalog');
             } else if (status === 'failed') {
               toastEvent.trigger('Catalogue processing failed: ' + (data.payload.error || 'Unknown error'), 'error', '/catalog');
+            }
+          } else if (data.type === 'sales_sync') {
+            toastEvent.trigger(`Mobile synced ${data.payload.count || 1} offline sales bill(s) for review!`, 'info');
+            if (typeof (window as any).refreshStagedCounts === 'function') {
+              (window as any).refreshStagedCounts();
+            }
+          } else if (data.type === 'purchases_sync') {
+            toastEvent.trigger(`Mobile synced ${data.payload.count || 1} offline purchase bill(s) for review!`, 'info');
+            if (typeof (window as any).refreshStagedCounts === 'function') {
+              (window as any).refreshStagedCounts();
             }
           }
         } catch (err) {
@@ -520,7 +594,7 @@ const Topbar = ({
   return (
     <>
       {/* Flash Toast — top center */}
-      <FlashToast toast={flashToast} onDismiss={dismissFlash} />
+      <FlashToast toast={flashToast} onDismiss={dismissFlash} onOpenReview={onOpenStagedReview} />
 
       <header className="h-16 bg-glass-bg border-b border-glass-border backdrop-blur-xl flex items-center justify-between px-8 shrink-0 relative z-40">
         <div className="flex items-center gap-4">
@@ -624,7 +698,30 @@ const Layout = ({
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [hasUnread, setHasUnread] = useState(false);
 
+  const [showStagedReview, setShowStagedReview] = useState(false);
+  const [pendingStagedSalesCount, setPendingStagedSalesCount] = useState(0);
+  const [pendingStagedPurchasesCount, setPendingStagedPurchasesCount] = useState(0);
 
+  const fetchStagedCounts = useCallback(async () => {
+    try {
+      const [sales, purchases] = await Promise.all([
+        api.getStagedSales(),
+        api.getStagedPurchases(),
+      ]);
+      setPendingStagedSalesCount(sales.length);
+      setPendingStagedPurchasesCount(purchases.length);
+    } catch (err) {
+      console.warn('Failed to load staged counts:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStagedCounts();
+    (window as any).refreshStagedCounts = fetchStagedCounts;
+    return () => {
+      delete (window as any).refreshStagedCounts;
+    };
+  }, [fetchStagedCounts]);
 
   // Global Arrow Key Navigation (Shift columns / Move focus, do not change numbers)
   useEffect(() => {
@@ -702,7 +799,11 @@ const Layout = ({
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-text selection:bg-primary/30">
-      <Sidebar />
+      <Sidebar 
+        stagedSalesCount={pendingStagedSalesCount}
+        stagedPurchasesCount={pendingStagedPurchasesCount}
+        onOpenReview={() => setShowStagedReview(true)}
+      />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <Topbar
           theme={theme}
@@ -713,6 +814,7 @@ const Layout = ({
           onClearAll={handleClearAll}
           onClearOne={handleClearOne}
           onMarkRead={handleMarkRead}
+          onOpenStagedReview={() => setShowStagedReview(true)}
         />
         <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-4 pt-2 pb-4' : 'overflow-y-auto p-6 pt-4 pb-6'} relative z-10 transition-all duration-200`}>
           {children}
@@ -720,6 +822,13 @@ const Layout = ({
         
         {/* Global Modals */}
         <QuickOrderModal />
+
+        {showStagedReview && (
+          <StagedReviewModal
+            onClose={() => setShowStagedReview(false)}
+            onActionComplete={fetchStagedCounts}
+          />
+        )}
 
         {/* Subtle background glow */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
@@ -780,6 +889,8 @@ function App() {
           <Route path="/learning" element={<Learning />} />
           <Route path="/database" element={<DatabasePage />} />
           <Route path="/composition-queue" element={<CompositionQueue />} />
+          <Route path="/customer-returns" element={<CustomerReturn />} />
+          <Route path="/customer-returns-history" element={<CustomerReturnHistory />} />
           <Route path="*" element={
             <div className="flex flex-col items-center justify-center h-full text-muted">
               <h1 className="text-2xl font-bold mb-2">Coming Soon</h1>

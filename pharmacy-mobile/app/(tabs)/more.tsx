@@ -10,6 +10,7 @@ const menuItems = [
   { icon: 'camera-outline', label: 'AI Camera', desc: 'Scan medicine packaging', route: '/camera', color: '#F59E0B' },
   { icon: 'search-outline', label: 'Product Trace', desc: 'Find product across purchases & sales', route: '/product-search', color: colors.accent },
   { icon: 'cloud-upload-outline', label: 'Backup & Safety', desc: 'Create backup, restore data', route: '/backup', color: colors.info },
+  { icon: 'notifications-outline', label: 'Notification History', desc: 'View all past system alerts', route: '/notifications', color: colors.primary },
 ];
 
 export default function MoreScreen() {

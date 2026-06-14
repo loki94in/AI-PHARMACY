@@ -66,6 +66,34 @@ const getInitialReturnsActiveTabId = (initialTabs: any[]) => {
   return initialTabs[0]?.id || 'default';
 };
 
+const formatExpiryToMMYY = (val: string): string => {
+  if (!val) return '';
+  val = val.trim().replace(/\s+/g, '');
+  if (/^\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yy = val.substring(2, 4);
+    return `${mm}/${yy}`;
+  }
+  if (/^\d{6}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(2, 6);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(3, 7);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{2}$/.test(val)) {
+    return val;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const parts = val.split('-');
+    return `${parts[1]}/${parts[0].substring(2, 4)}`;
+  }
+  return val;
+};
+
 const Returns: React.FC = () => {
   const location = useLocation();
 
@@ -180,7 +208,7 @@ const Returns: React.FC = () => {
       item.batch_no = info.batchNumber;
     }
     if (info.expiryDate) {
-      item.expiry_date = info.expiryDate;
+      item.expiry_date = formatExpiryToMMYY(info.expiryDate);
     }
     if (info.mrp) {
       item.mrp = info.mrp;
@@ -196,7 +224,7 @@ const Returns: React.FC = () => {
           item.medicine_id = purchase.medicine_id;
           item.medicine_name = purchase.medicine_name;
           item.batch_no = purchase.batch_no;
-          item.expiry_date = purchase.expiry_date;
+          item.expiry_date = formatExpiryToMMYY(purchase.expiry_date || '');
           item.cost_price = purchase.cost_price;
           item.mrp = purchase.mrp;
           item.purchase_item_id = purchase.purchase_item_id;
@@ -239,7 +267,7 @@ const Returns: React.FC = () => {
         medicine_id: item.medicine_id ?? null,
         medicine_name: item.medicine_name || '',
         batch_no: item.batch_no || '',
-        expiry_date: item.expiry_date || '',
+        expiry_date: formatExpiryToMMYY(item.expiry_date || ''),
         quantity: item.quantity || '',
         cost_price: item.mrp || '',
         mrp: item.mrp || '',
@@ -336,7 +364,7 @@ const Returns: React.FC = () => {
     item.medicine_id = purchase.medicine_id;
     item.medicine_name = purchase.medicine_name;
     item.batch_no = purchase.batch_no;
-    item.expiry_date = purchase.expiry_date;
+    item.expiry_date = formatExpiryToMMYY(purchase.expiry_date || '');
     item.cost_price = purchase.cost_price;
     item.mrp = purchase.mrp;
     item.purchase_item_id = purchase.purchase_item_id;
@@ -357,21 +385,7 @@ const Returns: React.FC = () => {
     if (field === 'quantity' || field === 'cost_price' || field === 'mrp') {
       (item as any)[field] = value;
     } else if (field === 'expiry_date') {
-      let val = value.replace(/\s+/g, '');
-      if (/^\d{4}$/.test(val)) {
-        const mm = val.substring(0, 2);
-        const yy = val.substring(2, 4);
-        val = `${mm}/20${yy}`;
-      } else if (/^\d{6}$/.test(val)) {
-        const mm = val.substring(0, 2);
-        const yyyy = val.substring(2, 6);
-        val = `${mm}/${yyyy}`;
-      } else if (/^\d{2}\/\d{2}$/.test(val)) {
-        const mm = val.substring(0, 2);
-        const yy = val.substring(3, 5);
-        val = `${mm}/20${yy}`;
-      }
-      (item as any)[field] = val;
+      (item as any)[field] = formatExpiryToMMYY(value);
     } else {
       (item as any)[field] = value;
     }
@@ -790,7 +804,7 @@ const Returns: React.FC = () => {
                       value={item.expiry_date}
                       onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
                       className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
-                      placeholder="MM/YYYY"
+                      placeholder="MM/YY"
                     />
                   </td>
 

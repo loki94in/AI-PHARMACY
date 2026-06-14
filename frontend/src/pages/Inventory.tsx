@@ -4,6 +4,34 @@ import { api, type InventoryItem } from '../services/api';
 import { UniversalMedicineEditModal } from '../components/UniversalMedicineEditModal';
 import { createPortal } from 'react-dom';
 
+const formatExpiryToMMYY = (val: string): string => {
+  if (!val) return '';
+  val = val.trim().replace(/\s+/g, '');
+  if (/^\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yy = val.substring(2, 4);
+    return `${mm}/${yy}`;
+  }
+  if (/^\d{6}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(2, 6);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(3, 7);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{2}$/.test(val)) {
+    return val;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const parts = val.split('-');
+    return `${parts[1]}/${parts[0].substring(2, 4)}`;
+  }
+  return val;
+};
+
 const Inventory = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -515,13 +543,13 @@ const Inventory = () => {
                     {isEditing ? (
                       <input 
                         type="text" 
-                        placeholder="MM/YYYY"
+                        placeholder="MM/YY"
                         className="mt-1 w-full px-3 py-1.5 bg-black/40 border border-glass-border rounded-lg text-sm text-white focus:border-primary focus:outline-none transition-all"
                         value={editForm.expiry_date ?? ''} 
-                        onChange={e => setEditForm({...editForm, expiry_date: e.target.value})} 
+                        onChange={e => setEditForm({...editForm, expiry_date: formatExpiryToMMYY(e.target.value)})} 
                       />
                     ) : (
-                      <span className="text-sm font-bold text-white mt-0.5 block">{selectedItem.expiry_date || '12/2028'}</span>
+                      <span className="text-sm font-bold text-white mt-0.5 block">{selectedItem.expiry_date || '12/28'}</span>
                     )}
                   </div>
                 </div>

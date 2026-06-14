@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
 import { searchMedicine, createSale, SearchMedicineResult } from '../../lib/api';
 import SearchBar from '../../components/SearchBar';
@@ -60,6 +61,16 @@ export default function BillingScreen() {
         patient_phone: patientPhone || undefined,
       });
       setInvoiceResult({ invoice_no: res.invoice_no, total: res.total });
+      
+      // Trigger local notification to display global Toast and save to alert history
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: '⚡ Bill Saved Successfully',
+          body: `Invoice ${res.invoice_no} created for ₹${res.total.toFixed(2)} (${patientName || 'Walk-in Customer'}).`,
+        },
+        trigger: null,
+      }).catch(err => console.warn('Failed to trigger bill notification:', err));
+
       setCart([]);
       setPatientName('');
       setPatientPhone('');

@@ -592,5 +592,77 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-06-13T19:14:52.264Z"
+  },
+  {
+    "id": "audit_1781378748252",
+    "imagePath": "data\\audit_images\\audit_1781378748252.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-13T19:25:48.324Z"
+  },
+  {
+    "id": "audit_1781390827767",
+    "imagePath": "data\\audit_images\\audit_1781390827767.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-13T22:47:07.819Z"
+  },
+  {
+    "id": "audit_1781391990892",
+    "imagePath": "data\\audit_images\\audit_1781391990892.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-13T23:06:30.949Z"
+  },
+  {
+    "id": "audit_1781395452876",
+    "imagePath": "data\\audit_images\\audit_1781395452876.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-14T00:04:12.906Z"
+  },
+  {
+    "id": "audit_1781395781936",
+    "imagePath": "data\\audit_images\\audit_1781395781936.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-14T00:09:41.998Z"
+  },
+  {
+    "id": "audit_1781395890661",
+    "imagePath": "data\\audit_images\\audit_1781395890661.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-14T00:11:30.724Z"
+  },
+  {
+    "id": "audit_1781396172828",
+    "imagePath": "data\\audit_images\\audit_1781396172828.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-14T00:16:12.899Z"
+  },
+  {
+    "id": "audit_1781396205961",
+    "imagePath": "data\\audit_images\\audit_1781396205961.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-14T00:16:46.185Z"
   }
 ]

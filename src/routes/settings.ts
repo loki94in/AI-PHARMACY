@@ -142,9 +142,12 @@ router.post('/distributors', async (req, res) => {
     const id = result.lastID;
     const saved = await db.get('SELECT * FROM distributors WHERE id = ?', [id]);
     res.json({ success: true, data: saved });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to create distributor:', error);
-    res.status(500).json({ error: 'Failed to create distributor' });
+    if (error && error.message && error.message.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ error: 'A distributor with this name already exists' });
+    }
+    res.status(500).json({ error: 'Failed to create distributor: ' + error.message });
   }
 });
 // Update a distributor

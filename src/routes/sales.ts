@@ -765,5 +765,158 @@ router.delete('/hold/:id', async (req, res) => {
   }
 });
 
-export default router;
+// Synchronize offline sales from mobile
+router.post('/sync', async (req, res) => {
+  let db;
+  try {
+    const { sales = [] } = req.body;
+    if (!Array.isArray(sales)) {
+      return res.status(400).json({ error: 'Sales array required for synchronization' });
+    }
 
+    db = await dbManager.getConnection();
+    await db.run('BEGIN TRANSACTION');
+
+    let stagedCount = 0;
+    for (const sale of sales) {
+      const { items = [], patient_name = '', patient_phone = '', discount = 0, sale_date = new Date().toISOString() } = sale;
+      if (!Array.isArray(items) || items.length === 0) continue;
+
+      await db.run(
+        `INSERT INTO staged_sales (patient_name, patient_phone, discount, sale_date, items_json) VALUES (?, ?, ?, ?, ?)`,
+        [patient_name, patient_phone, Number(discount), sale_date, JSON.stringify(items)]
+      );
+      stagedCount++;
+    }
+    await db.run('COMMIT');
+
+    // Broadcast update notification to dashboard via SSE
+    try {
+      const { eventService } = await import('../services/eventService.js');
+      eventService.broadcast('sales_sync', { success: true, count: stagedCount });
+    } catch (sseErr) {
+      console.warn('Could not broadcast sync update:', sseErr);
+    }
+
+    res.json({ success: true, count: stagedCount });
+  } catch (error: any) {
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Failed to sync offline sales:', error);
+    res.status(500).json({ error: error.message || 'Failed to sync offline sales' });
+  }
+});
+
+// Retrieve pending staged sales
+router.get('/staged', async (req, res) => {
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const rows = await db.all(`SELECT * FROM staged_sales WHERE status = 'pending' ORDER BY sale_date DESC`);
+    const parsed = rows.map(r => ({
+      ...r,
+      items: JSON.parse(r.items_json)
+    }));
+    res.json(parsed);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to retrieve staged sales' });
+  }
+});
+
+// Approve a staged sale
+router.post('/staged/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const { items, patient_name, patient_phone, discount = 0 } = req.body;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+
+    const staged = await db.get(`SELECT * FROM staged_sales WHERE id = ? AND status = 'pending'`, [id]);
+    if (!staged) {
+      return res.status(404).json({ error: 'Staged sale not found' });
+    }
+
+    const itemsToProcess = items || JSON.parse(staged.items_json);
+    const finalPatientName = patient_name !== undefined ? patient_name : staged.patient_name;
+    const finalPatientPhone = patient_phone !== undefined ? patient_phone : staged.patient_phone;
+    const finalDiscount = discount !== undefined ? discount : staged.discount;
+
+    await db.run('BEGIN TRANSACTION');
+
+    // Resolve customer
+    let customerId = null;
+    if (finalPatientName) {
+      const cleanPhone = finalPatientPhone || '';
+      const existing = await db.get('SELECT id FROM customers WHERE name = ? AND phone = ?', [finalPatientName, cleanPhone]);
+      if (existing) {
+        customerId = existing.id;
+      } else {
+        const custResult = await db.run(
+          'INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)',
+          [finalPatientName, cleanPhone, '']
+        );
+        customerId = custResult.lastID;
+      }
+    }
+
+    // Compute totals
+    let subtotal = 0;
+    for (const item of itemsToProcess) {
+      const { quantity, unit_price } = item;
+      subtotal += (Number(quantity) * Number(unit_price));
+    }
+    const tax = Number((subtotal * 0.05).toFixed(2));
+    const total = Math.round(subtotal + tax - Number(finalDiscount));
+
+    // Generate invoice number
+    const invoice_no = await generateInvoiceNo(db);
+
+    // Save invoice
+    const result = await db.run(
+      'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status, date, discount, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [invoice_no, customerId, total, tax, 'CASH', 'PAID', staged.sale_date, Number(finalDiscount), subtotal]
+    );
+    const invoiceId = result.lastID;
+
+    // Save items & update stock
+    for (const item of itemsToProcess) {
+      const { inventory_id, quantity, unit_price } = item;
+      await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [Number(quantity), inventory_id]);
+      await db.run(
+        'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)',
+        [invoiceId, inventory_id, Number(quantity), Number(unit_price), 0]
+      );
+    }
+
+    // Mark staged as approved
+    await db.run(`UPDATE staged_sales SET status = 'approved' WHERE id = ?`, [id]);
+
+    await db.run('COMMIT');
+    res.json({ success: true, invoice_no, total });
+  } catch (error: any) {
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Approve staged sale error:', error);
+    res.status(500).json({ error: error.message || 'Failed to approve staged sale' });
+  }
+});
+
+// Reject a staged sale
+router.post('/staged/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const result = await db.run(`UPDATE staged_sales SET status = 'rejected' WHERE id = ? AND status = 'pending'`, [id]);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Staged sale not found or already processed' });
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to reject staged sale' });
+  }
+});
+
+export default router;

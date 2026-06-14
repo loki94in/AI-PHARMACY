@@ -163,6 +163,34 @@ const INDIAN_STATE_CODES = [
   { code: '19', name: 'WEST BENGAL' }
 ];
 
+const formatExpiryToMMYY = (val: string): string => {
+  if (!val) return '';
+  val = val.trim().replace(/\s+/g, '');
+  if (/^\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yy = val.substring(2, 4);
+    return `${mm}/${yy}`;
+  }
+  if (/^\d{6}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(2, 6);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(3, 7);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{2}$/.test(val)) {
+    return val;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const parts = val.split('-');
+    return `${parts[1]}/${parts[0].substring(2, 4)}`;
+  }
+  return val;
+};
+
 const Purchases: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -723,7 +751,7 @@ const Purchases: React.FC = () => {
       if (response && response.found) {
         const lastPurchase = response;
         item.batch_no = lastPurchase.batch_no || '';
-        item.expiry_date = lastPurchase.expiry_date || '';
+        item.expiry_date = formatExpiryToMMYY(lastPurchase.expiry_date || '');
         item.rate = lastPurchase.rate || medicine.rate;
         item.mrp = lastPurchase.mrp || medicine.mrp;
         item.cgst_per = lastPurchase.cgst_per !== undefined ? lastPurchase.cgst_per : medicine.cgst_per;
@@ -792,7 +820,7 @@ const Purchases: React.FC = () => {
           medicine_name: item.medicine_name || '',
           original_name: item.medicine_name || '',
           batch_no: item.batch_no || '',
-          expiry_date: item.expiry_date || '',
+          expiry_date: formatExpiryToMMYY(item.expiry_date || ''),
           qty: item.qty || '',
           free_qty: item.free_qty || '',
           rate: item.rate || '',
@@ -925,7 +953,7 @@ const Purchases: React.FC = () => {
     if (field === 'qty' || field === 'free_qty' || field === 'rate' || field === 'mrp' || 
         field === 'cgst_per' || field === 'sgst_per' || field === 'cd_rs' || field === 'cd_per' || field === 'additional_discount') {
       const parsedVal = parseFloat(value);
-      (item as any)[field] = isNaN(parsedVal) ? 0 : parsedVal;
+      (item as any)[field] = value === '' ? '' : (isNaN(parsedVal) ? 0 : parsedVal);
       
       // Auto match SGST and CGST
       if (field === 'sgst_per') {
@@ -934,21 +962,7 @@ const Purchases: React.FC = () => {
         item.sgst_per = item.cgst_per;
       }
     } else if (field === 'expiry_date') {
-      let val = value.replace(/\s+/g, '');
-      if (/^\d{4}$/.test(val)) {
-        const mm = val.substring(0, 2);
-        const yy = val.substring(2, 4);
-        val = `${mm}/20${yy}`;
-      } else if (/^\d{6}$/.test(val)) {
-        const mm = val.substring(0, 2);
-        const yyyy = val.substring(2, 6);
-        val = `${mm}/${yyyy}`;
-      } else if (/^\d{2}\/\d{2}$/.test(val)) {
-        const mm = val.substring(0, 2);
-        const yy = val.substring(3, 5);
-        val = `${mm}/20${yy}`;
-      }
-      (item as any)[field] = val;
+      (item as any)[field] = formatExpiryToMMYY(value);
     } else {
       (item as any)[field] = value;
     }
@@ -1146,7 +1160,7 @@ const Purchases: React.FC = () => {
         free_qty: item.free_qty || '',
         rate: item.price || item.rate || '',
         batch_no: item.batch_no || '',
-        expiry_date: item.expiry_date || '',
+        expiry_date: formatExpiryToMMYY(item.expiry_date || ''),
         mrp: item.mrp || '',
         cgst_per: item.cgst_per || '',
         sgst_per: item.sgst_per || '',

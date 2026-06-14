@@ -362,4 +362,12 @@ export const api = {
   getReconciliationList: () => apiClient.get('/purchases/reconciliation').then(res => res.data),
   reissueOrder: (emailUid: number) => apiClient.post('/purchases/reconciliation/reissue', { email_uid: emailUid }).then(res => res.data),
   resolveOrderManually: (emailUid: number) => apiClient.post('/purchases/reconciliation/resolve', { email_uid: emailUid }).then(res => res.data),
+
+  // Staged / Offline Sync Review
+  getStagedSales: () => apiClient.get('/sales/staged').then(res => res.data),
+  approveStagedSale: (id: number, data: any) => apiClient.post(`/sales/staged/${id}/approve`, data).then(res => res.data),
+  rejectStagedSale: (id: number) => apiClient.post(`/sales/staged/${id}/reject`).then(res => res.data),
+  getStagedPurchases: () => apiClient.get('/purchases/staged').then(res => res.data),
+  approveStagedPurchase: (id: number, data: any) => apiClient.post(`/purchases/staged/${id}/approve`, data).then(res => res.data),
+  rejectStagedPurchase: (id: number) => apiClient.post(`/purchases/staged/${id}/reject`).then(res => res.data),
 };

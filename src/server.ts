@@ -55,6 +55,7 @@ import medicinesRouter from './routes/medicines.js';
 import enrichmentRouter from './routes/enrichment.js';
 import distributorsRouter from './routes/distributors.js';
 import notificationsRouter from './routes/notifications.js';
+import './services/pushNotificationService.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
 import { checkAllRefills } from './services/refillService.js';

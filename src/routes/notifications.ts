@@ -1,5 +1,6 @@
 import express from 'express';
 import { eventService } from '../services/eventService.js';
+import { dbManager } from '../database/connection.js';
 
 const router = express.Router();
 
@@ -21,6 +22,26 @@ router.get('/notifications/stream', (req, res) => {
   });
 
   res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Connected to notifications stream' })}\n\n`);
+});
+
+// Register push notification token from mobile device
+router.post('/notifications/register-token', async (req, res) => {
+  const { token, deviceName, os } = req.body;
+  if (!token) {
+    return res.status(400).json({ error: 'Token is required' });
+  }
+
+  try {
+    const db = await dbManager.getConnection();
+    await db.run(
+      'INSERT OR REPLACE INTO push_tokens (token, device_name, os) VALUES (?, ?, ?)',
+      [token, deviceName || 'Unknown', os || 'Unknown']
+    );
+    res.json({ success: true, message: 'Push token registered successfully' });
+  } catch (err: any) {
+    console.error('Failed to register push token:', err);
+    res.status(500).json({ error: 'Failed to register token: ' + err.message });
+  }
 });
 
 // Manual refill reminder endpoint
