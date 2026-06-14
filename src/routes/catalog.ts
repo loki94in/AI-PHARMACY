@@ -35,6 +35,7 @@ router.get('/catalog/job/:id', async (req, res) => {
       newCount: job.new_count || 0,
       duplicateCount: job.duplicate_count || 0,
       progress: job.progress || 0,
+      processedCount: job.processed_count || 0,
       errorLog: job.error_log || null,
       original_filename: job.original_filename,
       extractedData: job.extracted_data ? JSON.parse(job.extracted_data) : [],
@@ -45,6 +46,88 @@ router.get('/catalog/job/:id', async (req, res) => {
   } catch (error) {
     console.error('Fetch job error:', error);
     res.status(500).json({ error: 'Internal server error fetching job' });
+  }
+});
+
+// Pause a catalog ingestion job
+router.post('/catalog/job/:id/pause', async (req, res) => {
+  try {
+    const jobId = parseInt(req.params.id, 10);
+    const db = await dbManager.getConnection();
+    const job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', jobId);
+    
+    if (!job) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.status !== 'processing') {
+      await dbManager.close();
+      return res.status(400).json({ error: 'Only actively processing jobs can be paused' });
+    }
+
+    await db.run("UPDATE catalog_jobs SET status = 'paused' WHERE id = ?", jobId);
+    await dbManager.close();
+
+    const { eventService } = await import('../services/eventService.js');
+    eventService.broadcast('catalog_job_update', { 
+      id: jobId, 
+      status: 'paused', 
+      progress: job.progress || 0,
+      total_count: job.total_count || 0,
+      new_count: job.new_count || 0,
+      existing_count: job.existing_count || 0,
+      duplicate_count: job.duplicate_count || 0
+    });
+
+    res.json({ success: true, message: 'Ingestion paused' });
+  } catch (error) {
+    console.error('Pause job error:', error);
+    res.status(500).json({ error: 'Internal server error pausing job' });
+  }
+});
+
+// Resume a catalog ingestion job
+router.post('/catalog/job/:id/resume', async (req, res) => {
+  try {
+    const jobId = parseInt(req.params.id, 10);
+    const db = await dbManager.getConnection();
+    const job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', jobId);
+    
+    if (!job) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    if (job.status !== 'paused') {
+      await dbManager.close();
+      return res.status(400).json({ error: 'Only paused jobs can be resumed' });
+    }
+
+    await db.run("UPDATE catalog_jobs SET status = 'pending' WHERE id = ?", jobId);
+    await dbManager.close();
+
+    const { eventService } = await import('../services/eventService.js');
+    eventService.broadcast('catalog_job_update', { 
+      id: jobId, 
+      status: 'pending', 
+      progress: job.progress || 0,
+      total_count: job.total_count || 0,
+      new_count: job.new_count || 0,
+      existing_count: job.existing_count || 0,
+      duplicate_count: job.duplicate_count || 0
+    });
+
+    import('../worker/catalogWorker.js')
+      .then(({ runCatalogImport }) => {
+        runCatalogImport(jobId).catch(err => console.error('Resumed background catalog import failed:', err));
+      })
+      .catch(err => console.error('Failed to load runCatalogImport from worker:', err));
+
+    res.json({ success: true, message: 'Ingestion resumed' });
+  } catch (error) {
+    console.error('Resume job error:', error);
+    res.status(500).json({ error: 'Internal server error resuming job' });
   }
 });
 
@@ -80,7 +163,7 @@ router.post('/catalog/import-job/:id', async (req, res) => {
 
     // Set status to pending and save mapping config on the job
     await db.run(
-      'UPDATE catalog_jobs SET mapping_config = ?, data_filters = ?, status = "pending", progress = 0 WHERE id = ?',
+      'UPDATE catalog_jobs SET mapping_config = ?, data_filters = ?, status = "pending", progress = 0, processed_count = 0, new_count = 0, existing_count = 0, duplicate_count = 0 WHERE id = ?',
       [JSON.stringify(mappings), JSON.stringify(filters || {}), jobId]
     );
     await dbManager.close();

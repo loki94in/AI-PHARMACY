@@ -266,6 +266,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE catalog_jobs ADD COLUMN error_log TEXT`,
     `ALTER TABLE catalog_jobs ADD COLUMN mapping_config TEXT`,
     `ALTER TABLE catalog_jobs ADD COLUMN data_filters TEXT`,
+    `ALTER TABLE catalog_jobs ADD COLUMN processed_count INTEGER DEFAULT 0`,
     `ALTER TABLE medicines ADD COLUMN schedule_type TEXT`,
     `ALTER TABLE held_bills ADD COLUMN invoice_no TEXT`,
     `ALTER TABLE held_bills ADD COLUMN temp_label TEXT`,
@@ -280,6 +281,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE held_bills ADD COLUMN date DATETIME DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE medicines ADD COLUMN enrichment_status TEXT DEFAULT NULL`,
     `ALTER TABLE medicines ADD COLUMN enrichment_confidence REAL DEFAULT NULL`,
+    `ALTER TABLE push_tokens ADD COLUMN last_seen DATETIME DEFAULT CURRENT_TIMESTAMP`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -527,7 +529,8 @@ export async function ensureSchema(dbPath: string) {
       token TEXT PRIMARY KEY,
       device_name TEXT,
       os TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 

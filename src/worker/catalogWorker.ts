@@ -51,7 +51,7 @@ export async function preScanCsv(filePath: string, onProgress?: (rowIdx: number)
 
     parserStream.on('data', (row: any) => {
       processedRows++;
-      if (onProgress && processedRows % 5000 === 0) {
+      if (onProgress && processedRows % 100 === 0) {
         onProgress(processedRows);
       }
 
@@ -208,12 +208,20 @@ export async function runCatalogAnalysis(jobId: number) {
     let duplicateCount = 0;
 
     if (ext === '.csv') {
-      const csvPreview = await readCsvPreview(job.file_path, 50);
+      const csvPreview = await readCsvPreview(job.file_path, 100);
       headers = csvPreview.headers;
       previewData = csvPreview.rows;
 
       // Compute actual counts using preScanCsv
-      const scanResult = await preScanCsv(job.file_path);
+      const scanResult = await preScanCsv(job.file_path, (rowIdx) => {
+        db.run('UPDATE catalog_jobs SET total_count = ? WHERE id = ?', [rowIdx, jobId]);
+        eventService.broadcast('catalog_job_progress', {
+          id: jobId,
+          progress: 0,
+          total_count: rowIdx,
+          status: 'processing_analysis'
+        });
+      });
       totalCount = scanResult.totalCount;
       newCount = scanResult.newCount;
       existingCount = scanResult.existingCount;
@@ -226,7 +234,7 @@ export async function runCatalogAnalysis(jobId: number) {
         const sheetData = XLSX_import.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
         if (sheetData.length > 0) {
           headers = sheetData[0].map((h: any, idx: number) => h ? String(h).trim() : `Column_${idx + 1}`);
-          previewData = sheetData.slice(1, 51).map((row: any[]) => {
+          previewData = sheetData.slice(1, 101).map((row: any[]) => {
             const rowObj: Record<string, any> = {};
             headers.forEach((header, idx) => {
               rowObj[header] = row[idx] !== undefined ? row[idx] : '';
@@ -238,7 +246,7 @@ export async function runCatalogAnalysis(jobId: number) {
       }
     } else if (ext === '.pdf') {
       const extracted = await extractFromPdf(job.file_path);
-      previewData = extracted.slice(0, 50).map(item => ({
+      previewData = extracted.slice(0, 100).map(item => ({
         'Product Name': item.name,
         'Composition': item.api_reference || '',
         'Strength': item.strength || '',
@@ -391,10 +399,10 @@ export async function runCatalogImport(jobId: number) {
 
     const batchSize = 1000;
     let batch: any[] = [];
-    let processedCount = 0;
-    let newCount = 0;
-    let existingCount = 0;
-    let duplicateCount = 0;
+    let processedCount = job.processed_count || 0;
+    let newCount = job.new_count || 0;
+    let existingCount = job.existing_count || 0;
+    let duplicateCount = job.duplicate_count || 0;
     const addedNames = new Set<string>();
 
     const insertBatch = async (items: any[]) => {
@@ -506,6 +514,10 @@ export async function runCatalogImport(jobId: number) {
       return res;
     };
 
+
+
+
+
     if (ext === '.csv') {
       const readStream = fs.createReadStream(job.file_path);
       const csvStream = readStream.pipe(csvParser());
@@ -513,35 +525,78 @@ export async function runCatalogImport(jobId: number) {
         csvStream.destroy(new Error(`Failed to read stream for import: ${err.message}`));
       });
 
+      let currentLine = 0;
       for await (const row of csvStream) {
+        currentLine++;
+        if (currentLine <= processedCount) {
+          continue;
+        }
+
         const parsed = processRowObject(row);
         if (parsed) {
           batch.push(parsed);
-          processedCount++;
+        }
+        processedCount = currentLine;
+
+        if (processedCount % 100 === 0) {
+          const currentJob = await db.get('SELECT status FROM catalog_jobs WHERE id = ?', jobId);
+          if (currentJob && currentJob.status === 'paused') {
+            if (batch.length > 0) {
+              await insertBatch(batch);
+              batch = [];
+            }
+            const progress = Math.min(99, Math.round((processedCount / totalToProcess) * 100));
+            await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ?, processed_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, processedCount, jobId]);
+            eventService.broadcast('catalog_job_progress', { id: jobId, progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
+            eventService.broadcast('catalog_job_update', { id: jobId, status: 'paused', progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
+            readStream.destroy();
+            return;
+          }
         }
 
         if (batch.length >= batchSize) {
           await insertBatch(batch);
           batch = [];
           const progress = Math.min(99, Math.round((processedCount / totalToProcess) * 100));
-          await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, jobId]);
+          await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ?, processed_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, processedCount, jobId]);
           eventService.broadcast('catalog_job_progress', { id: jobId, progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
         }
       }
     } else {
       // PDF and Excel rows in memory
+      let currentLine = 0;
       for (const row of rows) {
+        currentLine++;
+        if (currentLine <= processedCount) {
+          continue;
+        }
+
         const parsed = processRowObject(row);
         if (parsed) {
           batch.push(parsed);
-          processedCount++;
+        }
+        processedCount = currentLine;
+
+        if (processedCount % 100 === 0) {
+          const currentJob = await db.get('SELECT status FROM catalog_jobs WHERE id = ?', jobId);
+          if (currentJob && currentJob.status === 'paused') {
+            if (batch.length > 0) {
+              await insertBatch(batch);
+              batch = [];
+            }
+            const progress = Math.min(99, Math.round((processedCount / totalToProcess) * 100));
+            await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ?, processed_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, processedCount, jobId]);
+            eventService.broadcast('catalog_job_progress', { id: jobId, progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
+            eventService.broadcast('catalog_job_update', { id: jobId, status: 'paused', progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
+            return;
+          }
         }
 
         if (batch.length >= batchSize) {
           await insertBatch(batch);
           batch = [];
           const progress = Math.min(99, Math.round((processedCount / totalToProcess) * 100));
-          await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, jobId]);
+          await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ?, processed_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, processedCount, jobId]);
           eventService.broadcast('catalog_job_progress', { id: jobId, progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
         }
       }
@@ -551,7 +606,7 @@ export async function runCatalogImport(jobId: number) {
       await insertBatch(batch);
     }
 
-    await db.run("UPDATE catalog_jobs SET status = 'done', progress = 100, new_count = ?, existing_count = ?, duplicate_count = ? WHERE id = ?", [newCount, existingCount, duplicateCount, jobId]);
+    await db.run("UPDATE catalog_jobs SET status = 'done', progress = 100, new_count = ?, existing_count = ?, duplicate_count = ?, processed_count = ? WHERE id = ?", [newCount, existingCount, duplicateCount, processedCount, jobId]);
     eventService.broadcast('catalog_job_update', { id: jobId, status: 'done', progress: 100, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
   } catch (err: any) {
     console.error('Batch import failed', err);

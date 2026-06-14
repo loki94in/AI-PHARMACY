@@ -1,8 +1,51 @@
 import express from 'express';
 import { eventService } from '../services/eventService.js';
 import { dbManager } from '../database/connection.js';
+import QRCode from 'qrcode';
+import os from 'os';
 
 const router = express.Router();
+
+// Get server connection info (IPs, Port, pre-generated QR code) for mobile app setup
+router.get('/notifications/connection-info', async (req, res) => {
+  try {
+    const interfaces = os.networkInterfaces();
+    const ips: string[] = [];
+    for (const interfaceName of Object.keys(interfaces)) {
+      const addresses = interfaces[interfaceName];
+      if (addresses) {
+        for (const addr of addresses) {
+          if (addr.family === 'IPv4' && !addr.internal) {
+            ips.push(addr.address);
+          }
+        }
+      }
+    }
+
+    const port = process.env.PORT || 3000;
+    const serverUrls = ips.map(ip => `http://${ip}:${port}`);
+
+    // If no external IPs found, fall back to localhost
+    if (serverUrls.length === 0) {
+      serverUrls.push(`http://localhost:${port}`);
+    }
+
+    const qrData = JSON.stringify({ serverUrls });
+    // Generate QR code data URL (base64 image)
+    const qrCodeUrl = await QRCode.toDataURL(qrData, { width: 250, margin: 1 });
+
+    res.json({
+      success: true,
+      ips,
+      port,
+      serverUrls,
+      qrCodeUrl
+    });
+  } catch (err: any) {
+    console.error('Failed to generate connection info:', err);
+    res.status(500).json({ error: 'Failed to generate connection info: ' + err.message });
+  }
+});
 
 // Real-time notifications SSE Stream
 router.get('/notifications/stream', (req, res) => {
@@ -34,13 +77,38 @@ router.post('/notifications/register-token', async (req, res) => {
   try {
     const db = await dbManager.getConnection();
     await db.run(
-      'INSERT OR REPLACE INTO push_tokens (token, device_name, os) VALUES (?, ?, ?)',
+      'INSERT OR REPLACE INTO push_tokens (token, device_name, os, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
       [token, deviceName || 'Unknown', os || 'Unknown']
     );
     res.json({ success: true, message: 'Push token registered successfully' });
   } catch (err: any) {
     console.error('Failed to register push token:', err);
     res.status(500).json({ error: 'Failed to register token: ' + err.message });
+  }
+});
+
+// Get all registered devices and check if they are currently online
+router.get('/notifications/devices', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(`
+      SELECT 
+        token, 
+        device_name, 
+        os, 
+        created_at,
+        last_seen,
+        CASE 
+          WHEN last_seen IS NOT NULL AND (strftime('%s', 'now') - strftime('%s', last_seen) < 90) THEN 1 
+          ELSE 0 
+        END as is_online
+      FROM push_tokens
+      ORDER BY last_seen DESC
+    `);
+    res.json({ success: true, devices: rows });
+  } catch (err: any) {
+    console.error('Failed to get registered devices:', err);
+    res.status(500).json({ error: 'Failed to get devices: ' + err.message });
   }
 });
 

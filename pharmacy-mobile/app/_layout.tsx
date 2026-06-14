@@ -1,11 +1,11 @@
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Platform, Animated, TouchableOpacity } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../lib/secureStore';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import 'react-native-reanimated';
@@ -57,6 +57,11 @@ export default function RootLayout() {
   const [toast, setToast] = useState<{ title: string; body: string } | null>(null);
   const slideAnim = useRef(new Animated.Value(-350)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Refs for tracking registered device information for periodic server pings
+  const deviceTokenRef = useRef<string | null>(null);
+  const deviceNameRef = useRef<string>('Device');
+  const deviceOsRef = useRef<string>(Platform.OS);
 
   const showToast = (title: string, body: string) => {
     setToast({ title, body });
@@ -137,10 +142,19 @@ export default function RootLayout() {
           setSyncingOffline(false);
         }
       }
+
+      // If online and we have a token, send a registration ping to keep active status
+      if (online && deviceTokenRef.current) {
+        try {
+          await registerPushToken(deviceTokenRef.current, deviceNameRef.current, deviceOsRef.current);
+        } catch (pingErr) {
+          console.warn('Background status ping failed:', pingErr);
+        }
+      }
     };
 
     checkConnectionAndSync();
-    intervalId = setInterval(checkConnectionAndSync, 15000);
+    intervalId = setInterval(checkConnectionAndSync, 20000);
 
     return () => clearInterval(intervalId);
   }, [syncingOffline]);
@@ -179,9 +193,12 @@ export default function RootLayout() {
           projectId: Constants.expoConfig?.extra?.eas?.projectId,
         });
         const token = tokenData.data;
-        const deviceName = Constants.deviceName || 
-                           (Platform.OS === 'ios' ? 'iPhone' : Platform.OS === 'android' ? 'Android' : 'Device');
+        const deviceName = Constants.deviceName || (Platform.OS === 'ios' ? 'iPhone' : Platform.OS === 'android' ? 'Android' : 'Device');
         const os = Platform.OS;
+
+        deviceTokenRef.current = token;
+        deviceNameRef.current = deviceName;
+        deviceOsRef.current = os;
 
         await registerPushToken(token, deviceName, os);
         console.log('Push notification token registered successfully:', token);

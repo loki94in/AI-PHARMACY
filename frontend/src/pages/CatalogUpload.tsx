@@ -6,7 +6,7 @@ interface CatalogJob {
   id: number;
   file_path: string;
   original_filename: string | null;
-  status: 'pending' | 'processing' | 'ready_for_review' | 'done' | 'failed' | 'waiting_for_mapping';
+  status: 'pending' | 'processing' | 'ready_for_review' | 'done' | 'failed' | 'waiting_for_mapping' | 'paused' | 'pending_analysis' | 'processing_analysis';
   created_at: string;
   total_count?: number;
   existing_count?: number;
@@ -134,6 +134,9 @@ const CatalogUpload = () => {
             // Update active job progress if it matches
             if (payload.id === jobIdRef.current) {
               setProgress(payload.progress);
+              if (payload.status) {
+                setJobStatus(payload.status);
+              }
               if (payload.total_count !== undefined) {
                 setStats(prev => ({
                   total: payload.total_count,
@@ -149,6 +152,7 @@ const CatalogUpload = () => {
                 job.id === payload.id 
                   ? { 
                       ...job, 
+                      status: payload.status || job.status,
                       progress: payload.progress,
                       total_count: payload.total_count !== undefined ? payload.total_count : job.total_count,
                       new_count: payload.new_count !== undefined ? payload.new_count : job.new_count,
@@ -330,6 +334,35 @@ const CatalogUpload = () => {
     }
   };
 
+  const handlePauseJob = async (id: number) => {
+    try {
+      await api.pauseCatalogJob(id);
+      setSuccess(`Catalogue Ingestion Job #${id} paused.`);
+      if (jobId === id) {
+        setJobStatus('paused');
+      }
+      fetchJobs();
+    } catch (err: any) {
+      console.error('Pause failed:', err);
+      setError(err.response?.data?.error || err.message || 'Failed to pause ingestion');
+    }
+  };
+
+  const handleResumeJob = async (id: number) => {
+    try {
+      await api.resumeCatalogJob(id);
+      setSuccess(`Catalogue Ingestion Job #${id} resumed.`);
+      if (jobId === id) {
+        setImporting(true);
+        setJobStatus('processing');
+      }
+      fetchJobs();
+    } catch (err: any) {
+      console.error('Resume failed:', err);
+      setError(err.response?.data?.error || err.message || 'Failed to resume ingestion');
+    }
+  };
+
   // Load a job from history for review
   const reviewJobFromHistory = async (job: CatalogJob) => {
     setError(null);
@@ -452,6 +485,11 @@ const CatalogUpload = () => {
                     {jobStatus === 'processing' && 'Pre-scanning and compiling statistics...'}
                     {!jobStatus && 'Uploading database...'}
                   </h4>
+                  {stats.total > 0 && jobStatus === 'processing_analysis' && (
+                    <p className="text-xs text-primary mb-2 font-semibold animate-pulse">
+                      Scanned {stats.total.toLocaleString()} rows so far...
+                    </p>
+                  )}
                   <p className="text-gray-400 text-sm mb-4">
                     The background worker is parsing your file. You can safely navigate away and continue working; you will be notified when mapping is ready.
                   </p>
@@ -464,9 +502,13 @@ const CatalogUpload = () => {
               {/* Importing Ingestion Phase */}
               {importing && (
                 <div className="flex-1 flex flex-col items-center justify-center text-center max-w-md mx-auto">
-                  <RefreshCw size={48} className="animate-spin text-green mb-4" />
+                  {jobStatus === 'paused' ? (
+                    <Loader2 size={48} className="text-amber-500 mb-4" />
+                  ) : (
+                    <RefreshCw size={48} className="animate-spin text-green mb-4" />
+                  )}
                   <h4 className="text-lg font-semibold text-white mb-2">
-                    Ingesting catalogue: {progress}% Complete
+                    {jobStatus === 'paused' ? `Ingestion Paused: ${progress}%` : `Ingesting catalogue: ${progress}% Complete`}
                   </h4>
                   {stats.total > 0 && (
                     <p className="text-xs text-gray-400 mb-2 font-semibold">
@@ -480,7 +522,7 @@ const CatalogUpload = () => {
                   {/* Progress Bar */}
                   <div className="w-full bg-white/5 rounded-full h-4 relative overflow-hidden border border-glass-border">
                     <div 
-                      className="bg-green h-full rounded-full transition-all duration-500 ease-out" 
+                      className={`h-full rounded-full transition-all duration-500 ease-out ${jobStatus === 'paused' ? 'bg-amber-500' : 'bg-green'}`} 
                       style={{ width: `${progress}%` }}
                     />
                     <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
@@ -504,6 +546,24 @@ const CatalogUpload = () => {
                       </div>
                     </div>
                   )}
+
+                  <div className="flex gap-4 mt-6">
+                    {jobStatus === 'processing' || jobStatus === 'pending' ? (
+                      <button
+                        onClick={() => handlePauseJob(jobId!)}
+                        className="bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold px-6 py-2.5 rounded-xl shadow-lg transition-all"
+                      >
+                        Pause Ingestion
+                      </button>
+                    ) : jobStatus === 'paused' ? (
+                      <button
+                        onClick={() => handleResumeJob(jobId!)}
+                        className="bg-green hover:bg-green/90 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-lg transition-all flex items-center gap-1.5"
+                      >
+                        <Play size={13} /> Resume Ingestion
+                      </button>
+                    ) : null}
+                  </div>
 
                   <p className="text-[10px] text-gray-500 mt-4">
                     You can safely close this screen or continue recording sales/bills while import runs in the background.
@@ -565,7 +625,7 @@ const CatalogUpload = () => {
 
                   {/* Dynamic Preview Header */}
                   <h5 className="font-bold text-xs text-gray-400 mb-2 uppercase tracking-wider">
-                    Catalogue Preview (First 50 lines)
+                    Catalogue Preview (First 100 lines)
                   </h5>
 
                   {/* Preview Table */}
@@ -650,20 +710,28 @@ const CatalogUpload = () => {
                           </td>
                           <td className="p-3">
                             <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <div className="w-16 bg-white/5 h-1.5 rounded-full overflow-hidden border border-glass-border">
-                                  <div 
-                                    className="bg-primary h-full rounded-full" 
-                                    style={{ width: `${job.progress || 0}%` }}
-                                  />
-                                </div>
-                                <span className="text-[9px] font-bold text-gray-400">{job.progress || 0}%</span>
-                              </div>
-                              {job.total_count ? (
-                                <span className="text-[9px] text-gray-500 font-medium">
-                                  {((job.new_count || 0) + (job.existing_count || 0) + (job.duplicate_count || 0)).toLocaleString()} / {job.total_count.toLocaleString()} rows
+                              {job.status === 'processing_analysis' ? (
+                                <span className="text-[9px] text-primary font-medium animate-pulse">
+                                  Analyzing: {job.total_count?.toLocaleString() || 0} rows scanned
                                 </span>
-                              ) : null}
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-16 bg-white/5 h-1.5 rounded-full overflow-hidden border border-glass-border">
+                                      <div 
+                                        className={`h-full rounded-full ${job.status === 'paused' ? 'bg-amber-500' : 'bg-primary'}`} 
+                                        style={{ width: `${job.progress || 0}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[9px] font-bold text-gray-400">{job.progress || 0}%</span>
+                                  </div>
+                                  {job.total_count ? (
+                                    <span className="text-[9px] text-gray-500 font-medium">
+                                      {((job.new_count || 0) + (job.existing_count || 0) + (job.duplicate_count || 0)).toLocaleString()} / {job.total_count.toLocaleString()} rows
+                                    </span>
+                                  ) : null}
+                                </>
+                              )}
                             </div>
                           </td>
                           <td className="p-3">
@@ -673,12 +741,29 @@ const CatalogUpload = () => {
                               job.status === 'ready_for_review' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
                               job.status === 'pending' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
                               job.status === 'waiting_for_mapping' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                              job.status === 'paused' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                               'bg-red-500/10 text-red-400 border-red-500/20'
                             }`}>
                               {job.status.replace(/_/g, ' ')}
                             </span>
                           </td>
                           <td className="p-3 text-right">
+                            {(job.status === 'processing' || job.status === 'pending') && (
+                              <button
+                                onClick={() => handlePauseJob(job.id)}
+                                className="text-xs bg-amber-500 hover:bg-amber-600 text-black px-3 py-1 rounded-lg font-bold transition-all mr-2"
+                              >
+                                Pause
+                              </button>
+                            )}
+                            {job.status === 'paused' && (
+                              <button
+                                onClick={() => handleResumeJob(job.id)}
+                                className="text-xs bg-green hover:bg-green/90 text-white px-3 py-1 rounded-lg font-bold transition-all mr-2 flex inline-flex items-center gap-1"
+                              >
+                                <Play size={10} /> Resume
+                              </button>
+                            )}
                             {job.status === 'waiting_for_mapping' && (
                               <button
                                 onClick={async () => {
@@ -806,9 +891,9 @@ const CatalogUpload = () => {
                 </div>
               </div>
 
-              {/* Right Column: Sample Data Preview (First 10 Rows) */}
+              {/* Right Column: Sample Data Preview (First 100 Rows) */}
               <div className="w-full lg:w-[52%] xl:w-[50%] p-4 md:p-5 flex flex-col overflow-hidden">
-                <h5 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Sample Data Grid (First 10 Rows)</h5>
+                <h5 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Sample Data Grid (First 100 Rows)</h5>
                 
                 <div className="flex-1 overflow-auto border border-glass-border rounded-xl bg-black/40">
                   <table className="min-w-full divide-y divide-glass-border text-xs text-left">

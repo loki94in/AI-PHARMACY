@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
-import { PackageOpen, Search, CheckCircle, RotateCcw, AlertCircle, History } from 'lucide-react';
+import { CheckCircle, RotateCcw, AlertCircle, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface SaleItem {
@@ -102,14 +102,7 @@ export default function CustomerReturn() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-bold text-text mb-2 flex items-center gap-2">
-            <PackageOpen className="w-6 h-6 text-sky" />
-            Customer Sales Return
-          </h1>
-          <p className="text-muted text-sm">Process returns from customers and restore inventory stock automatically.</p>
-        </div>
+      <div className="flex justify-end">
         <button
           onClick={() => navigate('/customer-returns-history')}
           className="btn-secondary flex items-center gap-2"
@@ -124,10 +117,9 @@ export default function CustomerReturn() {
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted uppercase tracking-wider mb-2">Original Invoice Number</label>
             <div className="relative">
-              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 type="text"
-                className="premium-input w-full pl-10"
+                className="premium-input w-full"
                 placeholder="e.g. S-2026-0001"
                 value={invoiceNo}
                 onChange={e => setInvoiceNo(e.target.value)}

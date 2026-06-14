@@ -664,5 +664,23 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-06-14T00:16:46.185Z"
+  },
+  {
+    "id": "audit_1781413285750",
+    "imagePath": "data\\audit_images\\audit_1781413285750.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-14T05:01:25.813Z"
+  },
+  {
+    "id": "audit_1781424669610",
+    "imagePath": "data\\audit_images\\audit_1781424669610.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-14T08:11:09.725Z"
   }
 ]

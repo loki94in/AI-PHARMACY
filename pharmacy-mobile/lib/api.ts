@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './secureStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SERVER_KEY = 'pharmacy_server_url';

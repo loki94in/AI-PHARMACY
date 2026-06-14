@@ -6,7 +6,7 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "concurrently \"tsc -w\" \"node --watch dist/src/server.js\"",
+    "dev:server": "tsx watch src/server.ts",
     "dev:client": "npm run dev --prefix frontend",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --forceExit",
     "enqueue-catalog": "tsx ./src/cli/enqueueCatalog.ts",

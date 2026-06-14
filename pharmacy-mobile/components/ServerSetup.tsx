@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, shadows } from '../lib/theme';
 import { testConnection, setServerUrl } from '../lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 interface ServerSetupProps {
   onConnected: () => void;
@@ -14,6 +15,9 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
   const [port, setPort] = useState('3000');
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanned, setScanned] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
 
   const handleConnect = async () => {
     const url = `http://${ip.trim()}:${port.trim()}`;
@@ -29,6 +33,108 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
     }
     setTesting(false);
   };
+
+  const handleBarcodeScanned = async ({ data }: { data: string }) => {
+    setScanned(true);
+    setTesting(true);
+    setError('');
+
+    try {
+      let targetUrl = '';
+      
+      // Try parsing the scanned code as JSON containing serverUrls
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed && Array.isArray(parsed.serverUrls)) {
+          // Loop over URLs and test connection
+          for (const url of parsed.serverUrls) {
+            const ok = await testConnection(url);
+            if (ok) {
+              targetUrl = url;
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        // Scanned raw string/URL instead of JSON
+        targetUrl = data.trim();
+      }
+
+      if (targetUrl) {
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+          targetUrl = `http://${targetUrl}`;
+        }
+        
+        const ok = await testConnection(targetUrl);
+        if (ok) {
+          await setServerUrl(targetUrl);
+          onConnected();
+          setTesting(false);
+          setShowScanner(false);
+          return;
+        }
+      }
+
+      setError('Cannot connect to scanned server. Check connection.');
+    } catch (err) {
+      setError('Invalid QR code format.');
+    } finally {
+      setTesting(false);
+      setScanned(false);
+    }
+  };
+
+  if (showScanner) {
+    if (!permission) {
+      return (
+        <View style={styles.scannerCenter}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      );
+    }
+    if (!permission.granted) {
+      return (
+        <View style={styles.scannerCenter}>
+          <Ionicons name="camera-outline" size={64} color={colors.textMuted} />
+          <Text style={[typography.body, { marginTop: spacing.md, textAlign: 'center' }]}>
+            Camera access is required to scan the connection QR code.
+          </Text>
+          <TouchableOpacity onPress={requestPermission} style={{ marginTop: spacing.lg }}>
+            <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.permBtn}>
+              <Text style={styles.permBtnText}>Grant Permission</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowScanner(false)} style={{ marginTop: spacing.md }}>
+            <Text style={{ color: colors.textMuted, fontSize: 15 }}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={StyleSheet.absoluteFill}>
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+        >
+          <View style={styles.scannerOverlay}>
+            <View style={styles.scannerFrame} />
+            <Text style={styles.scannerHint}>Align QR Code within the frame</Text>
+            
+            <TouchableOpacity 
+              onPress={() => setShowScanner(false)} 
+              style={styles.scannerCloseBtn}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -77,6 +183,20 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
                 <Text style={styles.buttonText}>Connect</Text>
               </>
             )}
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <Text style={styles.orText}>OR</Text>
+
+        <TouchableOpacity onPress={() => setShowScanner(true)} activeOpacity={0.8}>
+          <LinearGradient
+            colors={[colors.accentDark, colors.accent]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.scanButton}
+          >
+            <Ionicons name="qr-code-outline" size={20} color="#fff" />
+            <Text style={styles.buttonText}>Scan Connection QR</Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>
@@ -135,4 +255,72 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  orText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginVertical: spacing.md,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+  scanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.md,
+    minWidth: 200,
+  },
+  scannerCenter: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  permBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.md,
+  },
+  permBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  scannerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerFrame: {
+    width: 250,
+    height: 250,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    backgroundColor: 'transparent',
+  },
+  scannerHint: {
+    ...typography.bodySmall,
+    color: '#fff',
+    marginTop: spacing.lg,
+    textShadowColor: '#000',
+    textShadowRadius: 4,
+  },
+  scannerCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
 });

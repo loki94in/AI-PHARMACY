@@ -357,6 +357,8 @@ export const api = {
   getCatalogJobStatus: (id: number) => apiClient.get(`/catalog/job/${id}`).then(res => res.data),
   importCatalog: (medicines: any[]) => apiClient.post('/catalog/import', { medicines }).then(res => res.data),
   importCatalogJob: (id: number, mappings?: any, filters?: any) => apiClient.post(`/catalog/import-job/${id}`, { mappings, filters }).then(res => res.data),
+  pauseCatalogJob: (id: number) => apiClient.post(`/catalog/job/${id}/pause`).then(res => res.data),
+  resumeCatalogJob: (id: number) => apiClient.post(`/catalog/job/${id}/resume`).then(res => res.data),
   
   // Reconciliation
   getReconciliationList: () => apiClient.get('/purchases/reconciliation').then(res => res.data),
@@ -370,4 +372,5 @@ export const api = {
   getStagedPurchases: () => apiClient.get('/purchases/staged').then(res => res.data),
   approveStagedPurchase: (id: number, data: any) => apiClient.post(`/purchases/staged/${id}/approve`, data).then(res => res.data),
   rejectStagedPurchase: (id: number) => apiClient.post(`/purchases/staged/${id}/reject`).then(res => res.data),
+  getConnectionInfo: () => apiClient.get('/notifications/connection-info').then(res => res.data),
 };
