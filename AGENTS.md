@@ -200,7 +200,9 @@ node scripts/quick-update.mjs
 To maximize response efficiency and prevent main context bloat, agents **SHOULD** delegate tasks to subagents:
 1. **Research & Code Scanning**: Delegate extensive file reading, codebase-wide grep searches, or external documentation lookups to the `research` subagent.
 2. **Parallelizable/Isolated Tasks**: Use `self` or `research` subagents for independent tasks (e.g., verifying test cases, analyzing a specific component's security model) while keeping the main conversation focused on user interaction.
-3. **Task Hand-off**: When starting a subagent, provide a clear, actionable prompt and wait for the system to notify you when it completes. Do not poll or loop in the meantime.
+3. **Small Task Delegation**: Use subagents to run small, self-contained scripts, check compiler warnings, run specific formatting commands, or perform minor cleanups to offload processing from the main agent.
+4. **Multiple Agents for Development**: For complex, multi-component development (e.g., modifying both frontend page and backend API at the same time), spawn multiple subagents in parallel to focus on separate subsystems, then synthesize and integrate their output in the main agent.
+5. **Task Hand-off**: When starting a subagent, provide a clear, actionable prompt and wait for the system to notify you when it completes. Do not poll or loop in the meantime.
 
 ---
 
