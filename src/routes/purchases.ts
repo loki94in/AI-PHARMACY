@@ -578,7 +578,8 @@ router.get('/', async (req, res) => {
     }
     
     const purchases = await db.all(`
-      SELECT p.id, p.invoice_no, p.date, p.total_amount, d.name as distributor_name 
+      SELECT p.id, p.invoice_no, p.date, p.total_amount, d.name as distributor_name,
+             COALESCE((SELECT SUM(quantity) FROM purchase_items WHERE purchase_id = p.id), 0) as total_qty
       FROM purchases p 
       LEFT JOIN distributors d ON p.distributor_id = d.id 
       ${dateFilter}
@@ -679,6 +680,7 @@ router.post('/manual', async (req, res) => {
     const purchaseId = purchRes.lastID;
 
     // 3. Process items
+    const uniqueMedicineIds = new Set<number>();
     for (const item of items) {
       const { medicine, medicine_id, original_name, batch_no, expiry_date, qty, free_qty, rate, mrp, discPer, discRs, additional_discount, cgst, sgst } = item;
       
@@ -714,6 +716,8 @@ router.post('/manual', async (req, res) => {
       if (!medId) {
         continue;
       }
+
+      uniqueMedicineIds.add(medId);
 
       const baseAmt = rawQty * rawRate;
       const rawAddDisc = parseFloat(additional_discount) || 0;
@@ -753,6 +757,16 @@ router.post('/manual', async (req, res) => {
     }
 
     await db.run('COMMIT');
+
+    // Trigger refills and special orders after transaction commits successfully
+    const { inventoryService } = await import('../services/inventoryService.js');
+    for (const medId of uniqueMedicineIds) {
+      try {
+        await inventoryService.checkAndTriggerRefillsForMedicine(medId);
+      } catch (err) {
+        console.error(`Failed to trigger refills/special orders for medicine ID ${medId} in manual purchase:`, err);
+      }
+    }
     
     if (distId && source_filename && mapping_config) {
       try {

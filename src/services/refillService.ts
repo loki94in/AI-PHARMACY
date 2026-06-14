@@ -78,3 +78,38 @@ export async function triggerPendingRefillsForMedicine(db: Database, medicineId:
     }
   }
 }
+
+export async function triggerPendingSpecialOrdersForMedicineName(db: Database, medicineName: string): Promise<void> {
+  if (!medicineName) return;
+  const pendingOrders = await db.all(
+    `SELECT * FROM special_orders WHERE LOWER(product) = LOWER(?) AND (status = 'Pending' OR status = 'Ordered')`,
+    [medicineName.trim()]
+  );
+
+  for (const order of pendingOrders) {
+    await db.run("UPDATE special_orders SET status = 'Ready', notified = 1 WHERE id = ?", [order.id]);
+
+    if (order.phone) {
+      try {
+        const cleanPhone = order.phone.replace(/\D/g, '');
+        const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+        
+        let medicalName = 'XYZ MEDICAL';
+        const nameRow = await db.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
+        if (nameRow && nameRow.value) {
+          medicalName = nameRow.value;
+        }
+
+        const msg = `Hi ${order.requester || 'Customer'}, your special order for ${order.product} (Qty: ${order.qty}) is now READY for collection at ${medicalName}. Please visit us to collect it.`;
+        await sendMessage(formattedPhone, undefined, msg);
+      } catch (wsError: any) {
+        console.error(`Failed to send special order arrival WhatsApp to ${order.requester}:`, wsError);
+        await db.run(
+          "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
+          ['AUTOMATION_ALERT', `❌ WhatsApp Alert Failure: Failed to send special order ready notification to ${order.requester} (${order.phone}). Error: ${wsError.message || 'Unknown error'}`]
+        );
+      }
+    }
+  }
+}
+

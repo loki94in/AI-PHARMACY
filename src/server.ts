@@ -193,7 +193,6 @@ ensureSchema(DB_PATH).then(() => {
       .then(async (db) => {
         await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
         const row = await db.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
-        await dbManager.close();
 
         if (row && row.value === 'true') {
           console.log('Background automation is ENABLED in settings. Initializing background services...');
@@ -201,7 +200,6 @@ ensureSchema(DB_PATH).then(() => {
           // 1. WhatsApp Pre-initialization
           const waRow = await dbManager.getConnection().then(async (innerDb) => {
             const r = await innerDb.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
-            await dbManager.close();
             return r;
           });
           if (waRow && waRow.value === 'true') {
@@ -237,7 +235,6 @@ ensureSchema(DB_PATH).then(() => {
             } else {
               console.log(`Daily check has already been run today (${todayStr}). Skipping startup catch-up.`);
             }
-            await dbManager.close();
           }).catch(err => console.error('Failed to run startup catch-up daily check database connection:', err));
 
           // 5. Daily check at 9:00 AM for patient refills & overdue credit notes
@@ -251,7 +248,6 @@ ensureSchema(DB_PATH).then(() => {
               const d = new Date();
               const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
               await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
-              await dbManager.close();
             } catch (err) {
               console.error('Failed running daily check cron:', err);
             }

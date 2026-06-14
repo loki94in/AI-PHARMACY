@@ -2441,11 +2441,15 @@ export class EmailService {
       if (importData) {
         // Add/update to database inventory
         const db = await dbManager.getConnection();
+        const uniqueMedicineIds = new Set<number>();
         for (const item of items) {
           let med = await db.get('SELECT id FROM medicines WHERE name LIKE ? LIMIT 1', [`%${item.name}%`]);
           if (!med) {
             const medResult = await db.run('INSERT INTO medicines (name) VALUES (?)', [item.name]);
             med = { id: medResult.lastID };
+          }
+          if (med && med.id) {
+            uniqueMedicineIds.add(med.id);
           }
           const existingInv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? LIMIT 1', [med.id]);
           if (existingInv) {
@@ -2473,7 +2477,17 @@ export class EmailService {
           'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
           ['EMAIL_ATTACHMENT_PROCESSED', `Manually parsed attachment: ${filename}, imported ${items.length} items.`]
         );
-              }
+
+        // Trigger refills and special orders
+        const { inventoryService } = await import('./inventoryService.js');
+        for (const medId of uniqueMedicineIds) {
+          try {
+            await inventoryService.checkAndTriggerRefillsForMedicine(medId);
+          } catch (err) {
+            console.error(`Failed to trigger refills/special orders in email service for medicine ID ${medId}:`, err);
+          }
+        }
+      }
 
       return {
         success: true,

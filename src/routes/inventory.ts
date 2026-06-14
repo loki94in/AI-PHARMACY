@@ -22,7 +22,12 @@ router.get('/', async (req, res) => {
     // If limit is 0, fetch all (warning: can cause frontend lag)
     if (limit === 0) {
       const rows = await db.all(`
-        SELECT im.*, m.name as medicine_name, m.item_code as item_code
+        SELECT im.*, 
+               m.name as name, 
+               m.name as medicine_name, 
+               im.batch_no as batch_number, 
+               im.quantity as stock_quantity, 
+               m.item_code as item_code
         FROM inventory_master im
         LEFT JOIN medicines m ON im.medicine_id = m.id
         ORDER BY m.name ASC, im.id DESC
@@ -38,7 +43,12 @@ router.get('/', async (req, res) => {
     const totalPages = Math.ceil(totalItems / limit);
 
     const rows = await db.all(`
-      SELECT im.*, m.name as medicine_name, m.item_code as item_code
+      SELECT im.*, 
+             m.name as name, 
+             m.name as medicine_name, 
+             im.batch_no as batch_number, 
+             im.quantity as stock_quantity, 
+             m.item_code as item_code
       FROM inventory_master im
       LEFT JOIN medicines m ON im.medicine_id = m.id
       ORDER BY m.name ASC, im.id DESC
@@ -136,6 +146,8 @@ router.put('/:id', async (req, res) => {
   let db;
   const { id } = req.params;
   const { quantity, rack_location, batch_no, expiry_date, reorder_level, name, mrp, loose_quantity } = req.body;
+  const qtyVal = quantity !== undefined ? quantity : req.body.stock_quantity;
+  const batchNoVal = batch_no !== undefined ? batch_no : req.body.batch_number;
   try {
     if (!id) {
       return res.status(400).json({ error: 'id is required' });
@@ -147,7 +159,7 @@ router.put('/:id', async (req, res) => {
       `UPDATE inventory_master 
        SET quantity = ?, rack_location = ?, batch_no = ?, expiry_date = ?, reorder_level = ?, mrp = ?, loose_quantity = ? 
        WHERE id = ?`,
-      [quantity, rack_location, batch_no, expiry_date, reorder_level, mrp, loose_quantity, id]
+      [qtyVal, rack_location, batchNoVal, expiry_date, reorder_level, mrp, loose_quantity, id]
     );
 
     // 2. Fetch the medicine_id associated with this inventory record

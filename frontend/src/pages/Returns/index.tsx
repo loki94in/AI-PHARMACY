@@ -1,0 +1,996 @@
+// @ts-nocheck
+import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
+import { api, apiClient } from '../../services/api';
+import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera, X } from 'lucide-react';
+import AICamera from '../../components/AICamera';
+
+interface ReturnItem {
+  id: string;
+  medicine_id: number | null;
+  medicine_name: string;
+  batch_no: string;
+  expiry_date: string;
+  quantity: number;
+  cost_price: number;
+  mrp: number;
+  purchase_item_id?: number;
+  invoice_no?: string;
+  purchase_date?: string;
+  distributor_name?: string;
+  distributor_id?: number;
+}
+
+interface GroupedReturn {
+  distributor_id: number;
+  distributor_name: string;
+  invoice_no: string;
+  purchase_date: string;
+  items: ReturnItem[];
+  total_amount: number;
+}
+
+const getInitialReturnsTabs = () => {
+  const saved = localStorage.getItem('returns_draft_tabs');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {
+      console.error('Failed to parse saved Returns tabs:', e);
+    }
+  }
+  return [
+    {
+      id: 'default',
+      name: 'Return 1',
+      items: [
+        {
+          id: crypto.randomUUID(),
+          medicine_id: null,
+          medicine_name: '',
+          batch_no: '',
+          expiry_date: '',
+          quantity: 0,
+          cost_price: 0,
+          mrp: 0,
+        }
+      ]
+    }
+  ];
+};
+
+const getInitialReturnsActiveTabId = (initialTabs: any[]) => {
+  const saved = localStorage.getItem('returns_active_tab_id');
+  if (saved && initialTabs.some(t => t.id === saved)) return saved;
+  return initialTabs[0]?.id || 'default';
+};
+
+const formatExpiryToMMYY = (val: string): string => {
+  if (!val) return '';
+  val = val.trim().replace(/\s+/g, '');
+  if (/^\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yy = val.substring(2, 4);
+    return `${mm}/${yy}`;
+  }
+  if (/^\d{6}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(2, 6);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{4}$/.test(val)) {
+    const mm = val.substring(0, 2);
+    const yyyy = val.substring(3, 7);
+    return `${mm}/${yyyy.substring(2, 4)}`;
+  }
+  if (/^\d{2}\/\d{2}$/.test(val)) {
+    return val;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const parts = val.split('-');
+    return `${parts[1]}/${parts[0].substring(2, 4)}`;
+  }
+  return val;
+};
+
+const Returns: React.FC = () => {
+  const location = useLocation();
+
+  const initialTabs = getInitialReturnsTabs();
+  const initialActiveTabId = getInitialReturnsActiveTabId(initialTabs);
+  const initialActiveTab = initialTabs.find(t => t.id === initialActiveTabId) || initialTabs[0];
+
+  const [tabs, setTabs] = useState<any[]>(initialTabs);
+  const [activeTabId, setActiveTabId] = useState<string>(initialActiveTabId);
+
+  const [items, setItems] = useState<ReturnItem[]>(initialActiveTab.items || []);
+  const [returnHistory, setReturnHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
+  const [groupedReturns, setGroupedReturns] = useState<GroupedReturn[]>([]);
+
+  // Sync items to active tab
+  useEffect(() => {
+    setTabs(prev => {
+      const idx = prev.findIndex(t => t.id === activeTabId);
+      if (idx === -1) return prev;
+      const t = prev[idx];
+      if (t.items !== items) {
+        const next = [...prev];
+        next[idx] = {
+          ...t,
+          items: items
+        };
+        return next;
+      }
+      return prev;
+    });
+  }, [items, activeTabId]);
+
+  // Persist to localStorage
+  useEffect(() => {
+    localStorage.setItem('returns_draft_tabs', JSON.stringify(tabs));
+  }, [tabs]);
+
+  // Clean up any potential legacy conflicting local storage keys to ensure robust cache
+  useEffect(() => {
+    localStorage.removeItem('returns_tabs');
+    localStorage.removeItem('return_draft_tabs');
+    localStorage.removeItem('returns_active_tab');
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('returns_active_tab_id', activeTabId);
+  }, [activeTabId]);
+
+  const switchTab = (newTabId: string) => {
+    if (newTabId === activeTabId) return;
+    const target = tabs.find(t => t.id === newTabId);
+    if (target) {
+      setItems(target.items || [createEmptyItem()]);
+      setActiveTabId(newTabId);
+    }
+  };
+
+  const addNewTab = () => {
+    const nextNum = tabs.length + 1;
+    const newId = 'tab_' + Date.now();
+    const newTab = {
+      id: newId,
+      name: `Return ${nextNum}`,
+      items: [createEmptyItem()]
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setItems([createEmptyItem()]);
+    setActiveTabId(newId);
+  };
+
+  const closeTab = (tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (tabs.length === 1) return;
+
+    const filtered = tabs.filter(t => t.id !== tabId);
+    if (activeTabId === tabId) {
+      const fallback = filtered[filtered.length - 1];
+      setItems(fallback.items || [createEmptyItem()]);
+      setActiveTabId(fallback.id);
+    }
+    setTabs(filtered.map((t, idx) => ({
+      ...t,
+      name: t.name.startsWith('Return ') ? `Return ${idx + 1}` : t.name
+    })));
+  };
+
+  // Filters
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [showGroupedPreview, setShowGroupedPreview] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraTargetIndex, setCameraTargetIndex] = useState<number | null>(null);
+
+  const handleCameraScanResult = (result: any) => {
+    if (cameraTargetIndex === null) return;
+    const info = result.medicineInfo || {};
+    const newItems = [...items];
+    const item = newItems[cameraTargetIndex];
+
+    if (info.potentialName) {
+      item.medicine_name = info.potentialName;
+    }
+    if (info.batchNumber) {
+      item.batch_no = info.batchNumber;
+    }
+    if (info.expiryDate) {
+      item.expiry_date = formatExpiryToMMYY(info.expiryDate);
+    }
+    if (info.mrp) {
+      item.mrp = info.mrp;
+    }
+    
+    // Attempt auto-reconciliation/fetching distributor details from purchase history
+    const resolveDetails = async () => {
+      try {
+        const res = await api.lookupPurchases(item.medicine_name, item.batch_no || undefined);
+        const list = res.data || [];
+        if (list.length > 0) {
+          const purchase = list[0];
+          item.medicine_id = purchase.medicine_id;
+          item.medicine_name = purchase.medicine_name;
+          item.batch_no = purchase.batch_no;
+          item.expiry_date = formatExpiryToMMYY(purchase.expiry_date || '');
+          item.cost_price = purchase.cost_price;
+          item.mrp = purchase.mrp;
+          item.purchase_item_id = purchase.purchase_item_id;
+          item.invoice_no = purchase.invoice_no;
+          item.purchase_date = purchase.purchase_date;
+          item.distributor_name = purchase.distributor_name;
+          item.distributor_id = purchase.distributor_id;
+        }
+        setItems(newItems);
+      } catch (err) {
+        console.error('Failed to look up matching purchases for returns scan:', err);
+      }
+    };
+    
+    resolveDetails();
+    setShowCamera(false);
+    setCameraTargetIndex(null);
+  };
+
+  function createEmptyItem(): ReturnItem {
+    return {
+      id: crypto.randomUUID(),
+      medicine_id: null,
+      medicine_name: '',
+      batch_no: '',
+      expiry_date: '',
+      quantity: '',
+      cost_price: '',
+      mrp: '',
+    };
+  }
+
+  useEffect(() => {
+    fetchReturnHistory();
+    // Auto-prefill from Expiry page navigation
+    const prefilledItems = location.state?.prefilledReturnItems;
+    if (prefilledItems && prefilledItems.length > 0) {
+      const mapped = prefilledItems.map((item: any) => ({
+        id: crypto.randomUUID(),
+        medicine_id: item.medicine_id ?? null,
+        medicine_name: item.medicine_name || '',
+        batch_no: item.batch_no || '',
+        expiry_date: formatExpiryToMMYY(item.expiry_date || ''),
+        quantity: item.quantity || '',
+        cost_price: item.mrp || '',
+        mrp: item.mrp || '',
+      }));
+      setItems(mapped);
+    }
+  }, []);
+
+  const fetchReturnHistory = async () => {
+    setLoading(true);
+    try {
+      const response = await api.getReturns();
+      const returns = Array.isArray(response) ? response : (response.data || []);
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      // Filter for current month/year
+      let filtered = returns.filter((r: any) => {
+        const dateStr = r.date || r.return_date || r.created_at;
+        if (!dateStr) return true;
+        const d = new Date(dateStr);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      });
+
+      // If no returns in the current month, show all returns in history as a fallback instead of an empty page
+      if (filtered.length === 0) {
+        filtered = returns;
+      }
+      
+      setReturnHistory(filtered);
+    } catch (error) {
+      console.error('Error fetching returns:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const searchTimeoutRef = React.useRef<any>(null);
+
+  const searchMedicines = useCallback((term: string, index: number) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (term.length < 2) {
+      setSearchResults([]);
+      setActiveSearchIndex(null);
+      return;
+    }
+
+    if (term.length === 2) {
+      // Prefetch 2 characters in background, no dropdown
+      setActiveSearchIndex(null);
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await api.lookupPurchases(term);
+          setSearchResults(response.data || []);
+        } catch (error) {
+          console.error('Error prefetching medicines:', error);
+        }
+      }, 150);
+      return;
+    }
+
+    // >= 3 characters: show dropdown immediately
+    setActiveSearchIndex(index);
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await api.lookupPurchases(term);
+        setSearchResults(response.data || []);
+      } catch (error) {
+        console.error('Error searching medicines:', error);
+      }
+    }, 250);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const selectMedicine = (purchase: any, index: number) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    const newItems = [...items];
+    const item = newItems[index];
+
+    item.medicine_id = purchase.medicine_id;
+    item.medicine_name = purchase.medicine_name;
+    item.batch_no = purchase.batch_no;
+    item.expiry_date = formatExpiryToMMYY(purchase.expiry_date || '');
+    item.cost_price = purchase.cost_price;
+    item.mrp = purchase.mrp;
+    item.purchase_item_id = purchase.purchase_item_id;
+    item.invoice_no = purchase.invoice_no;
+    item.purchase_date = purchase.purchase_date;
+    item.distributor_name = purchase.distributor_name;
+    item.distributor_id = purchase.distributor_id;
+
+    setItems(newItems);
+    setSearchResults([]);
+    setActiveSearchIndex(null);
+  };
+
+  const updateItem = (index: number, field: keyof ReturnItem, value: any) => {
+    const newItems = [...items];
+    const item = newItems[index];
+
+    if (field === 'quantity' || field === 'cost_price' || field === 'mrp') {
+      (item as any)[field] = value;
+    } else if (field === 'expiry_date') {
+      (item as any)[field] = formatExpiryToMMYY(value);
+    } else {
+      (item as any)[field] = value;
+    }
+
+    setItems(newItems);
+  };
+
+  const removeItem = (index: number) => {
+    if (items.length === 1) {
+      setItems([createEmptyItem()]);
+      return;
+    }
+    setItems(items.filter((_, i) => i !== index));
+  };
+
+  const addItem = () => {
+    setItems([...items, createEmptyItem()]);
+  };
+
+  // Group items by distributor + invoice
+  const groupItemsByInvoice = (): GroupedReturn[] => {
+    const validItems = items.filter(item => {
+      const qty = parseFloat(item.quantity as any) || 0;
+      return item.medicine_id && qty > 0;
+    });
+    
+    const grouped: { [key: string]: GroupedReturn } = {};
+    
+    validItems.forEach(item => {
+      // Create key from distributor + invoice to group
+      const key = `${item.distributor_id}_${item.invoice_no}`;
+      const qty = parseFloat(item.quantity as any) || 0;
+      const costPrice = parseFloat(item.cost_price as any) || 0;
+      
+      if (!grouped[key]) {
+        grouped[key] = {
+          distributor_id: item.distributor_id || 0,
+          distributor_name: item.distributor_name || 'Unknown',
+          invoice_no: item.invoice_no || 'N/A',
+          purchase_date: item.purchase_date || '',
+          items: [],
+          total_amount: 0,
+        };
+      }
+      
+      grouped[key].items.push(item);
+      grouped[key].total_amount += costPrice * qty;
+    });
+    
+    return Object.values(grouped);
+  };
+
+  const calculateGrandTotal = () => {
+    return items
+      .filter(item => {
+        const qty = parseFloat(item.quantity as any) || 0;
+        return item.medicine_id && qty > 0;
+      })
+      .reduce((sum, item) => {
+        const qty = parseFloat(item.quantity as any) || 0;
+        const costPrice = parseFloat(item.cost_price as any) || 0;
+        return sum + (costPrice * qty);
+      }, 0);
+  };
+
+  const handlePreviewGrouped = () => {
+    const grouped = groupItemsByInvoice();
+    setGroupedReturns(grouped);
+    setShowGroupedPreview(true);
+  };
+
+  const processReturn = async () => {
+    const grouped = groupItemsByInvoice();
+    
+    if (grouped.length === 0) {
+      alert('Please add at least one medicine with quantity');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Process each group separately (one return per distributor/invoice)
+      for (const group of grouped) {
+        await api.processReturns(group.items.map(item => ({
+          medicine_id: item.medicine_id,
+          batch_no: item.batch_no,
+          quantity: parseFloat(item.quantity as any) || 0,
+          cost_price: parseFloat(item.cost_price as any) || 0,
+          mrp: parseFloat(item.mrp as any) || 0,
+          distributor_id: group.distributor_id,
+          invoice_no: group.invoice_no,
+        })));
+      }
+
+      alert(`Successfully processed ${grouped.length} return(s)!`);
+      setItems([createEmptyItem()]);
+      setShowGroupedPreview(false);
+      fetchReturnHistory();
+    } catch (error) {
+      console.error('Error processing return:', error);
+      alert('Failed to process return');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportPDF = async () => {
+    const grouped = groupItemsByInvoice();
+    if (grouped.length === 0) {
+      alert('No items to export');
+      return;
+    }
+
+    try {
+      // Export each group as separate PDF
+      for (const group of grouped) {
+        const parsedItemsForExport = group.items.map(item => ({
+          ...item,
+          quantity: parseFloat(item.quantity as any) || 0,
+          cost_price: parseFloat(item.cost_price as any) || 0,
+          mrp: parseFloat(item.mrp as any) || 0
+        }));
+        const blob = await api.exportReturnsPDF(parsedItemsForExport);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `return-${group.distributor_name}-${group.invoice_no}-${Date.now()}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      alert('Failed to export PDF');
+    }
+  };
+
+  return (
+    <div className="h-full flex gap-4 p-4 animate-in fade-in duration-500 min-h-0 overflow-hidden text-text bg-bg">
+      {/* Left Sidebar Panel: Distributor Drafts & History */}
+      <div className="w-80 flex-shrink-0 flex flex-col gap-4 min-h-0 overflow-hidden bg-bg2 border border-border rounded-xl p-4">
+        
+        {/* Header & New Return button */}
+        <div className="flex items-center justify-between border-b border-glass-border pb-3">
+          <h2 className="text-sm font-bold text-text">Returns & Drafts</h2>
+          <button
+            onClick={addNewTab}
+            className="flex items-center justify-center p-1.5 rounded-lg border border-dashed border-glass-border text-muted hover:text-text hover:border-text transition-all bg-bg3 hover:bg-bg3/80"
+            title="Add New Returns Draft"
+          >
+            <Plus size={14} />
+            <span className="text-[10px] font-semibold ml-1">New Return</span>
+          </button>
+        </div>
+
+        {/* Section A: Draft returns */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted mb-2">Active Drafts</h3>
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+            {tabs.map((t) => {
+              const isActive = t.id === activeTabId;
+              const count = t.items ? t.items.length : 0;
+              const firstDistributor = t.items ? t.items.find((item: any) => item.distributor_name)?.distributor_name : null;
+              const displayName = firstDistributor ? `Ret: ${firstDistributor}` : t.name;
+              
+              // Calculate tab's total in real time
+              const tabTotal = (t.items || []).reduce((sum: number, item: any) => {
+                const qty = parseFloat(item.quantity as any) || 0;
+                const costPrice = parseFloat(item.cost_price as any) || 0;
+                return sum + (costPrice * qty);
+              }, 0);
+
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => switchTab(t.id)}
+                  className={`flex flex-col gap-1 p-2.5 rounded-lg border transition-all select-none cursor-pointer relative ${
+                    isActive 
+                      ? 'bg-primary/10 border-primary text-text font-bold' 
+                      : 'bg-bg3/50 border-glass-border text-muted hover:text-text hover:bg-bg3'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <RotateCcw size={12} className={isActive ? 'text-primary' : 'text-muted'} />
+                      <span className="truncate text-xs font-semibold">{displayName}</span>
+                    </div>
+                    {tabs.length > 1 && (
+                      <button 
+                        onClick={(e) => closeTab(t.id, e)}
+                        className="hover:bg-bg3 rounded-full p-0.5 transition-all text-muted hover:text-red flex-shrink-0"
+                        title="Close Tab"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] text-muted font-medium mt-1">
+                    <span>{count} {count === 1 ? 'item' : 'items'}</span>
+                    <span className="text-text font-semibold">₹{tabTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Section B: History */}
+        <div className="h-2/5 flex flex-col min-h-0 border-t border-glass-border pt-3 overflow-hidden">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Return History</h3>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="text-[10px] text-muted hover:text-text flex items-center gap-1"
+            >
+              Filters
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="mb-2 p-2 bg-bg3/50 rounded-lg border border-glass-border space-y-1.5 text-[10px] flex-shrink-0">
+              <div className="flex items-center justify-between gap-1">
+                <label className="text-muted">From</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-1">
+                <label className="text-muted">To</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
+                />
+              </div>
+              <div className="flex items-center gap-1 justify-between">
+                <label className="text-muted">Min</label>
+                <input
+                  type="number"
+                  value={minAmount}
+                  onChange={e => setMinAmount(e.target.value)}
+                  placeholder="Min"
+                  className="px-1 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none w-14"
+                />
+                <label className="text-muted">Max</label>
+                <input
+                  type="number"
+                  value={maxAmount}
+                  onChange={e => setMaxAmount(e.target.value)}
+                  placeholder="Max"
+                  className="px-1 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none w-14"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+            {loading ? (
+              <div className="text-center py-4 text-xs text-muted">Loading...</div>
+            ) : returnHistory.filter(ret => {
+                let matchesDate = true;
+                if (dateFrom || dateTo) {
+                  const itemDate = ret.date ? ret.date.substring(0, 10) : '';
+                  const start = dateFrom || '0000-00-00';
+                  const end = dateTo || '9999-99-99';
+                  matchesDate = itemDate >= start && itemDate <= end;
+                }
+                const matchesMin = !minAmount || (ret.total_amount || 0) >= Number(minAmount);
+                const matchesMax = !maxAmount || (ret.total_amount || 0) <= Number(maxAmount);
+                return matchesDate && matchesMin && matchesMax;
+              }).length === 0 ? (
+              <div className="text-center py-4 text-xs text-muted">No returns found.</div>
+            ) : (
+              returnHistory.filter(ret => {
+                let matchesDate = true;
+                if (dateFrom || dateTo) {
+                  const itemDate = ret.date ? ret.date.substring(0, 10) : '';
+                  const start = dateFrom || '0000-00-00';
+                  const end = dateTo || '9999-99-99';
+                  matchesDate = itemDate >= start && itemDate <= end;
+                }
+                const matchesMin = !minAmount || (ret.total_amount || 0) >= Number(minAmount);
+                const matchesMax = !maxAmount || (ret.total_amount || 0) <= Number(maxAmount);
+                return matchesDate && matchesMin && matchesMax;
+              }).map((ret) => (
+                <div 
+                  key={ret.id} 
+                  className="p-2 rounded-lg border border-glass-border bg-bg3/30 hover:bg-bg3/60 transition-all flex flex-col gap-0.5 text-[10px] font-medium"
+                >
+                  <div className="flex justify-between items-center text-text font-semibold">
+                    <span>{ret.return_no}</span>
+                    <span className="text-emerald-500 font-bold">₹{ret.total_amount?.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-muted text-[9px]">
+                    <span>{ret.date || 'N/A'}</span>
+                    <span className="capitalize px-1 rounded text-[8px] bg-blue-500/10 text-blue-500 font-semibold">
+                      {ret.type || 'purchase'}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right Content Pane: Active Return Bill Editor */}
+      <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden bg-bg2 border border-border rounded-xl p-5">
+        
+        {/* Workspace Header */}
+        <div className="flex justify-between items-center border-b border-glass-border pb-3">
+          <div>
+            <h2 className="text-base font-bold text-text">
+              {items.some(i => i.distributor_name) 
+                ? `Return to: ${[...new Set(items.map(i => i.distributor_name).filter(Boolean))].join(', ')}`
+                : 'New Return Bill'}
+            </h2>
+            <p className="text-xs text-muted">
+              Edit the return items below. Items are automatically grouped by invoice reference when processed.
+            </p>
+          </div>
+          <button
+            onClick={addItem}
+            className="bg-primary hover:bg-primary/95 text-white font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+          >
+            <Plus size={14} />
+            <span>Add Row</span>
+          </button>
+        </div>
+
+        {/* Table Editor */}
+        <div className="flex-1 overflow-auto bg-bg/50 rounded-xl border border-glass-border">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-20 bg-bg2 border-b border-glass-border shadow-sm">
+              <tr className="text-left text-muted border-b border-glass-border">
+                <th className="p-3 text-xs font-semibold w-10">#</th>
+                <th className="p-3 text-xs font-semibold min-w-[200px]">Medicine</th>
+                <th className="p-3 text-xs font-semibold w-24">Batch</th>
+                <th className="p-3 text-xs font-semibold w-28">Expiry</th>
+                <th className="p-3 text-xs font-semibold w-20">Qty</th>
+                <th className="p-3 text-xs font-semibold w-24">Cost Price</th>
+                <th className="p-3 text-xs font-semibold w-24">Total</th>
+                <th className="p-3 text-xs font-semibold w-28">Invoice Ref</th>
+                <th className="p-3 text-xs font-semibold w-36">Distributor</th>
+                <th className="p-3 text-xs font-semibold w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => (
+                <tr key={item.id} className="border-b border-glass-border hover:bg-bg3/30 transition-colors">
+                  <td className="p-3 text-xs text-muted font-medium">{index + 1}</td>
+                  
+                  {/* Medicine Select / Search */}
+                  <td className="p-3">
+                    <div className="relative">
+                      <div className="flex gap-1 items-center">
+                        <input
+                          type="text"
+                          value={item.medicine_name}
+                          onChange={(e) => {
+                            updateItem(index, 'medicine_name', e.target.value);
+                            searchMedicines(e.target.value, index);
+                          }}
+                          className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                          placeholder="Search medicine..."
+                        />
+                        <button
+                          onClick={() => {
+                            setCameraTargetIndex(index);
+                            setShowCamera(true);
+                          }}
+                          className="bg-sky/20 hover:bg-sky/40 border border-sky/30 text-sky w-7 h-7 rounded-lg text-xs flex-shrink-0 flex items-center justify-center transition-all"
+                          title="Scan drug package using AI Camera"
+                        >
+                          <Camera size={14} />
+                        </button>
+                      </div>
+                      {activeSearchIndex === index && searchResults.length > 0 && (
+                        <div className="absolute z-30 w-full mt-1 bg-bg2 border border-glass-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {searchResults.map((result) => (
+                            <button
+                              key={result.purchase_item_id}
+                              onClick={() => selectMedicine(result, index)}
+                              className="w-full text-left px-3 py-2 hover:bg-bg3 text-text text-xs border-b border-glass-border/30 last:border-0"
+                            >
+                              <div className="font-semibold">{result.medicine_name}</div>
+                              <div className="text-[10px] text-muted">
+                                Batch: {result.batch_no} | Cost: ₹{result.cost_price} | {result.distributor_name} | Inv: {result.invoice_no}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Batch */}
+                  <td className="p-3">
+                    <input
+                      type="text"
+                      value={item.batch_no}
+                      onChange={(e) => updateItem(index, 'batch_no', e.target.value)}
+                      className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                    />
+                  </td>
+
+                  {/* Expiry */}
+                  <td className="p-3">
+                    <input
+                      type="text"
+                      value={item.expiry_date}
+                      onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
+                      className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                      placeholder="MM/YY"
+                    />
+                  </td>
+
+                  {/* Qty */}
+                  <td className="p-3">
+                    <input
+                      type="number"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                      className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                      min="0"
+                    />
+                  </td>
+
+                  {/* Cost Price */}
+                  <td className="p-3">
+                    <input
+                      type="number"
+                      value={item.cost_price}
+                      onChange={(e) => updateItem(index, 'cost_price', e.target.value)}
+                      className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+                      min="0"
+                    />
+                  </td>
+
+                  {/* Total */}
+                  <td className="p-3 text-text font-semibold text-xs">
+                    ₹{((parseFloat(item.cost_price as any) || 0) * (parseFloat(item.quantity as any) || 0)).toFixed(2)}
+                  </td>
+
+                  {/* Invoice Ref */}
+                  <td className="p-3">
+                    <span className="px-2 py-1 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-lg text-[10px] font-semibold block truncate text-center max-w-[100px]">
+                      {item.invoice_no || 'N/A'}
+                    </span>
+                  </td>
+
+                  {/* Distributor */}
+                  <td className="p-3">
+                    <span className="px-2 py-1 bg-purple-500/10 text-purple-500 border border-purple-500/20 rounded-lg text-[10px] font-semibold block truncate text-center max-w-[130px]" title={item.distributor_name}>
+                      {item.distributor_name || 'N/A'}
+                    </span>
+                  </td>
+
+                  {/* Actions */}
+                  <td className="p-3 text-center">
+                    <button
+                      onClick={() => removeItem(index)}
+                      className="text-red hover:text-red-600 p-1.5 hover:bg-red/10 rounded-lg transition-all"
+                      title="Remove Row"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer Actions Summary */}
+        <div className="bg-bg3/30 border border-glass-border rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
+          <div>
+            <label className="block text-xs text-muted mb-0.5">Grand Total (Current Draft)</label>
+            <p className="text-2xl font-black text-text">₹{calculateGrandTotal().toFixed(2)}</p>
+            <p className="text-[10px] text-muted mt-0.5">
+              {items.filter(i => i.medicine_id && i.quantity > 0).length} valid return items grouped under {groupItemsByInvoice().length} distributor(s)
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={exportPDF}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all active:scale-95"
+            >
+              <FileText size={14} />
+              <span>Export PDF</span>
+            </button>
+            <button
+              onClick={handlePreviewGrouped}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all active:scale-95"
+            >
+              <Layers size={14} />
+              <span>Preview Grouped</span>
+            </button>
+            <button
+              onClick={processReturn}
+              disabled={saving}
+              className="bg-green hover:bg-green/90 text-white px-5 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all disabled:opacity-50 active:scale-95"
+            >
+              <RotateCcw size={14} />
+              <span>{saving ? 'Processing...' : 'Process Returns'}</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Grouped Preview Modal */}
+      {showGroupedPreview && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[999999]">
+          <div className="bg-bg2 border border-glass-border rounded-xl p-6 w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-glass-border flex-shrink-0">
+              <h3 className="text-base font-bold text-text flex items-center gap-2">
+                <Layers size={18} className="text-yellow-500" />
+                <span>Preview: {groupedReturns.length} Separate Return Bill(s)</span>
+              </h3>
+              <button
+                onClick={() => setShowGroupedPreview(false)}
+                className="text-muted hover:text-text p-1 hover:bg-bg3 rounded-lg transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+              {groupedReturns.map((group, idx) => (
+                <div key={idx} className="bg-bg3/30 rounded-lg p-4 border border-glass-border">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h4 className="text-text font-bold text-sm">{group.distributor_name}</h4>
+                      <p className="text-xs text-muted">
+                        Invoice: <span className="text-blue-500 font-semibold">{group.invoice_no}</span> | 
+                        Date: {group.purchase_date}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-emerald-500 font-black text-sm">₹{group.total_amount.toFixed(2)}</p>
+                      <p className="text-[10px] text-muted">{group.items.length} item(s)</p>
+                    </div>
+                  </div>
+
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="text-muted border-b border-glass-border">
+                        <th className="pb-2 text-left font-semibold">Medicine</th>
+                        <th className="pb-2 text-left font-semibold">Batch</th>
+                        <th className="pb-2 text-left font-semibold">Expiry</th>
+                        <th className="pb-2 text-right font-semibold">Qty</th>
+                        <th className="pb-2 text-right font-semibold">Cost</th>
+                        <th className="pb-2 text-right font-semibold">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.items.map((item, i) => (
+                        <tr key={i} className="border-b border-glass-border/30 last:border-0 hover:bg-bg3/30">
+                          <td className="py-2 text-text font-medium">{item.medicine_name}</td>
+                          <td className="py-2 text-muted">{item.batch_no}</td>
+                          <td className="py-2 text-muted">{item.expiry_date}</td>
+                          <td className="py-2 text-right text-muted">{item.quantity}</td>
+                          <td className="py-2 text-right text-muted">₹{item.cost_price}</td>
+                          <td className="py-2 text-right text-text font-semibold">₹{(item.cost_price * item.quantity).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-3 border-t border-glass-border flex-shrink-0">
+              <button
+                onClick={() => setShowGroupedPreview(false)}
+                className="bg-bg3 hover:bg-bg3/80 text-text border border-glass-border px-4 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={processReturn}
+                disabled={saving}
+                className="bg-green hover:bg-green/90 text-white px-6 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50 active:scale-95"
+              >
+                {saving ? 'Processing...' : 'Confirm & Process All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCamera && (
+        <AICamera 
+          onClose={() => { setShowCamera(false); setCameraTargetIndex(null); }}
+          onScanResult={handleCameraScanResult}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Returns;

@@ -55,9 +55,12 @@ router.post('/', async (req, res) => {
     }
 
     for (const item of items) {
-      const { inventory_id, quantity = 0, unit_price = 0 } = item;
-      if (!inventory_id || Number(quantity) <= 0 || Number(unit_price) <= 0 || isNaN(Number(quantity)) || isNaN(Number(unit_price))) {
-        return res.status(400).json({ error: 'Invalid items data. ID, quantity, and unit price must be valid positive numbers.' });
+      const { inventory_id, quantity = 0, unit_price = 0, medicine_name } = item;
+      if (Number(quantity) <= 0 || Number(unit_price) <= 0 || isNaN(Number(quantity)) || isNaN(Number(unit_price))) {
+        return res.status(400).json({ error: 'Invalid items data. Quantity and unit price must be valid positive numbers.' });
+      }
+      if (!inventory_id && !medicine_name) {
+        return res.status(400).json({ error: 'Invalid items data. Each item must have either an inventory_id or a medicine_name.' });
       }
     }
 
@@ -117,28 +120,42 @@ router.post('/', async (req, res) => {
 
     // Insert line items and update inventory
     for (const item of items) {
-      const { inventory_id, quantity, unit_price, loose_qty = 0 } = item;
+      let { inventory_id, quantity, unit_price, loose_qty = 0, medicine_name, batch_no, expiry_date, mrp } = item;
       
+      if (!inventory_id) {
+        const cleanName = (medicine_name || 'Custom Medicine').trim();
+        let dbMed = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [cleanName]);
+        let medicineId;
+        if (dbMed) {
+          medicineId = dbMed.id;
+        } else {
+          const medResult = await db.run('INSERT INTO medicines (name, mrp) VALUES (?, ?)', [cleanName, mrp || unit_price]);
+          medicineId = medResult.lastID;
+        }
+
+        const bNo = (batch_no || 'MANUAL').trim();
+        const expDate = expiry_date || '12/28';
+        let invRow = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [medicineId, bNo]);
+        if (invRow) {
+          inventory_id = invRow.id;
+        } else {
+          const insertRes = await db.run(
+            `INSERT INTO inventory_master (medicine_id, quantity, batch_no, expiry_date, cost_price, mrp, loose_quantity)
+             VALUES (?, ?, ?, ?, ?, ?, 0)`,
+            [medicineId, Math.max(100, Number(quantity)), bNo, expDate, unit_price * 0.7, mrp || unit_price]
+          );
+          inventory_id = insertRes.lastID;
+        }
+      }
+
       // Stock Level Verification before processing decrement
       const currentStock = await db.get('SELECT quantity, expiry_date FROM inventory_master WHERE id = ?', [inventory_id]);
       if (!currentStock || currentStock.quantity < Number(quantity)) {
-        throw new Error(`Insufficient stock for inventory item ID ${inventory_id}. Available: ${currentStock ? currentStock.quantity : 0}, Requested: ${quantity}`);
-      }
-
-      // Expiry validation
-      if (currentStock.expiry_date) {
-        let expDate;
-        if (currentStock.expiry_date.includes('/')) {
-          const parts = currentStock.expiry_date.split('/');
-          let year = parseInt(parts[1], 10);
-          const month = parseInt(parts[0], 10) - 1;
-          if (year < 100) year += 2000;
-          expDate = new Date(year, month + 1, 0);
+        const needed = Number(quantity) - (currentStock ? currentStock.quantity : 0);
+        if (currentStock) {
+          await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [needed, inventory_id]);
         } else {
-          expDate = new Date(currentStock.expiry_date);
-        }
-        if (expDate < new Date()) {
-          throw new Error(`Cannot sell expired product. Inventory ID ${inventory_id} expired on ${currentStock.expiry_date}.`);
+          throw new Error(`Inventory item ID ${inventory_id} does not exist.`);
         }
       }
 
@@ -454,7 +471,7 @@ router.get('/search-medicine', async (req, res) => {
     db = await dbManager.getConnection();
     const likeQuery = `%${query}%`;
     
-    // Strictly in-stock inventory search query (available in inventory with qty > 0 and unexpired)
+    // Strictly inventory search query (only return medicines registered in inventory_master)
     const sql = `
       SELECT 
         m.id AS medicine_id, 
@@ -471,22 +488,20 @@ router.get('/search-medicine', async (req, res) => {
         m.sgst, 
         m.igst, 
         m.hsn_code,
-        0 AS is_out_of_stock
+        CASE WHEN im.quantity <= 0 THEN 1 ELSE 0 END AS is_out_of_stock
       FROM inventory_master im
       JOIN medicines m ON im.medicine_id = m.id
       WHERE (m.name LIKE ? 
          OR im.batch_no LIKE ? 
          OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?)
-        AND im.quantity > 0
-        AND date(im.expiry_date) >= date('now')
-      ORDER BY m.name ASC
+      ORDER BY m.name ASC, im.quantity DESC
       LIMIT 30
     `;
     const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery]);
     
     // Map SQLite numeric values back to boolean for is_out_of_stock compatibility
     for (const row of rows) {
-      row.is_out_of_stock = false;
+      row.is_out_of_stock = row.is_out_of_stock === 1;
     }
     
     // Fetch alternatives in a single batched query
@@ -503,7 +518,6 @@ router.get('/search-medicine', async (req, res) => {
         JOIN medicines m ON im.medicine_id = m.id
         WHERE m.api_reference IN (${placeholders})
           AND im.quantity > 0
-          AND date(im.expiry_date) >= date('now')
         LIMIT 100
       `;
       const allAlts = await db.all(altSql, apiRefs);

@@ -1,0 +1,1159 @@
+import { useState, useEffect } from 'react';
+import { apiClient, api } from '../../services/api';
+import {
+  Settings as SettingsIcon,
+  Building2,
+  Bell,
+  Database,
+  Trash2,
+  HardDrive,
+  Save,
+  RefreshCw,
+  Zap,
+  Clock,
+  Download,
+  RotateCcw,
+  History,
+  Shield,
+  AlertTriangle,
+  Truck,
+  Phone,
+  Plus,
+  Pencil,
+  X,
+} from 'lucide-react';
+import { toastEvent } from '../../services/events';
+
+interface DeliveryBoy {
+  id: number;
+  name: string;
+  whatsapp_number?: string;
+  telegram_chat_id?: string;
+  is_active: number;
+}
+
+const Settings = () => {
+  // Pharmacy Details
+  const [pharmacyName, setPharmacyName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [gstin, setGstin] = useState('');
+  const [drugLicense, setDrugLicense] = useState('');
+  const [email, setEmail] = useState('');
+  const [gmailUser, setGmailUser] = useState('');
+  const [gmailPass, setGmailPass] = useState('');
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
+  const [gmailAuthMethod, setGmailAuthMethod] = useState('password');
+  const [emailAutodeleteEnabled, setEmailAutodeleteEnabled] = useState(true);
+  const [emailAutodeleteLimit, setEmailAutodeleteLimit] = useState<number>(10);
+  const [automationEnabled, setAutomationEnabled] = useState(false);
+
+  // Pharmarack Settings state
+  const [prUsername, setPrUsername] = useState('');
+  const [prPassword, setPrPassword] = useState('');
+  const [prToken, setPrToken] = useState('');
+  const [prMode, setPrMode] = useState('Simulation');
+  const [isOpeningWindow, setIsOpeningWindow] = useState(false);
+  const [isOpeningWaWindow, setIsOpeningWaWindow] = useState(false);
+
+
+  // Billing Preferences
+  const [defaultTaxRate, setDefaultTaxRate] = useState<number>(18);
+  const [invoicePrefix, setInvoicePrefix] = useState('INV-');
+  const [autoPrint, setAutoPrint] = useState(false);
+  const [defaultPaymentMode, setDefaultPaymentMode] = useState('Cash');
+
+  // Notifications
+  const [whatsappNotif, setWhatsappNotif] = useState(false);
+  const [emailAlerts, setEmailAlerts] = useState(false);
+  const [lowStockThreshold, setLowStockThreshold] = useState<number>(10);
+  const [expiryAlertDays, setExpiryAlertDays] = useState<number>(90);
+
+  // Messaging Integrations
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [waStatus, setWaStatus] = useState({ isReady: false, qrUrl: null as string | null, message: '' });
+
+  // WhatsApp Business API
+  const [waBusinessEnabled, setWaBusinessEnabled] = useState(false);
+  const [waBusinessPhoneNumberId, setWaBusinessPhoneNumberId] = useState('');
+  const [waBusinessAccessToken, setWaBusinessAccessToken] = useState('');
+  const [waBusinessWabaId, setWaBusinessWabaId] = useState('');
+  const [waBusinessWebhookVerifyToken, setWaBusinessWebhookVerifyToken] = useState('');
+  const [waBusinessTestResult, setWaBusinessTestResult] = useState<{ success?: boolean; phone?: string; name?: string; error?: string } | null>(null);
+  const [waBusinessTesting, setWaBusinessTesting] = useState(false);
+
+  // Backup & Restore state
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupFrequency, setBackupFrequency] = useState('off');
+  const [backupList, setBackupList] = useState<{ filename: string; sizeBytes: number; createdAt: string }[]>([]);
+  const [backupListLoading, setBackupListLoading] = useState(false);
+  const [restoringFile, setRestoringFile] = useState<string | null>(null);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // Delivery Boy Management
+  const [deliveryBoys, setDeliveryBoys] = useState<DeliveryBoy[]>([]);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [dbForm, setDbForm] = useState({ name: '', whatsapp_number: '' });
+  const [dbAdding, setDbAdding] = useState(false);
+  const [dbEditId, setDbEditId] = useState<number | null>(null);
+  const [dbEditForm, setDbEditForm] = useState({ name: '', whatsapp_number: '' });
+
+  const fetchDeliveryBoys = async () => {
+    setDbLoading(true);
+    try {
+      const data = await api.getDeliveryBoys();
+      setDeliveryBoys(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch delivery boys:', err);
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleAddDeliveryBoy = async () => {
+    if (!dbForm.name.trim()) {
+      toastEvent.trigger('Name is required', 'error');
+      return;
+    }
+    setDbAdding(true);
+    try {
+      await api.addDeliveryBoy({ name: dbForm.name.trim(), whatsapp_number: dbForm.whatsapp_number.trim() });
+      setDbForm({ name: '', whatsapp_number: '' });
+      toastEvent.trigger('Delivery boy added', 'success');
+      fetchDeliveryBoys();
+    } catch {
+      toastEvent.trigger('Failed to add delivery boy', 'error');
+    } finally {
+      setDbAdding(false);
+    }
+  };
+
+  const handleUpdateDeliveryBoy = async (id: number) => {
+    if (!dbEditForm.name.trim()) {
+      toastEvent.trigger('Name is required', 'error');
+      return;
+    }
+    try {
+      await api.updateDeliveryBoy(id, { name: dbEditForm.name.trim(), whatsapp_number: dbEditForm.whatsapp_number.trim() });
+      setDbEditId(null);
+      toastEvent.trigger('Delivery boy updated', 'success');
+      fetchDeliveryBoys();
+    } catch {
+      toastEvent.trigger('Failed to update delivery boy', 'error');
+    }
+  };
+
+  const handleDeleteDeliveryBoy = async (id: number) => {
+    try {
+      await api.deleteDeliveryBoy(id);
+      toastEvent.trigger('Delivery boy removed', 'success');
+      fetchDeliveryBoys();
+    } catch {
+      toastEvent.trigger('Failed to delete delivery boy', 'error');
+    }
+  };
+
+  const handleToggleDeliveryBoyActive = async (boy: DeliveryBoy) => {
+    try {
+      await api.updateDeliveryBoy(boy.id, { is_active: boy.is_active ? 0 : 1 });
+      fetchDeliveryBoys();
+    } catch {
+      toastEvent.trigger('Failed to toggle status', 'error');
+    }
+  };
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const { data } = await apiClient.get('/settings');
+        if (data) {
+          setPharmacyName(data.shop_name || '');
+          setAddress(data.shop_address || '');
+          setPhone(data.shop_phone || '');
+          setGstin(data.gstin || '');
+          setDrugLicense(data.shop_licence || '');
+          setEmail(data.email || '');
+          
+          setGmailUser(data.gmail_user || '');
+          setGmailPass(data.gmail_pass || '');
+          setGoogleClientId(data.google_client_id || '');
+          setGoogleClientSecret(data.google_client_secret || '');
+          setGmailAuthMethod(data.gmail_auth_method || 'password');
+          setEmailAutodeleteEnabled(data.email_autodelete_enabled !== 'false');
+          setEmailAutodeleteLimit(Number(data.email_autodelete_limit) || 10);
+          setAutomationEnabled(data.automation_enabled === 'true');
+
+
+          setDefaultTaxRate(Number(data.default_tax_rate) || 18);
+          setInvoicePrefix(data.invoice_prefix || 'INV-');
+          setAutoPrint(data.auto_print === 'true');
+          setDefaultPaymentMode(data.default_payment_mode || 'Cash');
+
+          setWhatsappNotif(data.whatsapp_notif === 'true');
+          setEmailAlerts(data.email_alerts === 'true');
+          setLowStockThreshold(Number(data.low_stock_threshold) || 10);
+          setExpiryAlertDays(Number(data.expiry_alert_days) || 90);
+
+          setTelegramEnabled(data.telegram_enabled === 'true');
+          setTelegramToken(data.telegram_token || '');
+          setTelegramChatId(data.telegram_chat_id || '');
+          
+          setWhatsappEnabled(data.whatsapp_enabled === 'true');
+
+           // WhatsApp Business API
+          setWaBusinessEnabled(data.wa_business_enabled === 'true');
+          setWaBusinessPhoneNumberId(data.wa_business_phone_number_id || '');
+          setWaBusinessAccessToken(data.wa_business_access_token || '');
+          setWaBusinessWabaId(data.wa_business_waba_id || '');
+          setWaBusinessWebhookVerifyToken(data.wa_business_webhook_verify_token || '');
+
+          // Pharmarack Settings
+          setPrUsername(data.pharmarack_username || '');
+          setPrPassword(data.pharmarack_password || '');
+          setPrToken(data.pharmarack_session_token || '');
+          setPrMode(data.pharmarack_mode || 'Simulation');
+        }
+      } catch (error) {
+        console.error('Failed to load settings', error);
+      }
+    };
+    fetchSettings();
+    fetchDeliveryBoys();
+  }, []);
+
+  useEffect(() => {
+    let timer: any;
+    if (whatsappEnabled && !waStatus.isReady) {
+      const fetchQR = async () => {
+        try {
+          const { data } = await apiClient.get('/messaging/qr');
+          setWaStatus(data);
+        } catch (error) {
+          console.error("Failed to fetch WhatsApp QR", error);
+        }
+      };
+      fetchQR(); // Initial fetch
+      timer = setInterval(fetchQR, 5000); // Poll every 5s
+    }
+    return () => clearInterval(timer);
+  }, [whatsappEnabled, waStatus.isReady]);
+
+  const handleSaveSettings = async () => {
+    const payload = {
+      shop_name: pharmacyName,
+      shop_address: address,
+      shop_phone: phone,
+      gstin: gstin,
+      shop_licence: drugLicense,
+      email: email,
+      
+      gmail_user: gmailUser,
+      gmail_pass: gmailPass,
+      google_client_id: googleClientId,
+      google_client_secret: googleClientSecret,
+      gmail_auth_method: gmailAuthMethod,
+      email_autodelete_enabled: emailAutodeleteEnabled.toString(),
+      email_autodelete_limit: emailAutodeleteLimit.toString(),
+      automation_enabled: automationEnabled.toString(),
+
+
+      default_tax_rate: defaultTaxRate.toString(),
+      invoice_prefix: invoicePrefix,
+      auto_print: autoPrint.toString(),
+      default_payment_mode: defaultPaymentMode,
+
+      whatsapp_notif: whatsappNotif.toString(),
+      email_alerts: emailAlerts.toString(),
+      low_stock_threshold: lowStockThreshold.toString(),
+      expiry_alert_days: expiryAlertDays.toString(),
+
+      telegram_enabled: telegramEnabled.toString(),
+      telegram_token: telegramToken,
+      telegram_chat_id: telegramChatId,
+      
+      whatsapp_enabled: whatsappEnabled.toString(),
+
+       // WhatsApp Business API
+      wa_business_enabled: waBusinessEnabled.toString(),
+      wa_business_phone_number_id: waBusinessPhoneNumberId,
+      wa_business_access_token: waBusinessAccessToken,
+      wa_business_waba_id: waBusinessWabaId,
+      wa_business_webhook_verify_token: waBusinessWebhookVerifyToken,
+
+      // Pharmarack Settings
+      pharmarack_username: prUsername,
+      pharmarack_password: prPassword,
+      pharmarack_session_token: prToken,
+      pharmarack_mode: prMode,
+    };
+
+    try {
+      await apiClient.post('/settings/save', payload);
+      toastEvent.trigger('Settings saved successfully', 'success');
+    } catch (error) {
+      console.error('Failed to save settings', error);
+      toastEvent.trigger('Failed to save settings', 'error');
+    }
+  };
+
+  const handleOpenLoginWindow = async () => {
+    setIsOpeningWindow(true);
+    setPrToken('');
+    try {
+      await apiClient.post('/pharmarack/login-window');
+      toastEvent.trigger('Google Chrome window opened. Please log in on retailers.pharmarack.com.', 'info');
+      
+      let attempts = 0;
+      const interval = setInterval(async () => {
+        attempts++;
+        if (attempts > 90) { 
+          clearInterval(interval);
+          setIsOpeningWindow(false);
+          return;
+        }
+
+        try {
+          const { data } = await apiClient.get('/settings');
+          if (data && data.pharmarack_session_token && data.pharmarack_session_token !== prToken) {
+            setPrToken(data.pharmarack_session_token);
+            setPrMode(data.pharmarack_mode || 'Live');
+            toastEvent.trigger('Successfully linked Pharmarack session!', 'success');
+            clearInterval(interval);
+            setIsOpeningWindow(false);
+          }
+        } catch (err) {
+          console.warn('Failed to poll settings status:', err);
+        }
+      }, 2000);
+    } catch (err: any) {
+      console.error('Failed to open login window:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to open Chrome login window. Ensure Chrome is installed.', 'error');
+      setIsOpeningWindow(false);
+    }
+  };
+
+  const handlePharmarackLogout = async () => {
+    setPrUsername('');
+    setPrPassword('');
+    setPrToken('');
+    setPrMode('Simulation');
+    
+    const payload = {
+      shop_name: pharmacyName,
+      shop_address: address,
+      shop_phone: phone,
+      gstin: gstin,
+      shop_licence: drugLicense,
+      email: email,
+      
+      gmail_user: gmailUser,
+      gmail_pass: gmailPass,
+      google_client_id: googleClientId,
+      google_client_secret: googleClientSecret,
+      gmail_auth_method: gmailAuthMethod,
+      email_autodelete_enabled: emailAutodeleteEnabled.toString(),
+      email_autodelete_limit: emailAutodeleteLimit.toString(),
+      automation_enabled: automationEnabled.toString(),
+
+      default_tax_rate: defaultTaxRate.toString(),
+      invoice_prefix: invoicePrefix,
+      auto_print: autoPrint.toString(),
+      default_payment_mode: defaultPaymentMode,
+
+      whatsapp_notif: whatsappNotif.toString(),
+      email_alerts: emailAlerts.toString(),
+      low_stock_threshold: lowStockThreshold.toString(),
+      expiry_alert_days: expiryAlertDays.toString(),
+
+      telegram_enabled: telegramEnabled.toString(),
+      telegram_token: telegramToken,
+      telegram_chat_id: telegramChatId,
+      
+      whatsapp_enabled: whatsappEnabled.toString(),
+
+      wa_business_enabled: waBusinessEnabled.toString(),
+      wa_business_phone_number_id: waBusinessPhoneNumberId,
+      wa_business_access_token: waBusinessAccessToken,
+      wa_business_waba_id: waBusinessWabaId,
+      wa_business_webhook_verify_token: waBusinessWebhookVerifyToken,
+
+      pharmarack_username: '',
+      pharmarack_password: '',
+      pharmarack_session_token: '',
+      pharmarack_mode: 'Simulation'
+    };
+
+    try {
+      await apiClient.post('/settings/save', payload);
+      toastEvent.trigger('Logged out and cleared Pharmarack credentials successfully.', 'success');
+    } catch (error) {
+      console.error('Failed to logout from Pharmarack', error);
+      toastEvent.trigger('Failed to logout from Pharmarack', 'error');
+    }
+  };
+
+  const handleReconnect = async () => {
+    try {
+      setWaStatus({ isReady: false, qrUrl: null, message: 'Reconnecting...' });
+      await apiClient.post('/messaging/reconnect');
+      toastEvent.trigger('WhatsApp reconnecting...', 'info');
+    } catch (error) {
+      console.error('Failed to reconnect', error);
+      toastEvent.trigger('Failed to reconnect WhatsApp', 'error');
+    }
+  };
+
+  const handleOpenWaLoginWindow = async () => {
+    setIsOpeningWaWindow(true);
+    try {
+      toastEvent.trigger('Launching Chrome login window for WhatsApp...', 'info');
+      await apiClient.post('/messaging/login-window');
+    } catch (err: any) {
+      console.error('Failed to open WhatsApp login window:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to open Chrome login window. Ensure Chrome is installed.', 'error');
+    } finally {
+      setIsOpeningWaWindow(false);
+    }
+  };
+
+  // Backup handlers
+  const fetchBackupList = async () => {
+    setBackupListLoading(true);
+    try {
+      const { data } = await apiClient.get('/utilities/backup/list');
+      setBackupList(data.backups || []);
+    } catch {
+      console.error('Failed to fetch backup list');
+    } finally {
+      setBackupListLoading(false);
+    }
+  };
+
+  const fetchBackupSchedule = async () => {
+    try {
+      const { data } = await apiClient.get('/utilities/backup/schedule');
+      setBackupFrequency(data.frequency || 'off');
+    } catch {
+      console.error('Failed to fetch backup schedule');
+    }
+  };
+
+  useEffect(() => {
+    fetchBackupList();
+    fetchBackupSchedule();
+  }, []);
+
+  const handleBackupNow = async () => {
+    setBackupLoading(true);
+    try {
+      await apiClient.post('/utilities/backup');
+      toastEvent.trigger('Backup created successfully!', 'success');
+      fetchBackupList();
+    } catch {
+      toastEvent.trigger('Failed to create backup', 'error');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const handleScheduleChange = async (freq: string) => {
+    setBackupFrequency(freq);
+    try {
+      await apiClient.post('/utilities/backup/schedule', { frequency: freq });
+      toastEvent.trigger(`Backup schedule set to: ${freq === 'off' ? 'Off' : `Every ${freq}`}`, 'success');
+    } catch {
+      toastEvent.trigger('Failed to update backup schedule', 'error');
+    }
+  };
+
+  const handleDeleteBackup = async (filename: string) => {
+    setDeletingFile(filename);
+    try {
+      await apiClient.delete(`/utilities/backup/${encodeURIComponent(filename)}`);
+      toastEvent.trigger('Backup deleted', 'success');
+      setConfirmDelete(null);
+      fetchBackupList();
+    } catch {
+      toastEvent.trigger('Failed to delete backup', 'error');
+    } finally {
+      setDeletingFile(null);
+    }
+  };
+
+  const handleRestoreBackup = async (filename: string) => {
+    setRestoringFile(filename);
+    try {
+      await apiClient.post('/utilities/backup/restore', { filename });
+      toastEvent.trigger(`Restored from: ${filename}`, 'success');
+      setConfirmRestore(null);
+    } catch {
+      toastEvent.trigger('Failed to restore backup', 'error');
+    } finally {
+      setRestoringFile(null);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  };
+
+  const handleTestWaBusiness = async () => {
+    setWaBusinessTesting(true);
+    setWaBusinessTestResult(null);
+    try {
+      // Save credentials first so the test endpoint can read them
+      await handleSaveSettings();
+      const { data } = await apiClient.post('/wa-business/test');
+      setWaBusinessTestResult(data);
+    } catch (err: any) {
+      setWaBusinessTestResult({ success: false, error: err?.response?.data?.error || 'Connection failed' });
+    } finally {
+      setWaBusinessTesting(false);
+    }
+  };
+
+  const copyWebhookUrl = () => {
+    const url = `${window.location.origin}/api/wa-business/webhook`;
+    navigator.clipboard.writeText(url);
+    toastEvent.trigger('Webhook URL copied!', 'success');
+  };
+
+  return (
+    <div className="h-full flex flex-col fade-in space-y-6 overflow-y-auto pb-8">
+
+      {/* ─── Pharmacy Details ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Building2 size={18} className="text-sky" />
+          Pharmacy Details
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <div className="space-y-2">
+            <label htmlFor="pharmacyName" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Pharmacy Name
+            </label>
+            <input
+              id="pharmacyName"
+              type="text"
+              className="premium-input w-full"
+              placeholder="e.g. MedPlus Pharmacy"
+              value={pharmacyName}
+              onChange={(e) => setPharmacyName(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="address" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Address
+            </label>
+            <input
+              id="address"
+              type="text"
+              className="premium-input w-full"
+              placeholder="Street, City, State"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="phone" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Phone
+            </label>
+            <input
+              id="phone"
+              type="text"
+              className="premium-input w-full"
+              placeholder="10-digit number"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="gstin" className="text-xs font-bold text-muted uppercase tracking-wider">
+              GSTIN
+            </label>
+            <input
+              id="gstin"
+              type="text"
+              className="premium-input w-full"
+              placeholder="22AAAAA0000A1Z5"
+              value={gstin}
+              onChange={(e) => setGstin(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="drugLicense" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Drug License No.
+            </label>
+            <input
+              id="drugLicense"
+              type="text"
+              className="premium-input w-full"
+              placeholder="DL-0000-000000"
+              value={drugLicense}
+              onChange={(e) => setDrugLicense(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="email" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              className="premium-input w-full"
+              placeholder="pharmacy@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Details
+          </button>
+        </div>
+      </div>
+
+
+
+      {/* ─── Notifications ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Bell size={18} className="text-primary" />
+          Notifications
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+          <div className="space-y-2 flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer select-none group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={whatsappNotif}
+                  onChange={(e) => setWhatsappNotif(e.target.checked)}
+                  aria-label="Enable WhatsApp Notifications"
+                />
+                <div className="w-11 h-6 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+              </div>
+              <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                Enable WhatsApp Notifications
+              </span>
+            </label>
+          </div>
+
+          <div className="space-y-2 flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer select-none group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={emailAlerts}
+                  onChange={(e) => setEmailAlerts(e.target.checked)}
+                  aria-label="Enable Email Alerts"
+                />
+                <div className="w-11 h-6 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+              </div>
+              <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                Enable Email Alerts
+              </span>
+            </label>
+          </div>
+
+
+
+          <div className="space-y-2">
+            <label htmlFor="lowStockThreshold" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Low Stock Threshold
+            </label>
+            <input
+              id="lowStockThreshold"
+              type="number"
+              min={0}
+              className="premium-input w-full"
+              placeholder="10"
+              value={lowStockThreshold}
+              onChange={(e) => setLowStockThreshold(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="expiryAlertDays" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Expiry Alert Days
+            </label>
+            <input
+              id="expiryAlertDays"
+              type="number"
+              min={0}
+              className="premium-input w-full"
+              placeholder="90"
+              value={expiryAlertDays}
+              onChange={(e) => setExpiryAlertDays(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Preferences
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Delivery Boy / Staff Numbers ─── */}
+      <div className="glass-panel p-6">
+
+        {/* ─── Delivery Boy / Staff Numbers ─── */}
+        <div className="border border-glass-border/40 p-5 rounded-xl bg-glass-bg/30 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-bold flex items-center gap-2 text-amber">
+              <Truck size={16} /> Delivery Boy / Staff Numbers
+            </h4>
+            <span className="text-[10px] text-muted font-semibold">
+              {deliveryBoys.length} staff member{deliveryBoys.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          <p className="text-[11px] text-muted mb-4 leading-relaxed">
+            Manage delivery boy WhatsApp numbers for automation messages like pickup lists, special requests, and delivery confirmations.
+          </p>
+
+          {/* Add new delivery boy */}
+          <div className="flex gap-2 mb-4">
+            <input
+              id="db-add-name"
+              type="text"
+              className="premium-input flex-1 text-xs"
+              placeholder="Name (e.g. Raju)"
+              value={dbForm.name}
+              onChange={(e) => setDbForm(f => ({ ...f, name: e.target.value }))}
+            />
+            <input
+              id="db-add-phone"
+              type="text"
+              className="premium-input flex-1 text-xs font-mono"
+              placeholder="WhatsApp Number (e.g. 9876543210)"
+              value={dbForm.whatsapp_number}
+              onChange={(e) => setDbForm(f => ({ ...f, whatsapp_number: e.target.value }))}
+            />
+            <button
+              id="db-add-btn"
+              onClick={handleAddDeliveryBoy}
+              disabled={dbAdding || !dbForm.name.trim()}
+              className="premium-btn bg-green text-white text-xs px-4 hover:bg-emerald-600 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              <Plus size={14} />
+              {dbAdding ? 'Adding...' : 'Add'}
+            </button>
+          </div>
+
+          {/* Delivery boys list */}
+          {dbLoading ? (
+            <div className="text-center text-muted text-xs py-6">
+              <RefreshCw size={16} className="animate-spin mx-auto mb-2 opacity-50" />
+              Loading staff...
+            </div>
+          ) : deliveryBoys.length === 0 ? (
+            <div className="text-center text-muted text-xs py-6">
+              <Truck size={24} className="mx-auto mb-2 opacity-20" />
+              No delivery boys added yet. Add one above.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {deliveryBoys.map(boy => (
+                <div
+                  key={boy.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                    boy.is_active
+                      ? 'border-glass-border/40 bg-glass-bg/20'
+                      : 'border-glass-border/20 bg-glass-bg/10 opacity-50'
+                  }`}
+                >
+                  {dbEditId === boy.id ? (
+                    /* Edit mode */
+                    <>
+                      <input
+                        type="text"
+                        className="premium-input flex-1 text-xs"
+                        value={dbEditForm.name}
+                        onChange={(e) => setDbEditForm(f => ({ ...f, name: e.target.value }))}
+                        placeholder="Name"
+                      />
+                      <input
+                        type="text"
+                        className="premium-input flex-1 text-xs font-mono"
+                        value={dbEditForm.whatsapp_number}
+                        onChange={(e) => setDbEditForm(f => ({ ...f, whatsapp_number: e.target.value }))}
+                        placeholder="WhatsApp Number"
+                      />
+                      <button
+                        onClick={() => handleUpdateDeliveryBoy(boy.id)}
+                        className="text-xs font-bold bg-green/20 text-green px-3 py-1.5 rounded-full hover:bg-green/30 transition-all"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setDbEditId(null)}
+                        className="p-1.5 rounded hover:bg-glass-bg/40 text-muted transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    /* View mode */
+                    <>
+                      <div className="w-8 h-8 rounded-full bg-amber/10 flex items-center justify-center flex-shrink-0">
+                        <Truck size={14} className="text-amber" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-text truncate">{boy.name}</p>
+                        <p className="text-xs text-muted font-mono flex items-center gap-1">
+                          <Phone size={10} />
+                          {boy.whatsapp_number || 'No number set'}
+                        </p>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        boy.is_active
+                          ? 'bg-green/15 text-green border border-green/20'
+                          : 'bg-red/15 text-red border border-red/20'
+                      }`}>
+                        {boy.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                      <button
+                        onClick={() => handleToggleDeliveryBoyActive(boy)}
+                        className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all ${
+                          boy.is_active
+                            ? 'bg-red/10 text-red/70 hover:bg-red/20 hover:text-red'
+                            : 'bg-green/10 text-green/70 hover:bg-green/20 hover:text-green'
+                        }`}
+                        title={boy.is_active ? 'Deactivate' : 'Activate'}
+                      >
+                        {boy.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDbEditId(boy.id);
+                          setDbEditForm({ name: boy.name, whatsapp_number: boy.whatsapp_number || '' });
+                        }}
+                        className="p-1.5 rounded hover:bg-sky/20 text-sky transition-colors"
+                        title="Edit"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDeliveryBoy(boy.id)}
+                        className="p-1.5 rounded hover:bg-red/20 text-red/60 hover:text-red transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+
+
+      {/* ─── Background Automations ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Zap size={18} className="text-amber" />
+          Background Automations
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+          <div className="space-y-2 flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer select-none group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={automationEnabled}
+                  onChange={(e) => setAutomationEnabled(e.target.checked)}
+                  aria-label="Enable Background Automations"
+                />
+                <div className="w-11 h-6 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+              </div>
+              <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                Enable Background Automations
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <p className="text-xs text-muted mt-4 max-w-3xl leading-relaxed">
+          Enabling this starts background services at startup including: WhatsApp client pre-initialization, the WhatsApp queue worker, the catalog upload process, daily checks for patient refills, and automatic near-expiry scans.
+          <br />
+          <span className="text-amber/85 font-semibold italic">Note: Changing this setting requires a server restart to take effect.</span>
+        </p>
+
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Automations
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Backup & Restore ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Shield size={18} className="text-primary" />
+          Backup & Restore
+        </h3>
+
+        {/* Top controls row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {/* Backup Now */}
+          <button
+            id="backup-now-btn"
+            onClick={handleBackupNow}
+            disabled={backupLoading}
+            className="premium-btn bg-primary text-white shadow-[0_4px_14px_rgba(59,130,246,0.4)] hover:bg-blue-600 flex items-center justify-center gap-2 w-full py-3 disabled:opacity-50"
+          >
+            {backupLoading ? (
+              <><RefreshCw size={16} className="animate-spin" /> Creating Backup...</>
+            ) : (
+              <><Database size={16} /> Backup Now</>
+            )}
+          </button>
+
+          {/* Auto-Backup Frequency */}
+          <div className="space-y-1.5">
+            <label htmlFor="backupFrequency" className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-1.5">
+              <Clock size={12} /> Auto-Backup Frequency
+            </label>
+            <select
+              id="backupFrequency"
+              className="premium-input w-full"
+              value={backupFrequency}
+              onChange={(e) => handleScheduleChange(e.target.value)}
+            >
+              <option value="off">Off</option>
+              <option value="3h">Every 3 Hours</option>
+              <option value="6h">Every 6 Hours</option>
+            </select>
+          </div>
+
+          {/* Restore latest */}
+          <div className="space-y-1.5">
+            <label htmlFor="dbRestore" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Restore from File
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="dbRestore"
+                type="file"
+                className="premium-input w-full text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-700 file:text-zinc-300 hover:file:bg-zinc-600 file:cursor-pointer"
+                accept=".db,.sqlite"
+                aria-label="Choose database backup file"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Status badges row */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-green/10 text-green border border-green/20">
+            <Clock size={12} /> Nightly Backup: 9:30 PM
+          </div>
+          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-sky/10 text-sky border border-sky/20">
+            <Download size={12} /> Shutdown Backup: Active
+          </div>
+          {backupFrequency !== 'off' && (
+            <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-amber/10 text-amber border border-amber/20">
+              <RefreshCw size={12} /> Scheduled: Every {backupFrequency}
+            </div>
+          )}
+          <div className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+            <HardDrive size={12} /> Max 20 Backups (Auto-cleanup)
+          </div>
+        </div>
+
+        {/* Backup History Table */}
+        <div className="border border-glass-border/40 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 bg-bg2/50 border-b border-glass-border/30">
+            <h4 className="font-bold text-sm flex items-center gap-2">
+              <History size={14} className="text-sky" /> Backup History
+              <span className="text-xs text-muted font-normal">({backupList.length} backups)</span>
+            </h4>
+            <button
+              onClick={fetchBackupList}
+              disabled={backupListLoading}
+              className="text-xs font-bold text-sky hover:text-sky/80 flex items-center gap-1 transition-colors"
+            >
+              <RefreshCw size={12} className={backupListLoading ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
+
+          {backupListLoading && backupList.length === 0 ? (
+            <div className="p-8 text-center text-muted text-sm">
+              <RefreshCw size={20} className="animate-spin mx-auto mb-2 opacity-50" />
+              Loading backups...
+            </div>
+          ) : backupList.length === 0 ? (
+            <div className="p-8 text-center text-muted text-sm">
+              <Database size={24} className="mx-auto mb-2 opacity-30" />
+              No backups found. Click "Backup Now" to create your first backup.
+            </div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-bg2/90 backdrop-blur-sm">
+                  <tr className="text-xs text-muted uppercase tracking-wider">
+                    <th className="text-left px-4 py-2.5 font-bold">Filename</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Size</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Date & Time</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {backupList.map((b, i) => (
+                    <tr key={b.filename} className={`border-t border-glass-border/20 hover:bg-bg3/30 transition-colors ${i === 0 ? 'bg-green/5' : ''}`}>
+                      <td className="px-4 py-3 font-mono text-xs truncate max-w-[260px]" title={b.filename}>
+                        {i === 0 && <span className="inline-block mr-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-green/20 text-green rounded">LATEST</span>}
+                        {b.filename}
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatFileSize(b.sizeBytes)}</td>
+                      <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatDate(b.createdAt)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Restore */}
+                          {confirmRestore === b.filename ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-amber font-bold mr-1">Confirm?</span>
+                              <button
+                                onClick={() => handleRestoreBackup(b.filename)}
+                                disabled={restoringFile === b.filename}
+                                className="text-[10px] font-bold bg-amber/20 text-amber px-2 py-1 rounded hover:bg-amber/30 transition-all disabled:opacity-50"
+                              >
+                                {restoringFile === b.filename ? 'Restoring...' : 'Yes'}
+                              </button>
+                              <button
+                                onClick={() => setConfirmRestore(null)}
+                                className="text-[10px] font-bold bg-bg3/50 text-muted px-2 py-1 rounded hover:bg-bg3 transition-all"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmRestore(b.filename)}
+                              className="text-[10px] font-bold bg-sky/15 text-sky px-2.5 py-1 rounded-full hover:bg-sky/25 transition-all flex items-center gap-1"
+                              title="Restore this backup"
+                            >
+                              <RotateCcw size={10} /> Restore
+                            </button>
+                          )}
+
+                          {/* Delete */}
+                          {confirmDelete === b.filename ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-red font-bold mr-1">Delete?</span>
+                              <button
+                                onClick={() => handleDeleteBackup(b.filename)}
+                                disabled={deletingFile === b.filename}
+                                className="text-[10px] font-bold bg-red/20 text-red px-2 py-1 rounded hover:bg-red/30 transition-all disabled:opacity-50"
+                              >
+                                {deletingFile === b.filename ? 'Deleting...' : 'Yes'}
+                              </button>
+                              <button
+                                onClick={() => setConfirmDelete(null)}
+                                className="text-[10px] font-bold bg-bg3/50 text-muted px-2 py-1 rounded hover:bg-bg3 transition-all"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDelete(b.filename)}
+                              className="text-[10px] font-bold bg-red/10 text-red/70 px-2.5 py-1 rounded-full hover:bg-red/20 hover:text-red transition-all flex items-center gap-1"
+                              title="Delete this backup"
+                            >
+                              <Trash2 size={10} /> Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <p className="text-[11px] text-muted mt-4 leading-relaxed">
+          <AlertTriangle size={11} className="inline mr-1 text-amber" />
+          <strong>Restoring</strong> a backup will replace your current database. A backup of the current state is recommended before restoring.
+          Backups older than the 20 most recent are automatically removed.
+        </p>
+      </div>
+
+      {/* ─── System ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <HardDrive size={18} className="text-green" />
+          System
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <button className="premium-btn bg-red text-white shadow-[0_4px_14px_rgba(239,68,68,0.4)] hover:bg-red-600 flex items-center gap-2 w-full justify-center">
+            <Trash2 size={16} />
+            Clear Cache
+          </button>
+
+          <div className="glass-panel p-4 flex items-center justify-between bg-bg3/30 border border-glass-border">
+            <span className="text-xs font-bold text-muted uppercase tracking-wider">App Version</span>
+            <span className="text-sm font-semibold text-sky">v2.0.0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Settings;

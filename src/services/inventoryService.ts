@@ -203,8 +203,13 @@ export class InventoryService {
    */
   async checkAndTriggerRefillsForMedicine(medicineId: number): Promise<void> {
     return await dbManager.transaction(async (db) => {
-      const { triggerPendingRefillsForMedicine } = await import('./refillService.js');
+      const { triggerPendingRefillsForMedicine, triggerPendingSpecialOrdersForMedicineName } = await import('./refillService.js');
       await triggerPendingRefillsForMedicine(db, medicineId);
+      
+      const med = await db.get('SELECT name FROM medicines WHERE id = ?', [medicineId]);
+      if (med && med.name) {
+        await triggerPendingSpecialOrdersForMedicineName(db, med.name);
+      }
     });
   }
 
