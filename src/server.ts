@@ -73,7 +73,10 @@ process.on('uncaughtException', (error) => {
 const app = express();
 
 app.use((req, res, next) => {
-  activityTracker.recordActivity();
+  // Don't treat enrichment status and queue queries as blocking activity
+  if (!req.path.startsWith('/api/enrichment/status') && !req.path.startsWith('/api/enrichment/queue')) {
+    activityTracker.recordActivity();
+  }
   next();
 });
 

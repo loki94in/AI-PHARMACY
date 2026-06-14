@@ -31,7 +31,9 @@ class DatabaseManager {
           await this.connection.close();
         } catch (e) {}
       }
-      this.connection = await open({ filename: dbPath, driver: sqlite3.Database });
+      const db = await open({ filename: dbPath, driver: sqlite3.Database });
+      await db.run('PRAGMA busy_timeout = 5000;');
+      this.connection = db;
       this.currentDbPath = dbPath;
     }
     return this.connection;

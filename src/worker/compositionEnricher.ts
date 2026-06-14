@@ -202,12 +202,37 @@ export async function runEnrichment(onProgress?: (pct: number, matched: number) 
       return { matched: 0, needsReview: 0, unmatched: 0 };
     }
 
-    // Build a lookup map: cleaned name -> reference row
-    const exactMap = new Map<string, typeof refs[0]>();
-    for (const ref of refs) {
+    // Pre-clean and pre-tokenize reference data to avoid repetitive computations
+    const refsWithCleanName = refs.map(ref => {
       const cleaned = cleanMedicineName(ref.name);
-      if (cleaned) {
-        exactMap.set(cleaned, ref);
+      const tokens = cleaned.split(/\s+/).filter(Boolean);
+      const tokenSet = new Set(tokens);
+      return {
+        ...ref,
+        cleaned,
+        tokens,
+        tokenSet
+      };
+    });
+
+    // Build a lookup map: cleaned name -> reference row
+    const exactMap = new Map<string, typeof refsWithCleanName[0]>();
+    for (const ref of refsWithCleanName) {
+      if (ref.cleaned) {
+        exactMap.set(ref.cleaned, ref);
+      }
+    }
+
+    // Build an inverted token index: token -> list of references containing that token
+    const tokenIndex = new Map<string, typeof refsWithCleanName[0][]>();
+    for (const ref of refsWithCleanName) {
+      for (const token of ref.tokens) {
+        let list = tokenIndex.get(token);
+        if (!list) {
+          list = [];
+          tokenIndex.set(token, list);
+        }
+        list.push(ref);
       }
     }
 
@@ -229,15 +254,45 @@ export async function runEnrichment(onProgress?: (pct: number, matched: number) 
       await db.run('BEGIN TRANSACTION');
       for (const med of batch) {
         const cleanedName = cleanMedicineName(med.name);
+        if (!cleanedName) {
+          // If cleaned name is empty, we cannot match it
+          await db.run(
+            "UPDATE medicines SET enrichment_status = 'unmatched', enrichment_confidence = 0 WHERE id = ?",
+            med.id
+          );
+          unmatched++;
+          continue;
+        }
 
         // Step 1: Exact match (after cleaning)
         let bestRef = exactMap.get(cleanedName);
         let bestScore = bestRef ? 1.0 : 0;
 
-        // Step 2: If no exact match, try fuzzy
+        // Step 2: If no exact match, try fuzzy matching against candidates sharing at least one token
         if (!bestRef) {
-          for (const ref of refs) {
-            const score = calculateMatchScore(med.name, ref.name);
+          const medTokens = cleanedName.split(/\s+/).filter(Boolean);
+          const medSet = new Set(medTokens);
+
+          // Get candidate reference medicines sharing at least one token
+          const candidates = new Set<typeof refsWithCleanName[0]>();
+          for (const token of medTokens) {
+            const matches = tokenIndex.get(token);
+            if (matches) {
+              for (const candidate of matches) {
+                candidates.add(candidate);
+              }
+            }
+          }
+
+          // Evaluate score for candidates only
+          for (const ref of candidates) {
+            let matchCount = 0;
+            for (const t of medSet) {
+              if (ref.tokenSet.has(t)) matchCount++;
+            }
+            const maxLen = Math.max(medSet.size, ref.tokenSet.size);
+            const score = maxLen === 0 ? 0 : matchCount / maxLen;
+
             if (score > bestScore) {
               bestScore = score;
               bestRef = ref;
