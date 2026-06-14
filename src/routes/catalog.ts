@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import { dbManager } from '../database/connection.js';
 
 const router = express.Router();
@@ -41,7 +42,8 @@ router.get('/catalog/job/:id', async (req, res) => {
       extractedData: job.extracted_data ? JSON.parse(job.extracted_data) : [],
       previewData,
       headers,
-      suggestedMapping
+      suggestedMapping,
+      mappingConfig: job.mapping_config ? JSON.parse(job.mapping_config) : null
     });
   } catch (error) {
     console.error('Fetch job error:', error);
@@ -244,6 +246,37 @@ router.get('/jobs', async (req, res) => {
     await dbManager.close();
     console.error('Failed to fetch jobs:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete a catalog ingestion job
+router.delete('/catalog/job/:id', async (req, res) => {
+  try {
+    const jobId = parseInt(req.params.id, 10);
+    const db = await dbManager.getConnection();
+    const job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', jobId);
+    
+    if (!job) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Attempt to delete physical file if it exists
+    if (job.file_path && fs.existsSync(job.file_path)) {
+      try {
+        fs.unlinkSync(job.file_path);
+      } catch (err) {
+        console.warn(`[Catalog] Failed to delete physical file: ${job.file_path}`, err);
+      }
+    }
+
+    await db.run('DELETE FROM catalog_jobs WHERE id = ?', jobId);
+    await dbManager.close();
+
+    res.json({ success: true, message: 'Job deleted successfully' });
+  } catch (error) {
+    console.error('Delete job error:', error);
+    res.status(500).json({ error: 'Internal server error deleting job' });
   }
 });
 

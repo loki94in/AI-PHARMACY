@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cron, { type ScheduledTask } from 'node-cron';
 import { dbManager } from '../database/connection.js';
+import Database from 'better-sqlite3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,7 +28,10 @@ export async function createBackup(reason: string = 'Manual'): Promise<{ filenam
   const filename = `app_backup_${timestamp}.db`;
   const backupPath = path.join(BACKUP_DIR, filename);
 
-  fs.copyFileSync(DB_PATH, backupPath);
+  // Use native better-sqlite3 backup API to safely checkpoint WAL and clone live SQLite database
+  const tempDb = new Database(DB_PATH);
+  await tempDb.backup(backupPath);
+  tempDb.close();
 
   // Log the action
   try {

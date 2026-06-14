@@ -880,16 +880,73 @@ const POS = () => {
           <div className="glass-panel p-4 flex flex-col gap-3 bg-glass-bg border-glass-border relative z-30 shrink-0">
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted">
-                  <Search size={18} />
+                <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-muted">
+                  <Search size={16} />
                 </span>
                 <input 
                   type="text" 
                   placeholder="Search medicine by name, composition, batch, or price..." 
-                  className="premium-input w-full text-base py-2 pl-10 pr-4"
+                  className="premium-input w-full text-base py-2 pl-8 pr-4"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                 />
+                
+                {/* Empty inventory fallback dropdown */}
+                {searchTerm.trim().length >= 3 && searchResults.length === 0 && (
+                  <div className="absolute left-0 right-0 top-full z-[99999] mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
+                    <div className="p-3 border-b border-glass-border/30 text-[10px] font-bold text-muted uppercase tracking-wider">
+                      ⚠️ No matching inventory found
+                    </div>
+                    <div className="flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          addToCart({
+                            id: Date.now(),
+                            name: searchTerm.trim(),
+                            batch: 'MANUAL',
+                            expiry: '12/28',
+                            mrp: 0,
+                            costPrice: 0,
+                            salts: 'Custom Manual Entry',
+                            packSize: 10
+                          });
+                          setSearchTerm('');
+                        }}
+                        className="flex items-center justify-between p-3 hover:bg-bg2 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-semibold text-text group-hover:text-primary transition-all">Add "{searchTerm.trim()}" directly to cart (Quick Add)</span>
+                          <span className="text-[9px] text-muted font-normal">Will use default batch MANUAL and expiry 12/28 (editable later)</span>
+                        </div>
+                        <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualName(searchTerm.trim());
+                          setSearchTerm('');
+                          // Scroll to and focus manual billing input
+                          setTimeout(() => {
+                            const inputEl = document.getElementById('manual-medicine-name-input');
+                            if (inputEl) {
+                              inputEl.focus();
+                              inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                          }, 100);
+                        }}
+                        className="flex items-center justify-between p-3 hover:bg-bg2 text-left transition-all text-xs w-full group"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-semibold text-text group-hover:text-sky transition-all">Prefill manual entry row at bottom with "{searchTerm.trim()}"</span>
+                          <span className="text-[9px] text-muted font-normal">Recommended: lets you fill batch, expiry, MRP before adding</span>
+                        </div>
+                        <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-2.5 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">📝 Prefill</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 
                 {/* Search results dropdown */}
                 {searchResults.length > 0 && (
@@ -1358,14 +1415,14 @@ const POS = () => {
                   <tr className="bg-white/5 border-t-2 border-primary/20 hover:bg-white/10 transition-all">
                     <td className="p-2">
                       <div className="relative">
-                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <span className="absolute inset-y-0 left-0 pl-1.5 flex items-center pointer-events-none">
                           <Plus size={13} className="text-sky animate-pulse stroke-[3]" />
                         </span>
                         <input 
                           id="manual-medicine-name-input"
                           type="text" 
                           placeholder="Add Next Medicine / Custom Entry..." 
-                          className="premium-input text-xs py-2 pl-8 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
+                          className="premium-input text-xs py-2 pl-6 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
                           value={manualName}
                           onChange={e => setManualName(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}

@@ -138,11 +138,11 @@ export async function runManualMigration(fileName: string, dataType: string, map
   if (!fs.existsSync(filePath)) {
     throw new Error('File does not exist in MIGRATION SAMPEL folder.');
   }
-  
+
   const lowerFileName = fileName.toLowerCase();
   const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz', '.csv', '.xlsx', '.xls'];
   const isValid = allowedExtensions.some(ext => lowerFileName.endsWith(ext));
-  
+
   if (!isValid) {
     throw new Error('Unsupported file format for migration. Supported formats: .zip, .sql, .sql.gz/gz, .tar.gz/tgz, .csv, .xlsx, .xls');
   }
@@ -176,7 +176,7 @@ async function processMigrationFile(filePath: string, dataType: string, mapping?
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const csvContent = XLSX.utils.sheet_to_csv(worksheet);
-      
+
       tempCsvPath = path.join(TEMP_DIR, `converted_${Date.now()}.csv`);
       fs.writeFileSync(tempCsvPath, csvContent);
       actualFilePath = tempCsvPath;
@@ -203,7 +203,7 @@ async function processMigrationFile(filePath: string, dataType: string, mapping?
       extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
       fs.mkdirSync(extractPath, { recursive: true });
       sqlFilePath = path.join(extractPath, 'decompressed_backup.sql');
-      
+
       await new Promise<void>((resolve, reject) => {
         const gzStream = zlib.createGunzip();
         gzStream.on('error', reject);
@@ -352,7 +352,7 @@ async function detectDumpFormat(sqlPath: string): Promise<'pg_dump' | 'legacy'> 
  */
 async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
-  
+
   // Enable WAL mode for better concurrent write performance
   await db.run('PRAGMA journal_mode = WAL');
   await db.run('PRAGMA synchronous = NORMAL');
@@ -381,7 +381,7 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   }
   try {
     await db.run(`DELETE FROM inventory_master WHERE legacy_batch_id IS NOT NULL`);
-  } catch (err) {}
+  } catch (err) { }
 
   const totalPasses = 4;
   const stats = {
@@ -612,7 +612,7 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
 
   for await (const line of rl) {
     const trimmedLine = line.trim();
-    
+
     // Yield every 500 lines to keep event loop free
     if (linesProcessed % 500 === 0) {
       await new Promise(resolve => setImmediate(resolve));
@@ -634,12 +634,12 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
         migrated = await processReturnsLine(trimmedLine, db);
       }
       else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_STOCK') ||
-               trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_BATCHES')) {
+        trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_BATCHES')) {
         migrated = await processInventoryLine(trimmedLine, db);
       }
       else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALES') ||
-               trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALEITEMS') ||
-               trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALE_ITEMS')) {
+        trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALEITEMS') ||
+        trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALE_ITEMS')) {
         migrated = await processSalesLine(trimmedLine, db);
       }
     } catch (err: any) {
@@ -673,26 +673,53 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
 async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
   await ensureMigrationErrorsTable(db);
-  
+
   const tableInfo = await db.all('PRAGMA table_info(inventory_master)');
   const existingCols = tableInfo.map(c => c.name.toLowerCase());
-  
+
+  // Alter schema for custom fields dynamically
+  if (mapping) {
+    for (const [csvCol, targetCol] of Object.entries(mapping)) {
+      if (targetCol && String(targetCol).startsWith('custom_col_')) {
+        const dbColName = String(targetCol).substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+
+        let targetTable = 'medicines';
+        if (dataType === 'customers') targetTable = 'customers';
+        else if (dataType === 'sales') targetTable = 'sales_invoices';
+        else if (dataType === 'purchases') targetTable = 'purchases';
+        else if (dataType === 'returns') targetTable = 'returns';
+
+        const targetTableInfo = await db.all(`PRAGMA table_info(${targetTable})`);
+        const existingTableCols = targetTableInfo.map(c => c.name.toLowerCase());
+
+        if (dbColName && !existingTableCols.includes(dbColName)) {
+          try {
+            await db.run(`ALTER TABLE ${targetTable} ADD COLUMN "${dbColName}" TEXT`);
+            console.log(`[MigrationWorker] Dynamically added custom column "${dbColName}" to ${targetTable} table.`);
+          } catch (alterErr: any) {
+            console.error(`[MigrationWorker] Failed to add custom column ${dbColName} to ${targetTable}:`, alterErr.message);
+          }
+        }
+      }
+    }
+  }
+
   const results: any[] = [];
   let rowCount = 0;
-  
+
   migrationStatus.message = 'Reading and analyzing CSV structure...';
-  
+
   await new Promise<void>((resolve, reject) => {
     fs.createReadStream(csvPath)
       .pipe(csvParser({ skipLines: skipLines })) // Skip user-defined garbage rows
       .on('headers', async (headers) => {
-        if (dataType === 'inventory') {
+        if (dataType === 'inventory' || dataType === 'combined') {
           for (const rawHeader of headers) {
             const rawColName = rawHeader.trim();
             if (!rawColName) continue;
-            
+
             let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
-            
+
             // Apply mapping if provided
             if (mapping && mapping[rawColName] && mapping[rawColName] !== 'IGNORE') {
               colName = mapping[rawColName];
@@ -711,7 +738,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               'generic_name', 'pack_unit', 'cgst_per', 'sgst_per', 'item_code'
             ];
 
-            if (!existingCols.includes(colName) && colName !== '' && colName !== 'name' && !medicineFields.includes(colName)) {
+            if (!existingCols.includes(colName) && colName !== '' && colName !== 'name' && !medicineFields.includes(colName) && !colName.startsWith('custom_col_')) {
               try {
                 await db.run(`ALTER TABLE inventory_master ADD COLUMN "${colName}" TEXT`);
                 existingCols.push(colName);
@@ -731,7 +758,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
       })
       .on('end', async () => {
         migrationStatus.message = `Parsed ${rowCount} CSV rows. Inserting into database...`;
-        
+
         await db.run('BEGIN TRANSACTION');
         try {
           let insertCount = 0;
@@ -770,9 +797,15 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                 if (!mappedTarget || mappedTarget === 'IGNORE') continue;
 
                 let dbCol = mappedTarget;
-                if (dbCol === 'hsncode' || dbCol === 'hsn_code') dbCol = 'hsn_code';
-                if (dbCol === 'mfg' || dbCol === 'manufacturer') dbCol = 'manufacturer';
-                if (dbCol === 'mrkby' || dbCol === 'marketed_by') dbCol = 'marketed_by';
+                let isCustom = false;
+                if (dbCol.startsWith('custom_col_')) {
+                  dbCol = dbCol.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+                  isCustom = true;
+                } else {
+                  if (dbCol === 'hsncode' || dbCol === 'hsn_code') dbCol = 'hsn_code';
+                  if (dbCol === 'mfg' || dbCol === 'manufacturer') dbCol = 'manufacturer';
+                  if (dbCol === 'mrkby' || dbCol === 'marketed_by') dbCol = 'marketed_by';
+                }
                 if (dbCol === 'loos_qty' || dbCol === 'loose_qty' || dbCol === 'loose_quantity') continue; // inventory
                 if (dbCol === 'rate') continue; // inventory
                 if (dbCol === 'name') continue;
@@ -784,7 +817,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                   'generic_name', 'pack_unit', 'cgst_per', 'sgst_per', 'item_code'
                 ];
 
-                if (medicineFields.includes(dbCol)) {
+                if (medicineFields.includes(dbCol) || isCustom) {
                   medCols.push(`"${dbCol}"`);
                   medVals.push(val);
                   medUpdates.push(`"${dbCol}" = ?`);
@@ -810,7 +843,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               for (const [key, val] of Object.entries(cleanRow)) {
                 const rawColName = key.trim();
                 let colName = rawColName.replace(/\s+/g, '_').toLowerCase();
-                
+
                 if (mapping && mapping[rawColName] === 'IGNORE') continue;
                 if (mapping && mapping[rawColName]) {
                   colName = mapping[rawColName];
@@ -823,8 +856,8 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                   colName = 'cost_price';
                 }
 
-                if (!colName || colName === 'medicine' || colName === 'name' || val === '') continue;
-                
+                if (!colName || colName === 'medicine' || colName === 'name' || val === '' || colName.startsWith('custom_col_')) continue;
+
                 if (existingCols.includes(colName)) {
                   colsToInsert.push(`"${colName}"`);
                   valuesToInsert.push(val);
@@ -868,10 +901,23 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
 
               let invoice = await db.get('SELECT id FROM sales_invoices WHERE invoice_no = ?', [invoiceNo]);
               if (!invoice) {
+                const saleCols: string[] = [];
+                const saleVals: any[] = [];
+                for (const [key, val] of Object.entries(cleanRow)) {
+                  const mappedTarget = mapping?.[key];
+                  if (mappedTarget && mappedTarget.startsWith('custom_col_')) {
+                    const dbColName = mappedTarget.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+                    saleCols.push(`"${dbColName}"`);
+                    saleVals.push(val);
+                  }
+                }
+                const baseCols = ['invoice_no', 'customer_id', 'doctor_id', 'date', 'total_amount', 'discount', 'cgst_value', 'sgst_value'];
+                const baseVals = [invoiceNo, customer.id, doctor.id, dateStr, totalAmount, discount, cgstVal, sgstVal];
+                const colsStr = [...baseCols, ...saleCols].join(', ');
+                const placeholdersStr = [...baseCols, ...saleCols].map(() => '?').join(', ');
                 const result = await db.run(
-                  `INSERT INTO sales_invoices (invoice_no, customer_id, doctor_id, date, total_amount, discount, cgst_value, sgst_value)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                  [invoiceNo, customer.id, doctor.id, dateStr, totalAmount, discount, cgstVal, sgstVal]
+                  `INSERT INTO sales_invoices (${colsStr}) VALUES (${placeholdersStr})`,
+                  [...baseVals, ...saleVals]
                 );
                 invoice = { id: result.lastID };
               }
@@ -926,10 +972,23 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
 
               let purchase = await db.get('SELECT id FROM purchases WHERE invoice_no = ? AND distributor_id = ?', [invoiceNo, distributor.id]);
               if (!purchase) {
+                const purCols: string[] = [];
+                const purVals: any[] = [];
+                for (const [key, val] of Object.entries(cleanRow)) {
+                  const mappedTarget = mapping?.[key];
+                  if (mappedTarget && mappedTarget.startsWith('custom_col_')) {
+                    const dbColName = mappedTarget.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+                    purCols.push(`"${dbColName}"`);
+                    purVals.push(val);
+                  }
+                }
+                const baseCols = ['invoice_no', 'distributor_id', 'date', 'total_amount'];
+                const baseVals = [invoiceNo, distributor.id, dateStr, totalAmount];
+                const colsStr = [...baseCols, ...purCols].join(', ');
+                const placeholdersStr = [...baseCols, ...purCols].map(() => '?').join(', ');
                 const result = await db.run(
-                  `INSERT INTO purchases (invoice_no, distributor_id, date, total_amount)
-                   VALUES (?, ?, ?, ?)`,
-                  [invoiceNo, distributor.id, dateStr, totalAmount]
+                  `INSERT INTO purchases (${colsStr}) VALUES (${placeholdersStr})`,
+                  [...baseVals, ...purVals]
                 );
                 purchase = { id: result.lastID };
               }
@@ -980,10 +1039,23 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
 
               let retRecord = await db.get('SELECT id FROM returns WHERE return_no = ?', [returnNo]);
               if (!retRecord) {
+                const retCols: string[] = [];
+                const retVals: any[] = [];
+                for (const [key, val] of Object.entries(cleanRow)) {
+                  const mappedTarget = mapping?.[key];
+                  if (mappedTarget && mappedTarget.startsWith('custom_col_')) {
+                    const dbColName = mappedTarget.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+                    retCols.push(`"${dbColName}"`);
+                    retVals.push(val);
+                  }
+                }
+                const baseCols = ['return_no', 'distributor_id', 'type', 'date', 'total_amount'];
+                const baseVals = [returnNo, distributor.id, 'purchase', dateStr, totalAmount];
+                const colsStr = [...baseCols, ...retCols].join(', ');
+                const placeholdersStr = [...baseCols, ...retCols].map(() => '?').join(', ');
                 const result = await db.run(
-                  `INSERT INTO returns (return_no, distributor_id, type, date, total_amount)
-                   VALUES (?, ?, 'purchase', ?, ?)`,
-                  [returnNo, distributor.id, dateStr, totalAmount]
+                  `INSERT INTO returns (${colsStr}) VALUES (${placeholdersStr})`,
+                  [...baseVals, ...retVals]
                 );
                 retRecord = { id: result.lastID };
               }
@@ -1026,16 +1098,264 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               const notes = notesKey ? String(cleanRow[notesKey] || '').trim() : '';
 
               let customer = await db.get('SELECT id FROM customers WHERE LOWER(name) = LOWER(?)', [name]);
+              const custCols: string[] = [];
+              const custVals: any[] = [];
+              const custUpdates: string[] = [];
+              for (const [key, val] of Object.entries(cleanRow)) {
+                const mappedTarget = mapping?.[key];
+                if (mappedTarget && mappedTarget.startsWith('custom_col_')) {
+                  const dbColName = mappedTarget.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+                  custCols.push(`"${dbColName}"`);
+                  custVals.push(val);
+                  custUpdates.push(`"${dbColName}" = ?`);
+                }
+              }
+
               if (!customer) {
+                const baseCols = ['name', 'phone', 'address', 'notes'];
+                const baseVals = [name, phone, address, notes];
+                const colsStr = [...baseCols, ...custCols].join(', ');
+                const placeholdersStr = [...baseCols, ...custCols].map(() => '?').join(', ');
                 await db.run(
-                  'INSERT INTO customers (name, phone, address, notes) VALUES (?, ?, ?, ?)',
-                  [name, phone, address, notes]
+                  `INSERT INTO customers (${colsStr}) VALUES (${placeholdersStr})`,
+                  [...baseVals, ...custVals]
                 );
               } else {
                 await db.run(
-                  'UPDATE customers SET phone = COALESCE(NULLIF(phone, ""), ?), address = COALESCE(NULLIF(address, ""), ?), notes = COALESCE(NULLIF(notes, ""), ?) WHERE id = ?',
-                  [phone, address, notes, customer.id]
+                  `UPDATE customers SET phone = COALESCE(NULLIF(phone, ""), ?), address = COALESCE(NULLIF(address, ""), ?), notes = COALESCE(NULLIF(notes, ""), ?) ${custUpdates.length > 0 ? ', ' + custUpdates.join(', ') : ''} WHERE id = ?`,
+                  [phone, address, notes, ...custVals, customer.id]
                 );
+              }
+            }
+            else if (dataType === 'combined') {
+              // 1. Customer
+              let customerId: number | null = null;
+              const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
+              const nameKeyCust = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name') || patientKey;
+              if (nameKeyCust && cleanRow[nameKeyCust] && patientKey) {
+                const patientName = String(cleanRow[nameKeyCust] || '').trim();
+                const phoneKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'phone') || Object.keys(mapping || {}).find(k => mapping?.[k] === 'mobile');
+                const addressKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'address');
+                const notesKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'notes');
+
+                const phone = phoneKey ? String(cleanRow[phoneKey] || '').trim() : '';
+                const address = addressKey ? String(cleanRow[addressKey] || '').trim() : '';
+                const notes = notesKey ? String(cleanRow[notesKey] || '').trim() : '';
+
+                let customer = await db.get('SELECT id FROM customers WHERE LOWER(name) = LOWER(?)', [patientName]);
+                if (!customer) {
+                  const result = await db.run('INSERT INTO customers (name, phone, address, notes) VALUES (?, ?, ?, ?)', [patientName, phone, address, notes]);
+                  customerId = result.lastID ?? null;
+                } else {
+                  customerId = customer.id;
+                  await db.run(
+                    `UPDATE customers SET phone = COALESCE(NULLIF(phone, ""), ?), address = COALESCE(NULLIF(address, ""), ?), notes = COALESCE(NULLIF(notes, ""), ?) WHERE id = ?`,
+                    [phone, address, notes, customer.id]
+                  );
+                }
+              }
+
+              // 2. Doctor
+              let doctorId: number | null = null;
+              const doctorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'doctor_name');
+              if (doctorKey && cleanRow[doctorKey]) {
+                const doctorName = String(cleanRow[doctorKey] || '').trim();
+                let doctor = await db.get('SELECT id FROM doctors WHERE LOWER(name) = LOWER(?)', [doctorName]);
+                if (!doctor) {
+                  const result = await db.run('INSERT INTO doctors (name) VALUES (?)', [doctorName]);
+                  doctorId = result.lastID ?? null;
+                } else {
+                  doctorId = doctor.id;
+                }
+              }
+
+              // 3. Distributor
+              let distributorId: number | null = null;
+              const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
+              if (distributorKey && cleanRow[distributorKey]) {
+                const distributorName = String(cleanRow[distributorKey] || '').trim();
+                let distributor = await db.get('SELECT id FROM distributors WHERE LOWER(name) = LOWER(?)', [distributorName]);
+                if (!distributor) {
+                  const result = await db.run('INSERT INTO distributors (name) VALUES (?)', [distributorName]);
+                  distributorId = result.lastID ?? null;
+                } else {
+                  distributorId = distributor.id;
+                }
+              }
+
+              // 4. Medicine
+              let medicineId: number | null = null;
+              const nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
+              if (nameKey && cleanRow[nameKey]) {
+                const medName = String(cleanRow[nameKey] || '').trim();
+
+                const medCols: string[] = [];
+                const medVals: any[] = [];
+                const medUpdates: string[] = [];
+
+                for (const [key, val] of Object.entries(cleanRow)) {
+                  if (val === undefined || val === null || val === '') continue;
+                  const mappedTarget = mapping?.[key];
+                  if (!mappedTarget || mappedTarget === 'IGNORE') continue;
+
+                  let dbCol = mappedTarget;
+                  let isCustom = false;
+                  if (dbCol.startsWith('custom_col_')) {
+                    dbCol = dbCol.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+                    isCustom = true;
+                  } else {
+                    if (dbCol === 'hsncode' || dbCol === 'hsn_code') dbCol = 'hsn_code';
+                    if (dbCol === 'mfg' || dbCol === 'manufacturer') dbCol = 'manufacturer';
+                    if (dbCol === 'mrkby' || dbCol === 'marketed_by') dbCol = 'marketed_by';
+                  }
+                  if (dbCol === 'loos_qty' || dbCol === 'loose_qty' || dbCol === 'loose_quantity') continue;
+                  if (dbCol === 'rate') continue;
+                  if (dbCol === 'name') continue;
+
+                  const medicineFields = [
+                    'api_reference', 'mrp', 'hsn_code', 'schedule_type', 'manufacturer',
+                    'category', 'marketed_by', 'manufactured_by', 'legacy_id', 'packaging',
+                    'strength', 'item_type', 'cgst', 'sgst', 'igst', 'rack',
+                    'generic_name', 'pack_unit', 'cgst_per', 'sgst_per', 'item_code'
+                  ];
+
+                  if (medicineFields.includes(dbCol) || isCustom) {
+                    medCols.push(`"${dbCol}"`);
+                    medVals.push(val);
+                    medUpdates.push(`"${dbCol}" = ?`);
+                  }
+                }
+
+                let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
+                if (!med) {
+                  const colsStr = ['name', ...medCols].join(', ');
+                  const placeholdersStr = ['?', ...medVals.map(() => '?')].join(', ');
+                  const result = await db.run(`INSERT INTO medicines (${colsStr}) VALUES (${placeholdersStr})`, [medName, ...medVals]);
+                  medicineId = result.lastID ?? null;
+                } else {
+                  medicineId = med.id;
+                  if (medUpdates.length > 0) {
+                    await db.run(`UPDATE medicines SET ${medUpdates.join(', ')} WHERE id = ?`, [...medVals, med.id]);
+                  }
+                }
+              }
+
+              // 5. Inventory
+              let inventoryId: number | null = null;
+              if (medicineId) {
+                const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+                const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty');
+                const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
+                const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+                const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
+                const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
+                const rackKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'rack_location');
+
+                const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
+                const looseQty = looseQtyKey ? parseInt(cleanRow[looseQtyKey]) || 0 : 0;
+                const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
+                const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
+                const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
+                const expiryDate = expKey ? String(cleanRow[expKey] || '').trim() : '12/2028';
+                const rackLocation = rackKey ? String(cleanRow[rackKey] || '').trim() : '';
+
+                let inv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [medicineId, batchNo]);
+                if (!inv) {
+                  const result = await db.run(
+                    `INSERT INTO inventory_master (medicine_id, batch_no, expiry_date, quantity, loose_quantity, mrp, cost_price, rack_location)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [medicineId, batchNo, expiryDate, quantity, looseQty, mrp, costPrice, rackLocation]
+                  );
+                  inventoryId = result.lastID ?? null;
+                } else {
+                  inventoryId = inv.id;
+                  await db.run(
+                    `UPDATE inventory_master SET quantity = quantity + ?, loose_quantity = loose_quantity + ? WHERE id = ?`,
+                    [quantity, looseQty, inv.id]
+                  );
+                }
+              }
+
+              // 6. Sale or Purchase Invoice
+              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no');
+              if (invoiceNoKey && cleanRow[invoiceNoKey]) {
+                const invoiceNo = String(cleanRow[invoiceNoKey] || '').trim();
+                const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
+                const dateStr = dateKey ? cleanRow[dateKey] : new Date().toISOString();
+                const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
+                const totalAmount = totalAmountKey ? parseFloat(cleanRow[totalAmountKey]) || 0 : 0;
+                const discountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'discount');
+                const discount = discountKey ? parseFloat(cleanRow[discountKey]) || 0 : 0;
+                const cgstKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cgst');
+                const cgstVal = cgstKey ? parseFloat(cleanRow[cgstKey]) || 0 : 0;
+                const sgstKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'sgst');
+                const sgstVal = sgstKey ? parseFloat(cleanRow[sgstKey]) || 0 : 0;
+
+                const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
+                const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
+
+                if (patientKey && cleanRow[patientKey]) {
+                  // Sale Invoice
+                  let invoice = await db.get('SELECT id FROM sales_invoices WHERE invoice_no = ?', [invoiceNo]);
+                  if (!invoice) {
+                    const result = await db.run(
+                      `INSERT INTO sales_invoices (invoice_no, customer_id, doctor_id, date, total_amount, discount, cgst_value, sgst_value)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                      [invoiceNo, customerId || 1, doctorId || 1, dateStr, totalAmount, discount, cgstVal, sgstVal]
+                    );
+                    invoice = { id: result.lastID };
+                  }
+
+                  if (medicineId && inventoryId) {
+                    const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+                    const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty');
+                    const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
+                    const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+
+                    const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
+                    const looseQty = looseQtyKey ? parseInt(cleanRow[looseQtyKey]) || 0 : 0;
+                    const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
+                    const unitPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
+
+                    await db.run(
+                      `INSERT INTO sale_items (invoice_id, inventory_id, quantity, loose_qty, unit_price, mrp)
+                       VALUES (?, ?, ?, ?, ?, ?)`,
+                      [invoice.id, inventoryId, quantity, looseQty, unitPrice, mrp]
+                    );
+                  }
+                }
+                else if (distributorKey && cleanRow[distributorKey]) {
+                  // Purchase Invoice
+                  let purchase = await db.get('SELECT id FROM purchases WHERE invoice_no = ? AND distributor_id = ?', [invoiceNo, distributorId || 1]);
+                  if (!purchase) {
+                    const result = await db.run(
+                      `INSERT INTO purchases (invoice_no, distributor_id, date, total_amount)
+                       VALUES (?, ?, ?, ?)`,
+                      [invoiceNo, distributorId || 1, dateStr, totalAmount]
+                    );
+                    purchase = { id: result.lastID };
+                  }
+
+                  if (medicineId) {
+                    const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+                    const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
+                    const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+                    const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
+                    const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
+
+                    const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
+                    const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
+                    const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
+                    const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
+                    const expiryDate = expKey ? String(cleanRow[expKey] || '').trim() : '12/2028';
+
+                    await db.run(
+                      `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                      [purchase.id, medicineId, batchNo, expiryDate, quantity, costPrice, mrp]
+                    );
+                  }
+                }
               }
             }
 
@@ -1053,7 +1373,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
           await db.close();
         }
       })
-      .on('end', () => {})
+      .on('end', () => { })
       .on('error', reject);
   });
 }

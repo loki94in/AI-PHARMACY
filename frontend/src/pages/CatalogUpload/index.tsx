@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Database, Upload, FileText, CheckCircle, AlertCircle, Loader2, History, Check, AlertTriangle, Play, RefreshCw } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Database, Upload, FileText, CheckCircle, AlertCircle, Loader2, History, Check, AlertTriangle, Play, RefreshCw, Trash2, X } from 'lucide-react';
 import { api, apiClient } from '../../services/api';
 
 interface CatalogJob {
@@ -57,8 +58,66 @@ const getFieldLabelAndSection = (value: string) => {
   return { section: 'Unknown', label: value };
 };
 
+const getMappingColor = (targetCol: string) => {
+  if (!targetCol) return 'ignored';
+  
+  if (targetCol.startsWith('custom_col_')) {
+    return 'blue';
+  }
+  
+  const blueFields = ['name', 'api_reference', 'strength', 'packaging', 'manufacturer', 'marketed_by', 'hsn_code', 'schedule_type', 'generic_name', 'category'];
+  if (blueFields.includes(targetCol)) return 'blue';
+  
+  const greenFields = ['quantity', 'batch_no', 'expiry_date', 'rack', 'rack_location'];
+  if (greenFields.includes(targetCol)) return 'green';
+  
+  const yellowFields = ['mrp', 'cost_price', 'total_amount', 'cgst', 'sgst', 'discount', 'invoice_no', 'date'];
+  if (yellowFields.includes(targetCol)) return 'yellow';
+  
+  const purpleFields = ['patient_name', 'distributor_name', 'doctor_name', 'phone', 'mobile', 'address', 'notes'];
+  if (purpleFields.includes(targetCol)) return 'purple';
+  
+  return 'ignored';
+};
+
+const getHighlightStyles = (targetCol: string, isHovered: boolean) => {
+  const color = getMappingColor(targetCol);
+  
+  if (color === 'blue') {
+    return {
+      header: isHovered ? 'bg-blue-500/20 text-blue-300 border-blue-500/80 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+      cell: isHovered ? 'bg-blue-500/15 border-r border-blue-500/30 text-blue-300' : 'bg-blue-500/5 border-r border-blue-500/20 text-blue-400/90'
+    };
+  }
+  if (color === 'green') {
+    return {
+      header: isHovered ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/80 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+      cell: isHovered ? 'bg-emerald-500/15 border-r border-emerald-500/30 text-emerald-300' : 'bg-emerald-500/5 border-r border-emerald-500/20 text-emerald-400/90'
+    };
+  }
+  if (color === 'yellow') {
+    return {
+      header: isHovered ? 'bg-amber-500/20 text-amber-300 border-amber-500/80 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+      cell: isHovered ? 'bg-amber-500/15 border-r border-amber-500/30 text-amber-300' : 'bg-amber-500/5 border-r border-amber-500/20 text-amber-400/90'
+    };
+  }
+  if (color === 'purple') {
+    return {
+      header: isHovered ? 'bg-purple-500/20 text-purple-300 border-purple-500/80 shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+      cell: isHovered ? 'bg-purple-500/15 border-r border-purple-500/30 text-purple-300' : 'bg-purple-500/5 border-r border-purple-500/20 text-purple-400/90'
+    };
+  }
+  
+  return {
+    header: isHovered ? 'bg-white/10 text-gray-200 border-white/40' : 'bg-white/5 text-gray-500 border-glass-border opacity-50 grayscale',
+    cell: isHovered ? 'bg-white/5 border-r border-white/10 text-gray-200' : 'border-r border-glass-border/10 text-gray-500 opacity-50 grayscale'
+  };
+};
+
 const CatalogUpload = () => {
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
+  const [hoveredHeader, setHoveredHeader] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   // Job States
   const [uploading, setUploading] = useState(false);
@@ -89,6 +148,73 @@ const CatalogUpload = () => {
   const [showMappingModal, setShowMappingModal] = useState(false);
   const [fileHeaders, setFileHeaders] = useState<string[]>([]);
   const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
+  const [customColumns, setCustomColumns] = useState<string[]>([]);
+  const [history, setHistory] = useState<Record<string, string>[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [showOnlyMapped, setShowOnlyMapped] = useState<boolean>(false);
+  const [showExistingColor, setShowExistingColor] = useState<boolean>(true);
+  const [showNewColor, setShowNewColor] = useState<boolean>(true);
+
+  const initMappingModal = (mappings: Record<string, string>, headers: string[], preview: any[]) => {
+    setFileHeaders(headers);
+    setPreviewRows(preview);
+    
+    if (preview.length > 0) {
+      setPreviewHeaders(Object.keys(preview[0]));
+    } else if (headers.length > 0) {
+      setPreviewHeaders(headers);
+    } else {
+      setPreviewHeaders([]);
+    }
+    
+    setColumnMappings(mappings);
+    
+    // Initialize custom columns
+    const initialCustom = Object.values(mappings).filter((val: any) => typeof val === 'string' && val.startsWith('custom_col_')) as string[];
+    setCustomColumns(Array.from(new Set(initialCustom)));
+    
+    // Initialize history
+    setHistory([mappings]);
+    setHistoryIndex(0);
+    
+    setShowMappingModal(true);
+  };
+
+  const updateMappingsWithHistory = (newMappings: Record<string, string>) => {
+    setColumnMappings(newMappings);
+    const newHistory = history.slice(0, historyIndex + 1);
+    setHistory([...newHistory, newMappings]);
+    setHistoryIndex(newHistory.length);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1;
+      setHistoryIndex(prevIndex);
+      setColumnMappings(history[prevIndex]);
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1;
+      setHistoryIndex(nextIndex);
+      setColumnMappings(history[nextIndex]);
+    }
+  };
+
+  const handleDeleteCustomColumn = (targetCol: string) => {
+    if (window.confirm(`Are you sure you want to delete the custom column "${targetCol.replace('custom_col_', '')}"? This will unmap any headers currently mapped to it.`)) {
+      setCustomColumns(prev => prev.filter(c => c !== targetCol));
+      const updatedMappings = { ...columnMappings };
+      Object.keys(updatedMappings).forEach(key => {
+        if (updatedMappings[key] === targetCol) {
+          updatedMappings[key] = '';
+        }
+      });
+      updateMappingsWithHistory(updatedMappings);
+    }
+  };
 
   // Fetch previous jobs
   const fetchJobs = useCallback(async () => {
@@ -193,20 +319,7 @@ const CatalogUpload = () => {
                 api.getCatalogJobStatus(payload.id).then(data => {
                   const headers = Array.isArray(data.headers) && data.headers.length > 0 ? data.headers : [];
                   const preview = Array.isArray(data.previewData) ? data.previewData : [];
-                  
-                  setFileHeaders(headers);
-                  setPreviewRows(preview);
-                  
-                  if (preview.length > 0) {
-                    setPreviewHeaders(Object.keys(preview[0]));
-                  } else if (headers.length > 0) {
-                    setPreviewHeaders(headers);
-                  } else {
-                    setPreviewHeaders([]);
-                  }
-                  
-                  setColumnMappings(data.suggestedMapping || {});
-                  setShowMappingModal(true);
+                  initMappingModal(data.suggestedMapping || {}, headers, preview);
                 }).catch(err => {
                   console.error('Failed to load mapping details:', err);
                   setError('Failed to load mapping details.');
@@ -259,6 +372,21 @@ const CatalogUpload = () => {
       }
     };
   }, [fetchJobs]);
+
+  useEffect(() => {
+    if (hoveredHeader && scrollContainerRef.current) {
+      const thElement = scrollContainerRef.current.querySelector(
+        `th[data-header="${CSS.escape(hoveredHeader)}"]`
+      );
+      if (thElement) {
+        thElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
+      }
+    }
+  }, [hoveredHeader]);
 
   // Handle file uploading
   const handleUpload = async (file: File) => {
@@ -360,6 +488,25 @@ const CatalogUpload = () => {
     } catch (err: any) {
       console.error('Resume failed:', err);
       setError(err.response?.data?.error || err.message || 'Failed to resume ingestion');
+    }
+  };
+
+  const handleDeleteJob = async (id: number) => {
+    if (!window.confirm("Are you sure you want to delete this catalog import job? This will delete the uploaded file and all job statistics.")) {
+      return;
+    }
+    try {
+      await api.deleteCatalogJob(id);
+      setSuccess(`Job #${id} deleted successfully.`);
+      if (jobId === id) {
+        setJobId(null);
+        setJobStatus(null);
+        setPreviewRows([]);
+      }
+      fetchJobs();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.error || err.message || 'Failed to delete job');
     }
   };
 
@@ -590,9 +737,20 @@ const CatalogUpload = () => {
                         </button>
                       )}
                       
-                      {jobStatus === 'waiting_for_mapping' && (
+                      {(jobStatus === 'waiting_for_mapping' || jobStatus === 'ready_for_review' || jobStatus === 'done' || jobStatus === 'failed') && (
                         <button
-                          onClick={() => setShowMappingModal(true)}
+                          onClick={async () => {
+                            if (!jobId) return;
+                            try {
+                              const data = await api.getCatalogJobStatus(jobId);
+                              const headers = Array.isArray(data.headers) && data.headers.length > 0 ? data.headers : [];
+                              const preview = Array.isArray(data.previewData) ? data.previewData : [];
+                              initMappingModal(data.mappingConfig || data.suggestedMapping || {}, headers, preview);
+                            } catch (err) {
+                              console.error('Configure Mappings Error:', err);
+                              setError('Failed to load mapping details.');
+                            }
+                          }}
                           className="text-xs bg-amber-500 hover:bg-amber-600 text-black px-4 py-2 rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.2)]"
                         >
                           Configure Mappings
@@ -605,20 +763,52 @@ const CatalogUpload = () => {
                       >
                         Upload Another
                       </button>
+
+                      {jobId && (
+                        <button
+                          onClick={() => handleDeleteJob(jobId)}
+                          className="bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 px-4 py-2 rounded-xl text-xs font-bold text-red-400 transition-all"
+                        >
+                          Delete Job
+                        </button>
+                      )}
                     </div>
                   </div>
 
                   {/* Summary Cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     {[
-                      { label: 'Total Products Found', value: stats.total, color: 'text-primary' },
-                      { label: 'Existing Products (Merge)', value: stats.existing, color: 'text-yellow-400' },
-                      { label: 'New Products (Create)', value: stats.new, color: 'text-green' },
-                      { label: 'Duplicates in CSV', value: stats.duplicates, color: 'text-red-400' }
+                      { label: 'Total Products Found', value: stats.total, color: 'text-primary', clickable: false },
+                      { 
+                        label: 'Existing Products (Merge)', 
+                        value: stats.existing, 
+                        color: showExistingColor ? 'text-yellow-400 border-yellow-500/30' : 'text-muted border-glass-border opacity-50 grayscale', 
+                        clickable: true,
+                        active: showExistingColor,
+                        onClick: () => setShowExistingColor(p => !p)
+                      },
+                      { 
+                        label: 'New Products (Create)', 
+                        value: stats.new, 
+                        color: showNewColor ? 'text-green border-green/30' : 'text-muted border-glass-border opacity-50 grayscale', 
+                        clickable: true,
+                        active: showNewColor,
+                        onClick: () => setShowNewColor(p => !p)
+                      },
+                      { label: 'Duplicates in CSV', value: stats.duplicates, color: 'text-red-400', clickable: false }
                     ].map((card, idx) => (
-                      <div key={idx} className="glass-panel p-5 text-center">
-                        <p className={`text-2xl font-black ${card.color}`}>{card.value.toLocaleString()}</p>
-                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-1">{card.label}</p>
+                      <div 
+                        key={idx} 
+                        onClick={card.clickable ? card.onClick : undefined}
+                        className={`glass-panel p-5 text-center transition-all duration-300 ${card.clickable ? 'cursor-pointer select-none hover:scale-[1.02] border' : ''} ${card.clickable ? (card.active ? 'bg-bg3' : 'bg-bg') : ''}`}
+                      >
+                        <p className={`text-2xl font-black ${card.color.split(' ')[0]}`}>{card.value.toLocaleString()}</p>
+                        <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">{card.label}</p>
+                        {card.clickable && (
+                          <span className={`text-[8px] font-bold uppercase tracking-wider mt-1.5 px-1.5 py-0.5 rounded-full inline-block border ${card.active ? 'bg-glass-bg border-glass-border text-primary' : 'bg-bg border-glass-border text-muted'}`}>
+                            {card.active ? 'On / Highlighted' : 'Off / Muted'}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -639,15 +829,30 @@ const CatalogUpload = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {previewRows.map((row, ri) => (
-                          <tr key={ri} className="border-b border-glass-border/10 hover:bg-white/5 transition-all">
-                            {previewHeaders.map((header) => (
-                              <td key={header} className="p-3 text-gray-300 max-w-xs truncate" title={row[header]}>
-                                {String(row[header] ?? '—')}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
+                        {previewRows.map((row, ri) => {
+                          const isExisting = row.__is_existing === true;
+                          let rowClass = "border-b border-glass-border/10 hover:bg-white/5 transition-all duration-200";
+                          
+                          if (isExisting) {
+                            if (showExistingColor) {
+                              rowClass += " bg-amber-500/5 text-yellow-400/90";
+                            }
+                          } else {
+                            if (showNewColor) {
+                              rowClass += " bg-emerald-500/5 text-green/90";
+                            }
+                          }
+
+                          return (
+                            <tr key={ri} className={rowClass}>
+                              {previewHeaders.map((header) => (
+                                <td key={header} className="p-3 max-w-xs truncate" title={row[header]}>
+                                  {String(row[header] ?? '—')}
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -764,7 +969,7 @@ const CatalogUpload = () => {
                                 <Play size={10} /> Resume
                               </button>
                             )}
-                            {job.status === 'waiting_for_mapping' && (
+                            {(job.status === 'waiting_for_mapping' || job.status === 'ready_for_review' || job.status === 'done' || job.status === 'failed') && (
                               <button
                                 onClick={async () => {
                                   setError(null);
@@ -773,29 +978,15 @@ const CatalogUpload = () => {
                                   setJobStatus(job.status);
                                   try {
                                     const data = await api.getCatalogJobStatus(job.id);
-                                    
                                     const headers = Array.isArray(data.headers) && data.headers.length > 0 ? data.headers : [];
                                     const preview = Array.isArray(data.previewData) ? data.previewData : [];
-                                    
-                                    setFileHeaders(headers);
-                                    setPreviewRows(preview);
-                                    
-                                    if (preview.length > 0) {
-                                      setPreviewHeaders(Object.keys(preview[0]));
-                                    } else if (headers.length > 0) {
-                                      setPreviewHeaders(headers);
-                                    } else {
-                                      setPreviewHeaders([]);
-                                    }
-                                    
-                                    setColumnMappings(data.suggestedMapping || {});
-                                    setShowMappingModal(true);
+                                    initMappingModal(data.mappingConfig || data.suggestedMapping || {}, headers, preview);
                                   } catch (err) {
                                     console.error('Configure Mappings Error:', err);
                                     setError('Failed to load mapping details.');
                                   }
                                 }}
-                                className="text-xs bg-amber-500 hover:bg-amber-600 text-black px-3 py-1 rounded-lg font-bold transition-all"
+                                className="text-xs bg-amber-500 hover:bg-amber-600 text-black px-3 py-1 rounded-lg font-bold transition-all mr-2"
                               >
                                 Configure Mappings
                               </button>
@@ -806,6 +997,14 @@ const CatalogUpload = () => {
                                 className="text-xs bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 px-3 py-1 rounded-lg font-bold transition-all"
                               >
                                 Review / Import
+                              </button>
+                            )}
+                            {job.status !== 'processing' && job.status !== 'pending' && (
+                              <button
+                                onClick={() => handleDeleteJob(job.id)}
+                                className="text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 px-3 py-1 rounded-lg font-bold transition-all ml-2"
+                              >
+                                Delete
                               </button>
                             )}
                           </td>
@@ -821,172 +1020,307 @@ const CatalogUpload = () => {
       </div>
 
       {/* Mapping Preview Popup */}
-      {showMappingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-3">
-          <div className="glass-panel w-full max-w-[99vw] h-[98vh] lg:max-w-[98vw] lg:h-[95vh] flex flex-col rounded-2xl border border-glass-border shadow-2xl overflow-hidden bg-zinc-950">
-            {/* Modal Header */}
-            <div className="p-4 md:px-6 md:py-4 border-b border-glass-border bg-white/5 flex justify-between items-center">
-              <div>
-                <h4 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Database size={20} className="text-primary" />
-                  Catalogue Column Mapping & Configuration
-                </h4>
-                <p className="text-gray-400 text-xs mt-1">
-                  Map the columns from your uploaded file to the pharmacy catalog fields. Product Name is required.
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowMappingModal(false);
-                }}
-                className="text-gray-400 hover:text-white transition-colors text-sm font-bold bg-white/10 px-3 py-1.5 rounded-lg border border-white/10"
-              >
-                Cancel
-              </button>
-            </div>
+      {showMappingModal && createPortal(
+        (() => {
+          const visibleHeaders = fileHeaders.filter(h => {
+            if (showOnlyMapped) {
+              return columnMappings[h] && columnMappings[h] !== '';
+            }
+            return true;
+          });
 
-            {/* Modal Body */}
-            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-              {/* Left Column: Mappings form */}
-              <div className="w-full lg:w-[48%] xl:w-[50%] p-4 md:p-5 overflow-y-auto border-b lg:border-b-0 lg:border-r border-glass-border flex flex-col gap-4">
-                <h5 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Configure Column Mappings</h5>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {fileHeaders.map((header) => {
-                    const currentMapping = columnMappings[header] || '';
-                    const sampleValue = previewRows[0]?.[header] || '—';
+          return (
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-3">
+              <div className="glass-panel w-full max-w-[99vw] h-[98vh] lg:max-w-[98vw] lg:h-[95vh] flex flex-col rounded-2xl border border-glass-border shadow-2xl overflow-hidden bg-zinc-950">
+                {/* Modal Header */}
+                <div className="p-4 md:px-6 md:py-4 border-b border-glass-border bg-white/5 flex justify-between items-center">
+                  <div>
+                    <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Database size={20} className="text-primary" />
+                      Catalogue Column Mapping & Configuration
+                    </h4>
+                    <p className="text-gray-400 text-xs mt-1">
+                      Map the columns from your uploaded file to the pharmacy catalog fields. Product Name is required.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowMappingModal(false);
+                    }}
+                    className="text-gray-400 hover:text-white transition-colors text-sm font-bold bg-white/10 px-3 py-1.5 rounded-lg border border-white/10"
+                  >
+                    Cancel
+                  </button>
+                </div>
 
-                    return (
-                      <div key={header} className="p-3 rounded-lg border border-glass-border/60 bg-white/5 hover:bg-white/10 hover:border-primary/40 transition-all flex flex-col gap-2">
-                        <div className="flex flex-col gap-1 min-w-0">
-                          <span className="text-xs font-bold text-white truncate block" title={header}>
-                            {header}
-                          </span>
-                          <span className="text-[10px] text-gray-400 bg-black/40 px-1.5 py-0.5 rounded border border-glass-border/30 truncate self-start block max-w-full font-medium" title={String(sampleValue)}>
-                            Sample: <span className="text-primary font-mono">{String(sampleValue)}</span>
-                          </span>
-                        </div>
-                        
-                        <select
-                          value={currentMapping}
-                          onChange={(e) => {
-                            const newMappings = { ...columnMappings, [header]: e.target.value };
-                            setColumnMappings(newMappings);
+                {/* Modal Body */}
+                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                  {/* Left Column: Mappings form */}
+                  <div className="w-full lg:w-[48%] xl:w-[50%] p-4 md:p-5 overflow-y-auto border-b lg:border-b-0 lg:border-r border-glass-border flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                      <h5 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Configure Column Mappings</h5>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const updatedMappings = { ...columnMappings };
+                            fileHeaders.forEach(h => {
+                              if (!updatedMappings[h]) {
+                                updatedMappings[h] = '';
+                              }
+                            });
+                            updateMappingsWithHistory(updatedMappings);
                           }}
-                          className="w-full bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2 outline-none focus:border-primary transition-all cursor-pointer font-medium"
+                          className="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-glass-border text-gray-300 text-[10px] font-bold rounded-lg transition-all"
+                          title="Set all unmapped columns to Ignore"
                         >
-                          <option value="">-- Ignore --</option>
-                          {AVAILABLE_DB_SECTIONS.map((section) => (
-                            <optgroup key={section.label} label={section.label} className="bg-[#18181b] text-primary font-semibold">
-                              {section.fields.map((f) => (
-                                <option key={f.value} value={f.value} className="bg-[#18181b] text-white font-normal">
-                                  {f.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                          Ignore Unused Columns
+                        </button>
+                        
+                        {/* Undo / Redo controls */}
+                        <div className="flex items-center gap-2 bg-black/40 p-1 rounded-lg border border-glass-border">
+                        <button
+                          onClick={handleUndo}
+                          disabled={historyIndex <= 0}
+                          className="p-1 px-2 text-[10px] font-bold rounded hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none text-white transition-colors"
+                          title="Undo Mapping Change"
+                        >
+                          Undo
+                        </button>
+                        <div className="w-px h-3 bg-glass-border" />
+                        <button
+                          onClick={handleRedo}
+                          disabled={historyIndex >= history.length - 1}
+                          className="p-1 px-2 text-[10px] font-bold rounded hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none text-white transition-colors"
+                          title="Redo Mapping Change"
+                        >
+                          Redo
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
+                    </div>
+                  </div>
 
-              {/* Right Column: Sample Data Preview (First 100 Rows) */}
-              <div className="w-full lg:w-[52%] xl:w-[50%] p-4 md:p-5 flex flex-col overflow-hidden">
-                <h5 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Sample Data Grid (First 100 Rows)</h5>
-                
-                <div className="flex-1 overflow-auto border border-glass-border rounded-xl bg-black/40">
-                  <table className="min-w-full divide-y divide-glass-border text-xs text-left">
-                    <thead className="bg-white/5 sticky top-0 z-10">
-                      <tr>
-                        {fileHeaders.filter(header => columnMappings[header]).map((header) => {
-                          const isMapped = columnMappings[header];
-                          const fieldInfo = isMapped ? getFieldLabelAndSection(isMapped) : null;
-                          return (
-                            <th 
-                              key={header} 
-                              className={`px-4 py-3 font-bold border-b border-glass-border truncate whitespace-nowrap ${isMapped ? 'text-primary' : 'text-gray-500'}`}
-                            >
-                              {header}
-                              {isMapped && fieldInfo && (
-                                <span className="block text-[10px] font-medium text-emerald-400 mt-1 flex items-center gap-1.5">
-                                  <span className="bg-emerald-400/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-400/20">{fieldInfo.section}</span>
-                                  <span>{fieldInfo.label}</span>
-                                </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {fileHeaders.map((header) => {
+                        const currentMapping = columnMappings[header] || '';
+                        const sampleValue = previewRows[0]?.[header] || '—';
+
+                        const isCustomMapping = currentMapping.startsWith('custom_col_');
+                        const customFieldName = isCustomMapping ? currentMapping.substring(11) : '';
+
+                        return (
+                          <div 
+                            key={header} 
+                            onMouseEnter={() => setHoveredHeader(header)}
+                            onMouseLeave={() => setHoveredHeader(null)}
+                            className={`p-3 rounded-lg border transition-all flex flex-col gap-2 ${
+                              hoveredHeader === header
+                                ? 'border-primary bg-white/10 shadow-[0_0_15px_rgba(59,130,246,0.2)]'
+                                : 'border-glass-border/60 bg-white/5 hover:bg-white/10 hover:border-primary/40'
+                            }`}
+                          >
+                            <div className="flex flex-col gap-1 min-w-0">
+                              <span className="text-xs font-bold text-white truncate block" title={header}>
+                                {header}
+                              </span>
+                              <span className="text-[10px] text-gray-400 bg-black/40 px-1.5 py-0.5 rounded border border-glass-border/30 truncate self-start block max-w-full font-medium" title={String(sampleValue)}>
+                                Sample: <span className="text-primary font-mono">{String(sampleValue)}</span>
+                              </span>
+                            </div>
+                            
+                            <div className="flex items-center gap-1.5 w-full">
+                              <select
+                                value={currentMapping}
+                                onFocus={() => setHoveredHeader(header)}
+                                onBlur={() => setHoveredHeader(null)}
+                                onChange={(e) => {
+                                  if (e.target.value === 'CREATE_CUSTOM') {
+                                    const colName = window.prompt("Enter new custom database column name:");
+                                    if (colName) {
+                                      const cleanName = colName.trim().replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+                                      if (cleanName) {
+                                        const customVal = `custom_col_${cleanName}`;
+                                        if (!customColumns.includes(customVal)) {
+                                          setCustomColumns(prev => [...prev, customVal]);
+                                        }
+                                        const newMappings = { ...columnMappings, [header]: customVal };
+                                        updateMappingsWithHistory(newMappings);
+                                      }
+                                    }
+                                  } else {
+                                    const newMappings = { ...columnMappings, [header]: e.target.value };
+                                    updateMappingsWithHistory(newMappings);
+                                  }
+                                }}
+                                className="flex-1 bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2 outline-none focus:border-primary transition-all cursor-pointer font-medium"
+                              >
+                                <option value="">-- Ignore --</option>
+                                {AVAILABLE_DB_SECTIONS.map((section) => (
+                                  <optgroup key={section.label} label={section.label} className="bg-[#18181b] text-primary font-semibold">
+                                    {section.fields.map((f) => (
+                                      <option key={f.value} value={f.value} className="bg-[#18181b] text-white font-normal">
+                                        {f.label}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                ))}
+                                
+                                {/* Render Created Custom Columns */}
+                                {customColumns.length > 0 && (
+                                  <optgroup label="✨ Created Custom Columns" className="bg-[#18181b] text-blue-400 font-semibold">
+                                    {customColumns.map((c) => (
+                                      <option key={c} value={c} className="bg-[#18181b] text-white font-normal">
+                                        Custom Field: {c.substring(11)}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                
+                                <option value="CREATE_CUSTOM" className="bg-[#18181b] text-yellow-500 font-semibold">
+                                  + Add Custom Column...
+                                </option>
+                              </select>
+
+                              {isCustomMapping && (
+                                <button
+                                  onClick={() => handleDeleteCustomColumn(currentMapping)}
+                                  className="p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-colors shrink-0"
+                                  title="Delete Custom Column Mapping"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               )}
-                            </th>
-                          );
-                        })}
-                        {fileHeaders.filter(header => columnMappings[header]).length === 0 && (
-                          <th className="px-4 py-3 font-normal text-gray-500 italic border-b border-glass-border">No columns mapped yet.</th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-glass-border/40 text-gray-300 font-mono">
-                      {previewRows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-white/5 transition-colors">
-                          {fileHeaders.filter(header => columnMappings[header]).map((header) => (
-                            <td key={header} className="px-4 py-2 border-r border-glass-border/20 truncate max-w-[200px]" title={row[header]}>
-                              {row[header] !== undefined ? String(row[header]) : ''}
-                            </td>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Sample Data Preview (First 100 Rows) */}
+                  <div className="w-full lg:w-[52%] xl:w-[50%] p-4 md:p-5 flex flex-col overflow-hidden">
+                    <div className="flex justify-between items-center mb-3">
+                      <h5 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Sample Data Grid (First 100 Rows)</h5>
+                      <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-white select-none">
+                        <input
+                          type="checkbox"
+                          checked={showOnlyMapped}
+                          onChange={(e) => setShowOnlyMapped(e.target.checked)}
+                          className="rounded border-glass-border bg-black/60 text-primary focus:ring-0 focus:ring-offset-0 focus:outline-none"
+                        />
+                        Show Mapped Columns Only
+                      </label>
+                    </div>
+                    
+                    <div ref={scrollContainerRef} className="flex-1 overflow-auto border border-glass-border rounded-xl bg-black/40">
+                      <table className="min-w-full divide-y divide-glass-border text-xs text-left">
+                        <thead className="bg-[#18181b]/90 sticky top-0 z-10">
+                          <tr>
+                            {visibleHeaders.map((header) => {
+                              const isMapped = columnMappings[header];
+                              const customFieldName = isMapped && isMapped.startsWith('custom_col_') ? isMapped.substring(11) : '';
+                              const fieldInfo = isMapped ? (customFieldName ? { section: 'Custom Column', label: customFieldName } : getFieldLabelAndSection(isMapped)) : null;
+                              const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
+                              return (
+                                <th 
+                                  key={header} 
+                                  data-header={header}
+                                  onMouseEnter={() => setHoveredHeader(header)}
+                                  onMouseLeave={() => setHoveredHeader(null)}
+                                  className={`px-4 py-3 font-bold border-b border-glass-border transition-all duration-150 truncate whitespace-nowrap cursor-pointer ${styles.header}`}
+                                >
+                                  {header}
+                                  {isMapped && fieldInfo && (
+                                    <span className="block text-[10px] font-bold mt-1 flex flex-wrap items-center gap-1">
+                                      <span className={`px-1.5 py-0.5 rounded border text-[8px] uppercase ${
+                                        customFieldName ? 'bg-blue-400/10 text-blue-300 border-blue-400/20' : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/20'
+                                      }`}>{fieldInfo.section}</span>
+                                      <span className="truncate max-w-[120px]">{fieldInfo.label}</span>
+                                    </span>
+                                  )}
+                                </th>
+                              );
+                            })}
+                            {visibleHeaders.length === 0 && (
+                              <th className="px-4 py-3 font-normal text-gray-500 italic border-b border-glass-border">No columns found.</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-glass-border/40 text-gray-300 font-mono">
+                          {previewRows.map((row, idx) => (
+                            <tr key={idx} className="hover:bg-white/5 transition-colors">
+                              {visibleHeaders.map((header) => {
+                                const isMapped = columnMappings[header];
+                                const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
+                                return (
+                                  <td 
+                                    key={header} 
+                                    onMouseEnter={() => setHoveredHeader(header)}
+                                    onMouseLeave={() => setHoveredHeader(null)}
+                                    className={`px-4 py-2 truncate max-w-[200px] transition-all duration-150 ${styles.cell}`} 
+                                    title={row[header]}
+                                  >
+                                    {row[header] !== undefined ? String(row[header]) : ''}
+                                  </td>
+                                );
+                              })}
+                            </tr>
                           ))}
-                          {fileHeaders.filter(header => columnMappings[header]).length === 0 && (
-                            <td className="px-4 py-2 italic text-gray-600">Select mappings on the left to preview data.</td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-6 border-t border-glass-border bg-white/5 flex justify-between items-center">
+                  <div className="text-xs text-gray-400 flex items-center gap-1.5">
+                    <AlertTriangle size={14} className="text-amber-500 animate-pulse" />
+                    <span>Mappings are learned to auto-suggest in subsequent file uploads.</span>
+                  </div>
+                  
+                  <button
+                    onClick={async () => {
+                      // Validate Product Name (required) is mapped
+                      const nameMapped = Object.values(columnMappings).includes('name');
+                      if (!nameMapped) {
+                        alert('Error: You must map at least one column to the "Product Name (Required)" target field.');
+                        return;
+                      }
+                      
+                      // Start ingestion
+                      if (!jobId) return;
+                      setError(null);
+                      setSuccess(null);
+                      setImporting(true);
+                      setJobStatus('processing');
+                      setProgress(0);
+                      setShowMappingModal(false);
+                      setActiveTab('upload');
+                      
+                      try {
+                        const res = await api.importCatalogJob(jobId, columnMappings, {});
+                        if (res.success) {
+                          setSuccess('Mapping confirmed. Background ingestion started successfully.');
+                        } else {
+                          throw new Error(res.message || 'Ingestion trigger failed');
+                        }
+                      } catch (err: any) {
+                        setError(err.response?.data?.error || err.message || 'Failed to trigger ingestion');
+                        setImporting(false);
+                        setJobStatus(null);
+                      }
+                    }}
+                    className="bg-primary hover:bg-primary/90 text-white text-xs font-bold px-6 py-3 rounded-lg flex items-center gap-2 shadow-lg hover:shadow-primary/20 transition-all"
+                  >
+                    <Play size={14} /> Confirm & Start Ingestion
+                  </button>
                 </div>
               </div>
             </div>
-
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-glass-border bg-white/5 flex justify-between items-center">
-              <div className="text-xs text-gray-400 flex items-center gap-1.5">
-                <AlertTriangle size={14} className="text-amber-500 animate-pulse" />
-                <span>Mappings are learned to auto-suggest in subsequent file uploads.</span>
-              </div>
-              
-              <button
-                onClick={async () => {
-                  // Validate Product Name (required) is mapped
-                  const nameMapped = Object.values(columnMappings).includes('name');
-                  if (!nameMapped) {
-                    alert('Error: You must map at least one column to the "Product Name (Required)" target field.');
-                    return;
-                  }
-                  
-                  // Start ingestion
-                  if (!jobId) return;
-                  setError(null);
-                  setSuccess(null);
-                  setImporting(true);
-                  setJobStatus('processing');
-                  setProgress(0);
-                  setShowMappingModal(false);
-                  setActiveTab('upload');
-                  
-                  try {
-                    const res = await api.importCatalogJob(jobId, columnMappings, {});
-                    if (res.success) {
-                      setSuccess('Mapping confirmed. Background ingestion started successfully.');
-                    } else {
-                      throw new Error(res.message || 'Ingestion trigger failed');
-                    }
-                  } catch (err: any) {
-                    setError(err.response?.data?.error || err.message || 'Failed to trigger ingestion');
-                    setImporting(false);
-                    setJobStatus(null);
-                  }
-                }}
-                className="bg-primary hover:bg-primary/90 text-white text-xs font-bold px-6 py-3 rounded-lg flex items-center gap-2 shadow-lg hover:shadow-primary/20 transition-all"
-              >
-                <Play size={14} /> Confirm & Start Ingestion
-              </button>
-            </div>
-          </div>
-        </div>
+          );
+        })(),
+        document.body
       )}
     </div>
   );

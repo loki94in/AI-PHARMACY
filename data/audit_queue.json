@@ -1,686 +1,74 @@
 [
   {
-    "id": "audit_1780380710822",
-    "imagePath": "data\\audit_images\\audit_1780380710822.jpg",
+    "id": "audit_1781439558132",
+    "imagePath": "data\\audit_images\\audit_1781439558132.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T06:11:50.905Z"
+    "createdAt": "2026-06-14T12:19:18.240Z"
   },
   {
-    "id": "audit_1780381156885",
-    "imagePath": "data\\audit_images\\audit_1780381156885.jpg",
+    "id": "audit_1781445073370",
+    "imagePath": "data\\audit_images\\audit_1781445073370.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T06:19:17.003Z"
+    "createdAt": "2026-06-14T13:51:13.462Z"
   },
   {
-    "id": "audit_1780381452513",
-    "imagePath": "data\\audit_images\\audit_1780381452513.jpg",
+    "id": "audit_1781445192700",
+    "imagePath": "data\\audit_images\\audit_1781445192700.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T06:24:12.581Z"
+    "createdAt": "2026-06-14T13:53:12.788Z"
   },
   {
-    "id": "audit_1780382281883",
-    "imagePath": "data\\audit_images\\audit_1780382281883.jpg",
+    "id": "audit_1781445678125",
+    "imagePath": "data\\audit_images\\audit_1781445678125.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T06:38:01.949Z"
+    "createdAt": "2026-06-14T14:01:18.219Z"
   },
   {
-    "id": "audit_1780382347111",
-    "imagePath": "data\\audit_images\\audit_1780382347111.jpg",
+    "id": "audit_1781445722596",
+    "imagePath": "data\\audit_images\\audit_1781445722596.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T06:39:07.180Z"
+    "createdAt": "2026-06-14T14:02:02.681Z"
   },
   {
-    "id": "audit_1780383407470",
-    "imagePath": "data\\audit_images\\audit_1780383407470.jpg",
+    "id": "audit_1781445759581",
+    "imagePath": "data\\audit_images\\audit_1781445759581.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T06:56:47.539Z"
+    "createdAt": "2026-06-14T14:02:39.602Z"
   },
   {
-    "id": "audit_1780384837478",
-    "imagePath": "data\\audit_images\\audit_1780384837478.jpg",
+    "id": "audit_1781445848638",
+    "imagePath": "data\\audit_images\\audit_1781445848638.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T07:20:37.541Z"
+    "createdAt": "2026-06-14T14:04:08.679Z"
   },
   {
-    "id": "audit_1780389692345",
-    "imagePath": "data\\audit_images\\audit_1780389692345.jpg",
+    "id": "audit_1781457334104",
+    "imagePath": "data\\audit_images\\audit_1781457334104.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-02T08:41:32.433Z"
-  },
-  {
-    "id": "audit_1780397773455",
-    "imagePath": "data\\audit_images\\audit_1780397773455.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-02T10:56:13.606Z"
-  },
-  {
-    "id": "audit_1780398079392",
-    "imagePath": "data\\audit_images\\audit_1780398079392.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-02T11:01:19.525Z"
-  },
-  {
-    "id": "audit_1780460367691",
-    "imagePath": "data\\audit_images\\audit_1780460367691.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T04:19:27.896Z"
-  },
-  {
-    "id": "audit_1780461020266",
-    "imagePath": "data\\audit_images\\audit_1780461020266.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T04:30:20.395Z"
-  },
-  {
-    "id": "audit_1780461245979",
-    "imagePath": "data\\audit_images\\audit_1780461245979.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T04:34:06.075Z"
-  },
-  {
-    "id": "audit_1780462466976",
-    "imagePath": "data\\audit_images\\audit_1780462466976.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T04:54:27.063Z"
-  },
-  {
-    "id": "audit_1780462887643",
-    "imagePath": "data\\audit_images\\audit_1780462887643.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T05:01:27.768Z"
-  },
-  {
-    "id": "audit_1780463433244",
-    "imagePath": "data\\audit_images\\audit_1780463433244.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T05:10:33.336Z"
-  },
-  {
-    "id": "audit_1780465442792",
-    "imagePath": "data\\audit_images\\audit_1780465442792.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T05:44:02.932Z"
-  },
-  {
-    "id": "audit_1780465678382",
-    "imagePath": "data\\audit_images\\audit_1780465678382.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T05:47:58.531Z"
-  },
-  {
-    "id": "audit_1780467918550",
-    "imagePath": "data\\audit_images\\audit_1780467918550.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T06:25:18.751Z"
-  },
-  {
-    "id": "audit_1780468498594",
-    "imagePath": "data\\audit_images\\audit_1780468498594.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T06:34:58.771Z"
-  },
-  {
-    "id": "audit_1780468840331",
-    "imagePath": "data\\audit_images\\audit_1780468840331.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T06:40:40.343Z"
-  },
-  {
-    "id": "audit_1780469093140",
-    "imagePath": "data\\audit_images\\audit_1780469093140.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T06:44:53.167Z"
-  },
-  {
-    "id": "audit_1780469907797",
-    "imagePath": "data\\audit_images\\audit_1780469907797.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T06:58:27.834Z"
-  },
-  {
-    "id": "audit_1780470103096",
-    "imagePath": "data\\audit_images\\audit_1780470103096.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T07:01:43.192Z"
-  },
-  {
-    "id": "audit_1780470501983",
-    "imagePath": "data\\audit_images\\audit_1780470501983.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T07:08:21.999Z"
-  },
-  {
-    "id": "audit_1780470705267",
-    "imagePath": "data\\audit_images\\audit_1780470705267.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T07:11:45.293Z"
-  },
-  {
-    "id": "audit_1780471642088",
-    "imagePath": "data\\audit_images\\audit_1780471642088.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T07:27:22.261Z"
-  },
-  {
-    "id": "audit_1780473319386",
-    "imagePath": "data\\audit_images\\audit_1780473319386.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T07:55:19.408Z"
-  },
-  {
-    "id": "audit_1780478040708",
-    "imagePath": "data\\audit_images\\audit_1780478040708.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T09:14:00.983Z"
-  },
-  {
-    "id": "audit_1780478790211",
-    "imagePath": "data\\audit_images\\audit_1780478790211.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-03T09:26:30.347Z"
-  },
-  {
-    "id": "audit_1780648099156",
-    "imagePath": "data\\audit_images\\audit_1780648099156.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T08:28:19.337Z"
-  },
-  {
-    "id": "audit_1780673107945",
-    "imagePath": "data\\audit_images\\audit_1780673107945.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T15:25:08.042Z"
-  },
-  {
-    "id": "audit_1780673389081",
-    "imagePath": "data\\audit_images\\audit_1780673389081.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T15:29:49.144Z"
-  },
-  {
-    "id": "audit_1780673766610",
-    "imagePath": "data\\audit_images\\audit_1780673766610.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T15:36:06.689Z"
-  },
-  {
-    "id": "audit_1780673897365",
-    "imagePath": "data\\audit_images\\audit_1780673897365.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T15:38:17.488Z"
-  },
-  {
-    "id": "audit_1780674324377",
-    "imagePath": "data\\audit_images\\audit_1780674324377.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T15:45:24.499Z"
-  },
-  {
-    "id": "audit_1780675154747",
-    "imagePath": "data\\audit_images\\audit_1780675154747.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T15:59:14.829Z"
-  },
-  {
-    "id": "audit_1780675386040",
-    "imagePath": "data\\audit_images\\audit_1780675386040.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T16:03:06.101Z"
-  },
-  {
-    "id": "audit_1780675567410",
-    "imagePath": "data\\audit_images\\audit_1780675567410.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T16:06:07.466Z"
-  },
-  {
-    "id": "audit_1780676178222",
-    "imagePath": "data\\audit_images\\audit_1780676178222.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T16:16:18.295Z"
-  },
-  {
-    "id": "audit_1780676233006",
-    "imagePath": "data\\audit_images\\audit_1780676233006.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T16:17:13.054Z"
-  },
-  {
-    "id": "audit_1780676301896",
-    "imagePath": "data\\audit_images\\audit_1780676301896.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T16:18:22.008Z"
-  },
-  {
-    "id": "audit_1780676373279",
-    "imagePath": "data\\audit_images\\audit_1780676373279.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T16:19:33.292Z"
-  },
-  {
-    "id": "audit_1780679714834",
-    "imagePath": "data\\audit_images\\audit_1780679714834.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-05T17:15:15.041Z"
-  },
-  {
-    "id": "audit_1780984423645",
-    "imagePath": "data\\audit_images\\audit_1780984423645.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T05:53:43.671Z"
-  },
-  {
-    "id": "audit_1780984556555",
-    "imagePath": "data\\audit_images\\audit_1780984556555.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T05:55:56.610Z"
-  },
-  {
-    "id": "audit_1780984580177",
-    "imagePath": "data\\audit_images\\audit_1780984580177.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T05:56:20.229Z"
-  },
-  {
-    "id": "audit_1780984836721",
-    "imagePath": "data\\audit_images\\audit_1780984836721.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T06:00:36.729Z"
-  },
-  {
-    "id": "audit_1780985354855",
-    "imagePath": "data\\audit_images\\audit_1780985354855.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T06:09:14.867Z"
-  },
-  {
-    "id": "audit_1780985603552",
-    "imagePath": "data\\audit_images\\audit_1780985603552.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T06:13:23.600Z"
-  },
-  {
-    "id": "audit_1780989660219",
-    "imagePath": "data\\audit_images\\audit_1780989660219.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T07:21:00.262Z"
-  },
-  {
-    "id": "audit_1780990088515",
-    "imagePath": "data\\audit_images\\audit_1780990088515.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-09T07:28:08.688Z"
-  },
-  {
-    "id": "audit_1781066837530",
-    "imagePath": "data\\audit_images\\audit_1781066837530.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-10T04:47:17.632Z"
-  },
-  {
-    "id": "audit_1781087671354",
-    "imagePath": "data\\audit_images\\audit_1781087671354.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-10T10:34:31.415Z"
-  },
-  {
-    "id": "audit_1781089100669",
-    "imagePath": "data\\audit_images\\audit_1781089100669.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-10T10:58:20.720Z"
-  },
-  {
-    "id": "audit_1781091032594",
-    "imagePath": "data\\audit_images\\audit_1781091032594.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-10T11:30:32.616Z"
-  },
-  {
-    "id": "audit_1781165498378",
-    "imagePath": "data\\audit_images\\audit_1781165498378.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-11T08:11:38.392Z"
-  },
-  {
-    "id": "audit_1781190352559",
-    "imagePath": "data\\audit_images\\audit_1781190352559.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-11T15:05:52.623Z"
-  },
-  {
-    "id": "audit_1781271948956",
-    "imagePath": "data\\audit_images\\audit_1781271948956.jpg",
-    "rawOcrText": "FC V\nAs f Al\n1 IN   yf\nLW NV\n i J\n",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-12T13:45:49.250Z"
-  },
-  {
-    "id": "audit_1781275142310",
-    "imagePath": "data\\audit_images\\audit_1781275142310.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-12T14:39:02.335Z"
-  },
-  {
-    "id": "audit_1781275623879",
-    "imagePath": "data\\audit_images\\audit_1781275623879.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-12T14:47:03.992Z"
-  },
-  {
-    "id": "audit_1781275805825",
-    "imagePath": "data\\audit_images\\audit_1781275805825.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-12T14:50:05.873Z"
-  },
-  {
-    "id": "audit_1781377753816",
-    "imagePath": "data\\audit_images\\audit_1781377753816.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-13T19:09:13.889Z"
-  },
-  {
-    "id": "audit_1781377929178",
-    "imagePath": "data\\audit_images\\audit_1781377929178.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-13T19:12:09.310Z"
-  },
-  {
-    "id": "audit_1781377979393",
-    "imagePath": "data\\audit_images\\audit_1781377979393.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-13T19:12:59.462Z"
-  },
-  {
-    "id": "audit_1781378092221",
-    "imagePath": "data\\audit_images\\audit_1781378092221.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-13T19:14:52.264Z"
-  },
-  {
-    "id": "audit_1781378748252",
-    "imagePath": "data\\audit_images\\audit_1781378748252.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-13T19:25:48.324Z"
-  },
-  {
-    "id": "audit_1781390827767",
-    "imagePath": "data\\audit_images\\audit_1781390827767.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-13T22:47:07.819Z"
-  },
-  {
-    "id": "audit_1781391990892",
-    "imagePath": "data\\audit_images\\audit_1781391990892.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-13T23:06:30.949Z"
-  },
-  {
-    "id": "audit_1781395452876",
-    "imagePath": "data\\audit_images\\audit_1781395452876.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-14T00:04:12.906Z"
-  },
-  {
-    "id": "audit_1781395781936",
-    "imagePath": "data\\audit_images\\audit_1781395781936.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-14T00:09:41.998Z"
-  },
-  {
-    "id": "audit_1781395890661",
-    "imagePath": "data\\audit_images\\audit_1781395890661.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-14T00:11:30.724Z"
-  },
-  {
-    "id": "audit_1781396172828",
-    "imagePath": "data\\audit_images\\audit_1781396172828.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-14T00:16:12.899Z"
-  },
-  {
-    "id": "audit_1781396205961",
-    "imagePath": "data\\audit_images\\audit_1781396205961.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-14T00:16:46.185Z"
-  },
-  {
-    "id": "audit_1781413285750",
-    "imagePath": "data\\audit_images\\audit_1781413285750.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-14T05:01:25.813Z"
-  },
-  {
-    "id": "audit_1781424669610",
-    "imagePath": "data\\audit_images\\audit_1781424669610.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-14T08:11:09.725Z"
+    "createdAt": "2026-06-14T17:15:34.147Z"
   }
 ]

@@ -9,12 +9,14 @@ import csvParser from 'csv-parser';
 import * as XLSX from 'xlsx';
 import XLSX_default from 'xlsx';
 const XLSX_import = (XLSX as any).readFile ? XLSX : XLSX_default;
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
 
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
+const getDbPath = () => process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 export async function preScanCsv(filePath: string, onProgress?: (rowIdx: number) => void): Promise<{
   totalCount: number;
@@ -180,20 +182,36 @@ async function getSuggestedMapping(headers: string[], db: any): Promise<Record<s
 }
 
 export async function runCatalogAnalysis(jobId: number) {
-  const db = await dbManager.getConnection();
+  const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+  await db.run('PRAGMA busy_timeout = 10000;');
   
-  const updatedJob = await db.run(
-    "UPDATE catalog_jobs SET status = 'processing_analysis', progress = 0, error_log = NULL WHERE id = ? AND status = 'pending_analysis'",
-    jobId
-  );
+  let updatedJob;
+  try {
+    updatedJob = await db.run(
+      "UPDATE catalog_jobs SET status = 'processing_analysis', progress = 0, error_log = NULL WHERE id = ? AND status = 'pending_analysis'",
+      jobId
+    );
+  } catch (err) {
+    await db.close();
+    throw err;
+  }
   
   if (updatedJob.changes === 0) {
-        return;
+    await db.close();
+    return;
   }
 
-  const job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', jobId);
+  let job;
+  try {
+    job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', jobId);
+  } catch (err) {
+    await db.close();
+    throw err;
+  }
+
   if (!job) {
-        return;
+    await db.close();
+    return;
   }
 
   eventService.broadcast('catalog_job_update', { id: jobId, status: 'processing', progress: 0 });
@@ -207,10 +225,29 @@ export async function runCatalogAnalysis(jobId: number) {
     let existingCount = 0;
     let duplicateCount = 0;
 
+    // Fetch existing database medicines for duplication and new check
+    const existingRows = await db.all('SELECT name FROM medicines');
+    const existingNames = new Set<string>();
+    for (const r of existingRows) {
+      if (r.name) existingNames.add(r.name.toLowerCase().trim());
+    }
+
     if (ext === '.csv') {
       const csvPreview = await readCsvPreview(job.file_path, 100);
       headers = csvPreview.headers;
-      previewData = csvPreview.rows;
+      
+      const nameCol = headers.find((c) => /name|brand/i.test(c)) ||
+                      headers.find((c) => /product|item|inn|title/i.test(c)) ||
+                      headers[0] || '';
+
+      previewData = csvPreview.rows.map(row => {
+        const nameRaw = nameCol ? row[nameCol] : '';
+        const nameNorm = nameRaw ? nameRaw.trim().replace(/\s+/g, ' ').toLowerCase() : '';
+        return {
+          ...row,
+          __is_existing: nameNorm ? existingNames.has(nameNorm) : false
+        };
+      });
 
       // Compute actual counts using preScanCsv
       const scanResult = await preScanCsv(job.file_path, (rowIdx) => {
@@ -234,28 +271,79 @@ export async function runCatalogAnalysis(jobId: number) {
         const sheetData = XLSX_import.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
         if (sheetData.length > 0) {
           headers = sheetData[0].map((h: any, idx: number) => h ? String(h).trim() : `Column_${idx + 1}`);
+          
+          const nameColIdx = sheetData[0].findIndex((c: any) => 
+            /name|brand/i.test(String(c)) || 
+            /product|item|inn|title/i.test(String(c))
+          );
+          const finalNameColIdx = nameColIdx !== -1 ? nameColIdx : 0;
+
           previewData = sheetData.slice(1, 101).map((row: any[]) => {
             const rowObj: Record<string, any> = {};
             headers.forEach((header, idx) => {
               rowObj[header] = row[idx] !== undefined ? row[idx] : '';
             });
+            const nameRaw = row[finalNameColIdx] !== undefined ? String(row[finalNameColIdx]).trim().replace(/\s+/g, ' ') : '';
+            rowObj.__is_existing = nameRaw ? existingNames.has(nameRaw.toLowerCase()) : false;
             return rowObj;
           });
           totalCount = Math.max(0, sheetData.length - 1);
+
+          // Calculate statistics
+          const seenNames = new Set<string>();
+
+          sheetData.slice(1).forEach((row: any[]) => {
+            if (!row || row[finalNameColIdx] === undefined) return;
+            const nameRaw = String(row[finalNameColIdx]).trim().replace(/\s+/g, ' ');
+            if (!nameRaw) return;
+            const nameKey = nameRaw.toLowerCase();
+            if (seenNames.has(nameKey)) {
+              duplicateCount++;
+            } else {
+              seenNames.add(nameKey);
+              if (existingNames.has(nameKey)) {
+                existingCount++;
+              } else {
+                newCount++;
+              }
+            }
+          });
         }
       }
     } else if (ext === '.pdf') {
       const extracted = await extractFromPdf(job.file_path);
-      previewData = extracted.slice(0, 100).map(item => ({
-        'Product Name': item.name,
-        'Composition': item.api_reference || '',
-        'Strength': item.strength || '',
-        'Packaging': item.packaging_type || '',
-        'Manufacturer': item.manufacturer || '',
-        'Marketed By': item.marketed_by || ''
-      }));
+      previewData = extracted.slice(0, 100).map(item => {
+        const nameNorm = String(item.name).trim().replace(/\s+/g, ' ').toLowerCase();
+        return {
+          'Product Name': item.name,
+          'Composition': item.api_reference || '',
+          'Strength': item.strength || '',
+          'Packaging': item.packaging_type || '',
+          'Manufacturer': item.manufacturer || '',
+          'Marketed By': item.marketed_by || '',
+          __is_existing: existingNames.has(nameNorm)
+        };
+      });
       headers = ['Product Name', 'Composition', 'Strength', 'Packaging', 'Manufacturer', 'Marketed By'];
       totalCount = extracted.length;
+
+      // Calculate statistics
+      const seenNames = new Set<string>();
+      extracted.forEach((item) => {
+        const nameRaw = String(item.name).trim().replace(/\s+/g, ' ');
+        if (!nameRaw) return;
+        const nameKey = nameRaw.toLowerCase();
+        if (seenNames.has(nameKey)) {
+          duplicateCount++;
+        } else {
+          seenNames.add(nameKey);
+          if (existingNames.has(nameKey)) {
+            existingCount++;
+          } else {
+            newCount++;
+          }
+        }
+      });
     } else {
       throw new Error('Unsupported file format.');
     }
@@ -280,33 +368,58 @@ export async function runCatalogAnalysis(jobId: number) {
     });
   } catch (err: any) {
     console.error('Analysis failed', err);
-    await db.run("UPDATE catalog_jobs SET status = 'failed', error_log = ? WHERE id = ?", [err.message || 'Unknown error', jobId]);
+    try {
+      await db.run("UPDATE catalog_jobs SET status = 'failed', error_log = ? WHERE id = ?", [err.message || 'Unknown error', jobId]);
+    } catch (dbErr) {
+      console.error('Failed to log catalog analysis failure to DB:', dbErr);
+    }
     eventService.broadcast('catalog_job_update', { id: jobId, status: 'failed', error: err.message });
   } finally {
-      }
+    await db.close();
+  }
 }
 
 export async function runCatalogImport(jobId: number) {
-  const db = await dbManager.getConnection();
+  const db = await open({ filename: getDbPath(), driver: sqlite3.Database });
+  await db.run('PRAGMA busy_timeout = 10000;');
+  await db.run('PRAGMA journal_mode = WAL;');
+  await db.run('PRAGMA synchronous = NORMAL;');
   
   // Use a state lock to prevent concurrent ingestion of the same job
-  const updatedJob = await db.run(
-    "UPDATE catalog_jobs SET status = 'processing', progress = 0, error_log = NULL WHERE id = ? AND status = 'pending'",
-    jobId
-  );
+  let updatedJob;
+  try {
+    updatedJob = await db.run(
+      "UPDATE catalog_jobs SET status = 'processing', progress = 0, error_log = NULL WHERE id = ? AND status = 'pending'",
+      jobId
+    );
+  } catch (err) {
+    await db.close();
+    throw err;
+  }
   
   if (updatedJob.changes === 0) {
     // Already running or not pending
-    const checkJob = await db.get('SELECT status FROM catalog_jobs WHERE id = ?', jobId);
-        if (checkJob && checkJob.status === 'processing') {
-      console.log(`[Worker] Job ${jobId} is already being processed. Skipping duplicate run.`);
-    }
+    try {
+      const checkJob = await db.get('SELECT status FROM catalog_jobs WHERE id = ?', jobId);
+      if (checkJob && checkJob.status === 'processing') {
+        console.log(`[Worker] Job ${jobId} is already being processed. Skipping duplicate run.`);
+      }
+    } catch (e) {}
+    await db.close();
     return;
   }
 
-  const job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', jobId);
+  let job;
+  try {
+    job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', jobId);
+  } catch (err) {
+    await db.close();
+    throw err;
+  }
+
   if (!job) {
-        throw new Error('Catalog job not found');
+    await db.close();
+    throw new Error('Catalog job not found');
   }
 
   eventService.broadcast('catalog_job_update', { id: jobId, status: 'processing', progress: 0 });
@@ -316,8 +429,36 @@ export async function runCatalogImport(jobId: number) {
     
     // Parse mappings configuration
     const mapping = JSON.parse(job.mapping_config || '{}');
+
+    // Alter medicines schema for custom fields dynamically
+    const tableInfo = await db.all('PRAGMA table_info(medicines)');
+    const existingMedicinesCols = tableInfo.map(c => c.name.toLowerCase());
+
+    for (const [csvCol, targetCol] of Object.entries(mapping)) {
+      if (targetCol && String(targetCol).startsWith('custom_col_')) {
+        const dbColName = String(targetCol).substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+        if (dbColName && !existingMedicinesCols.includes(dbColName)) {
+          try {
+            await db.run(`ALTER TABLE medicines ADD COLUMN "${dbColName}" TEXT`);
+            existingMedicinesCols.push(dbColName);
+            console.log(`[CatalogWorker] Dynamically added custom column "${dbColName}" to medicines table.`);
+          } catch (alterErr: any) {
+            console.error(`[CatalogWorker] Failed to add custom column ${dbColName}:`, alterErr.message);
+          }
+        }
+      }
+    }
+
+    const customMappings = Object.entries(mapping)
+      .filter(([csvCol, targetCol]) => targetCol && String(targetCol).startsWith('custom_col_'))
+      .map(([csvCol, targetCol]) => ({
+        csvCol,
+        dbCol: String(targetCol).substring(11).trim().replace(/\s+/g, '_').toLowerCase()
+      }));
+
     const nameCol = Object.keys(mapping).find(key => mapping[key] === 'name');
-    const apiCol = Object.keys(mapping).find(key => mapping[key] === 'api_reference');
+    const apiCols = Object.keys(mapping).filter(key => mapping[key] === 'api_reference');
+    const metadataCols = Object.keys(mapping).filter(key => mapping[key] === 'metadata');
     const strCol = Object.keys(mapping).find(key => mapping[key] === 'strength');
     const pkgCol = Object.keys(mapping).find(key => mapping[key] === 'packaging');
     const mfgCol = Object.keys(mapping).find(key => mapping[key] === 'manufacturer');
@@ -435,6 +576,15 @@ export async function runCatalogImport(jobId: number) {
           if (item.cgst !== undefined) { updates.push("cgst_per = COALESCE(NULLIF(cgst_per, 0), ?)"); params.push(item.cgst); }
           if (item.sgst !== undefined) { updates.push("sgst_per = COALESCE(NULLIF(sgst_per, 0), ?)"); params.push(item.sgst); }
           if (item.rack !== undefined) { updates.push("rack = COALESCE(NULLIF(rack, ''), ?)"); params.push(item.rack); }
+          if (item.metadata !== undefined) { updates.push("metadata = COALESCE(NULLIF(metadata, ''), ?)"); params.push(item.metadata); }
+
+          // Custom columns update
+          for (const cm of customMappings) {
+            if (item[cm.dbCol] !== undefined) {
+              updates.push(`"${cm.dbCol}" = COALESCE(NULLIF("${cm.dbCol}", ''), ?)`);
+              params.push(item[cm.dbCol]);
+            }
+          }
 
           if (updates.length > 0) {
             params.push(medId);
@@ -443,23 +593,33 @@ export async function runCatalogImport(jobId: number) {
         } else {
           newCount++;
           // Create new product record in Product Master
+          const columns = ['name', 'api_reference', 'strength', 'packaging', 'manufacturer', 'marketed_by', 'hsn_code', 'schedule_type', 'mrp', 'cgst_per', 'sgst_per', 'rack', 'metadata'];
+          const placeholders = ['?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?'];
+          const params = [
+            item.name,
+            item.api_reference || null,
+            item.strength || null,
+            item.packaging || null,
+            item.manufacturer || null,
+            item.marketed_by || null,
+            item.hsn_code || null,
+            item.schedule_type || null,
+            item.mrp || 0,
+            item.cgst || 0,
+            item.sgst || 0,
+            item.rack || null,
+            item.metadata || null
+          ];
+
+          for (const cm of customMappings) {
+            columns.push(`"${cm.dbCol}"`);
+            placeholders.push('?');
+            params.push(item[cm.dbCol] !== undefined ? item[cm.dbCol] : null);
+          }
+
           const insertRes = await db.run(
-            `INSERT INTO medicines (name, api_reference, strength, packaging, manufacturer, marketed_by, hsn_code, schedule_type, mrp, cgst_per, sgst_per, rack)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              item.name,
-              item.api_reference || null,
-              item.strength || null,
-              item.packaging || null,
-              item.manufacturer || null,
-              item.marketed_by || null,
-              item.hsn_code || null,
-              item.schedule_type || null,
-              item.mrp || 0,
-              item.cgst || 0,
-              item.sgst || 0,
-              item.rack || null
-            ]
+            `INSERT INTO medicines (${columns.join(', ')}) VALUES (${placeholders.join(', ')})`,
+            params
           );
           medId = insertRes.lastID!;
           existingMedicinesMap.set(key, medId);
@@ -494,7 +654,19 @@ export async function runCatalogImport(jobId: number) {
       const nameNorm = name.replace(/\s+/g, ' ');
       
       const res: any = { name: nameNorm };
-      if (apiCol) res.api_reference = String(row[apiCol] || '').trim();
+      if (apiCols.length > 0) {
+        res.api_reference = apiCols
+          .map(col => String(row[col] || '').trim())
+          .filter(Boolean)
+          .join(' + ');
+      }
+      if (metadataCols.length > 0) {
+        const metadataObj: Record<string, string> = {};
+        for (const col of metadataCols) {
+          metadataObj[col] = String(row[col] || '').trim();
+        }
+        res.metadata = JSON.stringify(metadataObj);
+      }
       if (strCol) res.strength = String(row[strCol] || '').trim();
       if (pkgCol) res.packaging = String(row[pkgCol] || '').trim();
       if (mfgCol) res.manufacturer = String(row[mfgCol] || '').trim();
@@ -511,12 +683,21 @@ export async function runCatalogImport(jobId: number) {
       if (batchCol) res.batch_no = String(row[batchCol] || '').trim();
       if (expCol) res.expiry_date = String(row[expCol] || '').trim();
       
+      // Custom mappings
+      for (const cm of customMappings) {
+        if (row[cm.csvCol] !== undefined) {
+          res[cm.dbCol] = String(row[cm.csvCol] || '').trim();
+        }
+      }
+      
       return res;
     };
 
 
 
 
+
+    let lastProgressTime = Date.now();
 
     if (ext === '.csv') {
       const readStream = fs.createReadStream(job.file_path);
@@ -538,7 +719,14 @@ export async function runCatalogImport(jobId: number) {
         }
         processedCount = currentLine;
 
-        if (processedCount % 100 === 0) {
+        if (batch.length >= batchSize) {
+          await insertBatch(batch);
+          batch = [];
+        }
+
+        const shouldUpdateProgress = (processedCount === totalToProcess) || (processedCount % 1000 === 0) || (Date.now() - lastProgressTime > 3000);
+        if (shouldUpdateProgress) {
+          lastProgressTime = Date.now();
           const currentJob = await db.get('SELECT status FROM catalog_jobs WHERE id = ?', jobId);
           if (currentJob && currentJob.status === 'paused') {
             if (batch.length > 0) {
@@ -552,11 +740,7 @@ export async function runCatalogImport(jobId: number) {
             readStream.destroy();
             return;
           }
-        }
 
-        if (batch.length >= batchSize) {
-          await insertBatch(batch);
-          batch = [];
           const progress = Math.min(99, Math.round((processedCount / totalToProcess) * 100));
           await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ?, processed_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, processedCount, jobId]);
           eventService.broadcast('catalog_job_progress', { id: jobId, progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
@@ -577,7 +761,14 @@ export async function runCatalogImport(jobId: number) {
         }
         processedCount = currentLine;
 
-        if (processedCount % 100 === 0) {
+        if (batch.length >= batchSize) {
+          await insertBatch(batch);
+          batch = [];
+        }
+
+        const shouldUpdateProgress = (processedCount === totalToProcess) || (processedCount % 1000 === 0) || (Date.now() - lastProgressTime > 3000);
+        if (shouldUpdateProgress) {
+          lastProgressTime = Date.now();
           const currentJob = await db.get('SELECT status FROM catalog_jobs WHERE id = ?', jobId);
           if (currentJob && currentJob.status === 'paused') {
             if (batch.length > 0) {
@@ -590,11 +781,7 @@ export async function runCatalogImport(jobId: number) {
             eventService.broadcast('catalog_job_update', { id: jobId, status: 'paused', progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
             return;
           }
-        }
 
-        if (batch.length >= batchSize) {
-          await insertBatch(batch);
-          batch = [];
           const progress = Math.min(99, Math.round((processedCount / totalToProcess) * 100));
           await db.run('UPDATE catalog_jobs SET progress = ?, new_count = ?, existing_count = ?, duplicate_count = ?, processed_count = ? WHERE id = ?', [progress, newCount, existingCount, duplicateCount, processedCount, jobId]);
           eventService.broadcast('catalog_job_progress', { id: jobId, progress, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
@@ -610,10 +797,15 @@ export async function runCatalogImport(jobId: number) {
     eventService.broadcast('catalog_job_update', { id: jobId, status: 'done', progress: 100, new_count: newCount, existing_count: existingCount, duplicate_count: duplicateCount, total_count: totalToProcess });
   } catch (err: any) {
     console.error('Batch import failed', err);
-    await db.run("UPDATE catalog_jobs SET status = 'failed', error_log = ? WHERE id = ?", [err.message || 'Unknown error', jobId]);
+    try {
+      await db.run("UPDATE catalog_jobs SET status = 'failed', error_log = ? WHERE id = ?", [err.message || 'Unknown error', jobId]);
+    } catch (dbErr) {
+      console.error('Failed to log catalog import failure to DB:', dbErr);
+    }
     eventService.broadcast('catalog_job_update', { id: jobId, status: 'failed', error: err.message });
   } finally {
-      }
+    await db.close();
+  }
 }
 
 // Loop to poll jobs

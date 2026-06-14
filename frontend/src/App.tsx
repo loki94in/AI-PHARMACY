@@ -979,7 +979,7 @@ const Layout = ({
           onOpenStagedReview={() => setShowStagedReview(true)}
           onOpenConnectModal={() => setShowConnectModal(true)}
         />
-        <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-4 pt-2 pb-4' : 'overflow-y-auto p-6 pt-4 pb-6'} relative z-10 transition-all duration-200`}>
+        <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-3 pt-1.5 pb-3' : 'overflow-y-auto p-4 pt-3 pb-4'} relative z-10 transition-all duration-200`}>
           {children}
         </main>
         

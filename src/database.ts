@@ -203,6 +203,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE medicines ADD COLUMN cgst_per REAL DEFAULT 0`,
     `ALTER TABLE medicines ADD COLUMN sgst_per REAL DEFAULT 0`,
     `ALTER TABLE medicines ADD COLUMN item_code TEXT`,
+    `ALTER TABLE medicines ADD COLUMN metadata TEXT`,
     // Purchases extra columns
     `ALTER TABLE purchases ADD COLUMN cgst_value REAL DEFAULT 0`,
     `ALTER TABLE purchases ADD COLUMN sgst_value REAL DEFAULT 0`,

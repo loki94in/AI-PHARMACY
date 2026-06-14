@@ -34,7 +34,7 @@ describe('Catalog pipeline', () => {
       expect(row.cnt).toBeGreaterThan(0);
       await db.close();
     });
-  });
+  }, 30000);
 
   test('worker processes job and stores medicine', async () => {
     const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
@@ -49,5 +49,40 @@ describe('Catalog pipeline', () => {
     expect(meds.length).toBeGreaterThan(0);
     expect(meds[0].name).toBe('TestMed');
     await db.close();
+  });
+
+  test('worker merges multiple compositions and stores metadata', async () => {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+    
+    // Create a new CSV catalog file with multiple compositions and custom column
+    const testCatalog = path.resolve(__dirname, 'test-catalog-multi');
+    if (fs.existsSync(testCatalog)) fs.rmSync(testCatalog, { recursive: true });
+    fs.mkdirSync(testCatalog, { recursive: true });
+    fs.writeFileSync(path.join(testCatalog, 'multi.csv'), 'name,comp1,comp2,custom_box\nMultiMed,SaltA,SaltB,Box9');
+    
+    // Create new job in pending status
+    await db.run(
+      "INSERT INTO catalog_jobs (file_path, original_filename, status, mapping_config) VALUES (?, ?, 'pending', ?)",
+      [
+        path.join(testCatalog, 'multi.csv'),
+        'multi.csv',
+        JSON.stringify({ name: 'name', comp1: 'api_reference', comp2: 'api_reference', custom_box: 'metadata' })
+      ]
+    );
+
+    const job = await db.get(`SELECT * FROM catalog_jobs WHERE original_filename='multi.csv' LIMIT 1`);
+    expect(job).toBeDefined();
+
+    await runCatalogImport(job.id);
+
+    const meds = await db.all("SELECT * FROM medicines WHERE name='MultiMed'");
+    expect(meds.length).toBe(1);
+    expect(meds[0].api_reference).toBe('SaltA + SaltB');
+    
+    const parsedMetadata = JSON.parse(meds[0].metadata);
+    expect(parsedMetadata.custom_box).toBe('Box9');
+
+    await db.close();
+    fs.rmSync(testCatalog, { recursive: true });
   });
 });

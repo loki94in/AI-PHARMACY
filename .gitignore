@@ -63,4 +63,6 @@ test.csv
 *.bak
 MIGRATION SAMPEL/
 data/archived_migrations/
+catalogue/raw/
+
 

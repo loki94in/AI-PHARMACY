@@ -596,6 +596,53 @@ router.delete('/staging/returns/:id', async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+router.get('/staging/sales/:id/items', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all(`
+      SELECT si.id, si.invoice_id, si.inventory_id, si.quantity, si.loose_qty, si.unit_price, si.mrp, im.batch_no, m.name as medicine_name
+      FROM sale_items si
+      LEFT JOIN inventory_master im ON si.inventory_id = im.id
+      LEFT JOIN medicines m ON im.medicine_id = m.id
+      WHERE si.invoice_id = ?
+    `, [req.params.id]);
+    await db.close();
+    res.json(rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/staging/purchases/:id/items', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all(`
+      SELECT pi.id, pi.purchase_id, pi.medicine_id, pi.batch_no, pi.expiry_date, pi.quantity, pi.cost_price, pi.mrp, m.name as medicine_name
+      FROM purchase_items pi
+      LEFT JOIN medicines m ON pi.medicine_id = m.id
+      WHERE pi.purchase_id = ?
+    `, [req.params.id]);
+    await db.close();
+    res.json(rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/staging/returns/:id/items', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const rows = await db.all(`
+      SELECT ri.id, ri.return_id, ri.medicine_id, ri.batch_no, ri.quantity, ri.cost_price, ri.mrp, ri.total_price, m.name as medicine_name
+      FROM return_items ri
+      LEFT JOIN medicines m ON ri.medicine_id = m.id
+      WHERE ri.return_id = ?
+    `, [req.params.id]);
+    await db.close();
+    res.json(rows);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+
 router.post('/staging/finalize', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   const { regenerateInvoices } = req.body;

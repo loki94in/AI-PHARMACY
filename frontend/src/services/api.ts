@@ -222,6 +222,9 @@ export const api = {
   getStagingReturns: () => apiClient.get('/migration/staging/returns').then(r => r.data),
   updateStagingReturns: (id: number, data: any) => apiClient.put(`/migration/staging/returns/${id}`, data).then(r => r.data),
   deleteStagingReturns: (id: number) => apiClient.delete(`/migration/staging/returns/${id}`).then(r => r.data),
+  getStagingSaleItems: (id: number) => apiClient.get(`/migration/staging/sales/${id}/items`).then(r => r.data),
+  getStagingPurchaseItems: (id: number) => apiClient.get(`/migration/staging/purchases/${id}/items`).then(r => r.data),
+  getStagingReturnItems: (id: number) => apiClient.get(`/migration/staging/returns/${id}/items`).then(r => r.data),
   getStagingErrors: () => apiClient.get('/migration/staging/errors').then(r => r.data),
   finalizeMigration: (regenerateInvoices: boolean = false) => 
     apiClient.post('/migration/staging/finalize', { regenerateInvoices }).then(r => r.data),
@@ -359,6 +362,7 @@ export const api = {
   importCatalogJob: (id: number, mappings?: any, filters?: any) => apiClient.post(`/catalog/import-job/${id}`, { mappings, filters }).then(res => res.data),
   pauseCatalogJob: (id: number) => apiClient.post(`/catalog/job/${id}/pause`).then(res => res.data),
   resumeCatalogJob: (id: number) => apiClient.post(`/catalog/job/${id}/resume`).then(res => res.data),
+  deleteCatalogJob: (id: number) => apiClient.delete(`/catalog/job/${id}`).then(res => res.data),
   
   // Reconciliation
   getReconciliationList: () => apiClient.get('/purchases/reconciliation').then(res => res.data),
