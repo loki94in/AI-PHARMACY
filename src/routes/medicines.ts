@@ -147,6 +147,104 @@ router.post('/medicines', async (req, res) => {
   }
 });
 
+router.post('/medicines/bulk-delete', async (req, res) => {
+  const { ids, all, search, productName, mrpFilter, apiFilter, packagingFilter, distributorFilter, category } = req.body;
+  try {
+    const db = await dbManager.getConnection();
+    let targetIds: number[] = [];
+
+    if (all) {
+      let query = 'SELECT id FROM medicines';
+      const params: any[] = [];
+      const whereClauses = [];
+
+      if (search) {
+        whereClauses.push('(name LIKE ? OR item_code LIKE ? OR manufacturer LIKE ? OR api_reference LIKE ?)');
+        const searchParam = `%${search}%`;
+        params.push(searchParam, searchParam, searchParam, searchParam);
+      }
+      if (productName) {
+        whereClauses.push('name LIKE ?');
+        params.push(`%${productName}%`);
+      }
+      if (apiFilter) {
+        whereClauses.push('api_reference LIKE ?');
+        params.push(`%${apiFilter}%`);
+      }
+      if (mrpFilter) {
+        whereClauses.push('CAST(COALESCE(mrp, 0) AS TEXT) LIKE ?');
+        params.push(`%${mrpFilter}%`);
+      }
+      if (packagingFilter) {
+        whereClauses.push('(packaging LIKE ? OR strength LIKE ?)');
+        const packParam = `%${packagingFilter}%`;
+        params.push(packParam, packParam);
+      }
+      if (distributorFilter) {
+        whereClauses.push(`id IN (
+          SELECT DISTINCT pi.medicine_id 
+          FROM purchase_items pi
+          JOIN purchases p ON pi.purchase_id = p.id
+          JOIN distributors d ON p.distributor_id = d.id
+          WHERE d.name LIKE ?
+        )`);
+        params.push(`%${distributorFilter}%`);
+      }
+      if (category) {
+        whereClauses.push('category LIKE ?');
+        params.push(`%${category}%`);
+      }
+
+      if (whereClauses.length > 0) {
+        query += ' WHERE ' + whereClauses.join(' AND ');
+      }
+
+      const rows = await db.all(query, ...params);
+      targetIds = rows.map(r => r.id);
+    } else {
+      targetIds = ids || [];
+    }
+
+    if (targetIds.length === 0) {
+      await dbManager.close();
+      return res.json({ success: true, successCount: 0, failCount: 0, failedNames: [] });
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    const failedNames: string[] = [];
+
+    for (const id of targetIds) {
+      const med = await db.get('SELECT name FROM medicines WHERE id = ?', [id]);
+      const name = med ? med.name : `ID ${id}`;
+
+      const hasPurchases = await db.get('SELECT id FROM purchase_items WHERE medicine_id = ? LIMIT 1', [id]);
+      const hasSales = await db.get('SELECT id FROM sale_items WHERE inventory_id IN (SELECT id FROM inventory_master WHERE medicine_id = ?) LIMIT 1', [id]);
+      const hasReturns = await db.get('SELECT id FROM return_items WHERE medicine_id = ? LIMIT 1', [id]);
+      const hasLedger = await db.get('SELECT id FROM stock_ledger WHERE medicine_id = ? LIMIT 1', [id]);
+
+      if (hasPurchases || hasSales || hasReturns || hasLedger) {
+        failCount++;
+        failedNames.push(name);
+        continue;
+      }
+
+      await db.run('DELETE FROM inventory_master WHERE medicine_id = ?', [id]);
+      await db.run('DELETE FROM medicine_aliases WHERE medicine_id = ?', [id]);
+      await db.run('DELETE FROM patient_refills WHERE medicine_id = ?', [id]);
+      await db.run('DELETE FROM medicines WHERE id = ?', [id]);
+      successCount++;
+    }
+
+    await dbManager.close();
+    res.json({ success: true, successCount, failCount, failedNames });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to bulk delete medicines:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.delete('/medicines/:id', async (req, res) => {
   const { id } = req.params;
   try {

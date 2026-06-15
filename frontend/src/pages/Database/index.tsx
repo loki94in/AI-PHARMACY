@@ -36,8 +36,8 @@ const DatabasePage = () => {
   const [packagingTerm, setPackagingTerm] = useState('');
   const [distributorInput, setDistributorInput] = useState('');
   const [distributorTerm, setDistributorTerm] = useState('');
-  const [categoryInput, setCategoryInput] = useState('');
-  const [categoryTerm, setCategoryTerm] = useState('');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [allSelectedAcrossPages, setAllSelectedAcrossPages] = useState(false);
   const [sort, setSort] = useState('name_asc');
   const [letter, setLetter] = useState('');
   const [universalEditMedicineId, setUniversalEditMedicineId] = useState<number | null>(null);
@@ -99,11 +99,77 @@ const DatabasePage = () => {
     try {
       await api.deleteMedicine(id);
       alert('Medicine deleted successfully');
+      setSelectedIds(prev => prev.filter(item => item !== id));
       setPage(1);
       loadDatabase();
     } catch (err: any) {
       console.error(err);
       const errorMsg = err.response?.data?.error || 'Failed to delete medicine.';
+      alert(errorMsg);
+    }
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(medicines.map(m => m.id));
+    } else {
+      setSelectedIds([]);
+      setAllSelectedAcrossPages(false);
+    }
+  };
+
+  const handleSelectRow = (id: number) => {
+    setSelectedIds(prev => {
+      const updated = prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id];
+      if (updated.length !== medicines.length) {
+        setAllSelectedAcrossPages(false);
+      }
+      return updated;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    const countToDelete = allSelectedAcrossPages ? totalItems : selectedIds.length;
+    if (!window.confirm(`Are you sure you want to delete all ${countToDelete} selected medicines? This cannot be undone.`)) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await api.bulkDeleteMedicines({
+        ids: allSelectedAcrossPages ? undefined : selectedIds,
+        all: allSelectedAcrossPages,
+        productName: productNameTerm,
+        mrpFilter: mrpTerm,
+        apiFilter: apiTerm,
+        packagingFilter: packagingTerm,
+        distributorFilter: distributorTerm,
+      });
+
+      setLoading(false);
+      setSelectedIds([]);
+      setAllSelectedAcrossPages(false);
+      setPage(1);
+      loadDatabase();
+
+      const successCount = res.successCount || 0;
+      const failCount = res.failCount || 0;
+      const failedNames = res.failedNames || [];
+
+      if (failCount === 0) {
+        alert(`Successfully deleted all ${successCount} selected medicines.`);
+      } else {
+        alert(
+          `Deleted ${successCount} medicines.\n` +
+          `Failed to delete ${failCount} medicines because they have associated transactions:\n` +
+          failedNames.slice(0, 5).join(', ') + 
+          (failedNames.length > 5 ? `, and ${failedNames.length - 5} more...` : '')
+        );
+      }
+    } catch (err: any) {
+      console.error(err);
+      setLoading(false);
+      const errorMsg = err.response?.data?.error || 'Failed to bulk delete medicines.';
       alert(errorMsg);
     }
   };
@@ -186,10 +252,12 @@ const DatabasePage = () => {
     if (page === 1) setLoading(true);
     else setAppending(true);
 
-    api.getMedicines(page, limit, '', sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm, categoryTerm)
+    api.getMedicines(page, limit, '', sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm, '')
       .then((res: any) => {
         if (page === 1) {
           setMedicines(res.data || []);
+          setSelectedIds([]);
+          setAllSelectedAcrossPages(false);
         } else {
           setMedicines(prev => {
             const newIds = new Set((res.data || []).map((m: any) => m.id));
@@ -207,7 +275,7 @@ const DatabasePage = () => {
         setLoading(false);
         setAppending(false);
       });
-  }, [page, limit, sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm, categoryTerm]);
+  }, [page, limit, sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm]);
 
   useEffect(() => {
     loadDatabase();
@@ -240,10 +308,9 @@ const DatabasePage = () => {
       setApiTerm(apiInput);
       setPackagingTerm(packagingInput);
       setDistributorTerm(distributorInput);
-      setCategoryTerm(categoryInput);
     }, 500);
     return () => clearTimeout(timer);
-  }, [productNameInput, mrpInput, apiInput, packagingInput, distributorInput, categoryInput]);
+  }, [productNameInput, mrpInput, apiInput, packagingInput, distributorInput]);
 
   return (
     <div className="h-full flex flex-col fade-in relative gap-2">
@@ -278,11 +345,62 @@ const DatabasePage = () => {
 
 
 
+        {/* Bulk Delete Action Bar */}
+        {selectedIds.length > 0 && (
+          <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0 animate-fade-in z-20">
+            <div className="text-xs font-semibold text-red-400">
+              {allSelectedAcrossPages ? (
+                <span>Selected all {totalItems} medicines in the database matching current filters.</span>
+              ) : (
+                <span>
+                  Selected {selectedIds.length} {selectedIds.length === 1 ? 'medicine' : 'medicines'} on this page.
+                  {totalItems > medicines.length && (
+                    <button
+                      onClick={() => setAllSelectedAcrossPages(true)}
+                      className="ml-2 text-sky-400 hover:text-sky-300 underline font-bold transition-all"
+                    >
+                      Select all {totalItems} medicines in database
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {allSelectedAcrossPages && (
+                <button
+                  onClick={() => {
+                    setSelectedIds([]);
+                    setAllSelectedAcrossPages(false);
+                  }}
+                  className="px-3 py-1.5 border border-glass-border hover:bg-bg2 text-muted hover:text-text rounded-lg text-xs font-bold uppercase transition-all"
+                >
+                  Clear Selection
+                </button>
+              )}
+              <button
+                onClick={handleBulkDelete}
+                className="px-3.5 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-1.5 shadow-md shadow-red-600/10 hover:shadow-red-600/20"
+              >
+                <Trash2 size={12} />
+                {allSelectedAcrossPages ? `Delete All ${totalItems} Medicines` : 'Delete Selected'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Data Table */}
         <div className="flex-1 overflow-auto bg-bg2 relative">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-bg/95 backdrop-blur z-10 shadow-md">
               <tr>
+                <th className="p-4 border-b border-glass-border w-12 text-center align-middle">
+                  <input 
+                    type="checkbox"
+                    className="rounded bg-bg3 border-glass-border text-sky-500 focus:ring-0 focus:ring-offset-0 cursor-pointer w-4 h-4"
+                    checked={medicines.length > 0 && selectedIds.length === medicines.length}
+                    onChange={handleSelectAll}
+                  />
+                </th>
                 <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border w-16 align-middle">ID</th>
                 <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
                   <div className="flex flex-col">
@@ -319,18 +437,7 @@ const DatabasePage = () => {
                   </div>
                 </th>
                 <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle w-32">
-                  <div className="flex flex-col">
-                    <select 
-                      value={categoryInput}
-                      onChange={e => setCategoryInput(e.target.value)}
-                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-sky-500/50 font-medium normal-case cursor-pointer"
-                    >
-                      <option value="">Category: All</option>
-                      <option value="Allopathy">Allopathy</option>
-                      <option value="Homeopathy">Homeopathy</option>
-                      <option value="Ayurvedic">Ayurvedic</option>
-                    </select>
-                  </div>
+                  Category
                 </th>
                 <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">Manufacturer</th>
                 <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right align-middle w-28">
@@ -360,14 +467,14 @@ const DatabasePage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="p-12 text-center">
+                  <td colSpan={10} className="p-12 text-center">
                     <RefreshCw size={24} className="animate-spin text-sky-400 mx-auto mb-3" />
                     <span className="text-muted text-sm block">Loading catalog data...</span>
                   </td>
                 </tr>
               ) : medicines.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-12 text-center text-muted">
+                  <td colSpan={10} className="p-12 text-center text-muted">
                     <BookOpen size={32} className="mx-auto mb-3 opacity-30" />
                     <span className="block font-medium">No medicines found.</span>
                     <span className="text-xs opacity-70 mt-1 block">Try adjusting your search terms.</span>
@@ -379,6 +486,14 @@ const DatabasePage = () => {
                     key={item.id} 
                     className="hover:bg-bg3/50 transition-colors border-b border-glass-border/50 group"
                   >
+                    <td className="p-4 text-center align-middle w-12">
+                      <input 
+                        type="checkbox"
+                        className="rounded bg-bg3 border-glass-border text-sky-500 focus:ring-0 focus:ring-offset-0 cursor-pointer w-4 h-4"
+                        checked={selectedIds.includes(item.id)}
+                        onChange={() => handleSelectRow(item.id)}
+                      />
+                    </td>
                     <td className="p-4 text-xs text-muted/60 font-mono">{item.id}</td>
                     <td className="p-4">
                       <div className="font-semibold text-text text-sm">{item.name}</div>
@@ -477,7 +592,7 @@ const DatabasePage = () => {
               {/* Observer target */}
               {!loading && page < totalPages && (
                 <tr ref={observerTarget}>
-                  <td colSpan={9} className="p-8 text-center text-muted">
+                  <td colSpan={10} className="p-8 text-center text-muted">
                     {appending ? (
                       <><RefreshCw size={20} className="animate-spin inline-block mr-2 text-sky-400" /> Loading more products...</>
                     ) : (

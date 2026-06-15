@@ -279,6 +279,16 @@ export const api = {
     }).then(res => res.data),
 
   deleteMedicine: (id: number) => apiClient.delete(`/medicines/${id}`).then(res => res.data),
+  bulkDeleteMedicines: (data: {
+    ids?: number[];
+    all?: boolean;
+    search?: string;
+    productName?: string;
+    mrpFilter?: string;
+    apiFilter?: string;
+    packagingFilter?: string;
+    distributorFilter?: string;
+  }) => apiClient.post('/medicines/bulk-delete', data).then(res => res.data),
   createMedicine: (data: any) => apiClient.post('/medicines', data).then(res => res.data),
 
   getMedicinePriceHistory: (name: string) => apiClient.get('/purchases/price-history', { params: { name } }).then(res => res.data),
