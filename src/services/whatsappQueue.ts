@@ -30,17 +30,23 @@ export class WhatsappQueue {
   async processQueue(): Promise<void> {
     if (this.isProcessing) return;
     
-    // Check if WhatsApp is enabled in settings
+    // Check if WhatsApp and background automations are enabled in settings
     let dbCheck;
     try {
       dbCheck = await dbManager.getConnection();
+      const autoRow = await dbCheck.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
+      if (!autoRow || autoRow.value !== 'true') {
+        // Silent return if automations are disabled
+        return;
+      }
+
       const row = await dbCheck.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
-            if (!row || row.value !== 'true') {
+      if (!row || row.value !== 'true') {
         // Silent return if disabled to prevent background spam logs
         return;
       }
     } catch (dbErr) {
-      console.error('Failed to check if WhatsApp is enabled in queue worker:', dbErr);
+      console.error('Failed to check if WhatsApp/automation is enabled in queue worker:', dbErr);
     }
 
     if (!isReady) {

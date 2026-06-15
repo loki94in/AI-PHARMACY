@@ -193,23 +193,18 @@ ensureSchema(DB_PATH).then(() => {
       .then(async (db) => {
         await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
         const row = await db.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
+        const isAutoEnabled = row && row.value === 'true';
 
-        if (row && row.value === 'true') {
-          console.log('Background automation is ENABLED in settings. Initializing background services...');
+        if (isAutoEnabled) {
+          console.log('Background automation is ENABLED in settings at startup. Running startup catch-up tasks...');
           
           // 1. WhatsApp Pre-initialization
-          const waRow = await dbManager.getConnection().then(async (innerDb) => {
-            const r = await innerDb.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
-            return r;
-          });
+          const waRow = await db.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
           if (waRow && waRow.value === 'true') {
             console.log('WhatsApp is enabled, pre-initializing client in the background...');
             const { initClient } = await import('./whatsappClient.js');
             await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
           }
-
-          // 2. WhatsApp Queue Worker
-          whatsappQueue.startWorker();
 
           // 3. Startup catch-up expiry scan (checks for downtime near-expiry alerts)
           import('./services/expiryAlertService.js')
@@ -217,66 +212,81 @@ ensureSchema(DB_PATH).then(() => {
             .catch(err => console.error('Failed running startup catch-up scan check:', err));
 
           // 4. Startup catch-up daily check (refills & overdue credit notes)
-          dbManager.getConnection().then(async (innerDb) => {
+          const d = new Date();
+          const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const lastCheckRow = await db.get("SELECT value FROM app_settings WHERE key = 'last_daily_check_date'");
+          
+          if (!lastCheckRow || lastCheckRow.value !== todayStr) {
+            console.log(`Daily check was missed today (${todayStr}). Running startup catch-up daily check...`);
+            try {
+              await checkAllRefills(db);
+              await checkOverdueCreditNotes(db);
+              await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
+              console.log('Startup catch-up daily check complete.');
+            } catch (err) {
+              console.error('Failed running startup catch-up daily check:', err);
+            }
+          } else {
+            console.log(`Daily check has already been run today (${todayStr}). Skipping startup catch-up.`);
+          }
+        } else {
+          console.log('Background automation is DISABLED in settings at startup. Skipping startup catch-up tasks.');
+        }
+
+        // 2. WhatsApp Queue Worker (started always; checks automation_enabled inside processQueue)
+        whatsappQueue.startWorker();
+
+        // 5. Daily check at 9:00 AM for patient refills & overdue credit notes (registered always; checks dynamically)
+        cron.schedule('0 9 * * *', async () => {
+          try {
+            const db = await dbManager.getConnection();
+            const autoRow = await db.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
+            if (!autoRow || autoRow.value !== 'true') {
+              return;
+            }
+            console.log('Running daily patient refill & overdue credit notes check...');
+            await checkAllRefills(db);
+            await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+            await checkOverdueCreditNotes(db);
             const d = new Date();
             const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            const lastCheckRow = await innerDb.get("SELECT value FROM app_settings WHERE key = 'last_daily_check_date'");
-            
-            if (!lastCheckRow || lastCheckRow.value !== todayStr) {
-              console.log(`Daily check was missed today (${todayStr}). Running startup catch-up daily check...`);
-              try {
-                await checkAllRefills(innerDb);
-                await checkOverdueCreditNotes(innerDb);
-                await innerDb.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
-                console.log('Startup catch-up daily check complete.');
-              } catch (err) {
-                console.error('Failed running startup catch-up daily check:', err);
-              }
-            } else {
-              console.log(`Daily check has already been run today (${todayStr}). Skipping startup catch-up.`);
-            }
-          }).catch(err => console.error('Failed to run startup catch-up daily check database connection:', err));
+            await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
+          } catch (err) {
+            console.error('Failed running daily check cron:', err);
+          }
+        });
 
-          // 5. Daily check at 9:00 AM for patient refills & overdue credit notes
-          cron.schedule('0 9 * * *', async () => {
-            console.log('Running daily patient refill & overdue credit notes check...');
-            try {
-              const db = await dbManager.getConnection();
-              await checkAllRefills(db);
-              await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
-              await checkOverdueCreditNotes(db);
-              const d = new Date();
-              const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-              await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
-            } catch (err) {
-              console.error('Failed running daily check cron:', err);
+        // 6. Automatic near-expiry inventory scan & alerts (Every 15 days at 9:00 AM; registered always; checks dynamically)
+        cron.schedule('0 9 1,16 * *', async () => {
+          try {
+            const db = await dbManager.getConnection();
+            const autoRow = await db.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
+            if (!autoRow || autoRow.value !== 'true') {
+              return;
             }
-          });
-
-          // 6. Automatic near-expiry inventory scan & alerts (Every 15 days at 9:00 AM)
-          cron.schedule('0 9 1,16 * *', async () => {
             console.log('Running automatic 15-day near-expiry inventory scan...');
-            try {
-              const { runExpiryScanAndAlert } = await import('./services/expiryAlertService.js');
-              await runExpiryScanAndAlert(90);
-            } catch (err) {
-              console.error('Failed running 15-day expiry scan cron:', err);
-            }
-          });
+            const { runExpiryScanAndAlert } = await import('./services/expiryAlertService.js');
+            await runExpiryScanAndAlert(90);
+          } catch (err) {
+            console.error('Failed running 15-day expiry scan cron:', err);
+          }
+        });
 
-          // 7. Nightly 9:30 PM backup (pharmacy closing time)
-          cron.schedule('30 21 * * *', async () => {
-            console.log('[Backup] Running nightly 9:30 PM backup...');
-            try {
-              const result = await createBackup('Nightly 9:30 PM');
-              console.log(`[Backup] Nightly backup created: ${result.filename}`);
-            } catch (err) {
-              console.error('[Backup] Nightly backup failed:', err);
+        // 7. Nightly 9:30 PM backup (pharmacy closing time; registered always; checks dynamically)
+        cron.schedule('30 21 * * *', async () => {
+          try {
+            const db = await dbManager.getConnection();
+            const autoRow = await db.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
+            if (!autoRow || autoRow.value !== 'true') {
+              return;
             }
-          });
-        } else {
-          console.log('Background automation is DISABLED in settings. Skipping background services.');
-        }
+            console.log('[Backup] Running nightly 9:30 PM backup...');
+            const result = await createBackup('Nightly 9:30 PM');
+            console.log(`[Backup] Nightly backup created: ${result.filename}`);
+          } catch (err) {
+            console.error('[Backup] Nightly backup failed:', err);
+          }
+        });
       })
       .catch(err => console.error('Background automation init check failed:', err));
 

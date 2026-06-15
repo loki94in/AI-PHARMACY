@@ -1030,7 +1030,7 @@ const CatalogUpload = () => {
           });
 
           return (
-            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-3">
+            <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-3">
               <div className="glass-panel w-full max-w-[99vw] h-[98vh] lg:max-w-[98vw] lg:h-[95vh] flex flex-col rounded-2xl border border-glass-border shadow-2xl overflow-hidden bg-zinc-950">
                 {/* Modal Header */}
                 <div className="p-4 md:px-6 md:py-4 border-b border-glass-border bg-white/5 flex justify-between items-center">

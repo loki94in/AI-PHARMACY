@@ -619,6 +619,17 @@ router.post('/manual', async (req, res) => {
       distId = dbDist.id;
     }
 
+    if (distId && invoice_no) {
+      const existing = await db.get(
+        'SELECT id FROM purchases WHERE distributor_id = ? AND invoice_no = ?',
+        [distId, invoice_no]
+      );
+      if (existing) {
+        await db.run('ROLLBACK');
+        return res.status(400).json({ error: 'Invoice number already exists for this distributor.' });
+      }
+    }
+
     // Calculate totals securely on backend
     let subtotal = 0;
     let totalCgst = 0;
@@ -866,6 +877,17 @@ router.put('/:id/full', async (req, res) => {
     // 2. Handle distributor
     await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [distributor]);
     const distRow = await db.get('SELECT id FROM distributors WHERE name = ?', [distributor]);
+
+    if (distRow && invoice_no) {
+      const existing = await db.get(
+        'SELECT id FROM purchases WHERE distributor_id = ? AND invoice_no = ? AND id != ?',
+        [distRow.id, invoice_no, id]
+      );
+      if (existing) {
+        await db.run('ROLLBACK');
+        return res.status(400).json({ error: 'Invoice number already exists for this distributor.' });
+      }
+    }
 
     // Calculate new totals
     let subtotal = 0;
@@ -1629,6 +1651,18 @@ router.post('/reconciliation/reissue', async (req, res) => {
     const appInvoiceNo = `PUR-${year}-${nextSeq.toString().padStart(5, '0')}`;
     const invoiceNo = orderInfo.invoiceNumber !== 'N/A' ? orderInfo.invoiceNumber : appInvoiceNo;
 
+    // Check for duplicate invoice number
+    if (distId && invoiceNo) {
+      const existing = await db.get(
+        'SELECT id FROM purchases WHERE distributor_id = ? AND invoice_no = ?',
+        [distId, invoiceNo]
+      );
+      if (existing) {
+        await db.run('ROLLBACK');
+        return res.status(400).json({ error: 'Invoice number already exists for this distributor.' });
+      }
+    }
+
     // Calculate total amount
     let subtotal = 0;
     for (const item of parsedItems) {
@@ -1828,6 +1862,17 @@ router.post('/staged/:id/approve', async (req, res) => {
       await db.run('INSERT OR IGNORE INTO distributors (name) VALUES (?)', [finalDistName]);
       const dbDist = await db.get('SELECT id FROM distributors WHERE name = ?', [finalDistName]);
       distId = dbDist.id;
+    }
+
+    if (distId && finalInvoiceNo) {
+      const existing = await db.get(
+        'SELECT id FROM purchases WHERE distributor_id = ? AND invoice_no = ?',
+        [distId, finalInvoiceNo]
+      );
+      if (existing) {
+        await db.run('ROLLBACK');
+        return res.status(400).json({ error: 'Invoice number already exists for this distributor.' });
+      }
     }
 
     // Save main purchase bill

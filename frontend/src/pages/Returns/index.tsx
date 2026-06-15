@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { api, apiClient } from '../../services/api';
 import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera, X } from 'lucide-react';
@@ -903,8 +904,8 @@ const Returns: React.FC = () => {
       </div>
 
       {/* Grouped Preview Modal */}
-      {showGroupedPreview && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[999999]">
+      {showGroupedPreview && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal">
           <div className="bg-bg2 border border-glass-border rounded-xl p-6 w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-4 pb-3 border-b border-glass-border flex-shrink-0">
               <h3 className="text-base font-bold text-text flex items-center gap-2">
@@ -980,7 +981,8 @@ const Returns: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {showCamera && (

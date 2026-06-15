@@ -962,6 +962,7 @@ export class EmailService {
   private smtpTransporter: Transporter | null = null;
   private pollInterval: NodeJS.Timeout | null = null;
   private isPolling: boolean = false;
+  private isSyncing: boolean = false;
 
   constructor() {
     // IMAP configuration for receiving emails
@@ -1054,172 +1055,13 @@ export class EmailService {
     }
 
     this.isPolling = true;
-    let connection: any = null;
-
     try {
-      await ensureSchema(getDbPath());
-
-      let user = this.imapConfig.user;
-      let password = this.imapConfig.password;
-      let xoauth2: string | undefined = undefined;
-
-      try {
-        const db = await dbManager.getConnection();
-        const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
-        const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-                if (userRow && userRow.value) user = userRow.value;
-        if (passRow && passRow.value) password = passRow.value;
-      } catch (_) {}
-
-      const accessToken = await this.getGmailAccessToken();
-      if (accessToken && user) {
-        const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
-        xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
-      }
-
-      let host = this.imapConfig.host;
-      let port = this.imapConfig.port;
-      let tls = this.imapConfig.tls;
-
-      if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
-        host = 'imap.gmail.com';
-        port = 993;
-        tls = true;
-      }
-
-      if ((!user || !password || !host) && !xoauth2) {
-        console.warn('IMAP configuration incomplete, skipping email poll');
-        return;
-      }
-
-      const imapConfig: any = {
-        ...this.imapConfig,
-        user,
-        host,
-        port,
-        tls,
-        tlsOptions: {
-          rejectUnauthorized: false
-        }
-      };
-
-      if (xoauth2) {
-        imapConfig.xoauth2 = xoauth2;
-        delete imapConfig.password;
-      } else {
-        imapConfig.password = password;
-      }
-
-      const config = {
-        imap: imapConfig,
-      };
-
-      connection = await imap.connect(config);
-      await connection.openBox('INBOX');
-
-      // Fetch all email UIDs (very fast)
-      const uids: number[] = await new Promise((resolve, reject) => {
-        connection.imap.search(['ALL'], (err: any, results: number[]) => {
-          if (err) reject(err);
-          else resolve(results || []);
-        });
-      });
-
-      // Sort descending to get the newest emails first
-      uids.sort((a, b) => b - a);
-      
-      // Look at the latest 50 emails
-      const topUids = uids.slice(0, 50);
-      
-      const db = await dbManager.getConnection();
-      
-      // Get the set of already processed UIDs
-      const processedRows = await db.all('SELECT uid FROM processed_emails');
-      const processedUids = new Set<number>(processedRows.map((r: any) => r.uid));
-
-      // Filter to only non-processed email UIDs
-      const unprocessedUids = topUids.filter(uid => !processedUids.has(uid));
-      
-      console.log(`IMAP Poller: Found ${unprocessedUids.length} unprocessed emails among the latest 50.`);
-
-      for (const uid of unprocessedUids) {
-        try {
-          // Fetch the full message content for this specific UID
-          const fetchResult = await connection.search([['UID', uid]], { bodies: [''], struct: true });
-          if (!fetchResult || fetchResult.length === 0) continue;
-          
-          const item = fetchResult[0];
-          const bodyPart = item.parts.find((p: any) => p.which === '');
-          if (!bodyPart) continue;
-          
-          const parsed = await simpleParser(bodyPart.body);
-          const processedEmail: ProcessedEmail = {
-            from: parsed.from?.text || '',
-            subject: parsed.subject || '',
-            body: parsed.text || '',
-            attachments: (parsed.attachments || []).map((a: any) => ({
-              filename: a.filename || 'unknown',
-              content: a.content,
-              contentType: a.contentType || 'application/octet-stream'
-            }))
-          };
-
-          // Log the email receipt
-          await this.logEmailReceived(processedEmail);
-
-          // Process email based on content
-          await this.processEmail(processedEmail);
-
-          // Handle attachments if any
-          if (processedEmail.attachments.length > 0) {
-            await this.processAttachments(processedEmail.attachments, item.attributes.uid);
-          }
-
-          // Mark email as processed in SQLite
-          await db.run('INSERT OR IGNORE INTO processed_emails (uid) VALUES (?)', [item.attributes.uid]);
-
-          // Keep seen/unseen flag on server, or mark seen if it was unseen
-          const isSeen = item.attributes.flags.includes('\\Seen');
-          if (!isSeen) {
-            await new Promise<void>((resolve, reject) => {
-              connection.imap.uid.addFlags(item.attributes.uid, '\\Seen', (err: any) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            });
-          }
-        } catch (emailError) {
-          console.error(`Error processing email UID ${uid}:`, emailError);
-        }
-      }
-
-      
-      // Background sync and clean attachments for the latest emails
-      try {
-        await this.syncAndCleanAttachments();
-      } catch (cleanErr) {
-        console.error('Error during auto attachment sync/cleanup:', cleanErr);
-      }
-
-      await connection.end();
-    } catch (err: any) {
-      console.error('Email poller error:', err);
-      const errMsg = err.message || '';
-      if (errMsg.includes('AUTHENTICATIONFAILED') || errMsg.includes('Invalid credentials') || errMsg.includes('login') || errMsg.includes('auth')) {
-        eventService.broadcast('auth_failure', {
-          message: 'Gmail authentication failed. Please update your login credentials or link your Google account in Settings.',
-          service: 'gmail'
-        });
-      }
+      console.log('[Mail] Running background email poller sync...');
+      await this.syncNewEmailsFromIMAP();
+    } catch (err) {
+      console.error('[Mail] Background email poller sync failed:', err);
     } finally {
       this.isPolling = false;
-      if (connection) {
-        try {
-          await connection.end();
-        } catch (e) {
-          // Ignore errors on connection end during cleanup
-        }
-      }
     }
   }
 
@@ -2705,34 +2547,37 @@ export class EmailService {
         }
       }
 
-      // 2. Clean up / Auto-delete older attachments if enabled
+      // 2. Clean up / Auto-delete older emails and attachments if enabled
       if (autodeleteEnabled) {
-        const cachedUids = new Set<number>();
-        for (const file of cachedFiles) {
-          if (file.startsWith('att-')) {
-            const match = file.match(/^att-(\d+)-/);
-            if (match) {
-              cachedUids.add(parseInt(match[1]));
-            }
-          }
-        }
+        // Get all UIDs stored in the local DB
+        const dbUidsRows = await db.all('SELECT uid, is_order, is_saved, distributor_name, subject FROM emails');
+        const dbUids = dbUidsRows.map(r => r.uid);
 
-        for (const cachedUid of cachedUids) {
+        for (const cachedUid of dbUids) {
           // If the cached UID is in the latest UIDs, we KEEP it (retention limit)
           if (latestUids.includes(cachedUid)) {
             continue;
           }
 
-          // Otherwise, it is older. Check if the bill is saved.
-          const emailItem = results.find((r: any) => r.attributes.uid === cachedUid);
-          if (emailItem) {
-            const bodyPart = emailItem.parts.find((p: any) => p.which === '');
-            if (bodyPart) {
-              const parsed = await simpleParser(bodyPart.body);
+          // Otherwise, it is older than the retention limit. Check status.
+          const dbEmail = dbUidsRows.find(r => r.uid === cachedUid);
+          const isOrderEmail = dbEmail ? dbEmail.is_order === 1 : false;
+          const isSavedLocal = dbEmail ? dbEmail.is_saved === 1 : false;
+
+          let shouldDelete = false;
+
+          if (isSavedLocal) {
+            // Already marked as saved in DB, safe to delete
+            console.log(`[Cleanup] Auto-deleting UID ${cachedUid} since it is marked as saved in DB.`);
+            shouldDelete = true;
+          } else if (isOrderEmail) {
+            // For order emails, find if a matching purchase bill has been saved
+            const fullEmail = await db.get('SELECT subject, body FROM emails WHERE uid = ?', [cachedUid]);
+            if (fullEmail) {
               const processedEmail: ProcessedEmail = {
-                from: parsed.from?.text || '',
-                subject: parsed.subject || '',
-                body: parsed.text || '',
+                from: '',
+                subject: fullEmail.subject || '',
+                body: fullEmail.body || '',
                 attachments: []
               };
               const orderInfo = this.extractOrderInfo(processedEmail);
@@ -2741,32 +2586,26 @@ export class EmailService {
               if (invoiceNo && invoiceNo !== 'N/A') {
                 const purchase = await db.get('SELECT id FROM purchases WHERE invoice_no = ? LIMIT 1', [invoiceNo]);
                 if (purchase) {
-                  console.log(`[Cleanup] Auto-deleting attachments for UID ${cachedUid} since bill ${invoiceNo} is saved.`);
-                  const filesToDelete = cachedFiles.filter(f => f.startsWith(`att-${cachedUid}-`));
-                  for (const file of filesToDelete) {
-                    try {
-                      fs.unlinkSync(path.join(uploadsDir, file));
-                    } catch (err) {
-                      console.error(`Failed to delete cached file ${file}:`, err);
-                    }
-                  }
+                  console.log(`[Cleanup] Auto-deleting UID ${cachedUid} since bill ${invoiceNo} is saved.`);
+                  shouldDelete = true;
                 } else {
-                  console.log(`[Cleanup] Keeping attachments for UID ${cachedUid} because bill ${invoiceNo} is not saved yet.`);
+                  console.log(`[Cleanup] Keeping UID ${cachedUid} because bill ${invoiceNo} is not saved yet.`);
                 }
               } else {
-                console.log(`[Cleanup] Auto-deleting attachments for UID ${cachedUid} because it is not an order email.`);
-                const filesToDelete = cachedFiles.filter(f => f.startsWith(`att-${cachedUid}-`));
-                for (const file of filesToDelete) {
-                  try {
-                    fs.unlinkSync(path.join(uploadsDir, file));
-                  } catch (err) {
-                    console.error(`Failed to delete cached file ${file}:`, err);
-                  }
-                }
+                console.log(`[Cleanup] Auto-deleting UID ${cachedUid} because it has no extractable invoice.`);
+                shouldDelete = true;
               }
+            } else {
+              shouldDelete = true;
             }
           } else {
-            console.log(`[Cleanup] Auto-deleting attachments for UID ${cachedUid} because email is not in the IMAP folder.`);
+            // Non-order emails are deleted immediately once they exceed the retention limit
+            console.log(`[Cleanup] Auto-deleting UID ${cachedUid} because it is a non-order email.`);
+            shouldDelete = true;
+          }
+
+          if (shouldDelete) {
+            // 1. Delete attachment files from disk
             const filesToDelete = cachedFiles.filter(f => f.startsWith(`att-${cachedUid}-`));
             for (const file of filesToDelete) {
               try {
@@ -2775,6 +2614,11 @@ export class EmailService {
                 console.error(`Failed to delete cached file ${file}:`, err);
               }
             }
+
+            // 2. Delete database records
+            await db.run('DELETE FROM emails WHERE uid = ?', [cachedUid]);
+            await db.run('DELETE FROM email_attachments WHERE uid = ?', [cachedUid]);
+            await db.run('DELETE FROM processed_emails WHERE uid = ?', [cachedUid]);
           }
         }
       }
@@ -2906,12 +2750,18 @@ export class EmailService {
    * Returns the count of newly synced emails.
    */
   public async syncNewEmailsFromIMAP(): Promise<number> {
+    if (this.isSyncing) {
+      console.log('[Sync] IMAP sync already in progress, skipping duplicate request.');
+      return 0;
+    }
+
     const { imapConfig, isConfigured } = await this.buildImapConfig();
     if (!isConfigured) {
       console.log('[Sync] IMAP not configured, skipping sync.');
       return 0;
     }
 
+    this.isSyncing = true;
     let connection: any = null;
     let syncedCount = 0;
 
@@ -2944,11 +2794,14 @@ export class EmailService {
       // Filter strictly: only new UIDs (IMAP UID range can return boundary message)
       const newResults = uids.filter((uid: number) => uid > lastStoredUid);
 
-      // Sort ascending (oldest first) so we insert in order
-      newResults.sort((a: number, b: number) => a - b);
+      // Sort descending (newest first)
+      newResults.sort((a: number, b: number) => b - a);
       
       // Limit to max 50 per sync to avoid timeouts and connection drops
       const limitedResults = newResults.slice(0, 50);
+
+      // Sort ascending (oldest first of the limited set) so they get inserted in SQLite in chronological order
+      limitedResults.sort((a: number, b: number) => a - b);
 
       console.log(`[Sync] Found ${newResults.length} new email(s) to download.`);
 
@@ -3036,8 +2889,9 @@ export class EmailService {
           // Also mark as processed
           await db.run('INSERT OR IGNORE INTO processed_emails (uid) VALUES (?)', [uid]);
 
-          // Notify delivery boys if order-related
-          if (isOrder) {
+          // Notify delivery boys if order-related AND it's a recent email (received within the last 15 minutes)
+          const isRecent = parsed.date && parsed.date instanceof Date && (Date.now() - parsed.date.getTime()) < 15 * 60 * 1000;
+          if (isOrder && isRecent) {
             this.notifyDeliveryBoys(orderInfo).catch(err => {
               console.error('[Sync] Error notifying delivery boys:', err);
             });
@@ -3049,7 +2903,12 @@ export class EmailService {
         }
       }
 
-            console.log(`[Sync] Delta sync complete. Stored ${syncedCount} new email(s).`);
+      // Trigger background auto-delete cleanups for database and files
+      this.syncAndCleanAttachments().catch(err => {
+        console.error('[Sync] Background email cleanup failed:', err);
+      });
+
+      console.log(`[Sync] Delta sync complete. Stored ${syncedCount} new email(s).`);
     } catch (err: any) {
       const errMsg = err.message || '';
       if (errMsg.includes('AUTHENTICATIONFAILED') || errMsg.includes('Invalid credentials') || errMsg.includes('login') || errMsg.includes('auth')) {
@@ -3060,6 +2919,7 @@ export class EmailService {
       }
       console.error('[Sync] syncNewEmailsFromIMAP error:', err);
     } finally {
+      this.isSyncing = false;
       if (connection) {
         try { await connection.end(); } catch (e) {}
       }

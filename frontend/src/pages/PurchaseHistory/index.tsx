@@ -540,7 +540,7 @@ const PurchaseHistory = () => {
 
       {/* Investigation Modal */}
       {selectedOrder && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-modal flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-2xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
             <div className="p-6 border-b border-glass-border/30 flex justify-between items-start">
               <div>
@@ -663,7 +663,7 @@ const PurchaseHistory = () => {
 
       {/* View Purchase Modal */}
       {viewPurchase && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-modal flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-4xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
             <div className="p-6 border-b border-glass-border/30 flex justify-between items-center bg-black/40">
               <div>

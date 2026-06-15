@@ -84,10 +84,33 @@ const STATUS_BADGE: Record<string, { label: string; badgeCls: string; iconCls: s
     iconCls: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
   },
   saved: {
-    label: 'Saved',
-    badgeCls: 'bg-zinc-800/60 border-zinc-700 text-zinc-500',
-    iconCls: 'bg-zinc-800/40 border-zinc-700/30 text-zinc-500',
+    label: 'Saved & Processed',
+    badgeCls: 'bg-primary/15 border-primary/30 text-primary shadow-[0_0_8px_rgba(59,130,246,0.1)]',
+    iconCls: 'bg-primary/15 border-primary/30 text-primary',
   },
+};
+
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const formatDateTime = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'N/A';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const seconds = String(d.getSeconds()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 };
 
 const Mail = () => {
@@ -379,58 +402,7 @@ const Mail = () => {
 
   return (
     <div className="h-full flex flex-col fade-in space-y-4 overflow-hidden pb-4">
-      {/* Header */}
-      <div className="glass-panel p-4 flex flex-wrap items-center justify-between gap-4 bg-white/5 border-glass-border">
-        <div className="space-y-1">
-          <h3 className="text-lg font-bold text-text flex items-center gap-2">
-            <MailIcon size={20} className="text-primary" />
-            Distributor Mail Inbox
-          </h3>
-          <p className="text-xs text-muted">
-            Emails stored locally — available offline. Background sync fetches only new messages.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Connectivity indicator */}
-          {isOffline ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 font-bold select-none">
-              <CloudOff size={12} />
-              OFFLINE
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green/10 border border-green/20 text-xs text-green font-bold select-none">
-              <span className="h-2 w-2 bg-green rounded-full animate-ping" />
-              ONLINE
-            </div>
-          )}
 
-          {/* Sync status */}
-          {syncing && (
-            <div className="flex items-center gap-1.5 text-[11px] text-primary font-semibold animate-pulse">
-              <CloudLightning size={12} className="animate-bounce" />
-              Syncing IMAP...
-            </div>
-          )}
-          {!syncing && relTime && (
-            <span className="text-[10px] text-muted font-mono">Synced {relTime}</span>
-          )}
-
-          <button
-            onClick={handleManualRefresh}
-            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-glass-border/60 text-text transition-all flex items-center gap-2 text-xs font-semibold"
-          >
-            <RefreshCw size={14} className={loading || syncing ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-          <button
-            onClick={handleClearCache}
-            className="p-2 rounded-lg bg-red/10 hover:bg-red/20 border border-red/30 text-red hover:text-red-400 transition-all flex items-center gap-2 text-xs font-semibold"
-          >
-            <Trash2 size={14} />
-            Clear Cache
-          </button>
-        </div>
-      </div>
 
       {/* Status Legend */}
       <div className="flex items-center gap-4 px-1 text-[10px] text-muted">
@@ -443,8 +415,8 @@ const Mail = () => {
           Opened (not saved)
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-zinc-600" />
-          Saved (bill created)
+          <span className="h-2 w-2 rounded-full bg-primary" />
+          Saved &amp; Processed (bill created)
         </div>
         <div className="ml-auto text-muted font-mono">
           {emails.length} email{emails.length !== 1 ? 's' : ''} stored locally
@@ -454,7 +426,7 @@ const Mail = () => {
       {/* Main Two-Panel Layout */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 overflow-hidden">
         {/* LEFT: Email List */}
-        <div className="lg:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border">
+        <div className="lg:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border relative">
           <div className="p-3 border-b border-glass-border bg-black/10 text-xs font-bold text-muted uppercase tracking-wider select-none flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span>Inbox ({filteredEmails.length !== emails.length ? `${filteredEmails.length}/${emails.length}` : emails.length})</span>
@@ -578,7 +550,7 @@ const Mail = () => {
                           )}
                           <span className="text-[10px] text-muted font-mono flex items-center gap-1">
                             <Calendar size={10} />
-                            {email.date ? new Date(email.date).toLocaleDateString() : 'Today'}
+                            {email.date ? formatDate(email.date) : 'Today'}
                           </span>
                         </div>
                       </div>
@@ -591,6 +563,49 @@ const Mail = () => {
                 );
               })
             )}
+          </div>
+
+          {/* Floating Action Buttons */}
+          <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2">
+            {syncing && (
+              <div className="flex items-center gap-1.5 text-[10px] text-primary font-semibold animate-pulse px-3 py-2 rounded-full bg-glass-bg/85 border border-glass-border/40 shadow-lg backdrop-blur-sm">
+                <CloudLightning size={12} className="animate-bounce" />
+                <span className="hidden sm:inline">Syncing...</span>
+              </div>
+            )}
+            {!syncing && relTime && (
+              <span className="text-[9px] text-muted font-mono px-3 py-2 rounded-full bg-glass-bg/85 border border-glass-border/40 shadow-lg backdrop-blur-sm hidden sm:inline">Synced {relTime}</span>
+            )}
+
+            {/* Connectivity indicator */}
+            {isOffline ? (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-amber/10 border border-amber/30 text-[10px] text-amber font-bold select-none shadow-lg backdrop-blur-sm">
+                <CloudOff size={12} />
+                <span>OFFLINE</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-green/10 border border-green/30 text-[10px] text-green font-bold select-none shadow-lg backdrop-blur-sm">
+                <span className="h-1.5 w-1.5 bg-green rounded-full animate-ping" />
+                <span>ONLINE</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleManualRefresh}
+              className="p-2.5 rounded-full bg-bg2/90 hover:bg-bg3/95 border border-glass-border text-text transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5 text-xs font-semibold shadow-lg backdrop-blur-sm"
+              title="Refresh Inbox"
+            >
+              <RefreshCw size={14} className={loading || syncing ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              onClick={handleClearCache}
+              className="p-2.5 rounded-full bg-red/10 hover:bg-red/20 border border-red/30 text-red hover:text-red-400 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5 text-xs font-semibold shadow-lg backdrop-blur-sm"
+              title="Clear Attachments Cache"
+            >
+              <Trash2 size={14} />
+              <span className="hidden sm:inline">Clear Cache</span>
+            </button>
           </div>
         </div>
 
@@ -623,7 +638,7 @@ const Mail = () => {
                   <div>
                     <span className="font-bold text-muted mr-1.5">Date:</span>
                     <span className="font-mono text-muted">
-                      {selectedEmail.date ? new Date(selectedEmail.date).toLocaleString() : 'N/A'}
+                      {selectedEmail.date ? formatDateTime(selectedEmail.date) : 'N/A'}
                     </span>
                   </div>
                   <div className="pt-1">
@@ -773,14 +788,6 @@ const Mail = () => {
               </div>
               <div className="space-y-1">
                 <h4 className="text-sm font-bold text-text">Select an Email</h4>
-                <p className="text-xs text-muted max-w-[220px] leading-relaxed">
-                  Click any email from the list to view its attachments, then select files to create a purchase bill.
-                </p>
-              </div>
-              <div className="flex items-center gap-4 text-[10px] text-muted mt-4">
-                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green" /> New</div>
-                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-400" /> Opened</div>
-                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-zinc-600" /> Saved</div>
               </div>
             </div>
           )}

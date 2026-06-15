@@ -486,7 +486,7 @@ const Sells = () => {
 
       {/* Edit Modal */}
       {editInvoice && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="glass-panel w-full max-w-4xl max-h-[90vh] overflow-y-auto border-primary/20">
             {/* Modal Header */}
             <div className="p-5 border-b border-glass-border flex justify-between items-center bg-white/5 sticky top-0 z-10">
@@ -743,7 +743,7 @@ const Sells = () => {
 
       {/* View Modal */}
       {viewInvoice && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="glass-panel w-full max-w-4xl max-h-[90vh] flex flex-col border-sky-500/20">
             {/* Modal Header */}
             <div className="p-5 border-b border-glass-border flex justify-between items-center bg-white/5 shrink-0">
@@ -887,7 +887,7 @@ const Sells = () => {
       )}
       {/* Sliding Details Drawer for OpenFDA Enrichment */}
       {createPortal(
-        <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-[999999] flex flex-col ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-drawer flex flex-col ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedEnrichedItem && (
           <>
             {/* Header */}

@@ -1277,7 +1277,7 @@ const Migration = () => {
         });
 
         return createPortal(
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-3">
+          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-3">
             <div className="glass-panel w-full max-w-[99vw] h-[98vh] lg:max-w-[98vw] lg:h-[95vh] flex flex-col rounded-2xl border border-glass-border shadow-2xl overflow-hidden bg-bg">
               {/* Modal Header */}
               <div className="p-4 md:px-6 md:py-4 border-b border-glass-border bg-bg2 flex justify-between items-center">
@@ -1536,7 +1536,7 @@ const Migration = () => {
       {/* Interactive Staging Record Edit Modal */}
       {editingRecordType !== null && editingRecordData !== null && (
         createPortal(
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="glass-panel w-full max-w-lg rounded-2xl border border-glass-border shadow-2xl overflow-hidden bg-bg">
               {/* Header */}
               <div className="p-4 border-b border-glass-border bg-bg2 flex justify-between items-center">
@@ -1815,7 +1815,7 @@ const Migration = () => {
       {/* View Staged Items Modal */}
       {viewingItemsRecord !== null && (
         createPortal(
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="glass-panel w-full max-w-3xl rounded-2xl border border-glass-border shadow-2xl overflow-hidden bg-bg">
               {/* Header */}
               <div className="p-4 border-b border-glass-border bg-bg2 flex justify-between items-center">

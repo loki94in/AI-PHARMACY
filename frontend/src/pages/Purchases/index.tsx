@@ -1131,9 +1131,10 @@ const Purchases: React.FC = () => {
       setMappingConfig({});
       setEditPurchaseId(null);
       fetchPurchaseHistory();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving purchase:', error);
-      alert('Failed to save purchase');
+      const errMsg = error.response?.data?.error || error.message || 'Failed to save purchase';
+      alert(errMsg);
     } finally {
       setSaving(false);
     }
@@ -1473,7 +1474,7 @@ const Purchases: React.FC = () => {
                   placeholder="Type to search distributor..."
                 />
                 {showDistributorDropdown && (
-                  <div className="absolute z-[99999] w-full mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-60 overflow-y-auto shadow-2xl">
+                  <div className="absolute z-dropdown w-full mt-1 bg-[#18181b]/95 backdrop-blur border border-glass-border rounded-xl overflow-hidden max-h-60 overflow-y-auto shadow-2xl">
                     {distributorSearch === '' ? (
                       distributors.slice(0, 50).map((dist) => {
                         const distName = dist.name || dist.distributor_name || 'Unnamed Distributor';
@@ -1690,7 +1691,7 @@ const Purchases: React.FC = () => {
                   <td className="py-3">
                     <div className="relative group/search">
                       {item.original_name && (
-                        <div className="absolute z-[99999] bottom-full left-0 mb-1.5 hidden group-focus-within/search:block group-hover/search:block bg-gray-900 border border-blue-500 rounded-lg px-3 py-1.5 shadow-xl text-xs text-blue-300 font-mono select-none whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 duration-150">
+                        <div className="absolute z-dropdown bottom-full left-0 mb-1.5 hidden group-focus-within/search:block group-hover/search:block bg-gray-900 border border-blue-500 rounded-lg px-3 py-1.5 shadow-xl text-xs text-blue-300 font-mono select-none whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 duration-150">
                           📄 Original Bill Name: <span className="text-white font-bold">{item.original_name}</span>
                         </div>
                       )}
@@ -1738,7 +1739,7 @@ const Purchases: React.FC = () => {
                         </button>
                       </div>
                       {activeSearchIndex === index && (
-                        <div className="absolute z-[99999] w-full mt-1 bg-bg2 border border-glass-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        <div className="absolute z-dropdown w-full mt-1 bg-bg2 border border-glass-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
                           {item.original_name && (
                             <div className="px-4 py-2 bg-blue-500/10 border-b border-glass-border/30 text-xs text-blue-300 font-bold select-none flex items-center gap-1.5 font-mono">
                               📄 Original Bill Name: {item.original_name}
@@ -1823,7 +1824,7 @@ const Purchases: React.FC = () => {
                       />
                     </div>
                     {item.medicine_name && (
-                      <div className="absolute z-[99999] top-full left-0 mt-2 hidden group-hover/btn:block min-w-[320px]">
+                      <div className="absolute z-dropdown top-full left-0 mt-2 hidden group-hover/btn:block min-w-[320px]">
                         <div className="bg-gray-900 border border-blue-500 rounded-lg p-2 shadow-xl">
                           <HoverPriceIntelTable medicineName={item.medicine_name} />
                         </div>
@@ -1838,7 +1839,7 @@ const Purchases: React.FC = () => {
                       className="w-24 bg-white/10 border border-white/20 rounded px-1.5 py-1 text-white text-sm text-right"
                     />
                     {item.medicine_name && (
-                      <div className="absolute z-[99999] top-full left-0 mt-2 hidden group-hover/btn:block min-w-[320px]">
+                      <div className="absolute z-dropdown top-full left-0 mt-2 hidden group-hover/btn:block min-w-[320px]">
                         <div className="bg-gray-900 border border-purple-500 rounded-lg p-2 shadow-xl">
                           <HoverPriceIntelTable medicineName={item.medicine_name} />
                         </div>
@@ -1993,7 +1994,7 @@ const Purchases: React.FC = () => {
 
       {/* Upload Modal */}
       {showUploadModal && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Upload or Capture Invoice</h3>
             <p className="text-gray-400 mb-4">Upload PDF, CSV, Excel, ZIP, DAV, DAC, or Image scans. You can also capture a window (like Word or an email) using the Screen Capture button.</p>
@@ -2048,7 +2049,7 @@ const Purchases: React.FC = () => {
 
       {/* Add/Edit Distributor Modal */}
       {showDistributorModal && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-modal flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-gray-900 border border-white/10 rounded-xl p-6 w-full max-w-md shadow-2xl">
             <h3 className="text-lg font-semibold text-white mb-4">{editDistributorId ? 'Edit Distributor' : 'Add New Distributor'}</h3>
             
@@ -2136,7 +2137,7 @@ const Purchases: React.FC = () => {
 
       {/* Add Medicine Modal */}
       {showMedicineModal && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-lg">
             <h3 className="text-lg font-semibold text-white mb-4">Add New Medicine</h3>
             
@@ -2300,7 +2301,7 @@ const Purchases: React.FC = () => {
 
       {/* Price History Modal */}
       {showPriceHistoryModal && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-white mb-2">Price History</h3>
             <p className="text-gray-400 text-sm mb-4">Past purchase prices for: <span className="text-white">{priceHistoryMedicine}</span></p>
@@ -2357,7 +2358,7 @@ const Purchases: React.FC = () => {
 
       {/* Edit Purchase Modal */}
       {editingPurchase && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-white mb-4">Edit Purchase</h3>
             
@@ -2429,7 +2430,7 @@ const Purchases: React.FC = () => {
 
       {/* Barcode Print Prompt Modal */}
       {showBarcodeModal && createPortal(
-        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/70 backdrop-blur-md fade-in text-left">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-md fade-in text-left">
           <div className="bg-gray-900 border border-white/20 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
             <div className="text-center space-y-2">
               <div className="inline-flex p-3 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 mb-2">
@@ -2504,7 +2505,7 @@ const Purchases: React.FC = () => {
 
       {/* Sliding Details Drawer for OpenFDA Enrichment */}
       {createPortal(
-        <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-[999999] flex flex-col pt-16 ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className={`fixed top-0 right-0 h-full w-[450px] bg-[#121214]/95 backdrop-blur-xl border-l border-glass-border shadow-[-8px_0_30px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-in-out z-drawer flex flex-col pt-16 ${panelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           {selectedEnrichedItem && (
             <>
               {/* Header */}

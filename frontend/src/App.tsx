@@ -230,7 +230,7 @@ const FlashToast = ({
     <div
       key={toast.id}
       className={`
-        fixed top-4 left-1/2 -translate-x-1/2 z-[9999999]
+        fixed top-4 left-1/2 -translate-x-1/2 z-toast
         flex items-center gap-2.5 px-4 py-2.5 rounded-2xl
         border backdrop-blur-2xl ${cfg.bg} ${cfg.glow}
         animate-in slide-in-from-top-3 fade-in duration-300
@@ -311,7 +311,7 @@ const NotificationPanel = ({
   return (
     <div
       ref={panelRef}
-      className="absolute right-0 top-full mt-3 w-96 z-[999999] flex flex-col rounded-2xl overflow-hidden glass-panel"
+      className="absolute right-0 top-full mt-3 w-96 z-dropdown flex flex-col rounded-2xl overflow-hidden glass-panel"
       style={{
         backdropFilter: 'blur(24px)',
         boxShadow: '0 25px 60px rgba(0,0,0,0.35)',
@@ -719,7 +719,7 @@ const Topbar = ({
             {/* Devices Popover */}
             {showDevicesPopover && (
               <div
-                className="absolute right-0 top-full mt-3 w-80 z-[999999] flex flex-col rounded-2xl overflow-hidden glass-panel p-4"
+                className="absolute right-0 top-full mt-3 w-80 z-dropdown flex flex-col rounded-2xl overflow-hidden glass-panel p-4"
                 style={{
                   backdropFilter: 'blur(24px)',
                   boxShadow: '0 25px 60px rgba(0,0,0,0.35)',

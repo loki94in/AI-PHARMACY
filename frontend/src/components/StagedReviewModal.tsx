@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, Trash2, AlertTriangle, RefreshCw, Receipt, ShoppingCart, User, Calendar, Plus, Pill } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -147,8 +148,8 @@ export const StagedReviewModal: React.FC<Props> = ({ onClose, onActionComplete }
 
   const activeList = activeTab === 'sales' ? sales : purchases;
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-modal flex items-center justify-center p-4 sm:p-6 fade-in">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
@@ -519,6 +520,7 @@ export const StagedReviewModal: React.FC<Props> = ({ onClose, onActionComplete }
 
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

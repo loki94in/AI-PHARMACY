@@ -893,7 +893,7 @@ const POS = () => {
                 
                 {/* Empty inventory fallback dropdown */}
                 {searchTerm.trim().length >= 3 && searchResults.length === 0 && (
-                  <div className="absolute left-0 right-0 top-full z-[99999] mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
+                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
                     <div className="p-3 border-b border-glass-border/30 text-[10px] font-bold text-muted uppercase tracking-wider">
                       ⚠️ No matching inventory found
                     </div>
@@ -950,7 +950,7 @@ const POS = () => {
                 
                 {/* Search results dropdown */}
                 {searchResults.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full z-[99999] mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
+                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
                     <div className="p-2 border-b border-glass-border/30 bg-black/20 text-[10px] font-bold text-muted uppercase tracking-wider">
                       Matching Inventory Records:
                     </div>
@@ -1200,7 +1200,7 @@ const POS = () => {
                                   className="w-8 h-8 object-cover rounded-md border border-glass-border/60 hover:border-primary/60 transition-all cursor-zoom-in shadow-md"
                                   onClick={() => setZoomedImage(item.scanImage)}
                                 />
-                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/thumb:block z-[99999] bg-bg3 border border-glass-border rounded-xl p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-48 animate-in fade-in duration-150">
+                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/thumb:block z-dropdown bg-bg3 border border-glass-border rounded-xl p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-48 animate-in fade-in duration-150">
                                   <img src={item.scanImage} alt="Scan preview" className="w-full h-auto rounded-lg object-contain" />
                                   <div className="text-[8px] text-muted text-center mt-1 font-semibold">Click to enlarge</div>
                                 </div>
@@ -1226,7 +1226,7 @@ const POS = () => {
                               />
                               
                               {activeRowSearchIndex === cart.indexOf(item) && rowSearchResults.length > 0 && (
-                                <div className="absolute left-0 right-0 z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64 shadow-2xl">
+                                <div className="absolute left-0 right-0 z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64 shadow-2xl">
                                   {rowSearchResults.map((med) => {
                                     const rowPendingMatches = specialOrders.filter(
                                       o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
@@ -1293,7 +1293,7 @@ const POS = () => {
                             />
                             
                             {activeBatchRowId === item.id && rowBatchesList.length > 1 && (
-                              <div className="absolute left-1 z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
+                              <div className="absolute left-1 z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
                                 <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
                                   Switch Batch:
                                 </div>
@@ -1575,7 +1575,7 @@ const POS = () => {
                   aria-label="Patient Name"
                 />
                 {showPatientSuggestions && (
-                  <div className="absolute left-0 right-0 top-full z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-2xl">
+                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-2xl">
                     {patientSuggestions.map((c, idx) => (
                       <button
                         key={c.id}
@@ -1680,7 +1680,7 @@ const POS = () => {
                 </span>
                 
                 {isDoctorDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full z-[99999] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
+                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
                     {filteredDoctors.length > 0 ? (
                       filteredDoctors.map((doc, idx) => (
                         <button
@@ -1866,7 +1866,7 @@ const POS = () => {
 
       {zoomedImage && createPortal(
         <div 
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999999] flex items-center justify-center p-4 cursor-pointer animate-in fade-in duration-200"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-global-modal flex items-center justify-center p-4 cursor-pointer animate-in fade-in duration-200"
           onClick={() => setZoomedImage(null)}
         >
           <div className="relative max-w-3xl max-h-[85vh] bg-bg2 border border-glass-border rounded-2xl overflow-hidden p-2 shadow-2xl animate-in zoom-in-95 duration-200">
@@ -1885,7 +1885,7 @@ const POS = () => {
 
       {/* Patient Profile & Auto-Refills Modal */}
       {showPatientModal && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[99999] p-4 animate-fade-in">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-fade-in">
           <div className="glass-panel max-w-md w-full p-6 space-y-5 border-glass-border bg-bg2/95 rounded-2xl relative">
             {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-glass-border pb-3">
@@ -2025,7 +2025,7 @@ const POS = () => {
 
       {/* Doctor Registration Modal */}
       {showDoctorModal && createPortal(
-        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in">
           <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
             <div className="px-5 py-4 border-b border-glass-border bg-white/5 flex items-center justify-between">
               <h3 className="font-bold flex items-center gap-2 text-sky">
@@ -2119,7 +2119,7 @@ const POS = () => {
 
       {/* Barcode Print Prompt Modal */}
       {showBarcodeModal && createPortal(
-        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/70 backdrop-blur-md fade-in">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-md fade-in">
           <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
             <div className="text-center space-y-2">
               <div className="inline-flex p-3 rounded-full bg-green/10 border border-green/20 text-green mb-2">

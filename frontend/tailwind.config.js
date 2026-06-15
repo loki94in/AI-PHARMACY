@@ -42,6 +42,15 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
+      },
+      zIndex: {
+        'dropdown': '999',
+        'sticky-header': '1000',
+        'drawer': '9000',
+        'modal': '9999',
+        'global-modal': '10000',
+        'camera': '10010',
+        'toast': '10020',
       }
     },
   },

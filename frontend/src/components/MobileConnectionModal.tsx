@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, QrCode, RefreshCw, AlertCircle, Copy, Check } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -40,8 +41,8 @@ export const MobileConnectionModal: React.FC<Props> = ({ onClose }) => {
     setTimeout(() => setCopiedUrl(null), 2000);
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 sm:p-6 fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-global-modal flex items-center justify-center p-4 sm:p-6 fade-in">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
@@ -151,6 +152,7 @@ export const MobileConnectionModal: React.FC<Props> = ({ onClose }) => {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
