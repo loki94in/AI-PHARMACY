@@ -1656,6 +1656,7 @@ const Purchases: React.FC = () => {
                     <Plus size={14} />
                   </button>
                 </th>
+                <th className="pb-3 text-xs uppercase tracking-wider text-left pl-2">Original Bill Name</th>
                 <th className="pb-3 text-xs uppercase tracking-wider text-left">Medicine Name</th>
                 <th className="pb-3 text-xs uppercase tracking-wider text-left">Batch</th>
                 <th className="pb-3 text-xs uppercase tracking-wider text-center">Exp</th>
@@ -1688,13 +1689,16 @@ const Purchases: React.FC = () => {
                 return (
                   <tr key={item.id} data-medicine-id={item.medicine_id} className="border-b border-white/10">
                   <td className="py-3 text-gray-300">{index + 1}</td>
+                  <td className="py-3 pr-2">
+                    <span 
+                      className="text-xs font-mono text-muted select-all block max-w-[200px] truncate" 
+                      title={item.original_name || 'No original name'}
+                    >
+                      {item.original_name || '-'}
+                    </span>
+                  </td>
                   <td className="py-3">
                     <div className="relative group/search">
-                      {item.original_name && (
-                        <div className="absolute z-dropdown bottom-full left-0 mb-1.5 hidden group-focus-within/search:block group-hover/search:block bg-gray-900 border border-blue-500 rounded-lg px-3 py-1.5 shadow-xl text-xs text-blue-300 font-mono select-none whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 duration-150">
-                          📄 Original Bill Name: <span className="text-white font-bold">{item.original_name}</span>
-                        </div>
-                      )}
                       <div className="flex gap-1">
                         <input
                           type="text"
