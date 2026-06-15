@@ -944,10 +944,22 @@ const Settings = () => {
 
       {/* ─── Backup & Restore ─── */}
       <div className="glass-panel p-6">
-        <h3 className="font-bold flex items-center gap-2 mb-6">
-          <Shield size={18} className="text-primary" />
-          Backup & Restore
-        </h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-bold flex items-center gap-2">
+            <Shield size={18} className="text-primary" />
+            Backup & Restore
+          </h3>
+          <button
+            onClick={() => {
+              if (typeof (window as any).openBackupCenter === 'function') {
+                (window as any).openBackupCenter();
+              }
+            }}
+            className="premium-btn bg-primary text-white hover:bg-blue-600 flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase"
+          >
+            <SettingsIcon size={14} /> Open Backup Center
+          </button>
+        </div>
 
         {/* Top controls row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

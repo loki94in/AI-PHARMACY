@@ -250,7 +250,7 @@ router.get('/auth/google', async (req, res) => {
       `client_id=${encodeURIComponent(clientId)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&response_type=code` +
-      `&scope=${encodeURIComponent('https://mail.google.com/')}` +
+      `&scope=${encodeURIComponent('https://mail.google.com/ https://www.googleapis.com/auth/drive.file')}` +
       `&access_type=offline` +
       `&prompt=consent`;
 

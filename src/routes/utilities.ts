@@ -21,6 +21,9 @@ import {
   getScheduleConfig,
   setScheduleConfig,
 } from '../services/backupService.js';
+import { backupRecoveryService } from '../services/backupRecoveryService.js';
+import Database from 'better-sqlite3';
+import AdmZip from 'adm-zip';
 
 // Trigger manual backup
 router.post('/backup', async (_req, res) => {
@@ -250,6 +253,189 @@ router.post('/restore', async (_req, res) => {
   } catch (e: any) {
     console.error('Restore error:', e);
     res.status(500).json({ error: 'Failed to restore backup: ' + e.message });
+  }
+});
+
+// GET /api/utilities/backup/status
+router.get('/backup/status', async (req, res) => {
+  try {
+    const status = await backupRecoveryService.checkStartupRestore();
+    const db = await dbManager.getConnection();
+    
+    // Fetch individual toggles and values
+    const getSetting = async (key: string, def: string) => {
+      const row = await db.get('SELECT value FROM app_settings WHERE key = ?', [key]);
+      return row ? row.value : def;
+    };
+
+    const localEnabled = await getSetting('backup_local_enabled', 'true') === 'true';
+    const gdriveEnabled = await getSetting('backup_gdrive_enabled', 'false') === 'true';
+    const telegramEnabled = await getSetting('backup_telegram_enabled', 'false') === 'true';
+    const autoEnabled = await getSetting('backup_auto_enabled', 'true') === 'true';
+    const isPaused = await getSetting('backup_is_paused', 'false') === 'true';
+
+    // Calculate total size of snapshots and archives
+    const BACKUP_DIR = path.resolve(__dirname, '..', '..', 'backup');
+    const SNAPSHOTS_DIR = path.join(BACKUP_DIR, 'snapshots');
+    const ARCHIVES_DIR = path.join(BACKUP_DIR, 'archives');
+    
+    let totalSize = 0;
+    const calculateFolderSize = (dir: string) => {
+      if (fs.existsSync(dir)) {
+        fs.readdirSync(dir).forEach(f => {
+          const stats = fs.statSync(path.join(dir, f));
+          if (stats.isFile()) {
+            totalSize += stats.size;
+          }
+        });
+      }
+    };
+    calculateFolderSize(SNAPSHOTS_DIR);
+    calculateFolderSize(ARCHIVES_DIR);
+
+    // Get last backup & last upload details
+    const archives = backupRecoveryService.listArchives();
+    const lastArchive = archives[0];
+    
+    const uploadLogRaw = await getSetting('backup_upload_log', '{}');
+    const uploadLog = JSON.parse(uploadLogRaw);
+    
+    let lastUploadDate = 'Never';
+    let lastBackupDate = 'Never';
+
+    if (lastArchive) {
+      lastBackupDate = lastArchive.date;
+      const log = uploadLog[lastArchive.filename];
+      if (log && (log.gdrive || log.telegram)) {
+        lastUploadDate = lastArchive.date;
+      }
+    }
+
+    // Next scheduled backup
+    const frequency = await getScheduleConfig();
+    let nextScheduledBackup = 'N/A';
+    if (frequency !== 'off' && !isPaused) {
+      nextScheduledBackup = `In ${frequency}`;
+    }
+
+    res.json({
+      success: true,
+      showRestorePopup: status.showRestorePopup,
+      availableArchives: archives,
+      localBackupStatus: localEnabled ? (isPaused ? 'Paused' : 'Enabled') : 'Disabled',
+      gdriveStatus: gdriveEnabled ? (isPaused ? 'Paused' : 'Enabled') : 'Disabled',
+      telegramStatus: telegramEnabled ? (isPaused ? 'Paused' : 'Enabled') : 'Disabled',
+      lastBackupDate,
+      lastUploadDate,
+      nextScheduledBackup,
+      totalBackupSize: totalSize,
+      backupStorageLocations: {
+        local: 'backup/archives',
+        gdrive: gdriveEnabled ? 'Google Drive Cloud Storage' : 'Not Configured',
+        telegram: telegramEnabled ? 'Telegram Bot Notifications' : 'Not Configured'
+      },
+      isPaused
+    });
+  } catch (err: any) {
+    console.error('[Backup] Status API failed:', err);
+    res.status(500).json({ error: 'Failed to retrieve backup status: ' + err.message });
+  }
+});
+
+// POST /api/utilities/backup/fresh-install
+router.post('/backup/fresh-install', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('backup_fresh_installed', 'true')");
+    res.json({ success: true, message: 'Fresh installation mode set' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to set fresh installation mode: ' + err.message });
+  }
+});
+
+// POST /api/utilities/backup/archive/restore
+router.post('/backup/archive/restore', async (req, res) => {
+  const { filename } = req.body;
+  if (!filename) {
+    return res.status(400).json({ error: 'filename parameter is required' });
+  }
+  try {
+    await backupRecoveryService.restoreFromArchive(filename);
+    res.json({ success: true, message: 'Backup restored successfully' });
+  } catch (err: any) {
+    console.error('[Backup] Restore failed:', err);
+    res.status(500).json({ error: 'Restore failed: ' + err.message });
+  }
+});
+
+// DELETE /api/utilities/backup/archive/:filename
+router.delete('/backup/archive/:filename', async (req, res) => {
+  try {
+    backupRecoveryService.deleteArchive(req.params.filename);
+    res.json({ success: true, message: 'Archive deleted successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to delete archive: ' + err.message });
+  }
+});
+
+// POST /api/utilities/backup/manual
+router.post('/backup/manual', async (req, res) => {
+  try {
+    const BACKUP_DIR = path.resolve(__dirname, '..', '..', 'backup');
+    const SNAPSHOTS_DIR = path.join(BACKUP_DIR, 'snapshots');
+    const ARCHIVES_DIR = path.join(BACKUP_DIR, 'archives');
+
+    const archiveName = `archive_manual_${new Date().toISOString().split('T')[0]}_${Date.now()}.zip`;
+    const archivePath = path.join(ARCHIVES_DIR, archiveName);
+    
+    // Create new snapshot
+    const snapshotFile = await backupRecoveryService.createSnapshot();
+    const files = fs.readdirSync(SNAPSHOTS_DIR).filter(f => f.startsWith('snapshot_') && f.endsWith('.db'));
+    
+    if (files.length > 0) {
+      const zip = new AdmZip();
+      files.forEach(f => zip.addLocalFile(path.join(SNAPSHOTS_DIR, f)));
+      zip.writeZip(archivePath);
+      // Clean up snapshots
+      files.forEach(f => fs.unlinkSync(path.join(SNAPSHOTS_DIR, f)));
+      // Upload manual archive
+      await backupRecoveryService.uploadArchive(archiveName);
+      await backupRecoveryService.enforceRetention();
+    } else {
+      // Create backup of active db directly as a zip archive
+      const tempDbFile = `snapshot_manual_${Date.now()}.db`;
+      const tempDbPath = path.join(SNAPSHOTS_DIR, tempDbFile);
+      const tempDb = new Database(DB_PATH);
+      await tempDb.backup(tempDbPath);
+      tempDb.close();
+
+      const zip = new AdmZip();
+      zip.addLocalFile(tempDbPath);
+      zip.writeZip(archivePath);
+      fs.unlinkSync(tempDbPath);
+
+      await backupRecoveryService.uploadArchive(archiveName);
+      await backupRecoveryService.enforceRetention();
+    }
+
+    res.json({ success: true, message: 'Manual backup and upload completed successfully', archiveName });
+  } catch (err: any) {
+    console.error('[Backup] Manual backup failed:', err);
+    res.status(500).json({ error: 'Manual backup failed: ' + err.message });
+  }
+});
+
+// POST /api/utilities/backup/toggle-pause
+router.post('/backup/toggle-pause', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get("SELECT value FROM app_settings WHERE key = 'backup_is_paused'");
+    const currentVal = row ? row.value === 'true' : false;
+    const newVal = !currentVal;
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('backup_is_paused', ?)", [newVal ? 'true' : 'false']);
+    res.json({ success: true, message: newVal ? 'Automatic backup paused' : 'Automatic backup resumed', isPaused: newVal });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to toggle pause: ' + err.message });
   }
 });
 

@@ -1183,9 +1183,51 @@ const Learning: React.FC = () => {
                         >
                           <LogOut size={10} /> Log Out
                         </button>
-                      </div>
                     </div>
                   )}
+                </div>
+
+                {/* 8. Multi-Layer Backup Settings */}
+                <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-bold text-text flex items-center gap-2">
+                        <Brain size={14} className="text-sky" />
+                        Automatic Backup System
+                      </h4>
+                      <p className="text-[10px] text-muted leading-normal">
+                        Configure multi-layer backup rules, startup checks, and compression policies.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 pt-2 border-t border-glass-border/40 text-left">
+                    {[
+                      { key: 'backup_auto_enabled', label: 'Auto Backup' },
+                      { key: 'backup_local_enabled', label: 'Local Backup' },
+                      { key: 'backup_gdrive_enabled', label: 'Google Drive Backup' },
+                      { key: 'backup_telegram_enabled', label: 'Telegram Backup' },
+                      { key: 'backup_startup_restore_check', label: 'Startup Restore Check' },
+                      { key: 'backup_daily_compression', label: 'Daily Compression' },
+                      { key: 'backup_notifications_enabled', label: 'Backup Notifications' },
+                      { key: 'backup_auto_delete_old_archives', label: 'Auto Delete Old Archives' },
+                      { key: 'backup_manual_access', label: 'Manual Backup Access' },
+                    ].map(item => {
+                      const val = settingsData[item.key] === 'true';
+                      return (
+                        <label key={item.key} className="flex items-center justify-between cursor-pointer py-1.5 border-b border-glass-border/20 last:border-0 hover:bg-glass-bg/10 px-1 rounded transition-all select-none">
+                          <span className="text-[11px] font-semibold text-text">{item.label}</span>
+                          <input
+                            type="checkbox"
+                            className="accent-green w-4 h-4 rounded cursor-pointer"
+                            checked={val}
+                            onChange={() => handleToggleSetting(item.key)}
+                            disabled={savingSetting === item.key}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             ) : (

@@ -33,6 +33,37 @@ class DatabaseManager {
       }
       const db = await open({ filename: dbPath, driver: sqlite3.Database });
       await db.run('PRAGMA busy_timeout = 5000;');
+
+      // Intercept database writes for automatic backup snapshots
+      const originalRun = db.run.bind(db);
+      const originalExec = db.exec.bind(db);
+
+      const checkWriteQuery = (sql: string) => {
+        if (!sql) return;
+        const sqlLower = sql.toLowerCase();
+        const isWrite = sqlLower.includes('insert') || sqlLower.includes('update') || sqlLower.includes('delete');
+        const isInternal = sqlLower.includes('action_logs') || sqlLower.includes('app_settings') || sqlLower.includes('processed_emails') || sqlLower.includes('processed_files') || sqlLower.includes('push_tokens');
+        if (isWrite && !isInternal && process.env.NODE_ENV !== 'test') {
+          import('../services/backupRecoveryService.js')
+            .then(({ backupRecoveryService }) => {
+              backupRecoveryService.triggerSnapshot();
+            })
+            .catch(err => console.error('Failed to import backupRecoveryService:', err));
+        }
+      };
+
+      db.run = async function (sql: any, ...params: any[]) {
+        if (typeof sql === 'string') {
+          checkWriteQuery(sql);
+        }
+        return originalRun(sql, ...params);
+      } as any;
+
+      db.exec = async function (sql: string) {
+        checkWriteQuery(sql);
+        return originalExec(sql);
+      };
+
       this.connection = db;
       this.currentDbPath = dbPath;
     }

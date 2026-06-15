@@ -39,6 +39,7 @@ import { StagedReviewModal } from './components/StagedReviewModal';
 import { MobileConnectionModal } from './components/MobileConnectionModal';
 import { api, apiClient } from './services/api';
 import { Agentation } from 'agentation';
+import BackupCenterModal from './components/BackupCenterModal';
 
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
@@ -973,6 +974,33 @@ const Layout = ({
   const [pendingStagedSalesCount, setPendingStagedSalesCount] = useState(0);
   const [pendingStagedPurchasesCount, setPendingStagedPurchasesCount] = useState(0);
 
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [isBackupStartupMode, setIsBackupStartupMode] = useState(false);
+
+  useEffect(() => {
+    const checkBackupStatus = async () => {
+      try {
+        const { data } = await apiClient.get('/utilities/backup/status');
+        if (data.success && data.showRestorePopup) {
+          setIsBackupStartupMode(true);
+          setShowBackupModal(true);
+        }
+      } catch (err) {
+        console.warn('Failed to check startup restore status:', err);
+      }
+    };
+    checkBackupStatus();
+
+    (window as any).openBackupCenter = () => {
+      setIsBackupStartupMode(false);
+      setShowBackupModal(true);
+    };
+
+    return () => {
+      delete (window as any).openBackupCenter;
+    };
+  }, []);
+
   const fetchStagedCounts = useCallback(async () => {
     try {
       const [sales, purchases] = await Promise.all([
@@ -1105,6 +1133,14 @@ const Layout = ({
         {showConnectModal && (
           <MobileConnectionModal
             onClose={() => setShowConnectModal(false)}
+          />
+        )}
+
+        {showBackupModal && (
+          <BackupCenterModal
+            isOpen={showBackupModal}
+            onClose={() => setShowBackupModal(false)}
+            isStartupMode={isBackupStartupMode}
           />
         )}
 
