@@ -86,6 +86,7 @@ const Settings = () => {
   const [waBusinessWebhookVerifyToken, setWaBusinessWebhookVerifyToken] = useState('');
   const [waBusinessTestResult, setWaBusinessTestResult] = useState<{ success?: boolean; phone?: string; name?: string; error?: string } | null>(null);
   const [waBusinessTesting, setWaBusinessTesting] = useState(false);
+  const [whatsappPreferredSystem, setWhatsappPreferredSystem] = useState('automated');
 
   // Backup & Restore state
   const [backupLoading, setBackupLoading] = useState(false);
@@ -213,6 +214,7 @@ const Settings = () => {
           setWaBusinessAccessToken(data.wa_business_access_token || '');
           setWaBusinessWabaId(data.wa_business_waba_id || '');
           setWaBusinessWebhookVerifyToken(data.wa_business_webhook_verify_token || '');
+          setWhatsappPreferredSystem(data.whatsapp_preferred_system || 'automated');
 
           // Pharmarack Settings
           setPrUsername(data.pharmarack_username || '');
@@ -286,6 +288,7 @@ const Settings = () => {
       wa_business_access_token: waBusinessAccessToken,
       wa_business_waba_id: waBusinessWabaId,
       wa_business_webhook_verify_token: waBusinessWebhookVerifyToken,
+      whatsapp_preferred_system: whatsappPreferredSystem,
 
       // Pharmarack Settings
       pharmarack_username: prUsername,
@@ -383,6 +386,7 @@ const Settings = () => {
       wa_business_access_token: waBusinessAccessToken,
       wa_business_waba_id: waBusinessWabaId,
       wa_business_webhook_verify_token: waBusinessWebhookVerifyToken,
+      whatsapp_preferred_system: whatsappPreferredSystem,
 
       pharmarack_username: '',
       pharmarack_password: '',

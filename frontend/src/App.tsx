@@ -64,6 +64,8 @@ import CompositionQueue from './pages/CompositionQueue';
 import CustomerReturn from './pages/CustomerReturn';
 import CustomerReturnHistory from './pages/CustomerReturnHistory';
 import PharmarackCart from './pages/PharmarackCart';
+import AutomationCenter from './pages/AutomationCenter';
+import InvestigationCenter from './pages/Investigation';
 
 // ──────────────────────────────────────────────
 // Notification Types
@@ -93,6 +95,7 @@ const Sidebar = ({
   const menuItems = [
     { path: '/pos', label: 'Sales / POS', icon: <ShoppingCart size={18} /> },
     { path: '/sells', label: 'Sells / Bills', icon: <Receipt size={18} /> },
+    { path: '/investigation', label: 'Investigation Center', icon: <PackageSearch size={18} /> },
     { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
     { path: '/purchases', label: 'Purchases', icon: <Receipt size={18} /> },
     { path: '/purchase-history', label: 'Purchase History', icon: <ClipboardList size={18} /> },
@@ -101,6 +104,7 @@ const Sidebar = ({
     { path: '/expiry', label: 'Expiry Monitor', icon: <CalendarDays size={18} /> },
     { path: '/returns', label: 'Supplier Returns', icon: <RotateCcw size={18} /> },
     { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
+    { path: '/automation-center', label: 'Automation Center', icon: <Activity size={18} /> },
     { path: '/pharmarack-cart', label: 'Pharmarack Cart', icon: <ShoppingCart size={18} /> },
     { path: '/database', label: 'Master Database', icon: <Database size={18} /> },
     { path: '/composition-queue', label: 'Composition Queue', icon: <Beaker size={18} /> },
@@ -705,6 +709,7 @@ const Topbar = ({
       '/reports': 'Reports',
       '/pos': 'Sales / POS',
       '/sells': 'Sells / Bills',
+      '/investigation': 'Medicine & Bill Investigation Center',
       '/settings': 'Settings',
       '/returns': 'Supplier Returns',
     };
@@ -958,7 +963,7 @@ const Layout = ({
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 }) => {
   const location = useLocation();
-  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart'].includes(location.pathname);
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart', '/automation-center', '/investigation'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [hasUnread, setHasUnread] = useState(false);
@@ -1146,11 +1151,13 @@ function App() {
           <Route path="/expiry" element={<Expiry />} />
           <Route path="/pos" element={<POS />} />
           <Route path="/sells" element={<Sells />} />
+          <Route path="/investigation" element={<InvestigationCenter />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/manual-purchase" element={<Purchases />} />
           <Route path="/purchase-history" element={<PurchaseHistory />} />
           <Route path="/crm" element={<CRM />} />
           <Route path="/orders" element={<Orders />} />
+          <Route path="/automation-center" element={<AutomationCenter />} />
           <Route path="/pharmarack-cart" element={<PharmarackCart />} />
           <Route path="/migration" element={<Migration />} />
           <Route path="/doctors" element={<Doctors />} />

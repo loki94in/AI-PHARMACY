@@ -97,7 +97,7 @@ router.post('/', async (req, res) => {
   try {
     const db = await dbManager.getConnection();
     await initOrdersTable(db);
-    await db.run(
+    const result = await db.run(
       `INSERT INTO special_orders (
         product, requester, phone, qty, priority, status,
         pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped,
@@ -121,26 +121,38 @@ router.post('/', async (req, res) => {
     
     // Auto send confirmation message to customer via WhatsApp
     if (phone) {
+      const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+      let medicalName = 'XYZ MEDICAL';
+      const nameRow = await db.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
+      if (nameRow && nameRow.value) {
+        medicalName = nameRow.value;
+      }
+      const advMsg = advance_payment && Number(advance_payment) > 0 ? ` (Advance Paid: ₹${Number(advance_payment).toFixed(2)})` : '';
+      const msg = `Hi ${requester.trim()}, your special order for ${product.trim()} (Qty: ${qty})${advMsg} has been taken in ${medicalName}. We will notify you when it is ready.`;
+      
       try {
-        const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-
-        let medicalName = 'XYZ MEDICAL';
-        const nameRow = await db.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
-        if (nameRow && nameRow.value) {
-          medicalName = nameRow.value;
-        }
-
-        const advMsg = advance_payment && Number(advance_payment) > 0 ? ` (Advance Paid: ₹${Number(advance_payment).toFixed(2)})` : '';
-        const msg = `Hi ${requester.trim()}, your special order for ${product.trim()} (Qty: ${qty})${advMsg} has been taken in ${medicalName}. We will notify you when it is ready.`;
         await sendMessage(formattedPhone, undefined, msg);
         console.log(`Special order confirmation WhatsApp sent to ${requester}`);
+        
+        await db.run(
+          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          ['quick_order', requester.trim(), formattedPhone, msg, 'sent', String(result.lastID)]
+        );
       } catch (wsError: any) {
         console.error(`Failed to send special order confirmation WhatsApp to ${requester}:`, wsError);
+        const errMsg = wsError.message || 'Unknown error';
         try {
           await db.run(
             "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
             'AUTOMATION_ALERT',
-            `❌ WhatsApp Alert Failure: Failed to send special order confirmation to ${requester} (${phone}). Error: ${wsError.message || 'Unknown error'}`
+            `❌ WhatsApp Alert Failure: Failed to send special order confirmation to ${requester} (${phone}). Error: ${errMsg}`
+          );
+          
+          await db.run(
+            `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            ['quick_order', requester.trim(), formattedPhone, msg, 'failed', errMsg, String(result.lastID)]
           );
         } catch (_) {}
       }
@@ -171,24 +183,38 @@ router.get('/uncollected-alerts', async (_req, res) => {
 
     for (const order of uncollected) {
       if (order.phone && order.notified === 0) {
+        const cleanPhone = order.phone.replace(/\D/g, '');
+        const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+        const msg = `Hi ${order.requester || 'Customer'}, your special order for ${order.product} (Qty: ${order.qty}) is ready for collection at AI Pharmacy. Please visit us to collect it.`;
+        
         try {
-          const cleanPhone = order.phone.replace(/\D/g, '');
-          const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-          const msg = `Hi ${order.requester || 'Customer'}, your special order for ${order.product} (Qty: ${order.qty}) is ready for collection at AI Pharmacy. Please visit us to collect it.`;
-          
           await sendMessage(formattedPhone, undefined, msg);
           
           // Mark as notified in database
           await db.run('UPDATE special_orders SET notified = 1 WHERE id = ?', [order.id]);
           order.notified = 1;
           alertedOrders.push({ ...order, autoWhatsAppSent: true });
+          
+          await db.run(
+            `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            ['uncollected_reminder', order.requester || 'Customer', formattedPhone, msg, 'sent', String(order.id)]
+          );
         } catch (wsError: any) {
           console.error(`Failed to send auto collection reminder to ${order.requester}:`, wsError);
-          alertedOrders.push({ ...order, autoWhatsAppSent: false, error: 'WhatsApp failed' });
+          const errMsg = wsError.message || 'Unknown error';
+          alertedOrders.push({ ...order, autoWhatsAppSent: false, error: errMsg });
+          
           await db.run(
             "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
             'AUTOMATION_ALERT',
-            `❌ WhatsApp Alert Failure: Failed to send collection reminder to ${order.requester} (${order.phone}). Error: ${wsError.message || 'Unknown error'}`
+            `❌ WhatsApp Alert Failure: Failed to send collection reminder to ${order.requester} (${order.phone}). Error: ${errMsg}`
+          );
+          
+          await db.run(
+            `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            ['uncollected_reminder', order.requester || 'Customer', formattedPhone, msg, 'failed', errMsg, String(order.id)]
           );
         }
       } else {
@@ -243,18 +269,32 @@ router.put('/:id', async (req, res) => {
 
     // If status changes to 'Ready' and the customer wasn't notified, auto send WhatsApp
     if (newStatus === 'Ready' && existing.status !== 'Ready' && newPhone) {
+      const cleanPhone = newPhone.replace(/\D/g, '');
+      const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+      const msg = `Hi ${newRequester || 'Customer'}, your special order for ${newProduct} (Qty: ${newQty}) is now READY for collection. Please visit us to collect it.`;
+      
       try {
-        const cleanPhone = newPhone.replace(/\D/g, '');
-        const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-        const msg = `Hi ${newRequester || 'Customer'}, your special order for ${newProduct} (Qty: ${newQty}) is now READY for collection. Please visit us to collect it.`;
         await sendMessage(formattedPhone, undefined, msg);
         await db.run('UPDATE special_orders SET notified = 1 WHERE id = ?', [id]);
+        
+        await db.run(
+          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          ['order_ready', newRequester || 'Customer', formattedPhone, msg, 'sent', String(id)]
+        );
       } catch (wsError: any) {
         console.error(`Failed to send status update WhatsApp to ${newRequester}:`, wsError);
+        const errMsg = wsError.message || 'Unknown error';
         await db.run(
           "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
           'AUTOMATION_ALERT',
-          `❌ WhatsApp Alert Failure: Failed to send "Ready" notification to ${newRequester} (${newPhone}). Error: ${wsError.message || 'Unknown error'}`
+          `❌ WhatsApp Alert Failure: Failed to send "Ready" notification to ${newRequester} (${newPhone}). Error: ${errMsg}`
+        );
+        
+        await db.run(
+          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['order_ready', newRequester || 'Customer', formattedPhone, msg, 'failed', errMsg, String(id)]
         );
       }
     }

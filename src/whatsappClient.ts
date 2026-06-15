@@ -1,13 +1,46 @@
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import fs from 'fs';
+import path from 'path';
 import { eventService } from './services/eventService.js';
+import { dbManager } from './database/connection.js';
+import { config as appConfig } from './config/index.js';
+import { whatsappBusinessService } from './services/whatsappBusinessService.js';
 
 // whatsapp-web.js uses CommonJS default export, so Client is a value not a type.
 // Use InstanceType<typeof Client> to get the correct instance type.
 type WAClient = InstanceType<typeof Client>;
 
 let clientInstance: WAClient | null = null;
+
+/** Helper to check whether we should route messages to WhatsApp Business Cloud API */
+async function shouldRouteToBusiness(): Promise<boolean> {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT key, value FROM app_settings WHERE key IN (?, ?, ?)`,
+      ['whatsapp_enabled', 'wa_business_enabled', 'whatsapp_preferred_system']
+    );
+    const map: Record<string, string> = {};
+    for (const row of rows) {
+      map[row.key] = row.value;
+    }
+    const whatsappEnabled = map['whatsapp_enabled'] === 'true';
+    const waBusinessEnabled = map['wa_business_enabled'] === 'true';
+    const preferredSystem = map['whatsapp_preferred_system'] || 'automated';
+
+    if (waBusinessEnabled && !whatsappEnabled) {
+      return true;
+    }
+    if (waBusinessEnabled && whatsappEnabled && preferredSystem === 'official') {
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Error checking WhatsApp routing preferences:', err);
+    return false;
+  }
+}
 let activeClient: WAClient | null = null; // Track currently initializing or active client
 let initializing = false;
 
@@ -130,20 +163,54 @@ export async function initClient(): Promise<WAClient> {
   });
 }
 
-/** Send a media message using the initialized client */
+/** Send a media message using the initialized client or WhatsApp Business API */
 export async function sendMessage(
   to: string,
   mediaPath?: string,
   caption?: string,
   file?: { mimetype: string; data: string; filename?: string }
 ): Promise<void> {
-  if (!clientInstance) {
-    throw new Error('Client not initialized. Call initClient() first.');
-  }
-
   if (!to) {
     console.warn('Attempted to send WhatsApp message to an empty or null number. Skipping.');
     return;
+  }
+
+  // Check if we should route to official WhatsApp Business API
+  const useBusiness = await shouldRouteToBusiness();
+  if (useBusiness) {
+    if (file && file.mimetype && file.data) {
+      if (!fs.existsSync(appConfig.tempDir)) {
+        fs.mkdirSync(appConfig.tempDir, { recursive: true });
+      }
+      const tempFilePath = path.join(appConfig.tempDir, `wa_temp_${Date.now()}_${file.filename || 'document.pdf'}`);
+      fs.writeFileSync(tempFilePath, Buffer.from(file.data, 'base64'));
+      try {
+        const result = await whatsappBusinessService.sendDocument(to, tempFilePath, caption, file.filename);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to send document via WhatsApp Business API');
+        }
+      } finally {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      }
+    } else if (mediaPath) {
+      const result = await whatsappBusinessService.sendDocument(to, mediaPath, caption);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to send document via WhatsApp Business API');
+      }
+    } else {
+      const result = await whatsappBusinessService.sendTextMessage(to, caption ?? '');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to send text message via WhatsApp Business API');
+      }
+    }
+    return;
+  }
+
+  // Otherwise, use standard WhatsApp Web automated client
+  if (!clientInstance) {
+    throw new Error('Client not initialized. Call initClient() first.');
   }
 
   const recipients = String(to)

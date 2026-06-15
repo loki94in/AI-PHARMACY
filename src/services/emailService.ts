@@ -1270,8 +1270,22 @@ export class EmailService {
             await sendMessage(boy.whatsapp_number, undefined, message);
             console.log(`WhatsApp notification sent to delivery boy: ${boy.name}`);
             sentBoys.push(`${boy.name} (${boy.whatsapp_number})`);
-          } catch (wsError) {
+
+            // Log success to automation_notifications
+            await db.run(
+              `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              ['delivery_boy', boy.name, boy.whatsapp_number, message, 'sent', orderInfo.invoiceNumber]
+            );
+          } catch (wsError: any) {
             console.error(`Failed to send WhatsApp to ${boy.name}:`, wsError);
+            
+            // Log failure to automation_notifications
+            await db.run(
+              `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              ['delivery_boy', boy.name, boy.whatsapp_number, message, 'failed', wsError.message || 'Unknown error', orderInfo.invoiceNumber]
+            );
           }
         }
 
@@ -1311,6 +1325,53 @@ export class EmailService {
     }
   }
 
+  /**
+   * Send distributor invoice details via WhatsApp to the owner's phone
+   */
+  public async sendDistributorWhatsAppAlert(orderInfo: any): Promise<void> {
+    let db = null;
+    try {
+      db = await dbManager.getConnection();
+      const phoneRow = await db.get("SELECT value FROM app_settings WHERE key = 'shop_phone'");
+      const shopPhone = phoneRow?.value;
+
+      if (!shopPhone) {
+        console.warn('Shop phone not configured in settings. Skipping distributor invoice alert.');
+        return;
+      }
+
+      // If there are no medicines extracted, just send a basic invoice alert
+      let itemsText = 'No items could be extracted from the email text body.';
+      if (orderInfo.medicines && orderInfo.medicines.length > 0) {
+        itemsText = orderInfo.medicines
+          .map((m: any, idx: number) => `${idx + 1}. ${m.name} - Qty: ${m.quantity}`)
+          .join('\n');
+      }
+
+      const message = `📦 *Distributor Invoice Stock Alert*\n\nDistributor: ${orderInfo.distributorName}\nInvoice No: ${orderInfo.invoiceNumber}\nTime Received: ${orderInfo.timeStr}\n\n*Items Extracted:*\n${itemsText}\n\n— AI Pharmacy OS`;
+
+      try {
+        await sendMessage(shopPhone, undefined, message);
+        console.log(`Distributor WhatsApp alert sent to ${shopPhone}`);
+        
+        await db.run(
+          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          ['distributor_invoice', orderInfo.distributorName, shopPhone, message, 'sent', orderInfo.invoiceNumber]
+        );
+      } catch (wsError: any) {
+        console.error(`Failed to send distributor alert to ${shopPhone}:`, wsError);
+        await db.run(
+          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['distributor_invoice', orderInfo.distributorName, shopPhone, message, 'failed', wsError.message || 'Unknown error', orderInfo.invoiceNumber]
+        );
+      }
+    } catch (err) {
+      console.error('Error in sendDistributorWhatsAppAlert:', err);
+    }
+  }
+
   public async processEmail(email: ProcessedEmail): Promise<void> {
     try {
       const isOrderRelated = this.isOrderRelatedEmail(email);
@@ -1327,12 +1388,13 @@ export class EmailService {
           ['EMAIL_ORDER_DETECTED', logMsg]
         );
                 
-        // Notify delivery boys
+        // Notify delivery boys & send distributor alert
         await this.notifyDeliveryBoys(orderInfo);
+        await this.sendDistributorWhatsAppAlert(orderInfo);
 
         // No automatic background import of purchase bills (should be manually processed by user on frontend)
         // await this.processMedicineOrder(email);
-        console.log('Potential medicine order detected, delivery boys notified:', logMsg);
+        console.log('Potential medicine order detected, delivery boys notified & distributor alert sent:', logMsg);
       }
 
       // Check for inquiry keywords
@@ -2889,11 +2951,14 @@ export class EmailService {
           // Also mark as processed
           await db.run('INSERT OR IGNORE INTO processed_emails (uid) VALUES (?)', [uid]);
 
-          // Notify delivery boys if order-related AND it's a recent email (received within the last 15 minutes)
+          // Notify delivery boys & send distributor alert if order-related AND it's a recent email (received within the last 15 minutes)
           const isRecent = parsed.date && parsed.date instanceof Date && (Date.now() - parsed.date.getTime()) < 15 * 60 * 1000;
           if (isOrder && isRecent) {
             this.notifyDeliveryBoys(orderInfo).catch(err => {
               console.error('[Sync] Error notifying delivery boys:', err);
+            });
+            this.sendDistributorWhatsAppAlert(orderInfo).catch(err => {
+              console.error('[Sync] Error sending distributor WhatsApp alert:', err);
             });
           }
 

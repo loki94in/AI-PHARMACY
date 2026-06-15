@@ -3,6 +3,7 @@ import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { checkAllRefills } from '../services/refillService.js';
+import { sendMessage } from '../whatsappClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -90,7 +91,7 @@ router.post('/check', async (req, res) => {
 // Update a refill schedule manually
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status, hold_for_stock } = req.body;
+  const { patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status, hold_for_stock, is_active } = req.body;
 
   let db;
   try {
@@ -99,7 +100,7 @@ router.put('/:id', async (req, res) => {
     // Check if refill exists
     const refill = await db.get('SELECT * FROM patient_refills WHERE id = ?', [id]);
     if (!refill) {
-            return res.status(404).json({ error: 'Refill not found' });
+      return res.status(404).json({ error: 'Refill not found' });
     }
 
     const updatedName = patient_name !== undefined ? patient_name : refill.patient_name;
@@ -109,12 +110,13 @@ router.put('/:id', async (req, res) => {
     const updatedNextDate = next_refill_date !== undefined ? next_refill_date : refill.next_refill_date;
     const updatedStatus = status !== undefined ? status : refill.status;
     const updatedHold = hold_for_stock !== undefined ? parseInt(hold_for_stock, 10) : refill.hold_for_stock;
+    const updatedIsActive = is_active !== undefined ? (is_active ? 1 : 0) : (refill.is_active !== undefined ? refill.is_active : 1);
 
     await db.run(
       `UPDATE patient_refills 
-       SET patient_name = ?, patient_phone = ?, medicine_id = ?, refill_interval_days = ?, next_refill_date = ?, status = ?, hold_for_stock = ?
+       SET patient_name = ?, patient_phone = ?, medicine_id = ?, refill_interval_days = ?, next_refill_date = ?, status = ?, hold_for_stock = ?, is_active = ?
        WHERE id = ?`,
-      [updatedName, updatedPhone, updatedMedicineId, updatedInterval, updatedNextDate, updatedStatus, updatedHold, id]
+      [updatedName, updatedPhone, updatedMedicineId, updatedInterval, updatedNextDate, updatedStatus, updatedHold, updatedIsActive, id]
     );
 
     // If marked back to pending or values changed, re-run refilling triggers
@@ -122,10 +124,62 @@ router.put('/:id', async (req, res) => {
       await checkAllRefills(db);
     }
 
-        res.json({ success: true, message: 'Refill updated successfully', interval_days: updatedInterval });
+    res.json({ success: true, message: 'Refill updated successfully', interval_days: updatedInterval });
   } catch (err) {
     console.error('Failed to update refill:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Send refill reminder immediately via WhatsApp
+router.post('/:id/send', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const refill = await db.get(
+      `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
+       JOIN medicines m ON pr.medicine_id = m.id
+       WHERE pr.id = ?`,
+      [id]
+    );
+
+    if (!refill) {
+      return res.status(404).json({ error: 'Refill schedule not found' });
+    }
+
+    const message = `Hello ${refill.patient_name}, your prescription refill for ${refill.medicine_name} is now ready and in stock! Please visit the pharmacy to collect it.`;
+
+    try {
+      await sendMessage(refill.patient_phone, undefined, message);
+
+      // Update refill status to notified
+      await db.run(
+        "UPDATE patient_refills SET status = 'notified', hold_for_stock = 0 WHERE id = ?",
+        [id]
+      );
+
+      // Log notification as sent
+      await db.run(
+        `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        ['refill_reminder', refill.patient_name, refill.patient_phone, message, 'sent', String(id)]
+      );
+
+      res.json({ success: true, message: 'Refill reminder sent successfully' });
+    } catch (sendErr: any) {
+      const errMsg = sendErr.message || 'Unknown WhatsApp send error';
+      // Log notification as failed
+      await db.run(
+        `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ['refill_reminder', refill.patient_name, refill.patient_phone, message, 'failed', errMsg, String(id)]
+      );
+      res.status(500).json({ error: 'Failed to send WhatsApp message: ' + errMsg });
+    }
+  } catch (err: any) {
+    console.error('Failed to trigger immediate refill send:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
   }
 });
 

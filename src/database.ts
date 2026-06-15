@@ -257,6 +257,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE sales_invoices ADD COLUMN payment_status TEXT DEFAULT 'PAID'`,
     `ALTER TABLE sales_invoices ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE patient_refills ADD COLUMN hold_for_stock INTEGER DEFAULT 0`,
+    `ALTER TABLE patient_refills ADD COLUMN is_active INTEGER DEFAULT 1`,
     `ALTER TABLE catalog_jobs ADD COLUMN extracted_data TEXT`,
     `ALTER TABLE catalog_jobs ADD COLUMN original_filename TEXT`,
     `ALTER TABLE catalog_jobs ADD COLUMN total_count INTEGER DEFAULT 0`,
@@ -294,6 +295,18 @@ export async function ensureSchema(dbPath: string) {
 
   // New tables needed by various routes
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS automation_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      recipient_name TEXT,
+      recipient_phone TEXT,
+      message TEXT,
+      status TEXT DEFAULT 'pending',
+      error_message TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      reference_id TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS staged_sales (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       patient_name TEXT,

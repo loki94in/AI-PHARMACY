@@ -135,6 +135,33 @@ export interface SpecialOrder {
   advance_payment?: number;
 }
 
+export interface Refill {
+  id: number;
+  patient_name: string;
+  patient_phone: string;
+  medicine_id: number;
+  medicine_name?: string;
+  refill_interval_days: number;
+  last_refill_date: string;
+  next_refill_date: string;
+  status: string;
+  hold_for_stock?: number;
+  is_active: number;
+}
+
+export interface AutomationNotification {
+  id: number;
+  type: string;
+  recipient_name: string;
+  recipient_phone: string;
+  message: string;
+  status: string;
+  error_message?: string;
+  created_at: string;
+  reference_id?: string;
+}
+
+
 // API methods mapping
 export const api = {
   getDashboard: () => apiClient.get<DashboardStats>('/dashboard').then(res => res.data),
@@ -395,4 +422,25 @@ export const api = {
   approveStagedPurchase: (id: number, data: any) => apiClient.post(`/purchases/staged/${id}/approve`, data).then(res => res.data),
   rejectStagedPurchase: (id: number) => apiClient.post(`/purchases/staged/${id}/reject`).then(res => res.data),
   getConnectionInfo: () => apiClient.get('/notifications/connection-info').then(res => res.data),
+
+  // Refills
+  getRefills: () => apiClient.get<Refill[]>('/refills').then(res => res.data),
+  createRefill: (data: Partial<Refill>) => apiClient.post('/refills', data).then(res => res.data),
+  updateRefill: (id: number, data: Partial<Refill>) => apiClient.put(`/refills/${id}`, data).then(res => res.data),
+  deleteRefill: (id: number) => apiClient.delete(`/refills/${id}`).then(res => res.data),
+  sendRefillNow: (id: number) => apiClient.post(`/refills/${id}/send`).then(res => res.data),
+
+  // Automation / Communication logs
+  getAutomationNotifications: (params?: { type?: string; status?: string; search?: string; limit?: number }) =>
+    apiClient.get<AutomationNotification[]>('/automation/notifications', { params }).then(res => res.data),
+  retryNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/retry`).then(res => res.data),
+  manualNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/manual`).then(res => res.data),
+
+  // Investigation Center
+  searchInvestigation: (params: any) => apiClient.get('/investigation/search', { params }).then(res => res.data),
+  getInvestigationDetails: (inventoryId: number) => apiClient.get(`/investigation/details/${inventoryId}`).then(res => res.data),
+  updateInvestigationInventory: (inventoryId: number, data: any) => apiClient.put(`/investigation/inventory/${inventoryId}`, data).then(res => res.data),
+  updateInvestigationSaleBill: (invoiceId: number, data: any) => apiClient.put(`/investigation/sales/${invoiceId}`, data).then(res => res.data),
+  updateInvestigationPurchaseBill: (purchaseId: number, data: any) => apiClient.put(`/investigation/purchases/${purchaseId}`, data).then(res => res.data),
+  getInvestigationAuditLogs: (inventoryId: number) => apiClient.get(`/investigation/audit-logs/${inventoryId}`).then(res => res.data),
 };

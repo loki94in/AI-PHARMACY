@@ -48,12 +48,14 @@ import telegramPrescriptionRouter from './routes/telegramPrescription.js';
 import refillsRouter from './routes/refills.js';
 import waBusinessRouter from './routes/whatsappBusiness.js';
 import licenseRouter from './routes/license.js';
+import automationRouter from './routes/automation.js';
 import uploadRouter from './routes/upload.js';
 import catalogRouter from './routes/catalog.js';
 import medicinesRouter from './routes/medicines.js';
 import enrichmentRouter from './routes/enrichment.js';
 import distributorsRouter from './routes/distributors.js';
 import notificationsRouter from './routes/notifications.js';
+import investigationRouter from './routes/investigation.js';
 import './services/pushNotificationService.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
@@ -157,6 +159,7 @@ app.use('/api/aicamera', aiCameraRouter);
 app.use('/api/telegram-prescription', telegramPrescriptionRouter);
 app.use('/api/refills', refillsRouter);
 app.use('/api/wa-business', waBusinessRouter);
+app.use('/api/automation', automationRouter);
 // Core API routes
 app.use('/api/sales', salesRouter);
 app.use('/api/inventory', inventoryRouter);
@@ -176,6 +179,7 @@ app.use('/api', medicinesRouter);
 app.use('/api', enrichmentRouter);
 app.use('/api', distributorsRouter);
 app.use('/api', notificationsRouter);
+app.use('/api/investigation', investigationRouter);
 
 
 

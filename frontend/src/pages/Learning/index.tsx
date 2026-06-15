@@ -720,6 +720,36 @@ const Learning: React.FC = () => {
                   )}
                 </div>
 
+                {/* 2.5 Preferred System (Visible if both WhatsApp Web and Business API are enabled) */}
+                {settingsData.whatsapp_enabled === 'true' && settingsData.wa_business_enabled === 'true' && (
+                  <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-bold text-text flex items-center gap-2">
+                        <MessageCircle size={14} className="text-amber" />
+                        Preferred WhatsApp Channel
+                      </h4>
+                      <p className="text-[10px] text-muted leading-normal">
+                        Both Automated WhatsApp Web and Official Business API are enabled. Choose which one to use as the default sender:
+                      </p>
+                    </div>
+                    <select
+                      className="premium-input w-full text-xs py-1.5"
+                      value={settingsData.whatsapp_preferred_system || 'automated'}
+                      onChange={(e) => {
+                        const updated = {
+                          ...settingsData,
+                          whatsapp_preferred_system: e.target.value
+                        };
+                        setSettingsData(updated);
+                        handleSaveConfig(updated);
+                      }}
+                    >
+                      <option value="automated" className="bg-bg text-text">Automated WhatsApp Web Client</option>
+                      <option value="official" className="bg-bg text-text">Official WhatsApp Business Cloud API</option>
+                    </select>
+                  </div>
+                )}
+
                 {/* 3. Telegram Orders Bot */}
                 <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
                   <div className="flex justify-between items-start">

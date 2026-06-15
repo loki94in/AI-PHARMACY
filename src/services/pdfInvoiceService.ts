@@ -20,7 +20,7 @@ export class PdfInvoiceService {
 
     // Fetch invoice details
     const invoice = await db.get(
-      `SELECT si.invoice_no, si.date, si.total_amount, si.tax_amount, si.payment_medium, si.payment_status,
+      `SELECT si.invoice_no, si.date, si.total_amount, si.tax_amount, si.payment_medium, si.payment_status, si.discount, si.subtotal,
               c.name as customer_name, c.phone as customer_phone, c.address as customer_address
        FROM sales_invoices si
        LEFT JOIN customers c ON si.customer_id = c.id
@@ -111,19 +111,30 @@ export class PdfInvoiceService {
 
         // Totals Section
         doc.moveDown(1);
-        const subtotal = invoice.total_amount - invoice.tax_amount;
+        
+        let subtotal = invoice.total_amount - invoice.tax_amount;
+        let tax = invoice.tax_amount || 0;
+        let total = invoice.total_amount;
+
+        // Credit Bill Sharing: If payment_medium is CREDIT, share without discount amount
+        if (invoice.payment_medium === 'CREDIT' && (invoice.discount || 0) > 0) {
+          subtotal = invoice.subtotal || (invoice.total_amount + invoice.discount - invoice.tax_amount);
+          tax = invoice.tax_amount || 0;
+          total = subtotal + tax;
+        }
+
         doc.fontSize(9).fillColor('#64748b');
         doc.text('Subtotal:', 380, doc.y, { width: 80, align: 'right' });
         doc.fillColor('#0f172a').text(`₹${subtotal.toFixed(2)}`, 480, doc.y - 9, { width: 70, align: 'right' });
         
         doc.moveDown(0.5);
         doc.fillColor('#64748b').text('Tax (5%):', 380, doc.y, { width: 80, align: 'right' });
-        doc.fillColor('#0f172a').text(`₹${(invoice.tax_amount || 0).toFixed(2)}`, 480, doc.y - 9, { width: 70, align: 'right' });
+        doc.fillColor('#0f172a').text(`₹${tax.toFixed(2)}`, 480, doc.y - 9, { width: 70, align: 'right' });
         
         doc.moveDown(0.8);
         doc.fontSize(12).fillColor('#0f172a').font('Helvetica-Bold');
         doc.text('Grand Total:', 360, doc.y, { width: 100, align: 'right' });
-        doc.text(`₹${(invoice.total_amount || 0).toFixed(2)}`, 480, doc.y - 12, { width: 70, align: 'right' });
+        doc.text(`₹${total.toFixed(2)}`, 480, doc.y - 12, { width: 70, align: 'right' });
 
         // Check if custom stamp/signature files exist (only draw if includeStampAndSig is true)
         const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');

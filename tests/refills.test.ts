@@ -1,3 +1,18 @@
+import { jest } from '@jest/globals';
+
+jest.unstable_mockModule('../src/whatsappClient.js', () => ({
+  __esModule: true,
+  sendMessage: jest.fn().mockResolvedValue(true),
+  initClient: jest.fn().mockResolvedValue(true)
+}));
+
+jest.unstable_mockModule('../src/telegramBot.js', () => ({
+  __esModule: true,
+  telegramBotService: {
+    sendDefaultNotification: jest.fn().mockResolvedValue(true)
+  }
+}));
+
 import request from 'supertest';
 import express from 'express';
 import fs from 'fs';
@@ -5,19 +20,8 @@ import path from 'path';
 import os from 'os';
 import { ensureSchema } from '../src/database.js';
 
-// Mock communication dependencies
-jest.mock('../src/whatsappClient.js', () => ({
-  sendMessage: jest.fn().mockResolvedValue(true),
-  initClient: jest.fn().mockResolvedValue(true)
-}));
-jest.mock('../src/telegramBot.js', () => ({
-  telegramBotService: {
-    sendDefaultNotification: jest.fn().mockResolvedValue(true)
-  }
-}));
-
-import { sendMessage } from '../src/whatsappClient.js';
-import { telegramBotService } from '../src/telegramBot.js';
+let mockSendMessage: any;
+let mockTelegramBotService: any;
 
 describe('Patient Refills & POS Auto-Save Integration', () => {
   let app: express.Express;
@@ -29,6 +33,34 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
     dbPath = path.join(tmpDir, 'app.db');
     await ensureSchema(dbPath);
     process.env.DB_PATH = dbPath;
+
+    // Create special_orders table which is queried by inventory overrides
+    const { open } = await import('sqlite');
+    const sqlite3 = await import('sqlite3');
+    const db = await open({ filename: dbPath, driver: sqlite3.default.Database });
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS special_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product TEXT,
+        requester TEXT,
+        phone TEXT,
+        qty INTEGER,
+        priority TEXT,
+        status TEXT DEFAULT 'Pending',
+        date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        notified INTEGER DEFAULT 0,
+        pharmarack_distributor TEXT,
+        pharmarack_rate REAL,
+        pharmarack_mrp REAL,
+        pharmarack_mapped INTEGER DEFAULT 0,
+        pharmarack_scheme TEXT,
+        advance_payment REAL DEFAULT 0.0
+      )
+    `);
+    await db.close();
+
+    mockSendMessage = (await import('../src/whatsappClient.js')).sendMessage;
+    mockTelegramBotService = (await import('../src/telegramBot.js')).telegramBotService;
 
     // Load routers
     const { default: salesRouter } = await import('../src/routes/sales.js');
@@ -51,6 +83,14 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
   });
 
   test('POS billing automatically creates a customer in the database', async () => {
+    // Seed database with a valid medicine and inventory item
+    const { open } = await import('sqlite');
+    const sqlite3 = await import('sqlite3');
+    const dbSeed = await open({ filename: dbPath, driver: sqlite3.default.Database });
+    await dbSeed.run('INSERT INTO medicines (id, name) VALUES (1, "Test Med")');
+    await dbSeed.run('INSERT INTO inventory_master (id, medicine_id, quantity) VALUES (1, 1, 10)');
+    await dbSeed.close();
+
     const res = await request(app)
       .post('/api/sales')
       .send({
@@ -64,8 +104,6 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
     expect(res.body.success).toBe(true);
 
     // Verify customer is in the DB
-    const { open } = await import('sqlite');
-    const sqlite3 = await import('sqlite3');
     const db = await open({ filename: dbPath, driver: sqlite3.default.Database });
     const customer = await db.get('SELECT * FROM customers WHERE name = ?', 'John Doe');
     await db.close();
@@ -99,13 +137,13 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
     expect(res.body.success).toBe(true);
 
     // 3. Verify Telegram out-of-stock notification was triggered
-    expect(telegramBotService.sendDefaultNotification).toHaveBeenCalledWith(
+    expect(mockTelegramBotService.sendDefaultNotification).toHaveBeenCalledWith(
       expect.stringContaining('Alice Smith')
     );
-    expect(telegramBotService.sendDefaultNotification).toHaveBeenCalledWith(
+    expect(mockTelegramBotService.sendDefaultNotification).toHaveBeenCalledWith(
       expect.stringContaining('TestMeds')
     );
-    expect(sendMessage).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   test('Stock update triggers WhatsApp refill notification', async () => {
@@ -116,8 +154,9 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
     const res = await request(app)
       .post('/api/inventory/override')
       .send({
-        inventory_id: 1, // refers to medicine_id 101 or whichever is entry 1
-        quantity: 10
+        inventory_id: 2, // refers to medicine_id 101
+        quantity: 10,
+        reason: 'Restocking for test verification'
       });
 
     expect(res.status).toBe(200);
@@ -126,7 +165,7 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
     const { open } = await import('sqlite');
     const sqlite3 = await import('sqlite3');
     const db = await open({ filename: dbPath, driver: sqlite3.default.Database });
-    const invRow = await db.get('SELECT medicine_id FROM inventory_master WHERE id = 1');
+    const invRow = await db.get('SELECT medicine_id FROM inventory_master WHERE id = 2');
     
     // Explicitly call stock update triggers to make sure medicine stock triggers
     if (invRow) {
@@ -136,6 +175,6 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
     await db.close();
 
     // 3. Verify WhatsApp notification is sent out
-    expect(sendMessage).toHaveBeenCalled();
+    expect(mockSendMessage).toHaveBeenCalled();
   });
 });
