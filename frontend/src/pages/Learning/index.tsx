@@ -88,6 +88,21 @@ const Learning: React.FC = () => {
 
   // Pharmarack link login
   const [isOpeningWindow, setIsOpeningWindow] = useState(false);
+  const [prHealth, setPrHealth] = useState<{ healthy: boolean; mode: 'Live' | 'Simulation'; reason?: string; message?: string } | null>(null);
+  const [checkingPrHealth, setCheckingPrHealth] = useState(false);
+
+  const checkPrHealth = async () => {
+    setCheckingPrHealth(true);
+    try {
+      const res = await apiClient.get('/pharmarack/session-status');
+      setPrHealth(res.data);
+    } catch (err) {
+      console.error('Failed to check Pharmarack session health:', err);
+      setPrHealth(prev => prev || { healthy: false, mode: 'Live', reason: 'NETWORK_ERROR', message: 'Could not contact server' });
+    } finally {
+      setCheckingPrHealth(false);
+    }
+  };
 
   // New distributor creation states
   const [showAddDistModal, setShowAddDistModal] = useState(false);
@@ -126,7 +141,10 @@ const Learning: React.FC = () => {
       toastEvent.trigger('Settings saved successfully', 'success');
       // Refresh settings
       const { data } = await apiClient.get('/settings');
-      if (data) setSettingsData(data);
+      if (data) {
+        setSettingsData(data);
+        checkPrHealth();
+      }
     } catch (error) {
       console.error('Failed to save settings', error);
       toastEvent.trigger('Failed to save settings', 'error');
@@ -216,6 +234,7 @@ const Learning: React.FC = () => {
             toastEvent.trigger('Successfully linked Pharmarack session!', 'success');
             clearInterval(interval);
             setIsOpeningWindow(false);
+            checkPrHealth();
           }
         } catch (err) {
           console.warn('Failed to poll settings status:', err);
@@ -240,6 +259,7 @@ const Learning: React.FC = () => {
     try {
       await apiClient.post('/settings/save', updated);
       toastEvent.trigger('Logged out and cleared Pharmarack credentials successfully.', 'success');
+      checkPrHealth();
     } catch (error) {
       console.error('Failed to logout from Pharmarack', error);
       toastEvent.trigger('Failed to logout from Pharmarack', 'error');
@@ -279,7 +299,19 @@ const Learning: React.FC = () => {
 
   useEffect(() => {
     fetchProfiles();
-    fetchSettings();
+    const initPr = async () => {
+      try {
+        const { data } = await apiClient.get('/pharmarack/auto-verify');
+        setPrHealth(data);
+      } catch (err) {
+        console.error('Failed initial Pharmarack verification:', err);
+      }
+      fetchSettings();
+    };
+    initPr();
+    
+    const interval = setInterval(checkPrHealth, 180000); // Poll every 3 minutes
+    return () => clearInterval(interval);
   }, []);
 
   const fetchProfiles = async () => {
@@ -1015,9 +1047,19 @@ const Learning: React.FC = () => {
                 <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
                   <div className="flex justify-between items-start">
                     <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-text flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-text flex items-center gap-2 flex-wrap">
                         <Globe size={14} className="text-sky" />
                         Pharmarack Settings
+                        {prHealth && (
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-extrabold px-2 py-0.5 rounded-full border leading-none ${
+                            prHealth.healthy
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-red-500/10 text-red-400 border-red-500/20'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${prHealth.healthy ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                            {prHealth.mode === 'Simulation' ? 'SIMULATION' : prHealth.healthy ? 'ACTIVE' : 'EXPIRED / NOT LINKED'}
+                          </span>
+                        )}
                       </h4>
                       <p className="text-[10px] text-muted leading-normal">
                         Link retailer account credentials and cookies for background distributor inventory queries.
@@ -1030,6 +1072,21 @@ const Learning: React.FC = () => {
                       {showPrConfig ? 'Hide' : 'Configure'}
                     </button>
                   </div>
+
+                  {prHealth && !prHealth.healthy && settingsData?.pharmarack_mode === 'Live' && !showPrConfig && (
+                    <div className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg p-2.5 flex items-center justify-between animate-in fade-in slide-in-from-top-1">
+                      <span>Pharmarack session is expired or not linked.</span>
+                      <button
+                        onClick={() => {
+                          setShowPrConfig(true);
+                          handleOpenLoginWindow();
+                        }}
+                        className="text-[9px] bg-red-500/20 hover:bg-red-500/35 border border-red-500/30 px-2 py-0.5 rounded font-black uppercase transition-all whitespace-nowrap ml-2 active:scale-95"
+                      >
+                        Re-link Now
+                      </button>
+                    </div>
+                  )}
                   
                   {showPrConfig && (
                     <div className="flex flex-col gap-2.5 pt-3 border-t border-glass-border/40 text-left">

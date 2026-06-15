@@ -62,6 +62,7 @@ export const QuickOrderModal: React.FC = () => {
   const [requester, setRequester] = useState('');
   const [phone, setPhone] = useState('');
   const [qty, setQty] = useState(1);
+  const [advancePayment, setAdvancePayment] = useState<number | ''>('');
   const [priority, setPriority] = useState<'Low' | 'Normal' | 'High'>('Normal');
   
   const [selectedDistributor, setSelectedDistributor] = useState('');
@@ -79,6 +80,22 @@ export const QuickOrderModal: React.FC = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [prMode, setPrMode] = useState<'Live' | 'Simulation' | 'Unknown'>('Unknown');
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchSessionStatus = async () => {
+        try {
+          const data = await api.checkPharmarackSession();
+          setPrMode(data.mode || 'Simulation');
+        } catch (err) {
+          console.error('Failed to fetch Pharmarack session status in modal:', err);
+          setPrMode('Simulation');
+        }
+      };
+      fetchSessionStatus();
+    }
+  }, [isOpen]);
 
   const handleAddItemToCart = () => {
     if (!product.trim()) {
@@ -327,14 +344,14 @@ export const QuickOrderModal: React.FC = () => {
   };
 
   // Submit Order Form
-  const processSubmissionQueue = async (items: any[], customerName: string, customerPhone: string, orderPriority: 'Low' | 'Normal' | 'High') => {
+  const processSubmissionQueue = async (items: any[], customerName: string, customerPhone: string, orderPriority: 'Low' | 'Normal' | 'High', advanceAmt: number) => {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       try {
         await api.createOrder({
           product: item.product,
-          requester: customerName || 'Anonymous',
-          phone: customerPhone || '',
+          requester: customerName,
+          phone: customerPhone,
           qty: item.qty,
           priority: orderPriority,
           status: 'Pending',
@@ -342,7 +359,8 @@ export const QuickOrderModal: React.FC = () => {
           pharmarack_rate: item.rate,
           pharmarack_mrp: item.mrp,
           pharmarack_mapped: item.mapped ? 1 : 0,
-          pharmarack_scheme: item.scheme
+          pharmarack_scheme: item.scheme,
+          advance_payment: i === 0 ? advanceAmt : 0
         });
         
         // Success notification for this individual item
@@ -354,14 +372,18 @@ export const QuickOrderModal: React.FC = () => {
         // If it's a Pharmarack product, also add it to the actual Pharmarack cart!
         if (item.productId && item.storeId) {
           try {
-            await api.addPharmarackCart([{
+            const res = await api.addPharmarackCart([{
               productId: item.productId,
               storeId: item.storeId,
               qty: item.qty,
               rate: item.rate,
               scheme: item.scheme
             }]);
-            toastEvent.trigger(`Added "${item.product}" to actual Pharmarack cart!`, 'success');
+            if (res && res.mode === 'Simulation') {
+              toastEvent.trigger(`[Simulation] Staged "${item.product}" in mock cart.`, 'info');
+            } else {
+              toastEvent.trigger(`Added "${item.product}" to actual Pharmarack cart!`, 'success');
+            }
           } catch (cartErr) {
             console.error(`Failed to add ${item.product} to actual Pharmarack cart:`, cartErr);
             toastEvent.trigger(`Could not add "${item.product}" to Pharmarack cart.`, 'error');
@@ -392,6 +414,10 @@ export const QuickOrderModal: React.FC = () => {
         toastEvent.trigger('Please stage at least one product name first.', 'error');
         return;
       }
+      if (qty < 1) {
+        toastEvent.trigger('Quantity must be at least 1.', 'error');
+        return;
+      }
       finalItems.push({
         product: product.trim(),
         qty: qty,
@@ -409,6 +435,20 @@ export const QuickOrderModal: React.FC = () => {
     const customerName = requester.trim();
     const customerPhone = phone.replace(/\D/g, '');
     const orderPriority = priority;
+    const advanceAmt = advancePayment !== '' ? Number(advancePayment) : 0;
+
+    if (!customerName) {
+      toastEvent.trigger('Customer Name is required.', 'error');
+      return;
+    }
+    if (!customerPhone) {
+      toastEvent.trigger('Phone Number is required.', 'error');
+      return;
+    }
+    if (customerPhone.length < 10) {
+      toastEvent.trigger('Please enter a valid 10-digit mobile number.', 'error');
+      return;
+    }
 
     // Reset state and close modal immediately
     setCart([]);
@@ -416,6 +456,7 @@ export const QuickOrderModal: React.FC = () => {
     setRequester('');
     setPhone('');
     setQty(1);
+    setAdvancePayment('');
     setPriority('Normal');
     setSelectedDistributor('');
     setSelectedRate('');
@@ -428,7 +469,7 @@ export const QuickOrderModal: React.FC = () => {
 
     // Trigger background queue processing (non-blocking)
     toastEvent.trigger(`Starting background logging for ${finalItems.length} request(s)...`, 'info');
-    processSubmissionQueue(finalItems, customerName, customerPhone, orderPriority);
+    processSubmissionQueue(finalItems, customerName, customerPhone, orderPriority, advanceAmt);
   };
 
   if (!isOpen) return null;
@@ -455,6 +496,15 @@ export const QuickOrderModal: React.FC = () => {
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               Quick Special Request
               <span className="text-[10px] bg-white/5 border border-glass-border text-muted px-2 py-0.5 rounded font-mono">Alt + O</span>
+              {prMode !== 'Unknown' && (
+                <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border leading-none ${
+                  prMode === 'Live'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                }`}>
+                  {prMode === 'Live' ? '● LIVE' : '◎ SIMULATION'}
+                </span>
+              )}
             </h3>
             <p className="text-xs text-muted">Instantly log out-of-stock demands from any screen</p>
           </div>
@@ -659,27 +709,42 @@ export const QuickOrderModal: React.FC = () => {
                   <span className="w-1.5 h-3.5 bg-purple-500 rounded-full inline-block"></span>
                   <div className="font-bold text-xs text-text/90 uppercase tracking-wider">2. Customer Details & Priority</div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5 select-none">Customer Name</label>
+                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5 select-none">Customer Name *</label>
                     <input
                       type="text"
                       value={requester}
                       onChange={(e) => setRequester(e.target.value)}
                       className="w-full premium-input py-2 text-xs font-semibold rounded-xl bg-bg3/20 border-border/60"
-                      placeholder="e.g. John Doe (Optional)"
+                      placeholder="e.g. John Doe"
+                      required
                       autoComplete="off"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5 select-none">Phone Number</label>
+                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5 select-none">Phone Number *</label>
                     <input
                       type="tel"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full premium-input py-2 text-xs font-semibold rounded-xl bg-bg3/20 border-border/60"
-                      placeholder="e.g. 9876543210 (Optional)"
+                      placeholder="e.g. 9876543210"
                       maxLength={15}
+                      required
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5 select-none">Advance Payment</label>
+                    <input
+                      type="number"
+                      value={advancePayment}
+                      onChange={(e) => setAdvancePayment(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-full premium-input py-2 text-xs font-semibold rounded-xl bg-bg3/20 border-border/60"
+                      placeholder="e.g. 500 (Optional)"
+                      min="0"
+                      step="0.01"
                       autoComplete="off"
                     />
                   </div>

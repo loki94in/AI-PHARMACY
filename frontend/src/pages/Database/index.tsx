@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Database as DatabaseIcon, Search, RefreshCw, BookOpen, ArrowDownAZ, Clock, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Database as DatabaseIcon, Search, RefreshCw, BookOpen, ArrowDownAZ, Clock, X, Edit, Trash2, Plus } from 'lucide-react';
 import { api } from '../../services/api';
+import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 
 interface MedicineRow {
   id: number;
@@ -34,8 +36,33 @@ const DatabasePage = () => {
   const [packagingTerm, setPackagingTerm] = useState('');
   const [distributorInput, setDistributorInput] = useState('');
   const [distributorTerm, setDistributorTerm] = useState('');
+  const [categoryInput, setCategoryInput] = useState('');
+  const [categoryTerm, setCategoryTerm] = useState('');
   const [sort, setSort] = useState('name_asc');
   const [letter, setLetter] = useState('');
+  const [universalEditMedicineId, setUniversalEditMedicineId] = useState<number | null>(null);
+
+  // Add / Delete features
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addTab, setAddTab] = useState<'single' | 'bulk'>('single');
+  const [singleForm, setSingleForm] = useState({
+    name: '',
+    generic_name: '',
+    category: '',
+    manufacturer: '',
+    marketed_by: '',
+    packaging: '',
+    strength: '',
+    pack_unit: 'Tablet',
+    mrp: '',
+    hsn_code: '',
+    cgst_per: 6,
+    sgst_per: 6
+  });
+  const [bulkText, setBulkText] = useState('');
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addMessage, setAddMessage] = useState<string | null>(null);
   
   // Pagination
   const [page, setPage] = useState(1);
@@ -64,6 +91,93 @@ const DatabasePage = () => {
         setLoadingHistory(false);
       });
   };
+
+  const handleDeleteMedicine = async (id: number, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}" from the database? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.deleteMedicine(id);
+      alert('Medicine deleted successfully');
+      setPage(1);
+      loadDatabase();
+    } catch (err: any) {
+      console.error(err);
+      const errorMsg = err.response?.data?.error || 'Failed to delete medicine.';
+      alert(errorMsg);
+    }
+  };
+
+  const handleSingleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!singleForm.name) {
+      alert('Medicine name is required');
+      return;
+    }
+    setAdding(true);
+    setAddMessage(null);
+    try {
+      await api.createMedicine(singleForm);
+      setAdding(false);
+      setAddMessage('Medicine registered successfully!');
+      setSingleForm({
+        name: '',
+        generic_name: '',
+        category: '',
+        manufacturer: '',
+        marketed_by: '',
+        packaging: '',
+        strength: '',
+        pack_unit: 'Tablet',
+        mrp: '',
+        hsn_code: '',
+        cgst_per: 6,
+        sgst_per: 6
+      });
+      setPage(1);
+      loadDatabase();
+      setTimeout(() => setAddMessage(null), 3000);
+    } catch (err: any) {
+      console.error(err);
+      setAdding(false);
+      const errorMsg = err.response?.data?.error || 'Failed to create medicine.';
+      alert(errorMsg);
+    }
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const names = bulkText.split('\n').map(n => n.trim()).filter(Boolean);
+    if (names.length === 0) {
+      alert('Enter at least one medicine name');
+      return;
+    }
+    setAdding(true);
+    let count = 0;
+    setAddMessage(`Adding ${names.length} medicines...`);
+    for (const name of names) {
+      try {
+        await api.createMedicine({
+          name,
+          category: bulkCategory,
+          pack_unit: 'Tablet',
+          cgst_per: 6,
+          sgst_per: 6
+        });
+        count++;
+        setAddMessage(`Added ${count} / ${names.length} medicines...`);
+      } catch (err) {
+        console.error(`Failed to bulk add "${name}":`, err);
+      }
+    }
+    setAdding(false);
+    setAddMessage(`Finished bulk add! Successfully registered ${count} medicines.`);
+    setBulkText('');
+    setPage(1);
+    loadDatabase();
+    setTimeout(() => setAddMessage(null), 3000);
+  };
+
   const limit = 100;
   
   const observerTarget = useRef<HTMLTableRowElement>(null);
@@ -72,7 +186,7 @@ const DatabasePage = () => {
     if (page === 1) setLoading(true);
     else setAppending(true);
 
-    api.getMedicines(page, limit, '', sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm)
+    api.getMedicines(page, limit, '', sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm, categoryTerm)
       .then((res: any) => {
         if (page === 1) {
           setMedicines(res.data || []);
@@ -93,7 +207,7 @@ const DatabasePage = () => {
         setLoading(false);
         setAppending(false);
       });
-  }, [page, limit, sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm]);
+  }, [page, limit, sort, letter, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm, categoryTerm]);
 
   useEffect(() => {
     loadDatabase();
@@ -126,9 +240,10 @@ const DatabasePage = () => {
       setApiTerm(apiInput);
       setPackagingTerm(packagingInput);
       setDistributorTerm(distributorInput);
+      setCategoryTerm(categoryInput);
     }, 500);
     return () => clearTimeout(timer);
-  }, [productNameInput, mrpInput, apiInput, packagingInput, distributorInput]);
+  }, [productNameInput, mrpInput, apiInput, packagingInput, distributorInput, categoryInput]);
 
   return (
     <div className="h-full flex flex-col fade-in relative gap-2">
@@ -136,6 +251,14 @@ const DatabasePage = () => {
         
         {/* Floating Actions */}
         <div className="absolute bottom-8 right-8 flex flex-col gap-3 z-30">
+          <button 
+            className="w-12 h-12 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.3)] bg-bg3 border border-glass-border hover:bg-bg2 text-green-400 flex items-center justify-center transition-all group hover:-translate-y-1"
+            onClick={() => setShowAddModal(true)} 
+            title="Add Medicines"
+          >
+            <Plus size={20} className="group-hover:scale-110 transition-transform" />
+          </button>
+
           <button 
             className="w-12 h-12 rounded-full shadow-[0_0_15px_rgba(14,165,233,0.3)] bg-bg3 border border-glass-border hover:bg-bg2 text-sky-400 flex items-center justify-center transition-all group hover:-translate-y-1"
             onClick={() => { setPage(1); setSort(s => s === 'name_asc' ? 'id_desc' : 'name_asc'); }} 
@@ -160,64 +283,73 @@ const DatabasePage = () => {
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-bg/95 backdrop-blur z-10 shadow-md">
               <tr>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border w-16">ID</th>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-top">
-                  <div className="flex flex-col gap-2">
-                    <span>Product Name</span>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border w-16 align-middle">ID</th>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex flex-col">
                     <input 
                       type="text" 
-                      placeholder="Filter name..." 
-                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-sky-500/50 font-normal normal-case"
+                      placeholder="Product Name..." 
+                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-sky-500/50 font-medium normal-case"
                       value={productNameInput}
                       onChange={e => setProductNameInput(e.target.value)}
                     />
                   </div>
                 </th>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-top">
-                  <div className="flex flex-col gap-2">
-                    <span>Composition (API)</span>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex flex-col">
                     <input 
                       type="text" 
-                      placeholder="Filter composition..." 
-                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-sky-500/50 font-normal normal-case"
+                      placeholder="Composition (API)..." 
+                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-sky-500/50 font-medium normal-case"
                       value={apiInput}
                       onChange={e => setApiInput(e.target.value)}
                     />
                   </div>
                 </th>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-top">Strength</th>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-top">
-                  <div className="flex flex-col gap-2">
-                    <span>Packaging</span>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">Strength</th>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex flex-col">
                     <input 
                       type="text" 
-                      placeholder="Filter packing..." 
-                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-sky-500/50 font-normal normal-case"
+                      placeholder="Packaging..." 
+                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-sky-500/50 font-medium normal-case"
                       value={packagingInput}
                       onChange={e => setPackagingInput(e.target.value)}
                     />
                   </div>
                 </th>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-top">Manufacturer</th>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right align-top">
-                  <div className="flex flex-col gap-2 items-end">
-                    <span>MRP ₹</span>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle w-32">
+                  <div className="flex flex-col">
+                    <select 
+                      value={categoryInput}
+                      onChange={e => setCategoryInput(e.target.value)}
+                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-sky-500/50 font-medium normal-case cursor-pointer"
+                    >
+                      <option value="">Category: All</option>
+                      <option value="Allopathy">Allopathy</option>
+                      <option value="Homeopathy">Homeopathy</option>
+                      <option value="Ayurvedic">Ayurvedic</option>
+                    </select>
+                  </div>
+                </th>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">Manufacturer</th>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right align-middle w-28">
+                  <div className="flex flex-col items-end">
                     <input 
                       type="text" 
-                      placeholder="Filter MRP..." 
-                      className="w-24 bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-sky-500/50 text-right font-normal normal-case"
+                      placeholder="MRP (₹)..." 
+                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-sky-500/50 text-right font-medium normal-case"
                       value={mrpInput}
                       onChange={e => setMrpInput(e.target.value)}
                     />
                   </div>
                 </th>
-                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center align-top">
-                  <div className="flex flex-col gap-2 items-center">
-                    <span>Distributors</span>
+                <th className="p-4 text-[11px] font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center align-middle w-44">
+                  <div className="flex flex-col items-center">
                     <input 
                       type="text" 
-                      placeholder="Filter distributor..." 
-                      className="w-32 bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-sky-500/50 font-normal normal-case text-center"
+                      placeholder="Distributor..." 
+                      className="w-full bg-bg3 border border-glass-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-sky-500/50 font-medium normal-case text-center"
                       value={distributorInput}
                       onChange={e => setDistributorInput(e.target.value)}
                     />
@@ -228,14 +360,14 @@ const DatabasePage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-12 text-center">
+                  <td colSpan={9} className="p-12 text-center">
                     <RefreshCw size={24} className="animate-spin text-sky-400 mx-auto mb-3" />
                     <span className="text-muted text-sm block">Loading catalog data...</span>
                   </td>
                 </tr>
               ) : medicines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-12 text-center text-muted">
+                  <td colSpan={9} className="p-12 text-center text-muted">
                     <BookOpen size={32} className="mx-auto mb-3 opacity-30" />
                     <span className="block font-medium">No medicines found.</span>
                     <span className="text-xs opacity-70 mt-1 block">Try adjusting your search terms.</span>
@@ -268,6 +400,21 @@ const DatabasePage = () => {
                     <td className="p-4 text-xs text-muted">
                       {item.packaging || '-'}
                     </td>
+                    <td className="p-4 text-xs">
+                      {item.category ? (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          item.category.toLowerCase() === 'allopathy' 
+                            ? 'bg-sky-500/10 border-sky-500/20 text-sky-400' 
+                            : item.category.toLowerCase() === 'homeopathy'
+                            ? 'bg-purple-500/10 border-purple-500/20 text-purple-400'
+                            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        }`}>
+                          {item.category}
+                        </span>
+                      ) : (
+                        <span className="text-muted/40 font-medium">-</span>
+                      )}
+                    </td>
                     <td className="p-4 text-xs text-muted max-w-[150px] truncate" title={item.manufacturer || ''}>
                       {item.manufacturer || '-'}
                     </td>
@@ -289,16 +436,34 @@ const DatabasePage = () => {
                       )}
                     </td>
                     <td className="p-4 text-center">
-                      <button
-                        onClick={() => openPriceHistory(item.name)}
-                        className="px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white transition-all font-bold text-xs uppercase"
-                        title="View Supplier Price History"
-                      >
-                        Rates
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => openPriceHistory(item.name)}
+                          className="px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white transition-all font-bold text-[10px] uppercase"
+                          title="View Supplier Price History"
+                        >
+                          Rates
+                        </button>
+                        <button
+                          onClick={() => setUniversalEditMedicineId(item.id)}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500 hover:text-white transition-all font-bold text-[10px] uppercase flex items-center gap-0.5"
+                          title="Edit global medicine details"
+                        >
+                          <Edit size={10} />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMedicine(item.id, item.name)}
+                          className="px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all font-bold text-[10px] uppercase flex items-center gap-0.5"
+                          title="Delete medicine from database"
+                        >
+                          <Trash2 size={10} />
+                          Delete
+                        </button>
+                      </div>
                       {item.last_distributor_name && (
                         <div 
-                          className="text-[10px] text-muted mt-1.5 font-medium truncate max-w-[140px] mx-auto" 
+                          className="text-[10px] text-muted mt-1.5 font-medium truncate max-w-[140px] mx-auto text-center" 
                           title={`Last supplied by: ${item.last_distributor_name}`}
                         >
                           via {item.last_distributor_name}
@@ -312,7 +477,7 @@ const DatabasePage = () => {
               {/* Observer target */}
               {!loading && page < totalPages && (
                 <tr ref={observerTarget}>
-                  <td colSpan={8} className="p-8 text-center text-muted">
+                  <td colSpan={9} className="p-8 text-center text-muted">
                     {appending ? (
                       <><RefreshCw size={20} className="animate-spin inline-block mr-2 text-sky-400" /> Loading more products...</>
                     ) : (
@@ -412,6 +577,245 @@ const DatabasePage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {universalEditMedicineId && (
+        <UniversalMedicineEditModal 
+          medicineId={universalEditMedicineId} 
+          onClose={() => setUniversalEditMedicineId(null)} 
+          onSave={() => {
+            setPage(1);
+            loadDatabase();
+          }} 
+        />
+      )}
+
+      {/* Add Medicine Modal */}
+      {showAddModal && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative bg-bg border border-glass-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-glass-border bg-bg3 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-green-500/20 border border-green-500/30 flex items-center justify-center text-green-400">
+                  <Plus size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-text leading-tight">Add New Medicine</h3>
+                  <p className="text-xs text-muted mt-0.5">Register single or multiple catalog products</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowAddModal(false); setAddMessage(null); }}
+                className="p-2 rounded-full hover:bg-bg2 text-muted hover:text-text transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-glass-border bg-bg2 shrink-0">
+              <button
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${addTab === 'single' ? 'border-green-500 text-green-400 bg-green-500/5' : 'border-transparent text-muted hover:text-text'}`}
+                onClick={() => setAddTab('single')}
+              >
+                Single Medicine
+              </button>
+              <button
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${addTab === 'bulk' ? 'border-green-500 text-green-400 bg-green-500/5' : 'border-transparent text-muted hover:text-text'}`}
+                onClick={() => setAddTab('bulk')}
+              >
+                Bulk Add
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 scrollbar-custom space-y-4">
+              {addMessage && (
+                <div className={`p-3 rounded-lg text-xs font-medium border ${addMessage.includes('Added') || addMessage.includes('Adding') ? 'bg-sky-500/10 border-sky-500/20 text-sky-400' : 'bg-green-500/10 border-green-500/20 text-green-400'}`}>
+                  {addMessage}
+                </div>
+              )}
+
+              {addTab === 'single' ? (
+                <form id="single-add-form" onSubmit={handleSingleSubmit} className="space-y-4 text-left">
+                  <div>
+                    <label className="block text-xs font-semibold text-muted mb-1">Medicine Name *</label>
+                    <input 
+                      type="text" 
+                      required 
+                      className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all font-bold"
+                      value={singleForm.name}
+                      onChange={e => setSingleForm({...singleForm, name: e.target.value})}
+                      placeholder="e.g. Paracetamol 500mg"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">Generic Name (Formula)</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all"
+                        value={singleForm.generic_name}
+                        onChange={e => setSingleForm({...singleForm, generic_name: e.target.value})}
+                        placeholder="e.g. Paracetamol"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">Category</label>
+                      <select 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all cursor-pointer"
+                        value={singleForm.category}
+                        onChange={e => setSingleForm({...singleForm, category: e.target.value})}
+                      >
+                        <option value="">Select Category</option>
+                        <option value="Allopathy">Allopathy</option>
+                        <option value="Homeopathy">Homeopathy</option>
+                        <option value="Ayurvedic">Ayurvedic</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">Manufacturer</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all"
+                        value={singleForm.manufacturer}
+                        onChange={e => setSingleForm({...singleForm, manufacturer: e.target.value})}
+                        placeholder="e.g. Cipla Ltd"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">Marketed By</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all"
+                        value={singleForm.marketed_by}
+                        onChange={e => setSingleForm({...singleForm, marketed_by: e.target.value})}
+                        placeholder="e.g. Cipla Pvt Ltd"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">Pack Size (e.g., 10x10)</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all"
+                        value={singleForm.packaging}
+                        onChange={e => setSingleForm({...singleForm, packaging: e.target.value})}
+                        placeholder="e.g. 10x10 Tab"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">Strength</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all"
+                        value={singleForm.strength}
+                        onChange={e => setSingleForm({...singleForm, strength: e.target.value})}
+                        placeholder="e.g. 500mg"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">Type</label>
+                      <select 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all cursor-pointer"
+                        value={singleForm.pack_unit}
+                        onChange={e => setSingleForm({...singleForm, pack_unit: e.target.value})}
+                      >
+                        <option value="Tablet">Tablet</option>
+                        <option value="Capsule">Capsule</option>
+                        <option value="Syrup">Syrup</option>
+                        <option value="Drop">Drop</option>
+                        <option value="Injection">Injection</option>
+                        <option value="Ointment">Ointment</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">MRP ₹</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all font-mono"
+                        value={singleForm.mrp}
+                        onChange={e => setSingleForm({...singleForm, mrp: e.target.value})}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-muted mb-1">HSN Code</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all font-mono"
+                        value={singleForm.hsn_code}
+                        onChange={e => setSingleForm({...singleForm, hsn_code: e.target.value})}
+                        placeholder="3004"
+                      />
+                    </div>
+                  </div>
+                </form>
+              ) : (
+                <form id="bulk-add-form" onSubmit={handleBulkSubmit} className="space-y-4 text-left">
+                  <div>
+                    <label className="block text-xs font-semibold text-muted mb-1">Medicine Names (One per line) *</label>
+                    <textarea 
+                      required 
+                      rows={6}
+                      className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all font-mono resize-none"
+                      value={bulkText}
+                      onChange={e => setBulkText(e.target.value)}
+                      placeholder="Paracetamol 500mg&#10;Amoxicillin 250mg&#10;Ibuprofen 400mg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-muted mb-1">Category for all listed medicines</label>
+                    <select 
+                      className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all cursor-pointer"
+                      value={bulkCategory}
+                      onChange={e => setBulkCategory(e.target.value)}
+                    >
+                      <option value="">Select Category</option>
+                      <option value="Allopathy">Allopathy</option>
+                      <option value="Homeopathy">Homeopathy</option>
+                      <option value="Ayurvedic">Ayurvedic</option>
+                    </select>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 border-t border-glass-border bg-bg3 flex justify-end gap-3 shrink-0">
+              <button 
+                type="button" 
+                onClick={() => { setShowAddModal(false); setAddMessage(null); }}
+                className="px-5 py-2 rounded-xl border border-glass-border hover:bg-bg2 text-muted hover:text-text font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                form={addTab === 'single' ? 'single-add-form' : 'bulk-add-form'}
+                disabled={adding}
+                className="px-6 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold transition-colors flex items-center gap-2 shadow-lg shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {adding ? <RefreshCw size={18} className="animate-spin" /> : <Plus size={18} />}
+                {adding ? 'Registering...' : addTab === 'single' ? 'Add Single Medicine' : 'Bulk Register'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
     </div>

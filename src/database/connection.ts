@@ -39,13 +39,15 @@ class DatabaseManager {
     return this.connection;
   }
 
-  public async close(): Promise<void> {
-    if (this.connection) {
-      try {
-        await this.connection.close();
-      } catch (e) {}
-      this.connection = null;
-      this.currentDbPath = null;
+  public async close(force: boolean = false): Promise<void> {
+    if (force || process.env.NODE_ENV === 'test') {
+      if (this.connection) {
+        try {
+          await this.connection.close();
+        } catch (e) {}
+        this.connection = null;
+        this.currentDbPath = null;
+      }
     }
   }
 

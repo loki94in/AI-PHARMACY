@@ -29,6 +29,7 @@ import {
   Beaker,
   Smartphone,
   QrCode,
+  RefreshCw,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toastEvent, quickOrderEvent } from './services/events';
@@ -62,6 +63,7 @@ import DatabasePage from './pages/Database';
 import CompositionQueue from './pages/CompositionQueue';
 import CustomerReturn from './pages/CustomerReturn';
 import CustomerReturnHistory from './pages/CustomerReturnHistory';
+import PharmarackCart from './pages/PharmarackCart';
 
 // ──────────────────────────────────────────────
 // Notification Types
@@ -99,6 +101,7 @@ const Sidebar = ({
     { path: '/expiry', label: 'Expiry Monitor', icon: <CalendarDays size={18} /> },
     { path: '/returns', label: 'Supplier Returns', icon: <RotateCcw size={18} /> },
     { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
+    { path: '/pharmarack-cart', label: 'Pharmarack Cart', icon: <ShoppingCart size={18} /> },
     { path: '/database', label: 'Master Database', icon: <Database size={18} /> },
     { path: '/composition-queue', label: 'Composition Queue', icon: <Beaker size={18} /> },
     { path: '/reports', label: 'Reports', icon: <LayoutDashboard size={18} /> },
@@ -497,6 +500,40 @@ const Topbar = ({
   const location = useLocation();
   const [showPanel, setShowPanel] = useState(false);
   const [flashToast, setFlashToast] = useState<(ToastEventDetail & { id: number }) | null>(null);
+  const [catalogJob, setCatalogJob] = useState<{
+    id: number;
+    status: string;
+    progress: number;
+    total_count?: number;
+    processed_count?: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchActiveJob = async () => {
+      try {
+        const { data } = await apiClient.get('/jobs');
+        if (Array.isArray(data)) {
+          const activeJob = data.find(j => ['processing', 'pending', 'pending_analysis', 'processing_analysis'].includes(j.status));
+          if (activeJob) {
+            setCatalogJob({
+              id: activeJob.id,
+              status: activeJob.status,
+              progress: activeJob.progress || 0,
+              total_count: activeJob.total_count,
+              processed_count: activeJob.processed_count
+            });
+          } else {
+            setCatalogJob(null);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch active catalog job in Topbar:', err);
+      }
+    };
+    fetchActiveJob();
+    const timer = setInterval(fetchActiveJob, 8000);
+    return () => clearInterval(timer);
+  }, []);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const [connectedDevices, setConnectedDevices] = useState<{ token: string; device_name: string; os: string; is_online: number; last_seen: string }[]>([]);
@@ -564,14 +601,45 @@ const Topbar = ({
               'error',
               '/settings'
             );
+          } else if (data.type === 'catalog_job_progress' && data.payload) {
+            const payload = data.payload;
+            setCatalogJob(prev => {
+              if (!prev || prev.id === payload.id) {
+                return {
+                  id: payload.id,
+                  status: payload.status || 'processing',
+                  progress: payload.progress !== undefined ? payload.progress : (prev?.progress || 0),
+                  total_count: payload.total_count,
+                  processed_count: payload.processed_count || (payload.progress / 100 * (payload.total_count || 0))
+                };
+              }
+              return prev;
+            });
           } else if (data.type === 'catalog_job_update' && data.payload) {
-            const status = data.payload.status;
+            const payload = data.payload;
+            const status = payload.status;
+            if (status === 'done' || status === 'failed') {
+              setCatalogJob(null);
+            } else {
+              setCatalogJob(prev => {
+                if (!prev || prev.id === payload.id) {
+                  return {
+                    id: payload.id,
+                    status: status,
+                    progress: payload.progress !== undefined ? payload.progress : (prev?.progress || 0),
+                    total_count: payload.total_count,
+                    processed_count: payload.processed_count
+                  };
+                }
+                return prev;
+              });
+            }
             if (status === 'waiting_for_mapping') {
               toastEvent.trigger('Catalogue analyzed! Ready for mapping configuration.', 'info', '/catalog');
             } else if (status === 'done') {
               toastEvent.trigger('Catalogue ingestion completed successfully!', 'success', '/catalog');
             } else if (status === 'failed') {
-              toastEvent.trigger('Catalogue processing failed: ' + (data.payload.error || 'Unknown error'), 'error', '/catalog');
+              toastEvent.trigger('Catalogue processing failed: ' + (payload.error || 'Unknown error'), 'error', '/catalog');
             }
           } else if (data.type === 'sales_sync') {
             toastEvent.trigger(`Mobile synced ${data.payload.count || 1} offline sales bill(s) for review!`, 'info');
@@ -655,6 +723,42 @@ const Topbar = ({
         <div className="flex items-center gap-4">
           <h2 className="text-lg font-bold tracking-tight text-white uppercase">{getPageTitle(location.pathname)}</h2>
         </div>
+
+        {/* Global Catalog Ingestion Progress Bar */}
+        {catalogJob ? (
+          <Link
+            to="/catalog"
+            className="hidden md:flex items-center gap-3 bg-bg2/40 border border-glass-border px-4 py-1.5 rounded-2xl max-w-sm w-full transition-all hover:bg-bg3/50 hover:border-primary/30 shadow-[0_0_15px_rgba(14,165,233,0.05)]"
+          >
+            <div className="flex items-center justify-center shrink-0 w-7 h-7 rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <RefreshCw size={12} className="animate-spin text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between items-center text-[10px] font-bold text-text uppercase tracking-wider mb-1">
+                <span className="truncate">
+                  {catalogJob.status === 'processing_analysis' || catalogJob.status === 'pending_analysis'
+                    ? 'Analyzing File...'
+                    : catalogJob.status === 'waiting_for_mapping'
+                    ? 'Ready for Mapping'
+                    : 'Ingesting Catalog...'}
+                </span>
+                <span className="font-mono text-primary font-bold">{catalogJob.progress}%</span>
+              </div>
+              <div className="w-full bg-bg3 rounded-full h-1.5 relative overflow-hidden border border-glass-border">
+                <div
+                  className="h-full bg-gradient-to-r from-primary to-purple-600 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${catalogJob.progress}%` }}
+                />
+              </div>
+              {catalogJob.processed_count !== undefined && catalogJob.total_count !== undefined && catalogJob.total_count > 0 ? (
+                <div className="text-[9px] text-muted font-mono mt-0.5 text-right leading-none">
+                  {catalogJob.processed_count.toLocaleString()} / {catalogJob.total_count.toLocaleString()}
+                </div>
+              ) : null}
+            </div>
+          </Link>
+        ) : null}
+
         <div className="flex items-center gap-3">
           {/* Quick Request */}
           <button
@@ -854,7 +958,7 @@ const Layout = ({
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 }) => {
   const location = useLocation();
-  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration'].includes(location.pathname);
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [hasUnread, setHasUnread] = useState(false);
@@ -1047,6 +1151,7 @@ function App() {
           <Route path="/purchase-history" element={<PurchaseHistory />} />
           <Route path="/crm" element={<CRM />} />
           <Route path="/orders" element={<Orders />} />
+          <Route path="/pharmarack-cart" element={<PharmarackCart />} />
           <Route path="/migration" element={<Migration />} />
           <Route path="/doctors" element={<Doctors />} />
           <Route path="/dispatch" element={<Dispatch />} />

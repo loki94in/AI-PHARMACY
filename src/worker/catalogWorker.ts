@@ -810,6 +810,18 @@ export async function runCatalogImport(jobId: number) {
 
 // Loop to poll jobs
 export async function startWorker() {
+  // Reset stuck jobs on startup to allow resuming
+  try {
+    const db = await dbManager.getConnection();
+    const result1 = await db.run("UPDATE catalog_jobs SET status = 'pending' WHERE status = 'processing'");
+    const result2 = await db.run("UPDATE catalog_jobs SET status = 'pending_analysis' WHERE status = 'processing_analysis'");
+    if ((result1.changes && result1.changes > 0) || (result2.changes && result2.changes > 0)) {
+      console.log(`[Worker] Reset ${result1.changes || 0} stuck processing jobs and ${result2.changes || 0} stuck analysis jobs to pending/pending_analysis.`);
+    }
+  } catch (err) {
+    console.error('[Worker] Failed to reset stuck catalog jobs on startup:', err);
+  }
+
   setInterval(async () => {
     let db;
     try {

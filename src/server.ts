@@ -11,9 +11,8 @@ import { authenticateApiKey } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { dbManager } from './database/connection.js';
-import { startWorker as startCatalogWorker } from './worker/catalogWorker.js';
 import { ensureSchema } from './database.js';
-import { startEmailPoller } from './worker/emailPoller.js';
+import { workerSupervisor } from './worker/workerSupervisor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,8 +72,12 @@ process.on('uncaughtException', (error) => {
 const app = express();
 
 app.use((req, res, next) => {
-  // Don't treat enrichment status and queue queries as blocking activity
-  if (!req.path.startsWith('/api/enrichment/status') && !req.path.startsWith('/api/enrichment/queue')) {
+  // Don't treat status polling or background worker queries as blocking activity
+  const isEnrichmentStatus = req.path.startsWith('/api/enrichment/status') || req.path.startsWith('/api/enrichment/queue');
+  const isCatalogStatus = req.path.startsWith('/api/catalog/job') || req.path.startsWith('/api/jobs');
+  const isNotificationStream = req.path.startsWith('/api/notifications');
+
+  if (!isEnrichmentStatus && !isCatalogStatus && !isNotificationStream) {
     activityTracker.recordActivity();
   }
   next();
@@ -293,18 +296,11 @@ ensureSchema(DB_PATH).then(() => {
     // Backup scheduler is always enabled (reads frequency from app_settings)
     initBackupScheduler().catch(err => console.error('Failed to init backup scheduler:', err));
 
-    // Email poller is always enabled
+    // Start the background worker supervisor
     try {
-      startEmailPoller();
+      workerSupervisor.start();
     } catch (err) {
-      console.error('Failed to start email poller:', err);
-    }
-
-    // Catalog background worker is always enabled
-    try {
-      startCatalogWorker().catch(err => console.error('Failed to start catalog worker:', err));
-    } catch (err) {
-      console.error('Failed to start catalog worker:', err);
+      console.error('Failed to start worker supervisor:', err);
     }
 
   // Daily licensing tasks disabled permanently
@@ -323,7 +319,12 @@ async function gracefulShutdown(signal: string) {
   } catch (err) {
     console.error('[Backup] Shutdown backup failed:', err);
   }
-  await dbManager.close();
+  try {
+    workerSupervisor.stop();
+  } catch (err) {
+    console.error('Error stopping worker supervisor:', err);
+  }
+  await dbManager.close(true);
   process.exit(0);
 }
 

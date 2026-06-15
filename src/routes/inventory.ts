@@ -225,7 +225,7 @@ router.post('/bulk-action', async (req, res) => {
 
 // Create new medicine and inventory batch
 router.post('/', async (req, res) => {
-  const { name, api_reference, mrp, cost_price, batch_no, expiry_date, quantity, rack_location } = req.body;
+  const { name, api_reference, mrp, cost_price, batch_no, expiry_date, quantity, rack_location, category } = req.body;
   if (!name) return res.status(400).json({ error: 'Medicine name is required' });
   
   let db;
@@ -238,15 +238,15 @@ router.post('/', async (req, res) => {
     let medicineId;
     if (dbMed) {
       medicineId = dbMed.id;
-      // Optionally update details if they are provided, e.g. api_reference, mrp
+      // Optionally update details if they are provided, e.g. api_reference, mrp, category
       await db.run(
-        'UPDATE medicines SET api_reference = COALESCE(NULLIF(api_reference, ""), ?), mrp = COALESCE(NULLIF(mrp, 0), ?) WHERE id = ?',
-        [api_reference || '', parseFloat(mrp) || 0, medicineId]
+        'UPDATE medicines SET api_reference = COALESCE(NULLIF(api_reference, ""), ?), mrp = COALESCE(NULLIF(mrp, 0), ?), category = COALESCE(NULLIF(category, ""), ?) WHERE id = ?',
+        [api_reference || '', parseFloat(mrp) || 0, category || '', medicineId]
       );
     } else {
       const medResult = await db.run(
-        'INSERT INTO medicines (name, api_reference, mrp) VALUES (?, ?, ?)',
-        [cleanName, api_reference || '', parseFloat(mrp) || 0]
+        'INSERT INTO medicines (name, api_reference, mrp, category) VALUES (?, ?, ?, ?)',
+        [cleanName, api_reference || '', parseFloat(mrp) || 0, category || '']
       );
       medicineId = medResult.lastID;
     }

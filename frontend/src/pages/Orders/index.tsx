@@ -36,7 +36,8 @@ const Orders = () => {
   const [product, setProduct] = useState('');
   const [requester, setRequester] = useState('');
   const [phone, setPhone] = useState('');
-  const [qty, setQty] = useState(1);
+  const [qty, setQty] = useState<number | ''>('');
+  const [advancePayment, setAdvancePayment] = useState<number | ''>('');
   const [priority, setPriority] = useState('Normal');
   const [status, setStatus] = useState('Pending');
   const [formSubmitting, setFormSubmitting] = useState(false);
@@ -125,8 +126,31 @@ const Orders = () => {
   // Submit new special order request
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const customerName = requester.trim();
+    const customerPhone = phone.replace(/\D/g, '');
+
     if (!product.trim()) {
       showNotification('Product name is required.', 'error');
+      return;
+    }
+    if (!customerName) {
+      showNotification('Customer Name is required.', 'error');
+      return;
+    }
+    if (!customerPhone) {
+      showNotification('Phone Number is required.', 'error');
+      return;
+    }
+    if (customerPhone.length < 10) {
+      showNotification('Please enter a valid 10-digit mobile number.', 'error');
+      return;
+    }
+    if (qty === '' || qty === undefined || qty === null) {
+      showNotification('Quantity is required.', 'error');
+      return;
+    }
+    if (Number(qty) < 1) {
+      showNotification('Quantity must be at least 1.', 'error');
       return;
     }
 
@@ -134,8 +158,8 @@ const Orders = () => {
     try {
       await api.createOrder({
         product: product.trim(),
-        requester: requester.trim() || 'Anonymous',
-        phone: phone.replace(/\D/g, '') || '',
+        requester: customerName,
+        phone: customerPhone,
         qty,
         priority,
         status,
@@ -143,7 +167,8 @@ const Orders = () => {
         pharmarack_rate: selectedRate !== '' ? Number(selectedRate) : undefined,
         pharmarack_mrp: selectedMrp !== '' ? Number(selectedMrp) : undefined,
         pharmarack_mapped: selectedMapped ? 1 : 0,
-        pharmarack_scheme: selectedScheme || undefined
+        pharmarack_scheme: selectedScheme || undefined,
+        advance_payment: advancePayment !== '' ? Number(advancePayment) : 0
       });
 
       showNotification(`Order for "${product}" logged successfully!`, 'success');
@@ -152,7 +177,8 @@ const Orders = () => {
       setProduct('');
       setRequester('');
       setPhone('');
-      setQty(1);
+      setQty('');
+      setAdvancePayment('');
       setPriority('Normal');
       setStatus('Pending');
       setSelectedDistributor('');
@@ -462,20 +488,25 @@ const Orders = () => {
               )}
 
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Quantity Requested</label>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Quantity Requested *</label>
                 <input 
                   type="number" 
                   value={qty}
-                  onChange={e => setQty(Math.max(1, Number(e.target.value)))}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setQty(val === '' ? '' : Math.max(1, Number(val)));
+                  }}
                   className="premium-input w-full font-mono font-semibold" 
                   min="1"
+                  placeholder="Enter quantity"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Customer Name</label>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Customer Name *</label>
                 <input 
                   type="text" 
+                  required
                   value={requester}
                   onChange={e => setRequester(e.target.value)}
                   className="premium-input w-full font-semibold" 
@@ -484,9 +515,10 @@ const Orders = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">10-Digit Mobile (For WhatsApp Notify)</label>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">10-Digit Mobile * (For WhatsApp Notify)</label>
                 <input 
                   type="tel" 
+                  required
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
                   className="premium-input w-full font-mono" 
@@ -494,6 +526,19 @@ const Orders = () => {
                   maxLength={10}
                 />
                 <p className="text-[9px] text-muted">Auto sends order confirmation WhatsApp when submitted.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Advance Payment</label>
+                <input 
+                  type="number" 
+                  value={advancePayment}
+                  onChange={e => setAdvancePayment(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="premium-input w-full font-mono font-semibold" 
+                  placeholder="e.g. 500 (Optional)" 
+                  min="0"
+                  step="0.01"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -679,6 +724,13 @@ const Orders = () => {
                         {order.phone && (
                           <div className="text-[10px] text-muted font-mono mt-0.5">{order.phone}</div>
                         )}
+                        {order.advance_payment && Number(order.advance_payment) > 0 ? (
+                          <div className="mt-1">
+                            <span className="inline-flex items-center gap-1 text-[9px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded-md">
+                              Paid: ₹{Number(order.advance_payment).toFixed(2)}
+                            </span>
+                          </div>
+                        ) : null}
                       </td>
 
                       {/* Quantity */}

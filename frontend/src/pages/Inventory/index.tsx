@@ -236,47 +236,40 @@ const Inventory = () => {
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
               <tr>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">ID</th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">
-                  <div className="flex items-center gap-2">
-                    <span>Medicine Name</span>
-                    <input type="text" placeholder="Filter..." value={colFilters.medicine} onChange={e => setColFilters({...colFilters, medicine: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-24" />
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle w-16">ID</th>
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex items-center">
+                    <input type="text" placeholder="Medicine Name..." value={colFilters.medicine} onChange={e => setColFilters({...colFilters, medicine: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-36" />
                   </div>
                 </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">
-                  <div className="flex items-center gap-2">
-                    <span>Batch</span>
-                    <input type="text" placeholder="Filter..." value={colFilters.batch} onChange={e => setColFilters({...colFilters, batch: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-20" />
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex items-center">
+                    <input type="text" placeholder="Batch..." value={colFilters.batch} onChange={e => setColFilters({...colFilters, batch: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-24" />
                   </div>
                 </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">
-                  <div className="flex items-center gap-2">
-                    <span>Expiry</span>
-                    <input type="text" placeholder="Filter..." value={colFilters.expiry} onChange={e => setColFilters({...colFilters, expiry: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-16" />
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex items-center">
+                    <input type="text" placeholder="Expiry..." value={colFilters.expiry} onChange={e => setColFilters({...colFilters, expiry: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-20" />
                   </div>
                 </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">
-                  <div className="flex items-center gap-2">
-                    <span>Packs</span>
-                    <input type="text" placeholder="Filter..." value={colFilters.packs} onChange={e => setColFilters({...colFilters, packs: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-12" />
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex items-center">
+                    <input type="text" placeholder="Packs..." value={colFilters.packs} onChange={e => setColFilters({...colFilters, packs: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-16" />
                   </div>
                 </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">
-                  <div className="flex items-center gap-2">
-                    <span>Loose</span>
-                    <input type="text" placeholder="Filter..." value={colFilters.loose} onChange={e => setColFilters({...colFilters, loose: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-12" />
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex items-center">
+                    <input type="text" placeholder="Loose..." value={colFilters.loose} onChange={e => setColFilters({...colFilters, loose: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-16" />
                   </div>
                 </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">
-                  <div className="flex items-center gap-2">
-                    <span>MRP ₹</span>
-                    <input type="text" placeholder="Filter..." value={colFilters.mrp} onChange={e => setColFilters({...colFilters, mrp: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-14" />
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex items-center">
+                    <input type="text" placeholder="MRP (₹)..." value={colFilters.mrp} onChange={e => setColFilters({...colFilters, mrp: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-20" />
                   </div>
                 </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">
-                  <div className="flex items-center gap-2">
-                    <span>Rack</span>
-                    <input type="text" placeholder="Filter..." value={colFilters.rack} onChange={e => setColFilters({...colFilters, rack: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-14" />
+                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
+                  <div className="flex items-center">
+                    <input type="text" placeholder="Rack..." value={colFilters.rack} onChange={e => setColFilters({...colFilters, rack: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-16" />
                   </div>
                 </th>
               </tr>

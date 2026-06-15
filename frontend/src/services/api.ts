@@ -132,6 +132,7 @@ export interface SpecialOrder {
   pharmarack_mrp?: number;
   pharmarack_mapped?: number;
   pharmarack_scheme?: string;
+  advance_payment?: number;
 }
 
 // API methods mapping
@@ -258,7 +259,8 @@ export const api = {
     mrpFilter: string = '', 
     apiFilter: string = '',
     packagingFilter: string = '',
-    distributorFilter: string = ''
+    distributorFilter: string = '',
+    category: string = ''
   ) => 
     apiClient.get('/medicines', { 
       params: { 
@@ -271,14 +273,20 @@ export const api = {
         mrpFilter, 
         apiFilter,
         packagingFilter,
-        distributorFilter
+        distributorFilter,
+        category
       } 
     }).then(res => res.data),
+
+  deleteMedicine: (id: number) => apiClient.delete(`/medicines/${id}`).then(res => res.data),
+  createMedicine: (data: any) => apiClient.post('/medicines', data).then(res => res.data),
 
   getMedicinePriceHistory: (name: string) => apiClient.get('/purchases/price-history', { params: { name } }).then(res => res.data),
   searchPharmarack: (q: string) => apiClient.get('/pharmarack/search', { params: { q } }).then(res => res.data),
   addPharmarackCart: (items: Array<{ productId: string | number; storeId: string | number; qty: number; rate?: number; scheme?: string }>) => 
     apiClient.post('/pharmarack/cart/add', { items }).then(res => res.data),
+  getPharmarackCart: () => apiClient.get('/pharmarack/cart').then(res => res.data),
+  checkPharmarackSession: () => apiClient.get('/pharmarack/session-status').then(res => res.data),
   
   // Composition Enrichment
   getEnrichmentStatus: () => apiClient.get('/enrichment/status').then(res => res.data),

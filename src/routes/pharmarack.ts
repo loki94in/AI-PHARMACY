@@ -477,13 +477,13 @@ router.post('/cart/add', async (req, res) => {
       }
 
       if (cartSuccess) {
-        return res.json({ success: true, message: 'Successfully added to Pharmarack cart!' });
+        return res.json({ success: true, message: 'Successfully added to Pharmarack cart!', mode: 'Live' });
       } else {
         return res.status(503).json({ error: 'Failed to add items to actual Pharmarack cart', details: lastError });
       }
     } else {
       console.log('Simulation Mode: Adding to Pharmarack Cart:', payload);
-      return res.json({ success: true, message: 'Simulated Pharmarack cart addition successfully!', items });
+      return res.json({ success: true, message: 'Simulated Pharmarack cart addition successfully!', items, mode: 'Simulation' });
     }
   } catch (err: any) {
     console.error('Pharmarack cart route error:', err);
@@ -491,4 +491,268 @@ router.post('/cart/add', async (req, res) => {
   }
 });
 
+// Fetch current Pharmarack cart
+router.get('/cart', async (req, res) => {
+  try {
+    const settings = await getPharmarackSettings();
+    const mode = settings['pharmarack_mode'] || 'Simulation';
+    const token = settings['pharmarack_session_token'] || '';
+
+    if (mode === 'Live') {
+      if (!token) {
+        return res.status(401).json({ error: 'Need to login', code: 'NEED_LOGIN' });
+      }
+
+      // Try primary cart endpoint
+      let cartData: any = null;
+      let lastError = '';
+
+      const endpoints = [
+        'https://retailers.pharmarack.com/api/v2/cart',
+        'https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/cart'
+      ];
+
+      for (const url of endpoints) {
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'devicetype': 'web',
+              'Accept': 'application/json, text/plain, */*',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Referer': 'https://retailers.pharmarack.com/',
+              'Origin': 'https://retailers.pharmarack.com'
+            },
+            signal: AbortSignal.timeout(8000)
+          });
+
+          if (response.ok) {
+            cartData = await response.json();
+            break;
+          } else {
+            lastError = `${url} status: ${response.status}`;
+            if (response.status === 401 || response.status === 403) {
+              return res.status(401).json({ error: 'Session expired. Please re-login from the Learning page.', code: 'SESSION_EXPIRED' });
+            }
+          }
+        } catch (err: any) {
+          lastError = err.message;
+        }
+      }
+
+      if (!cartData) {
+        return res.status(503).json({ error: 'Could not fetch cart from Pharmarack. ' + lastError });
+      }
+
+      // Normalise different possible response shapes
+      let items: any[] = [];
+      if (Array.isArray(cartData)) {
+        items = cartData;
+      } else if (cartData.data && Array.isArray(cartData.data)) {
+        items = cartData.data;
+      } else if (cartData.CartItems && Array.isArray(cartData.CartItems)) {
+        items = cartData.CartItems;
+      } else if (cartData.cartItems && Array.isArray(cartData.cartItems)) {
+        items = cartData.cartItems;
+      }
+
+      const normalised = items.map((item: any) => ({
+        productId: item.ProductId || item.productId,
+        storeId: item.StoreId || item.storeId,
+        productName: item.ProductName || item.productName || item.Name || item.name || 'Unknown Product',
+        packaging: item.Packing || item.packaging || item.Pack || '',
+        distributor: item.StoreName || item.storeName || item.distributor || '',
+        qty: item.Quantity || item.quantity || item.qty || 1,
+        rate: item.Rate || item.rate || item.PTR || null,
+        mrp: item.MRP || item.mrp || null,
+        scheme: item.Scheme || item.scheme || '',
+        amount: item.Amount || item.amount || item.TotalAmount || null,
+      }));
+
+      return res.json({ success: true, mode: 'Live', items: normalised, total: normalised.length });
+    } else {
+      // Simulation mode — return realistic mock cart
+      const mockCart = [
+        {
+          productId: 100001,
+          storeId: 200001,
+          productName: 'Dolo 650 Tablet',
+          packaging: '15 TAB',
+          distributor: 'Sinhagad Pharma Pvt Ltd',
+          qty: 2,
+          rate: 24.47,
+          mrp: 32.12,
+          scheme: '10+1',
+          amount: 48.94,
+        },
+        {
+          productId: 100010,
+          storeId: 200010,
+          productName: 'Concor 5mg',
+          packaging: '10 TAB',
+          distributor: 'Amar Enterprises (Pune)',
+          qty: 1,
+          rate: 161.14,
+          mrp: 201.42,
+          scheme: '30+2',
+          amount: 161.14,
+        },
+        {
+          productId: 100011,
+          storeId: 200011,
+          productName: 'Calpol 500mg',
+          packaging: '15 TAB',
+          distributor: 'Sinhagad Pharma Pvt Ltd',
+          qty: 3,
+          rate: 13.50,
+          mrp: 18.00,
+          scheme: '10+1',
+          amount: 40.50,
+        }
+      ];
+      return res.json({ success: true, mode: 'Simulation', items: mockCart, total: mockCart.length });
+    }
+  } catch (err: any) {
+    console.error('Pharmarack cart fetch error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Auto-verify saved session token and update mode
+router.get('/auto-verify', async (req, res) => {
+  try {
+    const settings = await getPharmarackSettings();
+    const token = settings['pharmarack_session_token'] || '';
+
+    if (!token) {
+      const db = await dbManager.getConnection();
+      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_mode', 'Simulation')");
+      return res.json({ healthy: false, mode: 'Simulation', reason: 'NO_TOKEN', needs_login: true, message: 'No session token found' });
+    }
+
+    let healthy = false;
+    let reason = 'EXPIRED';
+    let message = 'Session expired';
+
+    const endpoints = [
+      'https://retailers.pharmarack.com/api/v2/cart',
+      'https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/cart'
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'devicetype': 'web',
+            'Accept': 'application/json, text/plain, */*',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://retailers.pharmarack.com/',
+            'Origin': 'https://retailers.pharmarack.com'
+          },
+          signal: AbortSignal.timeout(4000)
+        });
+
+        if (response.ok) {
+          healthy = true;
+          break;
+        } else {
+          if (response.status === 401 || response.status === 403) {
+            reason = 'EXPIRED';
+            message = 'Session expired or invalid token';
+          } else {
+            reason = 'SERVER_ERROR';
+            message = `Server returned status ${response.status}`;
+          }
+        }
+      } catch (err: any) {
+        reason = 'NETWORK_ERROR';
+        message = err.message || 'Network timeout/connection error';
+      }
+    }
+
+    const db = await dbManager.getConnection();
+    if (healthy) {
+      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_mode', 'Live')");
+      return res.json({ healthy: true, mode: 'Live', message: 'Session active and verified' });
+    } else {
+      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_mode', 'Simulation')");
+      return res.json({ healthy: false, mode: 'Simulation', reason, needs_login: true, message });
+    }
+  } catch (err: any) {
+    console.error('Session auto-verify error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Check Pharmarack session status
+router.get('/session-status', async (req, res) => {
+  try {
+    const settings = await getPharmarackSettings();
+    const mode = settings['pharmarack_mode'] || 'Simulation';
+    const token = settings['pharmarack_session_token'] || '';
+
+    if (mode !== 'Live') {
+      return res.json({ healthy: true, mode: 'Simulation', message: 'Simulation mode active' });
+    }
+
+    if (!token) {
+      return res.json({ healthy: false, mode: 'Live', reason: 'NO_TOKEN', message: 'Session not linked' });
+    }
+
+    let healthy = false;
+    let reason = 'EXPIRED';
+    let message = 'Session expired';
+
+    const endpoints = [
+      'https://retailers.pharmarack.com/api/v2/cart',
+      'https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/cart'
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'devicetype': 'web',
+            'Accept': 'application/json, text/plain, */*',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://retailers.pharmarack.com/',
+            'Origin': 'https://retailers.pharmarack.com'
+          },
+          signal: AbortSignal.timeout(4000)
+        });
+
+        if (response.ok) {
+          healthy = true;
+          break;
+        } else {
+          if (response.status === 401 || response.status === 403) {
+            reason = 'EXPIRED';
+            message = 'Session expired or invalid token';
+          } else {
+            reason = 'SERVER_ERROR';
+            message = `Server returned status ${response.status}`;
+          }
+        }
+      } catch (err: any) {
+        reason = 'NETWORK_ERROR';
+        message = err.message || 'Network timeout/connection error';
+      }
+    }
+
+    return res.json({ healthy, mode: 'Live', reason: healthy ? undefined : reason, message: healthy ? 'Session active' : message });
+  } catch (err: any) {
+    console.error('Session status check error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
+

@@ -13,6 +13,7 @@ router.get('/medicines', async (req, res) => {
     const apiFilter = (req.query.apiFilter as string) || '';
     const packagingFilter = (req.query.packagingFilter as string) || '';
     const distributorFilter = (req.query.distributorFilter as string) || '';
+    const categoryFilter = (req.query.category as string) || '';
     const offset = (page - 1) * limit;
 
     const db = await dbManager.getConnection();
@@ -85,6 +86,11 @@ router.get('/medicines', async (req, res) => {
       )`);
       params.push(`%${distributorFilter}%`);
     }
+
+    if (categoryFilter) {
+      whereClauses.push('category LIKE ?');
+      params.push(`%${categoryFilter}%`);
+    }
     
     if (whereClauses.length > 0) {
       const whereString = ' WHERE ' + whereClauses.join(' AND ');
@@ -121,14 +127,14 @@ router.get('/medicines', async (req, res) => {
 });
 
 router.post('/medicines', async (req, res) => {
-  const { name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code } = req.body;
+  const { name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code, category } = req.body;
   if (!name) return res.status(400).json({ error: 'Medicine name is required' });
   try {
     const db = await dbManager.getConnection();
     const result = await db.run(
-      `INSERT INTO medicines (name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name, generic_name || '', manufacturer || '', marketed_by || '', pack_unit || '', strength || '', parseFloat(cgst_per) || 0, parseFloat(sgst_per) || 0, hsn_code || '']
+      `INSERT INTO medicines (name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code, category)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name, generic_name || '', manufacturer || '', marketed_by || '', pack_unit || '', strength || '', parseFloat(cgst_per) || 0, parseFloat(sgst_per) || 0, hsn_code || '', category || '']
     );
     const id = result.lastID;
     const savedMed = await db.get('SELECT * FROM medicines WHERE id = ?', [id]);
@@ -137,6 +143,41 @@ router.post('/medicines', async (req, res) => {
   } catch (error) {
     await dbManager.close();
     console.error('Failed to create medicine:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/medicines/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    
+    // Check references
+    const hasPurchases = await db.get('SELECT id FROM purchase_items WHERE medicine_id = ? LIMIT 1', [id]);
+    const hasSales = await db.get('SELECT id FROM sale_items WHERE inventory_id IN (SELECT id FROM inventory_master WHERE medicine_id = ?) LIMIT 1', [id]);
+    const hasReturns = await db.get('SELECT id FROM return_items WHERE medicine_id = ? LIMIT 1', [id]);
+    const hasLedger = await db.get('SELECT id FROM stock_ledger WHERE medicine_id = ? LIMIT 1', [id]);
+    
+    if (hasPurchases || hasSales || hasReturns || hasLedger) {
+      await dbManager.close();
+      return res.status(400).json({ 
+        error: 'Cannot delete medicine. It has associated sales, purchases, or ledger transactions.' 
+      });
+    }
+    
+    // Delete safe references
+    await db.run('DELETE FROM inventory_master WHERE medicine_id = ?', [id]);
+    await db.run('DELETE FROM medicine_aliases WHERE medicine_id = ?', [id]);
+    await db.run('DELETE FROM patient_refills WHERE medicine_id = ?', [id]);
+    
+    // Delete the medicine itself
+    await db.run('DELETE FROM medicines WHERE id = ?', [id]);
+    
+    await dbManager.close();
+    res.json({ success: true, message: 'Medicine deleted successfully' });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to delete medicine:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

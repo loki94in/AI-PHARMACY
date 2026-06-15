@@ -26,7 +26,8 @@ async function initOrdersTable(db: any) {
       pharmarack_rate REAL,
       pharmarack_mrp REAL,
       pharmarack_mapped INTEGER DEFAULT 0,
-      pharmarack_scheme TEXT
+      pharmarack_scheme TEXT,
+      advance_payment REAL DEFAULT 0.0
     )
   `);
   // Try adding columns if they do not exist
@@ -51,6 +52,9 @@ async function initOrdersTable(db: any) {
   try {
     await db.exec('ALTER TABLE special_orders ADD COLUMN pharmarack_scheme TEXT');
   } catch (_) {}
+  try {
+    await db.exec('ALTER TABLE special_orders ADD COLUMN advance_payment REAL DEFAULT 0.0');
+  } catch (_) {}
 }
 
 // List special requests / orders
@@ -71,11 +75,25 @@ router.post('/', async (req, res) => {
   const { 
     product, requester, phone, qty, priority, status,
     pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped,
-    pharmarack_scheme
+    pharmarack_scheme, advance_payment
   } = req.body;
-  if (!product) {
+  if (!product || !product.trim()) {
     return res.status(400).json({ error: 'Product name is required' });
   }
+  if (!requester || !requester.trim()) {
+    return res.status(400).json({ error: 'Customer Name is required' });
+  }
+  if (!phone || !phone.trim()) {
+    return res.status(400).json({ error: 'Phone Number is required' });
+  }
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.length < 10) {
+    return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number' });
+  }
+  if (!qty || Number(qty) < 1) {
+    return res.status(400).json({ error: 'Quantity must be at least 1' });
+  }
+
   try {
     const db = await dbManager.getConnection();
     await initOrdersTable(db);
@@ -83,50 +101,47 @@ router.post('/', async (req, res) => {
       `INSERT INTO special_orders (
         product, requester, phone, qty, priority, status,
         pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped,
-        pharmarack_scheme
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        pharmarack_scheme, advance_payment
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        product, 
-        requester || 'Anonymous', 
-        phone || '', 
-        qty || 1, 
+        product.trim(), 
+        requester.trim(), 
+        phone.trim(), 
+        qty, 
         priority || 'Normal', 
         status || 'Pending',
         pharmarack_distributor || null,
         pharmarack_rate !== undefined ? pharmarack_rate : null,
         pharmarack_mrp !== undefined ? pharmarack_mrp : null,
         pharmarack_mapped ? 1 : 0,
-        pharmarack_scheme || null
+        pharmarack_scheme || null,
+        advance_payment !== undefined && advance_payment !== null ? Number(advance_payment) : 0.0
       ]
     );
     
     // Auto send confirmation message to customer via WhatsApp
     if (phone) {
       try {
-        const cleanPhone = phone.replace(/\D/g, '');
         const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
         let medicalName = 'XYZ MEDICAL';
-        const dbConf = await dbManager.getConnection();
-        const nameRow = await dbConf.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
-        await dbConf.close();
+        const nameRow = await db.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
         if (nameRow && nameRow.value) {
           medicalName = nameRow.value;
         }
 
-        const msg = `Hi ${requester || 'Customer'}, your special order for ${product} (Qty: ${qty}) has been taken in ${medicalName}. We will notify you when it is ready.`;
+        const advMsg = advance_payment && Number(advance_payment) > 0 ? ` (Advance Paid: ₹${Number(advance_payment).toFixed(2)})` : '';
+        const msg = `Hi ${requester.trim()}, your special order for ${product.trim()} (Qty: ${qty})${advMsg} has been taken in ${medicalName}. We will notify you when it is ready.`;
         await sendMessage(formattedPhone, undefined, msg);
         console.log(`Special order confirmation WhatsApp sent to ${requester}`);
       } catch (wsError: any) {
         console.error(`Failed to send special order confirmation WhatsApp to ${requester}:`, wsError);
         try {
-          const dbAlert = await dbManager.getConnection();
-          await dbAlert.run(
+          await db.run(
             "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
             'AUTOMATION_ALERT',
             `❌ WhatsApp Alert Failure: Failed to send special order confirmation to ${requester} (${phone}). Error: ${wsError.message || 'Unknown error'}`
           );
-          await dbAlert.close();
         } catch (_) {}
       }
     }
@@ -193,7 +208,8 @@ router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { 
     status, priority, qty, product, requester, phone,
-    pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped
+    pharmarack_distributor, pharmarack_rate, pharmarack_mrp, pharmarack_mapped,
+    advance_payment
   } = req.body;
   try {
     const db = await dbManager.getConnection();
@@ -214,13 +230,15 @@ router.put('/:id', async (req, res) => {
     const newRate = pharmarack_rate !== undefined ? pharmarack_rate : existing.pharmarack_rate;
     const newMrp = pharmarack_mrp !== undefined ? pharmarack_mrp : existing.pharmarack_mrp;
     const newMapped = pharmarack_mapped !== undefined ? (pharmarack_mapped ? 1 : 0) : existing.pharmarack_mapped;
+    const newAdvancePayment = advance_payment !== undefined ? advance_payment : existing.advance_payment;
 
     await db.run(
       `UPDATE special_orders 
        SET status = ?, priority = ?, qty = ?, product = ?, requester = ?, phone = ?,
-           pharmarack_distributor = ?, pharmarack_rate = ?, pharmarack_mrp = ?, pharmarack_mapped = ?
+           pharmarack_distributor = ?, pharmarack_rate = ?, pharmarack_mrp = ?, pharmarack_mapped = ?,
+           advance_payment = ?
        WHERE id = ?`,
-      [newStatus, newPriority, newQty, newProduct, newRequester, newPhone, newDistributor, newRate, newMrp, newMapped, id]
+      [newStatus, newPriority, newQty, newProduct, newRequester, newPhone, newDistributor, newRate, newMrp, newMapped, newAdvancePayment, id]
     );
 
     // If status changes to 'Ready' and the customer wasn't notified, auto send WhatsApp
