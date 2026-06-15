@@ -443,4 +443,8 @@ export const api = {
   updateInvestigationSaleBill: (invoiceId: number, data: any) => apiClient.put(`/investigation/sales/${invoiceId}`, data).then(res => res.data),
   updateInvestigationPurchaseBill: (purchaseId: number, data: any) => apiClient.put(`/investigation/purchases/${purchaseId}`, data).then(res => res.data),
   getInvestigationAuditLogs: (inventoryId: number) => apiClient.get(`/investigation/audit-logs/${inventoryId}`).then(res => res.data),
+  
+  // Online enrichment & search
+  onlineSearch: (q: string) => apiClient.get('/medicines/online-search', { params: { q } }).then(res => res.data),
+  autoEnrich: (data: { name: string; api_reference: string; manufacturer?: string }) => apiClient.post('/medicines/auto-enrich', data).then(res => res.data),
 };

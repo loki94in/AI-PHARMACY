@@ -57,16 +57,18 @@ router.post('/audit/resolve', async (req, res) => {
       }
 
       // 2. Open DB and insert medicine
+      const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
+      const adjustedName = normalizeMedicineName(name.trim());
       const db = await dbManager.getConnection();
 
       // Check if medicine already exists
-      let med = await db.get('SELECT id FROM medicines WHERE name = ?', [name.trim()]);
+      let med = await db.get('SELECT id FROM medicines WHERE name = ?', [adjustedName]);
       let medicineId: number;
 
       if (!med) {
         const result = await db.run(
           `INSERT INTO medicines (name, mrp) VALUES (?, ?)`,
-          [name.trim(), mrp || 0]
+          [adjustedName, mrp || 0]
         );
         medicineId = result.lastID!;
       } else {

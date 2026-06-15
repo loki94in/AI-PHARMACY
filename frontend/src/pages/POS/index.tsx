@@ -238,6 +238,8 @@ const POS = () => {
   
   const [doctorsList, setDoctorsList] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [onlineResults, setOnlineResults] = useState<any[]>([]);
+  const [searchingOnline, setSearchingOnline] = useState(false);
 
   const [activeRowSearchIndex, setActiveRowSearchIndex] = useState<number | null>(null);
   const [rowSearchTerm, setRowSearchTerm] = useState('');
@@ -396,6 +398,8 @@ const POS = () => {
   useEffect(() => {
     if (searchTerm.trim().length < 3) {
       setSearchResults([]);
+      setOnlineResults([]);
+      setSearchingOnline(false);
       return;
     }
     
@@ -404,9 +408,28 @@ const POS = () => {
         .then(data => {
           if (Array.isArray(data)) {
             setSearchResults(data);
+            
+            const needsOnline = data.length === 0 || data.some(m => !m.api_reference || m.api_reference.trim() === '');
+            if (needsOnline) {
+              setSearchingOnline(true);
+              api.onlineSearch(searchTerm)
+                .then(online => {
+                  if (Array.isArray(online)) {
+                    setOnlineResults(online);
+                  }
+                })
+                .catch(err => console.error('Online search failed:', err))
+                .finally(() => setSearchingOnline(false));
+            } else {
+              setOnlineResults([]);
+              setSearchingOnline(false);
+            }
           }
         })
-        .catch(err => console.error('Error searching medicines:', err));
+        .catch(err => {
+          console.error('Error searching medicines:', err);
+          setSearchingOnline(false);
+        });
     }, 300);
     
     return () => clearTimeout(delayDebounce);
@@ -483,6 +506,36 @@ const POS = () => {
         salts: med.salts || '' 
       }];
     });
+  };
+
+  const handleSelectOnlineSuggestion = async (sug: any) => {
+    try {
+      const res = await api.autoEnrich({
+        name: sug.name,
+        api_reference: sug.api_reference,
+        manufacturer: sug.manufacturer
+      });
+      
+      const newMed = res.data;
+      
+      addToCart({
+        id: Date.now(),
+        medicine_id: newMed.id,
+        name: newMed.name,
+        batch: 'B-GEN',
+        expiry: '12/28',
+        mrp: 0,
+        costPrice: 0,
+        salts: newMed.api_reference || 'Generic',
+        packSize: 10
+      });
+      
+      setSearchTerm('');
+      setOnlineResults([]);
+      setSearchResults([]);
+    } catch (err: any) {
+      alert(`Failed to auto-enrich medicine: ${err.message || 'Unknown error'}`);
+    }
   };
 
   const addManualItem = () => {
@@ -944,6 +997,36 @@ const POS = () => {
                         </div>
                         <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-2.5 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">📝 Prefill</span>
                       </button>
+                      
+                      {searchingOnline && (
+                        <div className="flex items-center justify-center p-4 text-xs text-muted gap-2 border-t border-glass-border/10">
+                          <Loader2 size={14} className="animate-spin text-sky" />
+                          <span>Searching internet for active compositions...</span>
+                        </div>
+                      )}
+
+                      {onlineResults.length > 0 && (
+                        <>
+                          <div className="p-3 bg-black/10 border-t border-glass-border/20 text-[10px] font-bold text-sky uppercase tracking-wider">
+                            🌐 Internet Suggestion (Auto-Enrich to Database)
+                          </div>
+                          {onlineResults.map((sug, sidx) => (
+                            <button
+                              key={`online_${sidx}`}
+                              type="button"
+                              onClick={() => handleSelectOnlineSuggestion(sug)}
+                              className="flex items-center justify-between p-3 hover:bg-bg2 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                            >
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-semibold text-text group-hover:text-sky transition-all">{sug.name}</span>
+                                <span className="text-[10px] text-muted font-normal">Active Salts: <strong className="text-text">{sug.api_reference || 'Generic'}</strong></span>
+                                {sug.manufacturer && <span className="text-[9px] text-muted font-normal">Mfr: {sug.manufacturer}</span>}
+                              </div>
+                              <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-2.5 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">✨ Import & Add</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1055,6 +1138,36 @@ const POS = () => {
                           </div>
                         );
                       })}
+                      
+                      {searchingOnline && (
+                        <div className="flex items-center justify-center p-3 text-xs text-muted gap-2 border-t border-glass-border/10">
+                          <Loader2 size={14} className="animate-spin text-sky" />
+                          <span>Searching internet for active compositions...</span>
+                        </div>
+                      )}
+
+                      {onlineResults.length > 0 && (
+                        <>
+                          <div className="p-2 border-t border-glass-border/30 bg-black/20 text-[10px] font-bold text-sky uppercase tracking-wider">
+                            🌐 Internet Suggestion (Auto-Enrich to Database):
+                          </div>
+                          {onlineResults.map((sug, sidx) => (
+                            <button
+                              key={`online_${sidx}`}
+                              type="button"
+                              onClick={() => handleSelectOnlineSuggestion(sug)}
+                              className="flex items-center justify-between p-3 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                            >
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-semibold text-text group-hover:text-sky transition-all">{sug.name}</span>
+                                <span className="text-[10px] text-muted font-normal">Active Salts: <strong className="text-text">{sug.api_reference || 'Generic'}</strong></span>
+                                {sug.manufacturer && <span className="text-[9px] text-muted font-normal">Mfr: {sug.manufacturer}</span>}
+                              </div>
+                              <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-2.5 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">✨ Import & Add</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

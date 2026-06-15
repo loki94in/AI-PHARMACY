@@ -124,12 +124,14 @@ router.post('/', async (req, res) => {
       
       if (!inventory_id) {
         const cleanName = (medicine_name || 'Custom Medicine').trim();
-        let dbMed = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [cleanName]);
+        const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
+        const adjustedName = normalizeMedicineName(cleanName);
+        let dbMed = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [adjustedName]);
         let medicineId;
         if (dbMed) {
           medicineId = dbMed.id;
         } else {
-          const medResult = await db.run('INSERT INTO medicines (name, mrp) VALUES (?, ?)', [cleanName, mrp || unit_price]);
+          const medResult = await db.run('INSERT INTO medicines (name, mrp) VALUES (?, ?)', [adjustedName, mrp || unit_price]);
           medicineId = medResult.lastID;
         }
 

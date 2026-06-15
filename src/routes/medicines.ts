@@ -130,11 +130,13 @@ router.post('/medicines', async (req, res) => {
   const { name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code, category } = req.body;
   if (!name) return res.status(400).json({ error: 'Medicine name is required' });
   try {
+    const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
+    const adjustedName = normalizeMedicineName(name, manufacturer || '');
     const db = await dbManager.getConnection();
     const result = await db.run(
       `INSERT INTO medicines (name, generic_name, manufacturer, marketed_by, pack_unit, strength, cgst_per, sgst_per, hsn_code, category)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name, generic_name || '', manufacturer || '', marketed_by || '', pack_unit || '', strength || '', parseFloat(cgst_per) || 0, parseFloat(sgst_per) || 0, hsn_code || '', category || '']
+      [adjustedName, generic_name || '', manufacturer || '', marketed_by || '', pack_unit || '', strength || '', parseFloat(cgst_per) || 0, parseFloat(sgst_per) || 0, hsn_code || '', category || '']
     );
     const id = result.lastID;
     const savedMed = await db.get('SELECT * FROM medicines WHERE id = ?', [id]);
@@ -280,4 +282,73 @@ router.delete('/medicines/:id', async (req, res) => {
   }
 });
 
+// Dynamic Online Search using OpenFDA API fallback
+router.get('/online-search', async (req, res) => {
+  const query = (req.query.q as string || '').trim();
+  if (!query || query.length < 2) {
+    return res.json([]);
+  }
+  try {
+    const { checkConnectivity } = await import('../utils/networkDetector.js');
+    const isOnline = await checkConnectivity();
+    if (!isOnline) {
+      return res.json([]);
+    }
+    const { OpenFdaClient } = await import('../services/apiClients/openFdaClient.js');
+    const client = new OpenFdaClient();
+    const result = await client.queryMedicine(query);
+    if (!result) {
+      return res.json([]);
+    }
+    res.json([{
+      name: result.medicineName,
+      api_reference: result.activeIngredients?.join(' + ') || '',
+      manufacturer: result.manufacturer || ''
+    }]);
+  } catch (error) {
+    console.error('Online search endpoint failed:', error);
+    res.status(500).json({ error: 'Internal server error during online search' });
+  }
+});
+
+// Auto-enrich composition by saving to database
+router.post('/auto-enrich', async (req, res) => {
+  const { name, api_reference, manufacturer } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Medicine name is required' });
+  }
+  try {
+    const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
+    const db = await dbManager.getConnection();
+    const cleanName = name.trim();
+    const cleanApi = (api_reference || '').trim();
+    const cleanMfr = (manufacturer || '').trim();
+    const adjustedName = normalizeMedicineName(cleanName, cleanMfr);
+
+    let existing = await db.get('SELECT * FROM medicines WHERE LOWER(name) = LOWER(?)', [cleanName]);
+    if (existing) {
+      await db.run(
+        "UPDATE medicines SET name = ?, api_reference = COALESCE(NULLIF(api_reference, ''), ?), manufacturer = COALESCE(NULLIF(manufacturer, ''), ?) WHERE id = ?",
+        [adjustedName, cleanApi, cleanMfr, existing.id]
+      );
+      const updated = await db.get('SELECT * FROM medicines WHERE id = ?', [existing.id]);
+      await dbManager.close();
+      return res.json({ success: true, data: updated, isNew: false });
+    } else {
+      const result = await db.run(
+        "INSERT INTO medicines (name, api_reference, manufacturer) VALUES (?, ?, ?)",
+        [adjustedName, cleanApi || null, cleanMfr || null]
+      );
+      const newMed = await db.get('SELECT * FROM medicines WHERE id = ?', [result.lastID]);
+      await dbManager.close();
+      return res.json({ success: true, data: newMed, isNew: true });
+    }
+  } catch (error) {
+    await dbManager.close();
+    console.error('Auto enrichment save failed:', error);
+    res.status(500).json({ error: 'Internal server error saving enrichment' });
+  }
+});
+
 export default router;
+

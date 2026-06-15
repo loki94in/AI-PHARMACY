@@ -194,13 +194,18 @@ router.post('/catalog/import', async (req, res) => {
   try {
     const db = await dbManager.getConnection();
     
+    const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
+    
     for (const med of medicines) {
       if (!med.name) continue;
       
-      const existing = await db.get(`SELECT id FROM medicines WHERE lower(name) = lower(?)`, med.name);
+      const cleanName = med.name.trim();
+      const adjustedName = normalizeMedicineName(cleanName, med.manufacturer);
+      
+      const existing = await db.get(`SELECT id FROM medicines WHERE lower(name) = lower(?)`, adjustedName);
       if (existing) {
-        const updates = [];
-        const params = [];
+        const updates = ["name = ?"];
+        const params = [adjustedName];
         
         if (med.manufacturer) { updates.push("manufacturer = COALESCE(NULLIF(manufacturer, ''), ?)"); params.push(med.manufacturer); }
         if (med.marketed_by) { updates.push("marketed_by = COALESCE(NULLIF(marketed_by, ''), ?)"); params.push(med.marketed_by); }
@@ -208,15 +213,13 @@ router.post('/catalog/import', async (req, res) => {
         if (med.strength) { updates.push("strength = COALESCE(NULLIF(strength, ''), ?)"); params.push(med.strength); }
         if (med.packaging_type) { updates.push("packaging = COALESCE(NULLIF(packaging, ''), ?)"); params.push(med.packaging_type); }
         
-        if (updates.length > 0) {
-            params.push(existing.id);
-            const setClause = updates.join(', ');
-            await db.run(`UPDATE medicines SET ${setClause} WHERE id = ?`, ...params);
-        }
+        params.push(existing.id);
+        const setClause = updates.join(', ');
+        await db.run(`UPDATE medicines SET ${setClause} WHERE id = ?`, ...params);
       } else {
         await db.run(
           `INSERT INTO medicines (name, api_reference, strength, packaging, manufacturer, marketed_by) VALUES (?, ?, ?, ?, ?, ?)`,
-          med.name,
+          adjustedName,
           med.api_reference || null,
           med.strength || null,
           med.packaging_type || null,
