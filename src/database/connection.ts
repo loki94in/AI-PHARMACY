@@ -34,6 +34,21 @@ class DatabaseManager {
       const db = await open({ filename: dbPath, driver: sqlite3.Database });
       await db.run('PRAGMA busy_timeout = 5000;');
 
+      // Integrity check on cold start — must pass before any app code uses the DB
+      if (process.env.NODE_ENV !== 'test') {
+        const integrityResult = await db.get('PRAGMA integrity_check');
+        if (integrityResult?.integrity_check !== 'ok') {
+          console.error('[DB] Integrity check failed, attempting WAL checkpoint recovery...');
+          await db.run('PRAGMA wal_checkpoint(TRUNCATE)');
+          const recheck = await db.get('PRAGMA integrity_check');
+          if (recheck?.integrity_check !== 'ok') {
+            await db.close();
+            throw new Error('DB_INTEGRITY_FAILURE');
+          }
+          console.log('[DB] WAL checkpoint recovery succeeded.');
+        }
+      }
+
       // Intercept database writes for automatic backup snapshots
       const originalRun = db.run.bind(db);
       const originalExec = db.exec.bind(db);

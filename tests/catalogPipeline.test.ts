@@ -85,4 +85,41 @@ describe('Catalog pipeline', () => {
     await db.close();
     fs.rmSync(testCatalog, { recursive: true });
   });
+  test('stale mapping (mismatched headers) routes job to waiting_for_mapping', async () => {
+    const db = await open({ filename: DB_PATH, driver: sqlite3.Database });
+
+    // Create a CSV with different headers from what the mapping_config expects
+    const mismatchCatalog = path.resolve(__dirname, 'test-catalog-mismatch');
+    if (fs.existsSync(mismatchCatalog)) fs.rmSync(mismatchCatalog, { recursive: true });
+    fs.mkdirSync(mismatchCatalog, { recursive: true });
+    // CSV has "product_name" but the mapping_config references the old column "name"
+    fs.writeFileSync(path.join(mismatchCatalog, 'stale.csv'), 'product_name,api\nAspirin,http://example.com/api');
+
+    // Insert a job with a stale mapping that references the old column name "name"
+    await db.run(
+      "INSERT INTO catalog_jobs (file_path, original_filename, status, mapping_config) VALUES (?, ?, 'pending', ?)",
+      [
+        path.join(mismatchCatalog, 'stale.csv'),
+        'stale.csv',
+        JSON.stringify({ name: 'name', api: 'api_reference' })  // "name" column no longer exists
+      ]
+    );
+
+    const job = await db.get("SELECT * FROM catalog_jobs WHERE original_filename='stale.csv' LIMIT 1");
+    expect(job).toBeDefined();
+
+    await runCatalogImport(job.id);
+
+    // Must NOT throw and must NOT silently import bad data
+    const updatedJob = await db.get('SELECT status, error_log FROM catalog_jobs WHERE id = ?', job.id);
+    expect(updatedJob.status).toBe('waiting_for_mapping');
+    expect(updatedJob.error_log).toContain('Missing mapped columns');
+
+    // No medicine called "Aspirin" should have been inserted
+    const meds = await db.all("SELECT * FROM medicines WHERE name='Aspirin'");
+    expect(meds.length).toBe(0);
+
+    await db.close();
+    fs.rmSync(mismatchCatalog, { recursive: true });
+  });
 });

@@ -553,6 +553,26 @@ export async function runCatalogImport(jobId: number) {
     // Parse mappings configuration
     const mapping = JSON.parse(job.mapping_config || '{}');
 
+    // --- Header-presence guard ---
+    // Verify every mapped CSV column is actually present in this file's headers.
+    // If any are missing the distributor may have renamed columns — route to
+    // waiting_for_mapping so the user can re-map, rather than silently mis-importing.
+    if (ext === '.csv') {
+      const preview = await readCsvPreview(job.file_path, 1);
+      const actualHeaders = new Set(preview.headers);
+      const missingMappedColumns = Object.keys(mapping).filter(col => col && !actualHeaders.has(col));
+      if (missingMappedColumns.length > 0) {
+        console.warn(`[CatalogWorker] Job ${jobId}: mapped columns missing from file headers: ${missingMappedColumns.join(', ')}. Routing to waiting_for_mapping.`);
+        await db.run(
+          "UPDATE catalog_jobs SET status = 'waiting_for_mapping', error_log = ? WHERE id = ?",
+          [`Missing mapped columns: ${missingMappedColumns.join(', ')}`, jobId]
+        );
+        eventService.broadcast('catalog_job_update', { id: jobId, status: 'waiting_for_mapping' });
+        return;
+      }
+    }
+
+
     // Alter medicines schema for custom fields dynamically
     const tableInfo = await db.all('PRAGMA table_info(medicines)');
     const existingMedicinesCols = tableInfo.map(c => c.name.toLowerCase());

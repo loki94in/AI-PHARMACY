@@ -13,6 +13,7 @@ import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { dbManager } from './database/connection.js';
 import { ensureSchema } from './database.js';
 import { workerSupervisor } from './worker/workerSupervisor.js';
+import { registerProcessGuardian } from './process/processGuardian.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,12 +65,8 @@ import { checkOverdueCreditNotes, reconcileCreditNote } from './services/creditN
 import { activityTracker } from './utils/activityTracker.js';
 import { createBackup, initBackupScheduler } from './services/backupService.js';
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
-});
-process.on('uncaughtException', (error) => {
-  console.error('CRITICAL: Uncaught Exception:', error);
-});
+// Register process-level crash handler (logs to crash_log, exits(1) for watchdog restart)
+registerProcessGuardian();
 
 const app = express();
 
@@ -193,7 +190,19 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 
-ensureSchema(DB_PATH).then(() => {
+ensureSchema(DB_PATH).then(async () => {
+  // Mark this boot as unclean (will be flipped to 'true' in gracefulShutdown)
+  try {
+    const bootDb = await dbManager.getConnection();
+    const prevShutdown = await bootDb.get("SELECT value FROM app_settings WHERE key = 'last_clean_shutdown'");
+    if (prevShutdown && prevShutdown.value === 'false') {
+      console.warn('[Boot] WARNING: Last shutdown was unclean (app may have crashed or been force-killed).');
+    }
+    await bootDb.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_clean_shutdown', 'false')");
+  } catch (bootErr) {
+    console.error('[Boot] Could not write last_clean_shutdown flag:', bootErr);
+  }
+
   app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}/test`);
     // Pre-initialize background services if automation is enabled in settings
@@ -329,13 +338,28 @@ ensureSchema(DB_PATH).then(() => {
   // Daily licensing tasks disabled permanently
   });
 }).catch(err => {
-  console.error('Failed to initialize database schema:', err);
+  if (err.message === 'DB_INTEGRITY_FAILURE') {
+    console.error(
+      '[FATAL] Database integrity check failed and could not be automatically recovered.\n' +
+      'Please use the backup/restore feature in the app settings to restore a healthy backup.\n' +
+      'The application will not start until the database is repaired.'
+    );
+  } else {
+    console.error('Failed to initialize database schema:', err);
+  }
   process.exit(1);
 });
 
 // Graceful shutdown with auto-backup
 async function gracefulShutdown(signal: string) {
   console.log(`${signal} received. Creating shutdown backup...`);
+  // Mark clean shutdown BEFORE anything else that might fail
+  try {
+    const db = await dbManager.getConnection();
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_clean_shutdown', 'true')");
+  } catch (flagErr) {
+    console.error('[Shutdown] Could not write last_clean_shutdown=true:', flagErr);
+  }
   try {
     const result = await createBackup(`Shutdown (${signal})`);
     console.log(`[Backup] Shutdown backup created: ${result.filename}`);

@@ -572,6 +572,16 @@ export async function ensureSchema(dbPath: string) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Crash telemetry: written by processGuardian on uncaught exceptions
+    CREATE TABLE IF NOT EXISTS crash_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      message TEXT,
+      stack TEXT,
+      app_version TEXT,
+      recovered INTEGER DEFAULT 0
+    );
   `);
 
   // Insert default settings if they don't exist
@@ -596,6 +606,10 @@ export async function ensureSchema(dbPath: string) {
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('backup_auto_delete_old_archives', 'true')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('backup_manual_access', 'true')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('backup_is_paused', 'false')");
+
+  // Self-healing boot tracking
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('last_clean_shutdown', 'true')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('app_version', 'unknown')");
 
   // WhatsApp Business API defaults
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wa_business_enabled', 'false')");
