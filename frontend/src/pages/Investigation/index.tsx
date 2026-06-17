@@ -1,20 +1,15 @@
 import { useState, useEffect } from 'react';
 import { 
   Search, 
-  Filter, 
   RotateCcw, 
   Edit, 
   Clock, 
-  FileText, 
   Trash2, 
-  Plus, 
   Check, 
   AlertTriangle, 
-  HelpCircle,
-  TrendingUp,
-  Package,
+  ArrowRightLeft,
   Calendar,
-  DollarSign
+  Package
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -26,10 +21,9 @@ interface SearchFilters {
   purchaseBillNo: string;
   batchNo: string;
   distributor: string;
-  expiryDate: string;
-  mrp: string;
-  quantity: string;
-  looseQuantity: string;
+  dateFrom: string;
+  dateTo: string;
+  type: string;
 }
 
 interface SelectedDetails {
@@ -91,12 +85,11 @@ const InvestigationCenter = () => {
     purchaseBillNo: '',
     batchNo: '',
     distributor: '',
-    expiryDate: '',
-    mrp: '',
-    quantity: '',
-    looseQuantity: ''
+    dateFrom: '',
+    dateTo: '',
+    type: 'All'
   });
-  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [details, setDetails] = useState<SelectedDetails | null>(null);
@@ -144,18 +137,10 @@ const InvestigationCenter = () => {
     setLoading(true);
     try {
       const activeFilters = Object.fromEntries(
-        Object.entries(filters).filter(([_, val]) => val.trim() !== '')
+        Object.entries(filters).filter(([_, val]) => val && String(val).trim() !== '')
       );
-      const data = await api.searchInvestigation(activeFilters);
+      const data = await api.getInvestigationTimeline(activeFilters);
       setSearchResults(data);
-      if (data.length > 0 && !selectedId) {
-        // Automatically select the first row
-        handleSelectRecord(data[0].inventory_id);
-      } else if (data.length === 0) {
-        setDetails(null);
-        setAuditLogs([]);
-        setSelectedId(null);
-      }
     } catch (err) {
       showToast('Search failed. Please try again.', 'error');
     } finally {
@@ -163,25 +148,9 @@ const InvestigationCenter = () => {
     }
   };
 
-  const handleSelectRecord = async (inventoryId: number) => {
-    setSelectedId(inventoryId);
-    setDetailsLoading(true);
-    setEditingType(null);
-    try {
-      const detailsData = await api.getInvestigationDetails(inventoryId);
-      setDetails(detailsData);
-      const logs = await api.getInvestigationAuditLogs(inventoryId);
-      setAuditLogs(logs);
-    } catch (err) {
-      showToast('Failed to fetch details.', 'error');
-    } finally {
-      setDetailsLoading(false);
-    }
-  };
-
   useEffect(() => {
     runSearch();
-  }, []);
+  }, [filters.type, filters.dateFrom, filters.dateTo]);
 
   const handleFilterChange = (key: keyof SearchFilters, val: string) => {
     setFilters(prev => ({ ...prev, [key]: val }));
@@ -196,31 +165,40 @@ const InvestigationCenter = () => {
       purchaseBillNo: '',
       batchNo: '',
       distributor: '',
-      expiryDate: '',
-      mrp: '',
-      quantity: '',
-      looseQuantity: ''
+      dateFrom: '',
+      dateTo: '',
+      type: 'All'
     });
     setSearchResults([]);
-    setDetails(null);
-    setAuditLogs([]);
-    setSelectedId(null);
   };
 
   // Direct Inventory Correction logic
-  const startInventoryEdit = () => {
-    if (!details) return;
-    const inv = details.inventory;
-    setEditInventoryForm({
-      quantity: inv.quantity,
-      loose_quantity: inv.loose_quantity,
-      batch_no: inv.batch_no,
-      expiry_date: inv.expiry_date,
-      mrp: inv.mrp,
-      cost_price: inv.cost_price,
-      rack_location: inv.rack_location || ''
-    });
-    setEditingType('inventory');
+  const handleAdjustStock = async (inventoryId: number) => {
+    setSelectedId(inventoryId);
+    setDetailsLoading(true);
+    setEditingType(null);
+    try {
+      const detailsData = await api.getInvestigationDetails(inventoryId);
+      setDetails(detailsData);
+      const logs = await api.getInvestigationAuditLogs(inventoryId);
+      setAuditLogs(logs);
+
+      const inv = detailsData.inventory;
+      setEditInventoryForm({
+        quantity: inv.quantity,
+        loose_quantity: inv.loose_quantity,
+        batch_no: inv.batch_no,
+        expiry_date: inv.expiry_date,
+        mrp: inv.mrp,
+        cost_price: inv.cost_price,
+        rack_location: inv.rack_location || ''
+      });
+      setEditingType('inventory');
+    } catch (err) {
+      showToast('Failed to fetch medicine inventory details.', 'error');
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
   const saveInventoryAdjustment = () => {
@@ -240,7 +218,7 @@ const InvestigationCenter = () => {
           showToast('Inventory adjusted successfully.');
           setEditingType(null);
           setConfirmModal(null);
-          handleSelectRecord(selectedId);
+          runSearch();
         } catch (err: any) {
           showToast(err.response?.data?.error || 'Failed to update inventory', 'error');
         }
@@ -249,15 +227,13 @@ const InvestigationCenter = () => {
   };
 
   // Edit Sales Bill logic
-  const startSaleBillEdit = (sale: any) => {
-    setEditingBillId(sale.invoice_id);
-    setEditingBillNo(sale.invoice_no);
-    setBillDiscount(sale.discount || 0);
+  const handleStartSaleBillEdit = (item: any) => {
+    setEditingBillId(item.invoice_id);
+    setEditingBillNo(item.reference);
+    setBillDiscount(item.discount || 0);
 
-    // Initialize items currently on this invoice
-    // Fetch detailed items
     setDetailsLoading(true);
-    api.getSale(sale.invoice_id)
+    api.getSale(item.invoice_id)
       .then(invoiceDetails => {
         const mapped = invoiceDetails.items.map((it: any) => ({
           inventory_id: it.inventory_id,
@@ -266,7 +242,7 @@ const InvestigationCenter = () => {
           quantity: it.quantity,
           unit_price: it.unit_price,
           loose_qty: it.loose_qty || 0,
-          original_qty: it.quantity // Keep to track reversion delta
+          original_qty: it.quantity
         }));
         setBillItems(mapped);
         setEditingType('sale');
@@ -276,12 +252,12 @@ const InvestigationCenter = () => {
   };
 
   // Edit Purchase Bill logic
-  const startPurchaseBillEdit = (p: any) => {
-    setEditingBillId(p.purchase_id);
-    setEditingBillNo(p.invoice_no);
+  const handleStartPurchaseBillEdit = (item: any) => {
+    setEditingBillId(item.purchase_id);
+    setEditingBillNo(item.reference);
 
     setDetailsLoading(true);
-    api.getPurchase(p.purchase_id)
+    api.getPurchase(item.purchase_id)
       .then(purchaseDetails => {
         const mapped = purchaseDetails.items.map((it: any) => ({
           medicine_id: it.medicine_id,
@@ -359,7 +335,6 @@ const InvestigationCenter = () => {
 
   const handleAddMedicineToBill = (med: any) => {
     if (editingType === 'sale') {
-      // Check if already in list
       if (billItems.some(i => i.inventory_id === med.inventory_id)) {
         showToast('Medicine already present in list', 'error');
         return;
@@ -424,12 +399,40 @@ const InvestigationCenter = () => {
           showToast(`${actionText} corrected successfully!`);
           setEditingType(null);
           setConfirmModal(null);
-          if (selectedId) handleSelectRecord(selectedId);
+          runSearch();
         } catch (err: any) {
           showToast(err.response?.data?.error || 'Failed to save correction.', 'error');
         }
       }
     });
+  };
+
+  // Helper date formatter matching user's spreadsheet style: DD/MM/YYYY hh:mm AM/PM
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    
+    const pad = (num: number) => String(num).padStart(2, '0');
+    const day = pad(d.getDate());
+    const month = pad(d.getMonth() + 1);
+    const year = d.getFullYear();
+    
+    let hours = d.getHours();
+    const minutes = pad(d.getMinutes());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0 hour should be 12
+    const formattedHours = pad(hours);
+    
+    return `${day}/${month}/${year} ${formattedHours}:${minutes} ${ampm}`;
+  };
+
+  // Formatting helpers for stock quantities
+  const formatOpeningStock = (qty: number, loose: number) => `${qty || 0}::${loose || 0}`;
+  const formatTxQty = (qty: number, loose: number) => {
+    if (loose > 0) return `${qty || 0}::${loose}`;
+    return String(qty || 0);
   };
 
   return (
@@ -470,534 +473,563 @@ const InvestigationCenter = () => {
         </div>
       )}
 
-      {/* MAIN CONTAINER SPLIT */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
-        
-        {/* LEFT PANEL: Filters and Search Results */}
-        <div className="w-full lg:w-[320px] shrink-0 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden">
-          
-          {/* SECTION 1: Search Filters */}
-          <div className="p-4 border-b border-glass-border/30 bg-bg2/40 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-text flex items-center gap-1.5">
-                <Filter size={14} className="text-primary" /> SEARCH FILTERS
-              </span>
-              <button 
-                onClick={() => setShowAdvanced(!showAdvanced)} 
-                className="text-[10px] text-primary hover:underline font-bold"
-              >
-                {showAdvanced ? 'Hide Advanced' : 'Show Advanced'}
-              </button>
-            </div>
-
-            {/* Global search */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2 text-muted" size={13} />
-              <input 
-                type="text"
-                placeholder="Global Name, Batch, or Bill..."
-                value={filters.q}
-                onChange={e => handleFilterChange('q', e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && runSearch()}
-                className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text placeholder-muted focus:outline-none"
-              />
-            </div>
-
-            {/* Advanced Panel */}
-            {showAdvanced && (
-              <div className="grid grid-cols-1 gap-2 border-t border-glass-border/20 pt-2.5 animate-in fade-in duration-200">
-                <input 
-                  type="text"
-                  placeholder="Medicine Name"
-                  value={filters.medicineName}
-                  onChange={e => handleFilterChange('medicineName', e.target.value)}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-xs text-text focus:outline-none"
-                />
-                <input 
-                  type="text"
-                  placeholder="Patient Name"
-                  value={filters.patientName}
-                  onChange={e => handleFilterChange('patientName', e.target.value)}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-xs text-text focus:outline-none"
-                />
-                <input 
-                  type="text"
-                  placeholder="Sales Bill Number"
-                  value={filters.salesBillNo}
-                  onChange={e => handleFilterChange('salesBillNo', e.target.value)}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-xs text-text focus:outline-none"
-                />
-                <input 
-                  type="text"
-                  placeholder="Purchase Bill Number"
-                  value={filters.purchaseBillNo}
-                  onChange={e => handleFilterChange('purchaseBillNo', e.target.value)}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-xs text-text focus:outline-none"
-                />
-                <input 
-                  type="text"
-                  placeholder="Batch Number"
-                  value={filters.batchNo}
-                  onChange={e => handleFilterChange('batchNo', e.target.value)}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-xs text-text focus:outline-none"
-                />
-                <input 
-                  type="text"
-                  placeholder="Distributor"
-                  value={filters.distributor}
-                  onChange={e => handleFilterChange('distributor', e.target.value)}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-xs text-text focus:outline-none"
-                />
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button 
-                onClick={runSearch}
-                disabled={loading}
-                className="flex-1 py-1.5 bg-primary text-white hover:bg-primary/95 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1"
-              >
-                {loading ? 'Searching...' : 'Search'}
-              </button>
-              <button 
-                onClick={handleClearFilters}
-                className="p-1.5 bg-bg3 hover:bg-bg2 text-muted hover:text-text border border-glass-border rounded-lg transition-colors"
-                title="Reset Filters"
-              >
-                <RotateCcw size={13} />
-              </button>
-            </div>
-          </div>
-
-          {/* Results List */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1.5 bg-bg2/10">
-            {loading ? (
-              <div className="p-8 text-center text-xs text-muted animate-pulse">Running query...</div>
-            ) : searchResults.length === 0 ? (
-              <div className="p-8 text-center text-xs text-muted">No records match filter values.</div>
-            ) : (
-              searchResults.map(item => (
-                <button
-                  key={item.inventory_id}
-                  onClick={() => handleSelectRecord(item.inventory_id)}
-                  className={`w-full text-left p-2.5 rounded-xl border transition-all duration-200 flex flex-col gap-1 cursor-pointer
-                    ${selectedId === item.inventory_id 
-                      ? 'bg-primary/10 border-primary shadow-[inset_0_0_10px_rgba(59,130,246,0.15)]' 
-                      : 'bg-glass-bg border-glass-border/30 hover:border-glass-border/70 hover:translate-x-0.5'}`}
-                >
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="font-bold text-xs text-text truncate max-w-[170px]">{item.medicine_name}</span>
-                    <span className="text-[9px] font-mono font-bold bg-bg3 text-primary px-1.5 py-0.5 rounded border border-glass-border">
-                      {item.batch_no}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] text-muted font-medium">
-                    <span>Stock: <strong className="text-text font-bold">{item.quantity}</strong> | Loose: {item.loose_quantity}</span>
-                    <span>MRP: ₹{item.mrp}</span>
-                  </div>
-                </button>
-              ))
-            )}
+      {detailsLoading && (
+        <div className="absolute inset-0 z-[80] bg-black/40 backdrop-blur-xs flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2 animate-pulse text-muted">
+            <Clock size={32} className="animate-spin text-primary" />
+            <span className="text-xs font-bold uppercase tracking-wider">Fetching details...</span>
           </div>
         </div>
+      )}
 
-        {/* RIGHT PANEL: Details, Timeline, Edit Workspace */}
-        <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden">
-          {detailsLoading ? (
-            <div className="flex-1 flex items-center justify-center p-8 text-muted">
-              <div className="flex flex-col items-center gap-2 animate-pulse">
-                <Clock size={32} className="animate-spin text-primary" />
-                <span className="text-xs font-bold uppercase tracking-wider">Fetching details timeline...</span>
-              </div>
+      {editingType ? (
+        /* CORRECTION WORKSPACE PANEL */
+        <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden animate-in fade-in duration-300">
+          <div className="p-4 border-b border-glass-border/30 bg-bg2/40 flex justify-between items-center shrink-0">
+            <div className="flex items-center gap-2">
+              <Edit size={16} className="text-primary" />
+              <h2 className="text-base font-black text-text uppercase">
+                {editingType === 'inventory' ? 'Inventory Direct Correction' : 
+                 editingType === 'sale' ? `Correcting Sales Invoice #${editingBillNo}` : 
+                 `Correcting Purchase Bill #${editingBillNo}`}
+              </h2>
             </div>
-          ) : !details ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
-              <Package size={44} className="opacity-20 mb-3" />
-              <h3 className="font-bold text-xs text-text">Select a record to investigate</h3>
-              <p className="text-[11px] max-w-sm mt-1 leading-relaxed">Choose one matching search result on the left to review its stock lineage, purchase references, sales history, and make edits.</p>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col min-h-0">
-              
-              {/* HEADER INFORMATION STRIP */}
-              <div className="p-4 border-b border-glass-border/30 bg-bg2/40 flex justify-between items-center shrink-0">
-                <div className="min-w-0">
-                  <h2 className="text-base font-black text-text truncate">{details.inventory.medicine_name}</h2>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px] text-muted font-medium">
-                    <span>Batch: <strong className="text-text font-bold">{details.inventory.batch_no}</strong></span>
-                    <span>Expiry: <strong className="text-text font-bold">{details.inventory.expiry_date}</strong></span>
-                    <span>MRP: <strong className="text-text font-bold">₹{details.inventory.mrp}</strong></span>
-                    <span>Rack: <strong className="text-text font-bold">{details.inventory.rack_location || 'Not Specified'}</strong></span>
+            <button 
+              onClick={() => setEditingType(null)} 
+              className="text-xs text-muted hover:text-text font-bold bg-bg3 border border-glass-border px-3 py-1.5 rounded-xl transition-all"
+            >
+              Discard Workspace
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+            {editingType === 'inventory' && (
+              <div className="bg-bg2 border border-glass-border p-6 rounded-2xl flex flex-col gap-6 max-w-4xl mx-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-muted uppercase">Stock Quantity</label>
+                    <input 
+                      type="number"
+                      value={editInventoryForm.quantity}
+                      onChange={e => setEditInventoryForm(prev => ({ ...prev, quantity: Math.max(0, Number(e.target.value)) }))}
+                      className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-muted uppercase">Loose Quantity</label>
+                    <input 
+                      type="number"
+                      value={editInventoryForm.loose_quantity}
+                      onChange={e => setEditInventoryForm(prev => ({ ...prev, loose_quantity: Math.max(0, Number(e.target.value)) }))}
+                      className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-muted uppercase">Batch Number</label>
+                    <input 
+                      type="text"
+                      value={editInventoryForm.batch_no}
+                      onChange={e => setEditInventoryForm(prev => ({ ...prev, batch_no: e.target.value }))}
+                      className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-muted uppercase">Expiry Date</label>
+                    <input 
+                      type="text"
+                      placeholder="MM/YY"
+                      value={editInventoryForm.expiry_date}
+                      onChange={e => setEditInventoryForm(prev => ({ ...prev, expiry_date: e.target.value }))}
+                      className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-muted uppercase">MRP (₹)</label>
+                    <input 
+                      type="number"
+                      value={editInventoryForm.mrp}
+                      onChange={e => setEditInventoryForm(prev => ({ ...prev, mrp: Math.max(0, Number(e.target.value)) }))}
+                      className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-muted uppercase">Cost Price (₹)</label>
+                    <input 
+                      type="number"
+                      value={editInventoryForm.cost_price}
+                      onChange={e => setEditInventoryForm(prev => ({ ...prev, cost_price: Math.max(0, Number(e.target.value)) }))}
+                      className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
+                    />
                   </div>
                 </div>
 
-                {!editingType && (
+                <div className="flex justify-end gap-3 border-t border-glass-border/30 pt-4">
                   <button 
-                    onClick={startInventoryEdit}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-primary/10 border border-primary/20 hover:bg-primary/20 hover:border-primary/40 text-primary hover:text-white transition-all text-xs font-bold rounded-lg"
+                    onClick={() => setEditingType(null)} 
+                    className="px-4 py-2 rounded-xl bg-bg3 text-muted hover:text-text border border-glass-border transition-colors text-xs font-bold"
                   >
-                    <Edit size={13} />
-                    Adjust Stock
+                    Discard
                   </button>
-                )}
+                  <button 
+                    onClick={saveInventoryAdjustment} 
+                    className="px-4 py-2 rounded-xl bg-primary text-white hover:bg-primary/95 transition-all text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.2)]"
+                  >
+                    Save Stock Adjustments
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {(editingType === 'sale' || editingType === 'purchase') && (
+              <div className="bg-bg2 border border-glass-border p-6 rounded-2xl flex flex-col gap-4 max-w-5xl mx-auto">
+                {/* Search to add medicine item */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 text-muted" size={13} />
+                  <input 
+                    type="text"
+                    placeholder="Search medicine to add to this transaction..."
+                    value={searchMedicineQuery}
+                    onChange={e => handleSearchMedicineForAdd(e.target.value)}
+                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-2 text-xs text-text placeholder-muted focus:outline-none"
+                  />
+                  {searchMedicineResults.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-[100] mt-1 bg-bg2 border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto p-1.5 flex flex-col gap-1">
+                      {searchMedicineResults.map((med, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleAddMedicineToBill(med)}
+                          className="w-full text-left p-2 hover:bg-primary/10 rounded-lg text-xs text-text flex items-center justify-between border border-transparent hover:border-primary/20"
+                        >
+                          <span>{med.medicine_name} (Batch: {med.batch_no || 'N/A'})</span>
+                          <span className="font-mono text-muted text-[10px]">Stock: {med.quantity}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Invoice lines */}
+                <div className="border border-glass-border/30 rounded-xl overflow-hidden divide-y divide-glass-border/30 max-h-80 overflow-y-auto">
+                  {billItems.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-muted">No items in the list. Please search and add a medicine.</div>
+                  ) : (
+                    billItems.map((item, index) => (
+                      <div key={index} className="p-3.5 bg-bg3/10 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-text truncate">{item.medicine_name}</p>
+                          <p className="text-[10px] text-muted">Batch: {item.batch_no}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-4 shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-muted uppercase">Qty</span>
+                            <input 
+                              type="number"
+                              value={item.quantity}
+                              onChange={e => handleItemQtyChange(index, Math.max(0, Number(e.target.value)))}
+                              className="w-16 bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-xs text-text focus:outline-none"
+                            />
+                          </div>
+                          {editingType === 'sale' && (
+                            <>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted uppercase">Loose</span>
+                                <input 
+                                  type="number"
+                                  value={item.loose_qty}
+                                  onChange={e => handleItemLooseQtyChange(index, Math.max(0, Number(e.target.value)))}
+                                  className="w-14 bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-xs text-text focus:outline-none"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-muted uppercase">Price</span>
+                                <span className="font-mono font-bold text-text">₹{item.unit_price}</span>
+                              </div>
+                            </>
+                          )}
+                          {editingType === 'purchase' && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-muted uppercase">Cost</span>
+                              <span className="font-mono font-bold text-text">₹{item.cost_price}</span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => handleRemoveBillItem(index)}
+                            className="p-1.5 rounded hover:bg-red/10 text-red-400 transition-colors"
+                            title="Remove item"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Recalculated values strip */}
+                <div className="p-4 bg-bg3/30 border border-glass-border/20 rounded-xl flex items-center justify-between text-xs font-bold">
+                  {editingType === 'sale' && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-muted">Discount Override:</span>
+                      <input 
+                        type="number"
+                        value={billDiscount}
+                        onChange={e => setBillDiscount(Math.max(0, Number(e.target.value)))}
+                        className="w-16 bg-bg3 border border-glass-border rounded-lg px-2 py-0.5 font-mono text-text focus:outline-none"
+                      />
+                    </div>
+                  )}
+                  <div className="ml-auto text-right">
+                    <span className="text-muted mr-1.5">Recalculated Total:</span>
+                    <span className="text-primary text-sm font-black font-mono">₹{calculateRecalculatedTotal()}</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 border-t border-glass-border/30 pt-4 mt-2">
+                  <button 
+                    onClick={() => setEditingType(null)} 
+                    className="px-4 py-2 rounded-xl bg-bg3 text-muted hover:text-text border border-glass-border transition-colors text-xs font-bold"
+                  >
+                    Discard
+                  </button>
+                  <button 
+                    onClick={saveBillCorrections} 
+                    className="px-4 py-2 rounded-xl bg-primary text-white hover:bg-primary/95 transition-all text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.2)]"
+                  >
+                    Save Bill Corrections
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* UNIFIED LEDGER SPREADSHEET TIMELINE */
+        <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden animate-in fade-in duration-300">
+          
+          {/* ALWAYS VISIBLE FILTERS HEADER */}
+          <div className="p-4 border-b border-glass-border/30 bg-bg2/40 flex flex-col gap-3 shrink-0">
+            <div className="flex items-center justify-between">
+              <span className="font-extrabold text-xs text-text flex items-center gap-2">
+                <ArrowRightLeft size={15} className="text-primary" />
+                STOCK ACTIVITY LEDGER FILTERS
+              </span>
+            </div>
+
+            {/* Filter Fields Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {/* Global search */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Global Search</label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 text-muted" size={13} />
+                  <input 
+                    type="text"
+                    placeholder="Global name, batch, or bill..."
+                    value={filters.q}
+                    onChange={e => handleFilterChange('q', e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && runSearch()}
+                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text placeholder-muted focus:outline-none focus:border-primary/50"
+                  />
+                </div>
               </div>
 
-              {/* CORE DETAILS SCROLLABLE WORKSPACE */}
-              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-4">
-                
-                {/* TRANSACTION LINEAGE WORKSPACE */}
-                {editingType ? (
-                  
-                  /* EDIT PANEL SECTION */
-                  <div className="bg-bg2 border border-glass-border p-4 rounded-2xl flex flex-col gap-4 animate-in slide-in-from-top-4 duration-300">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-xs text-text flex items-center gap-1.5 uppercase">
-                        <Edit size={14} className="text-primary" /> 
-                        {editingType === 'inventory' ? 'Inventory Direct Correction' : 
-                         editingType === 'sale' ? `Correcting Sales Invoice #${editingBillNo}` : 
-                         `Correcting Purchase Bill #${editingBillNo}`}
-                      </span>
-                      <button 
-                        onClick={() => setEditingType(null)} 
-                        className="text-[10px] text-muted hover:text-text font-bold"
-                      >
-                        Discard Adjustments
-                      </button>
-                    </div>
+              {/* Date From */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Date From</label>
+                <div className="relative">
+                  <Calendar className="absolute left-2.5 top-2.5 text-muted" size={13} />
+                  <input 
+                    type="date"
+                    value={filters.dateFrom}
+                    onChange={e => handleFilterChange('dateFrom', e.target.value)}
+                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+              </div>
 
-                    {/* Inventory Adjust Form */}
-                    {editingType === 'inventory' && (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-muted uppercase">Stock Quantity</label>
-                          <input 
-                            type="number"
-                            value={editInventoryForm.quantity}
-                            onChange={e => setEditInventoryForm(prev => ({ ...prev, quantity: Math.max(0, Number(e.target.value)) }))}
-                            className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-muted uppercase">Loose Quantity</label>
-                          <input 
-                            type="number"
-                            value={editInventoryForm.loose_quantity}
-                            onChange={e => setEditInventoryForm(prev => ({ ...prev, loose_quantity: Math.max(0, Number(e.target.value)) }))}
-                            className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-muted uppercase">Batch Number</label>
-                          <input 
-                            type="text"
-                            value={editInventoryForm.batch_no}
-                            onChange={e => setEditInventoryForm(prev => ({ ...prev, batch_no: e.target.value }))}
-                            className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-muted uppercase">Expiry Date</label>
-                          <input 
-                            type="text"
-                            placeholder="MM/YY"
-                            value={editInventoryForm.expiry_date}
-                            onChange={e => setEditInventoryForm(prev => ({ ...prev, expiry_date: e.target.value }))}
-                            className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-muted uppercase">MRP (₹)</label>
-                          <input 
-                            type="number"
-                            value={editInventoryForm.mrp}
-                            onChange={e => setEditInventoryForm(prev => ({ ...prev, mrp: Math.max(0, Number(e.target.value)) }))}
-                            className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] font-bold text-muted uppercase">Cost Price (₹)</label>
-                          <input 
-                            type="number"
-                            value={editInventoryForm.cost_price}
-                            onChange={e => setEditInventoryForm(prev => ({ ...prev, cost_price: Math.max(0, Number(e.target.value)) }))}
-                            className="bg-bg3 border border-glass-border rounded-lg px-3 py-1.5 text-xs text-text focus:outline-none"
-                          />
-                        </div>
-                      </div>
-                    )}
+              {/* Date To */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Date To</label>
+                <div className="relative">
+                  <Calendar className="absolute left-2.5 top-2.5 text-muted" size={13} />
+                  <input 
+                    type="date"
+                    value={filters.dateTo}
+                    onChange={e => handleFilterChange('dateTo', e.target.value)}
+                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+              </div>
 
-                    {/* Transaction Items Form (Sales/Purchases) */}
-                    {(editingType === 'sale' || editingType === 'purchase') && (
-                      <div className="flex flex-col gap-3">
-                        
-                        {/* Search to add medicine item */}
-                        <div className="relative">
-                          <Search className="absolute left-2.5 top-2.5 text-muted" size={13} />
-                          <input 
-                            type="text"
-                            placeholder="Search medicine to add to this transaction..."
-                            value={searchMedicineQuery}
-                            onChange={e => handleSearchMedicineForAdd(e.target.value)}
-                            className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-2 text-xs text-text placeholder-muted focus:outline-none"
-                          />
-                          {searchMedicineResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 z-[100] mt-1 bg-bg2 border border-glass-border rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto p-1.5 flex flex-col gap-1">
-                              {searchMedicineResults.map((med, idx) => (
-                                <button
-                                  key={idx}
-                                  type="button"
-                                  onClick={() => handleAddMedicineToBill(med)}
-                                  className="w-full text-left p-2 hover:bg-primary/10 rounded-lg text-xs text-text flex items-center justify-between border border-transparent hover:border-primary/20"
-                                >
-                                  <span>{med.medicine_name} (Batch: {med.batch_no || 'N/A'})</span>
-                                  <span className="font-mono text-muted text-[10px]">Stock: {med.quantity}</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+              {/* Medicine Name */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Medicine Name</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. Crocin"
+                  value={filters.medicineName}
+                  onChange={e => handleFilterChange('medicineName', e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runSearch()}
+                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                />
+              </div>
 
-                        {/* Invoice lines */}
-                        <div className="border border-glass-border/30 rounded-xl overflow-hidden divide-y divide-glass-border/30 max-h-60 overflow-y-auto">
-                          {billItems.length === 0 ? (
-                            <div className="p-6 text-center text-xs text-muted">No items in the list. Please add a medicine.</div>
-                          ) : (
-                            billItems.map((item, index) => (
-                              <div key={index} className="p-3 bg-bg3/20 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-semibold text-text truncate">{item.medicine_name}</p>
-                                  <p className="text-[10px] text-muted">Batch: {item.batch_no}</p>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-3 shrink-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[10px] text-muted uppercase">Qty</span>
-                                    <input 
-                                      type="number"
-                                      value={item.quantity}
-                                      onChange={e => handleItemQtyChange(index, Math.max(0, Number(e.target.value)))}
-                                      className="w-16 bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-xs text-text focus:outline-none"
-                                    />
-                                  </div>
-                                  {editingType === 'sale' && (
-                                    <>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[10px] text-muted uppercase">Loose</span>
-                                        <input 
-                                          type="number"
-                                          value={item.loose_qty}
-                                          onChange={e => handleItemLooseQtyChange(index, Math.max(0, Number(e.target.value)))}
-                                          className="w-14 bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-xs text-text focus:outline-none"
-                                        />
-                                      </div>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[10px] text-muted uppercase">Price</span>
-                                        <span className="font-mono font-bold text-text">₹{item.unit_price}</span>
-                                      </div>
-                                    </>
-                                  )}
-                                  {editingType === 'purchase' && (
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-[10px] text-muted uppercase">Cost</span>
-                                      <span className="font-mono font-bold text-text">₹{item.cost_price}</span>
-                                    </div>
-                                  )}
-                                  <button
-                                    onClick={() => handleRemoveBillItem(index)}
-                                    className="p-1.5 rounded hover:bg-red/10 text-red-400 transition-colors"
-                                    title="Remove item"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
+              {/* Batch Number */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Batch Number</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. BT998"
+                  value={filters.batchNo}
+                  onChange={e => handleFilterChange('batchNo', e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runSearch()}
+                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                />
+              </div>
 
-                        {/* Recalculated values strip */}
-                        <div className="p-3 bg-bg3/30 border border-glass-border/20 rounded-xl flex items-center justify-between text-xs font-bold">
-                          {editingType === 'sale' && (
-                            <div className="flex items-center gap-3">
-                              <span className="text-muted">Discount Override:</span>
-                              <input 
-                                type="number"
-                                value={billDiscount}
-                                onChange={e => setBillDiscount(Math.max(0, Number(e.target.value)))}
-                                className="w-16 bg-bg3 border border-glass-border rounded-lg px-2 py-0.5 font-mono text-text focus:outline-none"
-                              />
-                            </div>
-                          )}
-                          <div className="ml-auto text-right">
-                            <span className="text-muted mr-1.5">Recalculated Total:</span>
-                            <span className="text-primary text-sm font-black font-mono">₹{calculateRecalculatedTotal()}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+              {/* Sales Bill No */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Sales Bill No</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. SL-501F..."
+                  value={filters.salesBillNo}
+                  onChange={e => handleFilterChange('salesBillNo', e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runSearch()}
+                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                />
+              </div>
 
-                    {/* Actions */}
-                    <div className="flex justify-end gap-2.5">
-                      <button 
-                        onClick={() => setEditingType(null)} 
-                        className="px-4 py-2 rounded-xl bg-bg3 text-muted border border-glass-border transition-colors text-xs font-bold"
-                      >
-                        Discard
-                      </button>
-                      <button 
-                        onClick={editingType === 'inventory' ? saveInventoryAdjustment : saveBillCorrections} 
-                        className="px-4 py-2 rounded-xl bg-primary text-white hover:bg-primary/95 transition-all text-xs font-bold shadow-[0_0_15px_rgba(59,130,246,0.2)]"
-                      >
-                        Save Adjustments
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  
-                  /* BILL INFORMATION SECTIONS */
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    
-                    {/* SECTION 3: Purchase Bill Info */}
-                    <div className="bg-bg2/40 border border-glass-border/30 p-4 rounded-2xl flex flex-col gap-3">
-                      <h3 className="font-bold text-xs text-text flex items-center gap-1.5 border-b border-glass-border/20 pb-2">
-                        <TrendingUp size={14} className="text-green" /> SECTION 3: PURCHASE BILL RECORD
-                      </h3>
-                      {details.purchases.length === 0 ? (
-                        <p className="text-[11px] text-muted text-center py-6">No matching purchase records for this batch.</p>
-                      ) : (
-                        details.purchases.map(p => (
-                          <div key={p.id} className="p-3 bg-bg3/20 border border-glass-border/20 rounded-xl flex items-center justify-between gap-3 hover:bg-bg3/40 transition-colors">
-                            <div className="min-w-0">
-                              <p className="font-bold text-xs text-text truncate">Bill: {p.invoice_no}</p>
-                              <p className="text-[10px] text-muted truncate">{p.distributor_name}</p>
-                              <p className="text-[9px] text-muted/60">{new Date(p.date).toLocaleDateString()}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="text-right shrink-0">
-                                <p className="font-mono text-xs text-text font-bold">Qty: {p.quantity}</p>
-                                <p className="text-[9px] text-muted font-mono">Cost: ₹{p.cost_price}</p>
-                              </div>
-                              <button 
-                                onClick={() => startPurchaseBillEdit(p)}
-                                className="p-1.5 rounded hover:bg-primary/10 text-primary transition-colors"
-                                title="Edit Purchase Bill"
-                              >
-                                <Edit size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
+              {/* Purchase Bill No */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Purchase Bill No</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. PR-1402..."
+                  value={filters.purchaseBillNo}
+                  onChange={e => handleFilterChange('purchaseBillNo', e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runSearch()}
+                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                />
+              </div>
 
-                    {/* SECTION 4: Sales Bill Info */}
-                    <div className="bg-bg2/40 border border-glass-border/30 p-4 rounded-2xl flex flex-col gap-3">
-                      <h3 className="font-bold text-xs text-text flex items-center gap-1.5 border-b border-glass-border/20 pb-2">
-                        <FileText size={14} className="text-sky" /> SECTION 4: SALES BILL RECORDS
-                      </h3>
-                      {details.sales.length === 0 ? (
-                        <p className="text-[11px] text-muted text-center py-6">No sales recorded from this batch.</p>
-                      ) : (
-                        details.sales.map(s => (
-                          <div key={s.id} className="p-3 bg-bg3/20 border border-glass-border/20 rounded-xl flex items-center justify-between gap-3 hover:bg-bg3/40 transition-colors">
-                            <div className="min-w-0">
-                              <p className="font-bold text-xs text-text truncate">Bill: {s.invoice_no}</p>
-                              <p className="text-[10px] text-muted truncate">Patient: {s.customer_name || 'Walk-in'}</p>
-                              <p className="text-[9px] text-muted/60">{new Date(s.date).toLocaleDateString()}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="text-right shrink-0">
-                                <p className="font-mono text-xs text-text font-bold">Qty: {s.quantity}</p>
-                                <p className="text-[9px] text-muted font-mono">Price: ₹{s.unit_price}</p>
-                              </div>
-                              <button 
-                                onClick={() => startSaleBillEdit(s)}
-                                className="p-1.5 rounded hover:bg-primary/10 text-primary transition-colors"
-                                title="Edit Sales Bill"
-                              >
-                                <Edit size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
+              {/* Patient Name */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Patient Name</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. Ramesh Kumar"
+                  value={filters.patientName}
+                  onChange={e => handleFilterChange('patientName', e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runSearch()}
+                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                />
+              </div>
 
-                {/* DOUBLE SPLIT: Stock movement timeline and Audit summary */}
-                {!editingType && (
-                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                    
-                    {/* SECTION 5: Stock Movement History (3 cols) */}
-                    <div className="lg:col-span-3 bg-bg2/40 border border-glass-border/30 p-4 rounded-2xl flex flex-col gap-3">
-                      <h3 className="font-bold text-xs text-text flex items-center gap-1.5 border-b border-glass-border/20 pb-2">
-                        <Clock size={14} className="text-primary" /> STOCK MOVEMENT TIMELINE
-                      </h3>
-                      <div className="flex-1 max-h-80 overflow-y-auto custom-scrollbar flex flex-col gap-3.5 pl-3 border-l-2 border-primary/20">
-                        {details.timeline.length === 0 ? (
-                          <p className="text-[11px] text-muted py-4">No stock ledger movement logs found.</p>
-                        ) : (
-                          details.timeline.map((item, idx) => (
-                            <div key={idx} className="relative group">
-                              {/* Bullets */}
-                              <div className={`absolute -left-[17px] top-1 w-2.5 h-2.5 rounded-full border border-bg
-                                ${item.type === 'Purchase' ? 'bg-green' : 
-                                  item.type === 'Sale' ? 'bg-sky' : 'bg-amber-500'}`} 
-                              />
-                              <div>
-                                <p className="text-xs font-semibold text-text flex items-center gap-2">
-                                  <span>{item.detail}</span>
-                                  <span className={`text-[9px] px-1 rounded font-bold uppercase
-                                    ${item.type === 'Purchase' ? 'bg-green/10 text-green-400' : 
-                                      item.type === 'Sale' ? 'bg-sky/10 text-sky-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                                    {item.type}
-                                  </span>
-                                </p>
-                                <div className="flex items-center gap-3 text-[10px] text-muted font-medium mt-0.5">
-                                  <span className="font-mono">{new Date(item.date).toLocaleString()}</span>
-                                  <span>Ref: {item.reference}</span>
-                                  <span className={`font-mono font-bold ${item.qtyChange > 0 ? 'text-green' : 'text-red-400'}`}>
-                                    {item.qtyChange > 0 ? `+${item.qtyChange}` : item.qtyChange} units
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+              {/* Distributor */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Distributor</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. Apex Pharma"
+                  value={filters.distributor}
+                  onChange={e => handleFilterChange('distributor', e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && runSearch()}
+                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                />
+              </div>
 
-                    {/* SECTION 6: Audit Logs (2 cols) */}
-                    <div className="lg:col-span-2 bg-bg2/40 border border-glass-border/30 p-4 rounded-2xl flex flex-col gap-3">
-                      <h3 className="font-bold text-xs text-text flex items-center gap-1.5 border-b border-glass-border/20 pb-2">
-                        <Clock size={14} className="text-purple-400" /> AUDIT ADJUSTMENT LOGS
-                      </h3>
-                      <div className="flex-1 max-h-80 overflow-y-auto custom-scrollbar flex flex-col gap-2.5">
-                        {auditLogs.length === 0 ? (
-                          <p className="text-[11px] text-muted py-6 text-center">No corrections logged for this medicine.</p>
-                        ) : (
-                          auditLogs.map((log, idx) => (
-                            <div key={idx} className="p-2 bg-bg3/25 border border-glass-border/10 rounded-xl flex flex-col gap-1">
-                              <div className="flex justify-between items-center text-[9px] font-bold text-purple-400 uppercase tracking-wider">
-                                <span>{log.action_type}</span>
-                                <span className="font-mono text-muted/60 font-medium">{new Date(log.created_at).toLocaleDateString()}</span>
-                              </div>
-                              <p className="text-[10px] text-text leading-relaxed font-medium">{log.description}</p>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-
+              {/* Activity Type */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-muted uppercase">Activity Type</label>
+                <select
+                  value={filters.type}
+                  onChange={e => handleFilterChange('type', e.target.value)}
+                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                >
+                  <option value="All">All Activities</option>
+                  <option value="Sale">POS Sales</option>
+                  <option value="Purchase">Purchases</option>
+                  <option value="Return">Returns</option>
+                  <option value="Adjustment">Adjustments</option>
+                </select>
               </div>
             </div>
-          )}
-        </div>
 
-      </div>
+            {/* Action Buttons */}
+            <div className="flex gap-2 justify-end mt-1">
+              <button 
+                onClick={runSearch}
+                disabled={loading}
+                className="px-4 py-1.5 bg-primary text-white hover:bg-primary/95 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
+              >
+                {loading ? 'Searching...' : 'Apply Filters'}
+              </button>
+              <button 
+                onClick={handleClearFilters}
+                className="px-3 py-1.5 bg-bg3 hover:bg-bg2 text-muted hover:text-text border border-glass-border rounded-lg transition-colors text-xs font-bold flex items-center gap-1"
+                title="Reset Filters"
+              >
+                <RotateCcw size={13} /> Clear
+              </button>
+            </div>
+          </div>
+
+          {/* LEDGER SPREADSHEET VIEW CONTAINER */}
+          <div className="flex-1 overflow-auto p-4 custom-scrollbar bg-bg2/15">
+            {loading ? (
+              <div className="h-full flex items-center justify-center text-muted animate-pulse">
+                <div className="flex flex-col items-center gap-2">
+                  <Clock size={32} className="animate-spin text-primary" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Loading Stock Ledger...</span>
+                </div>
+              </div>
+            ) : searchResults.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center text-muted p-12">
+                <Package size={44} className="opacity-20 mb-3" />
+                <h3 className="font-bold text-xs text-text">No ledger entries matches filters</h3>
+                <p className="text-[11px] max-w-sm mt-1 leading-relaxed">Try adjusting the calendar dates or global search query keywords.</p>
+              </div>
+            ) : (
+              <div className="border border-glass-border/30 rounded-xl overflow-x-auto bg-glass-bg">
+                <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-[1300px]">
+                  <thead>
+                    <tr className="bg-bg2/80 border-b border-glass-border/40 text-muted font-bold">
+                      <th className="p-2.5 border-r border-glass-border/20">Medicine</th>
+                      <th className="p-2.5 border-r border-glass-border/20">Batch</th>
+                      <th className="p-2.5 border-r border-glass-border/20">Date</th>
+                      <th className="p-2.5 border-r border-glass-border/20">Invoice</th>
+                      <th className="p-2.5 border-r border-glass-border/20">Party</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Opening Stock</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Purchase</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Sales</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Purchase Return</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Sales Return</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Adj</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Stock Audit</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">B2B Sales</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Closing Stock</th>
+                      <th className="p-2.5 border-r border-glass-border/20 text-center">Medicine Stock</th>
+                      <th className="p-2.5 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-glass-border/20">
+                    {searchResults.map((item, index) => (
+                      <tr 
+                        key={index} 
+                        className="odd:bg-bg3/20 even:bg-transparent hover:bg-primary/5 transition-colors"
+                      >
+                        {/* Medicine */}
+                        <td className="p-2 border-r border-glass-border/20 text-text truncate max-w-[200px]" title={item.medicine_name}>
+                          {item.medicine_name || 'System Activity'}
+                        </td>
+                        
+                        {/* Batch */}
+                        <td className="p-2 border-r border-glass-border/20 font-mono font-bold text-muted">
+                          {item.batch_no || 'N/A'}
+                        </td>
+
+                        {/* Date */}
+                        <td className="p-2 border-r border-glass-border/20 font-mono whitespace-nowrap text-muted">
+                          {formatDate(item.date)}
+                        </td>
+
+                        {/* Invoice Link */}
+                        <td className="p-2 border-r border-glass-border/20">
+                          {item.invoice_id || item.purchase_id ? (
+                            <button 
+                              onClick={() => {
+                                if (item.type === 'Sale') handleStartSaleBillEdit(item);
+                                if (item.type === 'Purchase') handleStartPurchaseBillEdit(item);
+                              }}
+                              className="text-primary hover:underline font-bold text-left cursor-pointer underline decoration-dotted"
+                            >
+                              {item.reference}
+                            </button>
+                          ) : (
+                            <span className="text-muted">{item.reference}</span>
+                          )}
+                        </td>
+
+                        {/* Party */}
+                        <td className="p-2 border-r border-glass-border/20 truncate max-w-[120px]">
+                          {item.party}
+                        </td>
+
+                        {/* Opening Stock */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-muted">
+                          {formatOpeningStock(item.opening_qty, item.opening_loose)}
+                        </td>
+
+                        {/* Purchase */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-green-400">
+                          {item.type === 'Purchase' ? formatTxQty(item.purchase_qty, item.free_qty || 0) : '0'}
+                        </td>
+
+                        {/* Sales */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-sky-400">
+                          {item.type === 'Sale' ? formatTxQty(item.sale_qty, item.sale_loose) : '0'}
+                        </td>
+
+                        {/* Purchase Return */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-orange-400">
+                          {(item.type === 'Return' && item.return_type === 'purchase') ? formatTxQty(item.purchase_return_qty, 0) : '0'}
+                        </td>
+
+                        {/* Sales Return */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-purple-400">
+                          {(item.type === 'Return' && item.return_type === 'sale') ? formatTxQty(item.sales_return_qty, 0) : '0'}
+                        </td>
+
+                        {/* Adj */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-amber-500">
+                          {item.type === 'Adjustment' ? formatTxQty(item.adj_qty, item.adj_loose) : '0'}
+                        </td>
+
+                        {/* Stock Audit */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-muted/50">
+                          0
+                        </td>
+
+                        {/* B2B Sales */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-muted/50">
+                          0
+                        </td>
+
+                        {/* Closing Stock */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono font-bold text-text">
+                          {formatTxQty(item.closing_qty, item.closing_loose)}
+                        </td>
+
+                        {/* Medicine Stock */}
+                        <td className="p-2 border-r border-glass-border/20 text-center font-mono font-bold text-text/80">
+                          {formatTxQty(item.medicine_stock_qty, item.medicine_stock_loose)}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="p-1.5 text-center">
+                          {item.inventory_id ? (
+                            <button
+                              onClick={() => handleAdjustStock(item.inventory_id)}
+                              className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500 hover:text-white text-amber-500 transition-all text-[10px] font-extrabold cursor-pointer"
+                              title="Direct Stock Master Adjustment"
+                            >
+                              Adjust
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-muted/40 font-medium">N/A</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

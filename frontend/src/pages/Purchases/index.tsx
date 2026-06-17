@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Edit, Camera, CheckCircle, Mail, Package, TrendingDown, X, Plus, BookOpen, AlertTriangle, ShieldAlert, Factory, RefreshCw } from 'lucide-react';
 import { api, apiClient } from '../../services/api';
@@ -413,10 +413,41 @@ const Purchases: React.FC = () => {
     })));
   };
 
+  const savePurchaseRef = useRef(savePurchase);
+  const addNewItemRef = useRef(addNewItem);
+  useEffect(() => {
+    savePurchaseRef.current = savePurchase;
+    addNewItemRef.current = addNewItem;
+  });
+
   // Keyboard shortcut listeners (e.g. 'Alt+E' or 'F8' for quick edit medicine)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement as HTMLElement | null;
+
+      // Ctrl + S: Save Purchase Bill
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        savePurchaseRef.current();
+        return;
+      }
+
+      // Alt + A: Add New Item
+      if (e.altKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        addNewItemRef.current();
+        return;
+      }
+
+      // Escape: Close Overlays / Modals
+      if (e.key === 'Escape') {
+        setShowBarcodeModal(false);
+        setShowUploadModal(false);
+        setShowDistributorModal(false);
+        setShowPriceHistoryModal(false);
+        setShowMedicineModal(false);
+        setPanelOpen(false);
+      }
 
       // F8 or Alt+E: Universal Medicine Edit for focused row
       if (e.key === 'F8' || (e.altKey && e.key.toLowerCase() === 'e')) {

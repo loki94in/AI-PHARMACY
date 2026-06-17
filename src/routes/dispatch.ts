@@ -3,6 +3,7 @@ import express from 'express';
 import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { notificationService } from '../services/notificationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,7 +44,14 @@ router.post('/orders', async (req, res) => {
     const newOrder = await db.get(`
       SELECT d.*, db.name as delivery_boy_name FROM dispatch_orders d
       LEFT JOIN delivery_boys db ON d.delivery_boy_id = db.id WHERE d.id = ?`, result.lastID);
-        res.status(201).json(newOrder);
+
+    if (invoice_no) {
+      notificationService.notifyDistributorAboutDeliveryBoy(invoice_no).catch(err => {
+        console.error('Failed to notify distributor in background (create order):', err);
+      });
+    }
+
+    res.status(201).json(newOrder);
   } catch (err) {
     console.error('Create dispatch order error:', err);
     res.status(500).json({ error: 'Failed to create dispatch order' });
@@ -72,7 +80,14 @@ router.put('/orders/:id', async (req, res) => {
     const updated = await db.get(`
       SELECT d.*, db.name as delivery_boy_name FROM dispatch_orders d
       LEFT JOIN delivery_boys db ON d.delivery_boy_id = db.id WHERE d.id = ?`, id);
-        res.json(updated);
+
+    if (existing && existing.invoice_no) {
+      notificationService.notifyDistributorAboutDeliveryBoy(existing.invoice_no).catch(err => {
+        console.error('Failed to notify distributor in background (update order):', err);
+      });
+    }
+
+    res.json(updated);
   } catch (err) {
     console.error('Update dispatch order error:', err);
     res.status(500).json({ error: 'Failed to update dispatch order' });

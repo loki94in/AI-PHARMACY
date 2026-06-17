@@ -4,8 +4,8 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('../src/services/whatsappBusinessService.js', () => ({
   __esModule: true,
   whatsappBusinessService: {
-    sendTextMessage: jest.fn().mockResolvedValue({ success: true, messageId: 'msg-123' }),
-    sendDocument: jest.fn().mockResolvedValue({ success: true, messageId: 'doc-123' })
+    sendTextMessage: jest.fn(() => Promise.resolve({ success: true, messageId: 'msg-123' })),
+    sendDocument: jest.fn(() => Promise.resolve({ success: true, messageId: 'doc-123' }))
   }
 }));
 

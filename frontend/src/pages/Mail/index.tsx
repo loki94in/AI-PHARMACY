@@ -113,6 +113,12 @@ const formatDateTime = (dateStr?: string) => {
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 };
 
+// Module-level cache to persist data across page navigation (unmount/remount)
+let cachedEmails: EmailRecord[] = [];
+let cachedLastSyncedAt: Date | null = null;
+let cachedSelectedEmail: EmailRecord | null = null;
+let cachedAttachments: AttachmentFile[] = [];
+
 const Mail = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -122,12 +128,12 @@ const Mail = () => {
     orderId?: number;
   } | null;
 
-  const [emails, setEmails] = useState<EmailRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [emails, setEmails] = useState<EmailRecord[]>(() => cachedEmails);
+  const [loading, setLoading] = useState(() => cachedEmails.length === 0);
   const [syncing, setSyncing] = useState(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
-  const [selectedEmail, setSelectedEmail] = useState<EmailRecord | null>(null);
-  const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(() => cachedLastSyncedAt);
+  const [selectedEmail, setSelectedEmail] = useState<EmailRecord | null>(() => cachedSelectedEmail);
+  const [attachments, setAttachments] = useState<AttachmentFile[]>(() => cachedAttachments);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<any>(null);
@@ -139,6 +145,23 @@ const Mail = () => {
   });
 
   const prefillSelectionDone = useRef(false);
+
+  // Synchronize state changes to module-level cache
+  useEffect(() => {
+    cachedEmails = emails;
+  }, [emails]);
+
+  useEffect(() => {
+    cachedSelectedEmail = selectedEmail;
+  }, [selectedEmail]);
+
+  useEffect(() => {
+    cachedAttachments = attachments;
+  }, [attachments]);
+
+  useEffect(() => {
+    cachedLastSyncedAt = lastSyncedAt;
+  }, [lastSyncedAt]);
 
   // Listen for online/offline events
   useEffect(() => {
@@ -154,11 +177,16 @@ const Mail = () => {
 
   // Load inbox from local DB (instant, works offline)
   const loadLocalInbox = useCallback(() => {
-    setLoading(true);
+    if (cachedEmails.length === 0) {
+      setLoading(true);
+    }
     api
       .getEmailInbox(50)
       .then((data: any) => {
-        if (Array.isArray(data)) setEmails(data);
+        if (Array.isArray(data)) {
+          setEmails(data);
+          cachedEmails = data;
+        }
       })
       .catch((err: any) => console.error('Error loading inbox:', err))
       .finally(() => setLoading(false));
@@ -237,6 +265,7 @@ const Mail = () => {
   const handleSelectEmail = (email: EmailRecord) => {
     setSelectedEmail(email);
     setAttachments([]);
+    cachedAttachments = []; // Clear attachments cache when selecting a new email
     setProcessResult(null);
     if (!email.id) return;
 
@@ -283,19 +312,14 @@ const Mail = () => {
 
   const toggleAttachment = (filename: string) => {
     setAttachments((prev) =>
-      prev.map((a) => (a.filename === filename ? { ...a, isSelected: !a.isSelected } : a))
+      prev.map((a) => ({
+        ...a,
+        isSelected: a.filename === filename ? !a.isSelected : false
+      }))
     );
   };
 
-  const selectAll = () => setAttachments((prev) => prev.map((a) => ({ ...a, isSelected: true })));
   const clearAll = () => setAttachments((prev) => prev.map((a) => ({ ...a, isSelected: false })));
-  const selectPdfOnly = () =>
-    setAttachments((prev) => prev.map((a) => ({ ...a, isSelected: getFileExt(a.filename) === 'pdf' })));
-  const selectCsvOnly = () =>
-    setAttachments((prev) => {
-      const ext = (a: AttachmentFile) => getFileExt(a.filename);
-      return prev.map((a) => ({ ...a, isSelected: ext(a) === 'csv' || ext(a) === 'xlsx' || ext(a) === 'xls' }));
-    });
 
   const selectedCount = attachments.filter((a) => a.isSelected).length;
 
@@ -661,15 +685,9 @@ const Mail = () => {
                     <Paperclip size={12} />
                     Attachments ({attachments.length})
                   </h4>
-                  {attachments.length > 0 && (
+                  {attachments.length > 0 && attachments.some(a => a.isSelected) && (
                     <div className="flex gap-2">
-                      <button onClick={selectAll} className="text-[10px] font-bold text-primary hover:text-blue-400">All</button>
-                      <span className="text-[10px] text-muted">|</span>
-                      <button onClick={selectPdfOnly} className="text-[10px] font-bold text-red hover:text-red/80">PDF</button>
-                      <span className="text-[10px] text-muted">|</span>
-                      <button onClick={selectCsvOnly} className="text-[10px] font-bold text-green hover:text-green/80">CSV/Excel</button>
-                      <span className="text-[10px] text-muted">|</span>
-                      <button onClick={clearAll} className="text-[10px] font-bold text-muted hover:text-text">Clear</button>
+                      <button onClick={clearAll} className="text-[10px] font-bold text-muted hover:text-text">Clear Selection</button>
                     </div>
                   )}
                 </div>
@@ -702,7 +720,7 @@ const Mail = () => {
                         >
                           <div className="flex items-center gap-3">
                             <input
-                              type="checkbox"
+                              type="radio"
                               checked={att.isSelected}
                               onChange={() => toggleAttachment(att.filename)}
                               className="accent-primary w-4 h-4"

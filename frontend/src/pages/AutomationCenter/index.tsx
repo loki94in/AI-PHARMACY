@@ -144,9 +144,39 @@ const AutomationCenter = () => {
     setShowMedicineDropdown(false);
   };
 
+  const handleSaveReminderRef = useRef<any>(null);
+  useEffect(() => {
+    handleSaveReminderRef.current = handleSaveReminder;
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl + S: Save Refill Reminder Modal Form
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveReminderRef.current();
+        return;
+      }
+
+      // Escape: Close Refill Reminder Modal & Manual Send Dialog
+      if (e.key === 'Escape') {
+        setShowReminderModal(false);
+        setEditingRefillId(null);
+        setPatientName('');
+        setPatientPhone('');
+        setRefillInterval(30);
+        setMedicineQuery('');
+        setSelectedMedicineId(null);
+        setManualSendNotification(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Create or Update Refill reminder
-  const handleSaveReminder = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveReminder = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!patientName.trim()) return showToast('Patient name is required.', 'error');
     if (!patientPhone.trim()) return showToast('Phone number is required.', 'error');
     if (patientPhone.replace(/\D/g, '').length < 10) return showToast('Please enter a valid 10-digit phone number.', 'error');
@@ -519,13 +549,19 @@ const AutomationCenter = () => {
                         </button>
                       </td>
                       <td className="p-4 text-center select-none">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                          refill.status === 'notified'
-                            ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
-                            : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                        }`}>
-                          {refill.status}
-                        </span>
+                        {refill.status === 'pending' && refill.is_ready === 1 ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-green/15 text-green border border-green/30 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.15)]">
+                            Ready (Manual Send)
+                          </span>
+                        ) : (
+                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                            refill.status === 'notified'
+                              ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                              : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                          }`}>
+                            {refill.status}
+                          </span>
+                        )}
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex justify-end gap-1.5">

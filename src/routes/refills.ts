@@ -111,12 +111,13 @@ router.put('/:id', async (req, res) => {
     const updatedStatus = status !== undefined ? status : refill.status;
     const updatedHold = hold_for_stock !== undefined ? parseInt(hold_for_stock, 10) : refill.hold_for_stock;
     const updatedIsActive = is_active !== undefined ? (is_active ? 1 : 0) : (refill.is_active !== undefined ? refill.is_active : 1);
+    const updatedIsReady = req.body.is_ready !== undefined ? (req.body.is_ready ? 1 : 0) : refill.is_ready;
 
     await db.run(
       `UPDATE patient_refills 
-       SET patient_name = ?, patient_phone = ?, medicine_id = ?, refill_interval_days = ?, next_refill_date = ?, status = ?, hold_for_stock = ?, is_active = ?
+       SET patient_name = ?, patient_phone = ?, medicine_id = ?, refill_interval_days = ?, next_refill_date = ?, status = ?, hold_for_stock = ?, is_active = ?, is_ready = ?
        WHERE id = ?`,
-      [updatedName, updatedPhone, updatedMedicineId, updatedInterval, updatedNextDate, updatedStatus, updatedHold, updatedIsActive, id]
+      [updatedName, updatedPhone, updatedMedicineId, updatedInterval, updatedNextDate, updatedStatus, updatedHold, updatedIsActive, updatedIsReady, id]
     );
 
     // If marked back to pending or values changed, re-run refilling triggers
@@ -153,9 +154,9 @@ router.post('/:id/send', async (req, res) => {
     try {
       await sendMessage(refill.patient_phone, undefined, message);
 
-      // Update refill status to notified
+      // Update refill status to notified, reset is_ready
       await db.run(
-        "UPDATE patient_refills SET status = 'notified', hold_for_stock = 0 WHERE id = ?",
+        "UPDATE patient_refills SET status = 'notified', is_ready = 0, hold_for_stock = 0 WHERE id = ?",
         [id]
       );
 

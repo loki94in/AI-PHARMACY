@@ -393,6 +393,10 @@ router.post('/login-window', async (req, res) => {
 
 // Add to Pharmarack cart
 router.post('/cart/add', async (req, res) => {
+  if (new Date().getDay() === 0) {
+    return res.status(400).json({ error: "Ordering and adding items to cart is not allowed on Sundays." });
+  }
+
   const { items } = req.body;
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'No items provided' });

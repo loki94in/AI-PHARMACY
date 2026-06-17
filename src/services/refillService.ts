@@ -6,7 +6,7 @@ export async function checkAllRefills(db: Database): Promise<void> {
   const pendingRefills = await db.all(
     `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
      JOIN medicines m ON pr.medicine_id = m.id
-     WHERE pr.next_refill_date <= CURRENT_TIMESTAMP AND pr.status = 'pending'`
+     WHERE pr.next_refill_date <= datetime('now', '+3 days') AND pr.status = 'pending' AND pr.is_active = 1`
   );
 
   const outOfStockRefills: any[] = [];
@@ -20,17 +20,11 @@ export async function checkAllRefills(db: Database): Promise<void> {
     const qty = stockRow ? (stockRow.total_qty || 0) : 0;
 
     if (qty > 0) {
-      // Send WhatsApp Reminder
-      const message = `Hello ${refill.patient_name}, your prescription refill for ${refill.medicine_name} is now ready and in stock! Please visit the pharmacy to collect it.`;
-      try {
-        await sendMessage(refill.patient_phone, undefined, message);
-        await db.run("UPDATE patient_refills SET status = 'notified', hold_for_stock = 0 WHERE id = ?", [refill.id]);
-      } catch (err) {
-        console.error('Failed to send refill WhatsApp message:', err);
-      }
+      // Mark as ready for manual check and send, do not automatically send WhatsApp
+      await db.run("UPDATE patient_refills SET is_ready = 1, hold_for_stock = 0 WHERE id = ?", [refill.id]);
     } else {
       // Mark as waiting for stock
-      await db.run("UPDATE patient_refills SET hold_for_stock = 1 WHERE id = ?", [refill.id]);
+      await db.run("UPDATE patient_refills SET hold_for_stock = 1, is_ready = 0 WHERE id = ?", [refill.id]);
       outOfStockRefills.push(refill);
     }
   }
@@ -64,18 +58,13 @@ export async function triggerPendingRefillsForMedicine(db: Database, medicineId:
   const pendingRefills = await db.all(
     `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
      JOIN medicines m ON pr.medicine_id = m.id
-     WHERE pr.medicine_id = ? AND (pr.status = 'pending' OR pr.hold_for_stock = 1)`,
+     WHERE pr.medicine_id = ? AND pr.status = 'pending' AND (pr.hold_for_stock = 1 OR pr.is_ready = 0) AND pr.is_active = 1`,
     [medicineId]
   );
 
   for (const refill of pendingRefills) {
-    const message = `Hello ${refill.patient_name}, your prescription refill for ${refill.medicine_name} is now ready and in stock! Please visit the pharmacy to collect it.`;
-    try {
-      await sendMessage(refill.patient_phone, undefined, message);
-      await db.run("UPDATE patient_refills SET status = 'notified', hold_for_stock = 0 WHERE id = ?", [refill.id]);
-    } catch (err) {
-      console.error('Failed to send refill WhatsApp message on stock trigger:', err);
-    }
+    // Instead of auto-sending, mark as ready for manual check
+    await db.run("UPDATE patient_refills SET is_ready = 1, hold_for_stock = 0 WHERE id = ?", [refill.id]);
   }
 }
 

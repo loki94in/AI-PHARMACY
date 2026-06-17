@@ -225,11 +225,19 @@ export async function runCatalogAnalysis(jobId: number) {
     let existingCount = 0;
     let duplicateCount = 0;
 
-    // Fetch existing database medicines for duplication and new check
+    // Fetch existing database medicines and aliases for duplication and new check
     const existingRows = await db.all('SELECT name FROM medicines');
     const existingNames = new Set<string>();
     for (const r of existingRows) {
       if (r.name) existingNames.add(r.name.toLowerCase().trim());
+    }
+    try {
+      const aliasRows = await db.all('SELECT alias_name FROM medicine_aliases');
+      for (const r of aliasRows) {
+        if (r.alias_name) existingNames.add(r.alias_name.toLowerCase().trim());
+      }
+    } catch (e) {
+      console.warn('Failed to load medicine aliases during analysis:', e);
     }
 
     if (ext === '.csv') {
@@ -240,12 +248,25 @@ export async function runCatalogAnalysis(jobId: number) {
                       headers.find((c) => /product|item|inn|title/i.test(c)) ||
                       headers[0] || '';
 
+      const seenNames = new Set<string>();
       previewData = csvPreview.rows.map(row => {
         const nameRaw = nameCol ? row[nameCol] : '';
         const nameNorm = nameRaw ? nameRaw.trim().replace(/\s+/g, ' ').toLowerCase() : '';
+        let status = 'new';
+        if (nameNorm) {
+          if (seenNames.has(nameNorm)) {
+            status = 'duplicate';
+          } else {
+            seenNames.add(nameNorm);
+            if (existingNames.has(nameNorm)) {
+              status = 'updated';
+            }
+          }
+        }
         return {
           ...row,
-          __is_existing: nameNorm ? existingNames.has(nameNorm) : false
+          __is_existing: status === 'updated',
+          __status: status
         };
       });
 
@@ -278,29 +299,43 @@ export async function runCatalogAnalysis(jobId: number) {
           );
           const finalNameColIdx = nameColIdx !== -1 ? nameColIdx : 0;
 
+          const seenNames = new Set<string>();
           previewData = sheetData.slice(1, 101).map((row: any[]) => {
             const rowObj: Record<string, any> = {};
             headers.forEach((header, idx) => {
               rowObj[header] = row[idx] !== undefined ? row[idx] : '';
             });
             const nameRaw = row[finalNameColIdx] !== undefined ? String(row[finalNameColIdx]).trim().replace(/\s+/g, ' ') : '';
-            rowObj.__is_existing = nameRaw ? existingNames.has(nameRaw.toLowerCase()) : false;
+            const nameNorm = nameRaw.toLowerCase().trim();
+            let status = 'new';
+            if (nameNorm) {
+              if (seenNames.has(nameNorm)) {
+                status = 'duplicate';
+              } else {
+                seenNames.add(nameNorm);
+                if (existingNames.has(nameNorm)) {
+                  status = 'updated';
+                }
+              }
+            }
+            rowObj.__is_existing = status === 'updated';
+            rowObj.__status = status;
             return rowObj;
           });
           totalCount = Math.max(0, sheetData.length - 1);
 
           // Calculate statistics
-          const seenNames = new Set<string>();
+          const seenNamesAll = new Set<string>();
 
           sheetData.slice(1).forEach((row: any[]) => {
             if (!row || row[finalNameColIdx] === undefined) return;
             const nameRaw = String(row[finalNameColIdx]).trim().replace(/\s+/g, ' ');
             if (!nameRaw) return;
             const nameKey = nameRaw.toLowerCase();
-            if (seenNames.has(nameKey)) {
+            if (seenNamesAll.has(nameKey)) {
               duplicateCount++;
             } else {
-              seenNames.add(nameKey);
+              seenNamesAll.add(nameKey);
               if (existingNames.has(nameKey)) {
                 existingCount++;
               } else {
@@ -312,8 +347,20 @@ export async function runCatalogAnalysis(jobId: number) {
       }
     } else if (ext === '.pdf') {
       const extracted = await extractFromPdf(job.file_path);
+      const seenNames = new Set<string>();
       previewData = extracted.slice(0, 100).map(item => {
         const nameNorm = String(item.name).trim().replace(/\s+/g, ' ').toLowerCase();
+        let status = 'new';
+        if (nameNorm) {
+          if (seenNames.has(nameNorm)) {
+            status = 'duplicate';
+          } else {
+            seenNames.add(nameNorm);
+            if (existingNames.has(nameNorm)) {
+              status = 'updated';
+            }
+          }
+        }
         return {
           'Product Name': item.name,
           'Composition': item.api_reference || '',
@@ -321,22 +368,23 @@ export async function runCatalogAnalysis(jobId: number) {
           'Packaging': item.packaging_type || '',
           'Manufacturer': item.manufacturer || '',
           'Marketed By': item.marketed_by || '',
-          __is_existing: existingNames.has(nameNorm)
+          __is_existing: status === 'updated',
+          __status: status
         };
       });
       headers = ['Product Name', 'Composition', 'Strength', 'Packaging', 'Manufacturer', 'Marketed By'];
       totalCount = extracted.length;
 
       // Calculate statistics
-      const seenNames = new Set<string>();
+      const seenNamesAll = new Set<string>();
       extracted.forEach((item) => {
         const nameRaw = String(item.name).trim().replace(/\s+/g, ' ');
         if (!nameRaw) return;
         const nameKey = nameRaw.toLowerCase();
-        if (seenNames.has(nameKey)) {
+        if (seenNamesAll.has(nameKey)) {
           duplicateCount++;
         } else {
-          seenNames.add(nameKey);
+          seenNamesAll.add(nameKey);
           if (existingNames.has(nameKey)) {
             existingCount++;
           } else {
@@ -348,13 +396,88 @@ export async function runCatalogAnalysis(jobId: number) {
       throw new Error('Unsupported file format.');
     }
 
-    const suggestedMapping = await getSuggestedMapping(headers, db);
+    // Duplicate Catalog Detection Jaccard Similarity Check
+    let matchedPreviousJobId: number | null = null;
+    let newlyDetectedColumns: string[] = [];
+    let pastSuggestedMapping: Record<string, string> | null = null;
 
-    const extractedJson = JSON.stringify({ headers, previewData, suggestedMapping });
+    try {
+      const pastJobs = await db.all(
+        "SELECT id, file_path, original_filename, extracted_data, mapping_config FROM catalog_jobs WHERE id != ? AND status IN ('done', 'waiting_for_mapping', 'ready_for_review') ORDER BY id DESC",
+        jobId
+      );
+
+      if (headers.length > 0) {
+        for (const pj of pastJobs) {
+          if (!pj.extracted_data) continue;
+          try {
+            const extracted = JSON.parse(pj.extracted_data);
+            const pastHeaders = (extracted.headers as string[]) || [];
+            
+            const set1 = new Set(headers.map(h => h.toLowerCase().trim()));
+            const set2 = new Set(pastHeaders.map(h => h.toLowerCase().trim()));
+            const intersection = new Set([...set1].filter(x => set2.has(x)));
+            const union = new Set([...set1, ...set2]);
+            const headerSimilarity = union.size > 0 ? intersection.size / union.size : 0;
+            
+            let nameSimilarity = 0;
+            const nameCol1 = headers.find(c => /name|brand/i.test(c)) || headers[0];
+            const nameCol2 = pastHeaders.find((c: string) => /name|brand/i.test(c)) || pastHeaders[0];
+            
+            if (previewData.length > 0 && extracted.previewData && extracted.previewData.length > 0) {
+              const names1 = previewData.map(r => String(r[nameCol1] || '').toLowerCase().trim()).filter(Boolean);
+              const names2 = extracted.previewData.map((r: any) => String(r[nameCol2] || '').toLowerCase().trim()).filter(Boolean);
+              
+              const nSet1 = new Set(names1);
+              const nSet2 = new Set(names2);
+              const nIntersection = new Set([...nSet1].filter(x => nSet2.has(x)));
+              const nUnion = new Set([...nSet1, ...nSet2]);
+              nameSimilarity = nUnion.size > 0 ? nIntersection.size / nUnion.size : 0;
+            }
+
+            if (headerSimilarity > 0.7 || nameSimilarity > 0.8) {
+              matchedPreviousJobId = pj.id;
+              newlyDetectedColumns = headers.filter(h => !set2.has(h.toLowerCase().trim()));
+              
+              if (pj.mapping_config) {
+                pastSuggestedMapping = JSON.parse(pj.mapping_config);
+              } else if (extracted.suggestedMapping) {
+                pastSuggestedMapping = extracted.suggestedMapping;
+              }
+              console.log(`[CatalogWorker] Match found: Past Job #${pj.id} (${pj.original_filename}). Header overlap: ${Math.round(headerSimilarity*100)}%, Name overlap: ${Math.round(nameSimilarity*100)}%`);
+              break;
+            }
+          } catch (e) {
+            console.warn(`[CatalogWorker] Past job #${pj.id} comparison failed:`, e);
+          }
+        }
+      }
+    } catch (pastErr) {
+      console.warn('[CatalogWorker] Failed to query past jobs for duplicate detection:', pastErr);
+    }
+
+    const suggestedMapping = pastSuggestedMapping || await getSuggestedMapping(headers, db);
+
+    const extractedJson = JSON.stringify({ 
+      headers, 
+      previewData, 
+      suggestedMapping,
+      matchedPreviousJobId,
+      newlyDetectedColumns
+    });
 
     await db.run(
-      `UPDATE catalog_jobs SET status = 'waiting_for_mapping', extracted_data = ?, total_count = ?, new_count = ?, existing_count = ?, duplicate_count = ? WHERE id = ?`,
-      [extractedJson, totalCount, newCount, existingCount, duplicateCount, jobId]
+      `UPDATE catalog_jobs SET status = 'waiting_for_mapping', extracted_data = ?, total_count = ?, new_count = ?, existing_count = ?, duplicate_count = ?, matched_previous_job_id = ?, newly_detected_columns = ? WHERE id = ?`,
+      [
+        extractedJson, 
+        totalCount, 
+        newCount, 
+        existingCount, 
+        duplicateCount, 
+        matchedPreviousJobId, 
+        JSON.stringify(newlyDetectedColumns),
+        jobId
+      ]
     );
 
     eventService.broadcast('catalog_job_update', { 
@@ -531,11 +654,19 @@ export async function runCatalogImport(jobId: number) {
 
     await db.run('UPDATE catalog_jobs SET total_count = ? WHERE id = ?', [totalToProcess, jobId]);
 
-    // Fetch existing database medicines for duplication check
+    // Fetch existing database medicines and aliases for duplication check
     const dbRows = await db.all('SELECT id, name FROM medicines');
     const existingMedicinesMap = new Map<string, number>();
     for (const r of dbRows) {
       if (r.name) existingMedicinesMap.set(r.name.toLowerCase().trim(), r.id);
+    }
+    try {
+      const aliasRows = await db.all('SELECT alias_name, medicine_id FROM medicine_aliases');
+      for (const r of aliasRows) {
+        if (r.alias_name) existingMedicinesMap.set(r.alias_name.toLowerCase().trim(), r.medicine_id);
+      }
+    } catch (e) {
+      console.warn('Failed to load medicine aliases during import:', e);
     }
 
     const batchSize = 1000;
@@ -558,6 +689,27 @@ export async function runCatalogImport(jobId: number) {
         addedNames.add(key);
 
         let medId = existingMedicinesMap.get(key);
+
+        // Check if API composition is missing or incomplete, requiring review
+        const isApiMissing = !item.api_reference || item.api_reference.trim() === '';
+        if (isApiMissing) {
+          let dbHasApi = false;
+          if (medId) {
+            const dbMed = await db.get('SELECT api_reference FROM medicines WHERE id = ?', medId);
+            if (dbMed && dbMed.api_reference && dbMed.api_reference.trim() !== '') {
+              dbHasApi = true;
+            }
+          }
+          
+          if (!dbHasApi) {
+            // Stage for review!
+            await db.run(
+              'INSERT INTO staged_medicine_reviews (job_id, medicine_name, status, original_row_data) VALUES (?, ?, ?, ?)',
+              [jobId, item.name, 'pending', JSON.stringify(item)]
+            );
+            continue;
+          }
+        }
 
         if (medId) {
           existingCount++;
@@ -836,6 +988,47 @@ export async function startWorker() {
         if (job) {
           console.log(`[Worker] Found pending job ${job.id}, triggering runCatalogImport.`);
           await runCatalogImport(job.id);
+        } else {
+          // Process staged reviews background enrichment
+          const pendingReview = await db.get(
+            "SELECT * FROM staged_medicine_reviews WHERE status = 'pending' AND screenshot_path IS NULL LIMIT 1"
+          );
+          if (pendingReview) {
+            console.log(`[Worker] Found pending medicine review for "${pendingReview.medicine_name}", starting Google discovery...`);
+            const { googleSearchService } = await import('../services/googleSearchService.js');
+            const searchResult = await googleSearchService.discoverMedicineInfo(pendingReview.medicine_name);
+            
+            if (searchResult) {
+              const extractedJson = JSON.stringify({
+                api_reference: searchResult.api_reference || '',
+                strength: searchResult.strength || '',
+                manufacturer: searchResult.manufacturer || '',
+                dosage_form: searchResult.dosage_form || '',
+                pack_info: searchResult.pack_info || '',
+                therapeutic_class: searchResult.therapeutic_class || ''
+              });
+
+              await db.run(
+                "UPDATE staged_medicine_reviews SET screenshot_path = ?, raw_ocr_text = ?, extracted_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [
+                  searchResult.screenshot_path || null,
+                  searchResult.raw_text || null,
+                  extractedJson,
+                  pendingReview.id
+                ]
+              );
+              console.log(`[Worker] Enriched medicine review for "${pendingReview.medicine_name}".`);
+              
+              eventService.broadcast('catalog_review_updated', {
+                jobId: pendingReview.job_id,
+                reviewId: pendingReview.id,
+                medicineName: pendingReview.medicine_name,
+                status: 'enriched'
+              });
+            } else {
+              console.log(`[Worker] Google discovery failed or throttled for "${pendingReview.medicine_name}".`);
+            }
+          }
         }
       }
     } catch (err) {

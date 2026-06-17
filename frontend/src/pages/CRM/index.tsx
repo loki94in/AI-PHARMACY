@@ -507,8 +507,35 @@ const CRM = () => {
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveRef = useRef<any>(null);
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl + S: Save Patient Form
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveRef.current();
+        return;
+      }
+
+      // Escape: Reset Form/Edit Mode, deselect patient, close emojis/lightbox
+      if (e.key === 'Escape') {
+        setEditingId(null);
+        setForm(emptyForm);
+        setSelectedPatient(null);
+        setShowEmojiPicker(false);
+        setLightbox({ isOpen: false, src: '', name: '' });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!form.name.trim()) { showNotif('Name is required', 'error'); return; }
     setSaving(true);
     try {

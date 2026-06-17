@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
-import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Calendar, UserCheck, Edit } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Calendar, UserCheck, Edit, Loader2 } from 'lucide-react';
 import AICamera from '../../components/AICamera';
 import BrandBanner from '../../components/POS/BrandBanner';
 import { api, apiClient } from '../../services/api';
@@ -356,10 +356,37 @@ const POS = () => {
       .catch(err => console.error('Error fetching special orders:', err));
   }, []);
 
+  const handleCompleteSaleRef = useRef<any>(null);
+  useEffect(() => {
+    handleCompleteSaleRef.current = handleCompleteSale;
+  });
+
   // Keyboard shortcut listeners (e.g. 'X' for camera, 'Alt+E' or 'F8' for quick edit medicine)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement as HTMLElement | null;
+
+      // Ctrl + S: Save Bill
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleCompleteSaleRef.current();
+        return;
+      }
+
+      // Alt + P: Open Patient Modal
+      if (e.altKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setShowPatientModal(true);
+        return;
+      }
+
+      // Escape: Close Modals / Overlays
+      if (e.key === 'Escape') {
+        setShowPatientModal(false);
+        setShowDoctorModal(false);
+        setShowCamera(false);
+        setZoomedImage(null);
+      }
 
       // F8 or Alt+E: Universal Medicine Edit for focused row
       if (e.key === 'F8' || (e.altKey && e.key.toLowerCase() === 'e')) {
@@ -442,12 +469,46 @@ const POS = () => {
   const [editMedicineId, setEditMedicineId] = useState<number | null>(null);
   const [manualBatch, setManualBatch] = useState('');
   const [manualExpiry, setManualExpiry] = useState('');
-  const [manualQty, setManualQty] = useState(1);
+  const [manualQty, setManualQty] = useState(0);
   const [manualLooseQty, setManualLooseQty] = useState(0);
   const [manualDiscount, setManualDiscount] = useState(0);
   const [manualPackSize, setManualPackSize] = useState(10);
   const [manualMrp, setManualMrp] = useState(0);
   const [manualCostPrice, setManualCostPrice] = useState(0);
+  const [manualSuggestions, setManualSuggestions] = useState<any[]>([]);
+  const [showManualSuggestions, setShowManualSuggestions] = useState(false);
+
+  useEffect(() => {
+    if (manualName.trim().length < 3) {
+      setManualSuggestions([]);
+      setShowManualSuggestions(false);
+      return;
+    }
+    
+    const delayDebounce = setTimeout(() => {
+      api.searchMedicine(manualName)
+        .then(data => {
+          if (Array.isArray(data)) {
+            setManualSuggestions(data.slice(0, 8));
+            setShowManualSuggestions(true);
+          }
+        })
+        .catch(err => console.error('Error searching manual medicine:', err));
+    }, 300);
+    
+    return () => clearTimeout(delayDebounce);
+  }, [manualName]);
+
+  const selectManualSuggestion = (med: any) => {
+    setManualName(med.medicine_name);
+    setManualBatch(med.batch_no || 'MANUAL');
+    setManualExpiry(med.expiry_date || '12/28');
+    setManualMrp(med.mrp || 0);
+    setManualCostPrice(med.cost_price || (med.mrp * 0.7));
+    setManualPackSize(med.pack_size || 10);
+    setManualSuggestions([]);
+    setShowManualSuggestions(false);
+  };
 
   const addToCart = (med: any) => {
     // Expiry check
@@ -560,7 +621,7 @@ const POS = () => {
       name: manualName.trim(),
       batch: manualBatch.trim() || 'MANUAL',
       expiry: manualExpiry.trim() || '12/28',
-      qty: manualQty,
+      qty: manualQty === 0 && manualLooseQty === 0 ? 1 : manualQty,
       looseQty: manualLooseQty,
       discount: manualDiscount,
       packSize: manualPackSize,
@@ -575,7 +636,7 @@ const POS = () => {
     setManualName('');
     setManualBatch('');
     setManualExpiry('');
-    setManualQty(1);
+    setManualQty(0);
     setManualLooseQty(0);
     setManualDiscount(0);
     setManualPackSize(10);
@@ -778,7 +839,7 @@ const POS = () => {
     if (cart.length === 0) return;
 
     if (isLoss) {
-      alert(`❌ CANNOT COMPLETE INVOICE:\n\nTransaction results in a Net Loss (Grand Total ₹${grandTotal} is less than Cost Price ₹${Math.round(totalCost)}).\nPlease adjust overall discount or items MRP to proceed.`);
+      alert(`❌ CANNOT SAVE BILL:\n\nTransaction results in a Net Loss (Grand Total ₹${grandTotal} is less than Cost Price ₹${Math.round(totalCost)}).\nPlease adjust overall discount or items MRP to proceed.`);
       return;
     }
 
@@ -924,22 +985,22 @@ const POS = () => {
     <div className="h-full flex flex-col fade-in overflow-hidden pb-2">
 
       {/* Main Container: Split into Left Workspace and Right Sidebar */}
-      <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
+      <div className="flex-1 flex gap-3 overflow-hidden min-h-0">
         
         {/* LEFT WORKSPACE (approx 72-75% width) - Takes up full height */}
-        <div className="flex-1 flex flex-col gap-4 overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col gap-3 overflow-hidden min-h-0">
           
           {/* A. Search & Scan Medicine Area (Header) */}
-          <div className="glass-panel p-4 flex flex-col gap-3 bg-glass-bg border-glass-border relative z-30 shrink-0">
+          <div className="glass-panel p-3 flex flex-col gap-2.5 bg-glass-bg border-glass-border relative z-30 shrink-0">
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
-                <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-muted">
+                <span className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-muted">
                   <Search size={16} />
                 </span>
                 <input 
                   type="text" 
                   placeholder="Search medicine by name, composition, batch, or price..." 
-                  className="premium-input w-full text-base py-2 pl-8 pr-4"
+                  className="premium-input w-full text-base py-2 pl-6 pr-4"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                 />
@@ -1535,11 +1596,40 @@ const POS = () => {
                           id="manual-medicine-name-input"
                           type="text" 
                           placeholder="Add Next Medicine / Custom Entry..." 
-                          className="premium-input text-xs py-2 pl-6 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
+                          className="premium-input text-xs py-2 pl-5 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
                           value={manualName}
                           onChange={e => setManualName(e.target.value)}
+                          onFocus={() => {
+                            if (manualName.trim().length >= 3) {
+                              setShowManualSuggestions(true);
+                            }
+                          }}
+                          onBlur={() => {
+                            setTimeout(() => {
+                              setShowManualSuggestions(false);
+                            }, 250);
+                          }}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
                         />
+                        {showManualSuggestions && manualSuggestions.length > 0 && (
+                          <div className="absolute left-0 right-0 z-[100] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-72 shadow-2xl text-left">
+                            <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
+                              Select Medicine:
+                            </div>
+                            {manualSuggestions.map((med) => (
+                              <button
+                                key={med.inventory_id || med.id}
+                                type="button"
+                                onClick={() => selectManualSuggestion(med)}
+                                className="flex flex-col p-2.5 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full"
+                              >
+                                <span className="font-semibold text-text">{med.medicine_name}</span>
+                                <span className="text-[9px] text-muted font-mono mt-0.5">Batch: {med.batch_no} | Exp: {med.expiry_date}</span>
+                                <span className="text-[9px] text-green font-bold font-mono mt-0.5">MRP: ₹{Math.round(med.mrp)} | Stock: {med.quantity}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </td>
                     
@@ -1623,19 +1713,37 @@ const POS = () => {
                     </td>
 
                     <td className="p-2 text-center">
-                      <button 
-                        onClick={addManualItem}
-                        className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/30 active:scale-95 cursor-pointer"
-                        title="Add to Invoice"
-                        onKeyDown={e => {
-                          if (e.key === 'Tab' && !e.shiftKey) {
-                            e.preventDefault();
-                            document.getElementById('manual-medicine-name-input')?.focus();
-                          }
-                        }}
-                      >
-                        <Plus size={13} className="stroke-[3]" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button 
+                          onClick={addManualItem}
+                          className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/30 active:scale-95 cursor-pointer"
+                          title="Add to Invoice"
+                          onKeyDown={e => {
+                            if (e.key === 'Tab' && !e.shiftKey) {
+                              e.preventDefault();
+                              document.getElementById('manual-medicine-name-input')?.focus();
+                            }
+                          }}
+                        >
+                          <Plus size={13} className="stroke-[3]" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setManualName('');
+                            setManualBatch('');
+                            setManualExpiry('');
+                            setManualQty(0);
+                            setManualLooseQty(0);
+                            setManualDiscount(0);
+                            setManualMrp(0);
+                            setManualCostPrice(0);
+                          }}
+                          className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-red/20 border-red text-red hover:bg-red/30 active:scale-95 cursor-pointer"
+                          title="Clear Inputs"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -1645,16 +1753,16 @@ const POS = () => {
         </div>
 
         {/* RIGHT SIDEBAR (approx 25-28% width) - Houses Customer, Copilot, Summary & Checkout */}
-        <div className="w-80 xl:w-96 flex flex-col gap-3 shrink-0 z-20 select-none h-full overflow-hidden justify-between">
+        <div className="w-80 xl:w-96 flex flex-col gap-2 shrink-0 z-20 select-none h-full overflow-hidden justify-between">
           
           {/* Section 1: Customer & Prescriber Context */}
-          <div className="glass-panel p-3 bg-glass-bg border-glass-border flex flex-col gap-2.5 shrink-0">
+          <div className="glass-panel p-2.5 bg-glass-bg border-glass-border flex flex-col gap-2 shrink-0 relative z-30">
             <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider shrink-0 border-b border-glass-border/30 pb-2">
               <span className="text-sky">👤</span> Patient & Doctor Context
             </h3>
             
             {/* Patient Name */}
-            <div className="relative">
+            <div className="relative z-20">
               <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Patient / Customer</label>
               <div className="flex gap-1 items-center">
                 <input 
@@ -1755,7 +1863,7 @@ const POS = () => {
             </div>
 
             {/* Doctor */}
-            <div className="relative">
+            <div className="relative z-10">
               <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Prescribing Doctor</label>
               <div className="flex gap-1 relative">
                 <input 
@@ -1844,7 +1952,7 @@ const POS = () => {
           </div>
 
           {/* Section 2: Clinical Copilot Insights & Feed */}
-          <div className="glass-panel p-3 bg-glass-bg border-glass-border flex-1 flex flex-col gap-2 min-h-0">
+          <div className="glass-panel p-2.5 bg-glass-bg border-glass-border flex-1 flex flex-col gap-1.5 min-h-0">
             {/* Interactive Scanner Box */}
             <button 
               type="button"
@@ -1890,7 +1998,7 @@ const POS = () => {
           </div>
 
           {/* Section 3: Checkout Summary & Total */}
-          <div className="glass-panel p-3 bg-glass-bg border-glass-border flex flex-col gap-2 mt-auto shrink-0">
+          <div className="glass-panel p-2.5 bg-glass-bg border-glass-border flex flex-col gap-2 mt-auto shrink-0">
             <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider border-b border-glass-border/30 pb-1.5">
               💳 Payment & Checkout
             </h3>
@@ -1964,7 +2072,7 @@ const POS = () => {
                   : 'bg-green hover:bg-emerald-600 animate-pulse-subtle'
               }`}
             >
-              <CheckCircle size={15} /> Complete Invoice
+              <CheckCircle size={15} /> Save Bill (Ctrl+S)
             </button>
           </div>
         </div>

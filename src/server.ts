@@ -132,6 +132,7 @@ app.use(express.json({ limit: '15mb' }));
 
 
 app.use('/uploads', express.static(path.resolve(__dirname, '..', 'uploads')));
+app.use('/data/search_screenshots', express.static(path.resolve(__dirname, '..', 'data', 'search_screenshots')));
 
 // Old test console routes have been removed. This server now acts purely as an API backend.
 
@@ -228,6 +229,15 @@ ensureSchema(DB_PATH).then(() => {
             try {
               await checkAllRefills(db);
               await checkOverdueCreditNotes(db);
+              
+              // Auto expiry return on 18th, 19th, 20th of the month
+              const dayOfMonth = new Date().getDate();
+              if (dayOfMonth === 18 || dayOfMonth === 19 || dayOfMonth === 20) {
+                console.log(`Today is the ${dayOfMonth}th. Running startup catch-up for expired medicine returns...`);
+                const { autoCreateExpiryReturns } = await import('./services/returnsService.js');
+                await autoCreateExpiryReturns(db);
+              }
+
               await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);
               console.log('Startup catch-up daily check complete.');
             } catch (err) {
@@ -255,6 +265,15 @@ ensureSchema(DB_PATH).then(() => {
             await checkAllRefills(db);
             await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
             await checkOverdueCreditNotes(db);
+            
+            // Auto expiry return on 18th, 19th, 20th of the month
+            const dayOfMonth = new Date().getDate();
+            if (dayOfMonth === 18 || dayOfMonth === 19 || dayOfMonth === 20) {
+              console.log(`Today is the ${dayOfMonth}th. Checking and auto-creating supplier returns for expired medicines...`);
+              const { autoCreateExpiryReturns } = await import('./services/returnsService.js');
+              await autoCreateExpiryReturns(db);
+            }
+
             const d = new Date();
             const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_daily_check_date', ?)", [todayStr]);

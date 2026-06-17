@@ -3,8 +3,8 @@ import { jest } from '@jest/globals';
 // Mock WhatsApp dependency BEFORE any other imports that might cause it to be loaded
 jest.unstable_mockModule('../src/whatsappClient.js', () => ({
   __esModule: true,
-  sendMessage: jest.fn().mockResolvedValue(true),
-  initClient: jest.fn().mockResolvedValue(true)
+  sendMessage: jest.fn(() => Promise.resolve(true)),
+  initClient: jest.fn(() => Promise.resolve(true))
 }));
 
 import request from 'supertest';

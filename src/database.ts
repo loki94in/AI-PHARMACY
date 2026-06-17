@@ -258,6 +258,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE sales_invoices ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE patient_refills ADD COLUMN hold_for_stock INTEGER DEFAULT 0`,
     `ALTER TABLE patient_refills ADD COLUMN is_active INTEGER DEFAULT 1`,
+    `ALTER TABLE patient_refills ADD COLUMN is_ready INTEGER DEFAULT 0`,
     `ALTER TABLE catalog_jobs ADD COLUMN extracted_data TEXT`,
     `ALTER TABLE catalog_jobs ADD COLUMN original_filename TEXT`,
     `ALTER TABLE catalog_jobs ADD COLUMN total_count INTEGER DEFAULT 0`,
@@ -284,6 +285,8 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE medicines ADD COLUMN enrichment_status TEXT DEFAULT NULL`,
     `ALTER TABLE medicines ADD COLUMN enrichment_confidence REAL DEFAULT NULL`,
     `ALTER TABLE push_tokens ADD COLUMN last_seen DATETIME DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE catalog_jobs ADD COLUMN matched_previous_job_id INTEGER DEFAULT NULL`,
+    `ALTER TABLE catalog_jobs ADD COLUMN newly_detected_columns TEXT DEFAULT NULL`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -295,6 +298,29 @@ export async function ensureSchema(dbPath: string) {
 
   // New tables needed by various routes
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS staged_medicine_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER,
+      medicine_name TEXT NOT NULL,
+      status TEXT CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+      original_row_data TEXT,
+      search_query TEXT,
+      screenshot_path TEXT,
+      raw_ocr_text TEXT,
+      extracted_json TEXT,
+      approved_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_staged_reviews_job_id ON staged_medicine_reviews (job_id);
+    CREATE INDEX IF NOT EXISTS idx_staged_reviews_status ON staged_medicine_reviews (status);
+
+    CREATE TABLE IF NOT EXISTS google_search_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      query TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS automation_notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       type TEXT NOT NULL,

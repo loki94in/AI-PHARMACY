@@ -2,6 +2,7 @@ import express from 'express';
 import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { notificationService } from '../services/notificationService.js';
 import multer from 'multer';
 import pdfParse from 'pdf-parse';
 import { parse } from 'csv-parse/sync';
@@ -769,6 +770,12 @@ router.post('/manual', async (req, res) => {
 
     await db.run('COMMIT');
 
+    if (invoice_no) {
+      notificationService.notifyDistributorAboutDeliveryBoy(invoice_no).catch(err => {
+        console.error('Failed to notify distributor in background (manual purchase):', err);
+      });
+    }
+
     // Trigger refills and special orders after transaction commits successfully
     const { inventoryService } = await import('../services/inventoryService.js');
     for (const medId of uniqueMedicineIds) {
@@ -999,6 +1006,12 @@ router.put('/:id/full', async (req, res) => {
     }
 
     await db.run('COMMIT');
+
+    if (invoice_no) {
+      notificationService.notifyDistributorAboutDeliveryBoy(invoice_no).catch(err => {
+        console.error('Failed to notify distributor in background (update purchase):', err);
+      });
+    }
 
     // Background enrichment for medicines in this purchase
     const medicineNamesToEnrich = items
@@ -1936,6 +1949,14 @@ router.post('/staged/:id/approve', async (req, res) => {
     await db.run(`UPDATE staged_purchases SET status = 'approved' WHERE id = ?`, [id]);
 
     await db.run('COMMIT');
+
+    const invoiceNo = finalInvoiceNo;
+    if (invoiceNo) {
+      notificationService.notifyDistributorAboutDeliveryBoy(invoiceNo).catch(err => {
+        console.error('Failed to notify distributor in background (approve staged purchase):', err);
+      });
+    }
+
     res.json({ success: true, purchase_id: purchaseId });
   } catch (error: any) {
     if (db) {

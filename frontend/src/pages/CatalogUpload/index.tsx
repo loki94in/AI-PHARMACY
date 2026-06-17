@@ -108,10 +108,234 @@ const getHighlightStyles = (targetCol: string, isHovered: boolean) => {
     };
   }
   
-  return {
-    header: isHovered ? 'bg-white/10 text-gray-200 border-white/40' : 'bg-white/5 text-gray-500 border-glass-border opacity-50 grayscale',
-    cell: isHovered ? 'bg-white/5 border-r border-white/10 text-gray-200' : 'border-r border-glass-border/10 text-gray-500 opacity-50 grayscale'
+};
+
+interface ReviewDetailPaneProps {
+  review: any;
+  onApproved: () => void;
+  onRejected: () => void;
+  googleSearchStatus: { count: number; limit: number } | null;
+}
+
+const ReviewDetailPane = ({ review, onApproved, onRejected, googleSearchStatus }: ReviewDetailPaneProps) => {
+  const [name, setName] = useState('');
+  const [apiReference, setApiReference] = useState('');
+  const [strength, setStrength] = useState('');
+  const [packaging, setPackaging] = useState('');
+  const [manufacturer, setManufacturer] = useState('');
+  const [marketedBy, setMarketedBy] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
+
+  useEffect(() => {
+    if (review) {
+      setName(review.approved_json?.name || review.extracted_json?.name || review.medicine_name || '');
+      setApiReference(review.approved_json?.api_reference || review.extracted_json?.api_reference || review.original_row_data?.api_reference || '');
+      setStrength(review.approved_json?.strength || review.extracted_json?.strength || review.original_row_data?.strength || '');
+      setPackaging(review.approved_json?.packaging || review.extracted_json?.dosage_form || review.original_row_data?.packaging || '');
+      setManufacturer(review.approved_json?.manufacturer || review.extracted_json?.manufacturer || review.original_row_data?.manufacturer || '');
+      setMarketedBy(review.approved_json?.marketed_by || review.original_row_data?.marketed_by || review.extracted_json?.manufacturer || '');
+    }
+  }, [review]);
+
+  const handleApprove = async () => {
+    setIsSubmitting(true);
+    try {
+      const data = {
+        name,
+        api_reference: apiReference,
+        strength,
+        packaging,
+        manufacturer,
+        marketed_by: marketedBy
+      };
+      await api.approveCatalogReview(review.id, data);
+      alert('Record approved and master catalog updated.');
+      onApproved();
+    } catch (err: any) {
+      alert('Failed to approve: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const handleReject = async () => {
+    if (!window.confirm('Are you sure you want to reject this item? It will be skipped from the catalog import.')) {
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await api.rejectCatalogReview(review.id);
+      onRejected();
+    } catch (err: any) {
+      alert('Failed to reject: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleManualEnrich = async () => {
+    setIsEnriching(true);
+    try {
+      await api.enrichCatalogReview(review.id);
+      alert('Background Google search enrichment triggered. Please wait 5-10 seconds for it to refresh.');
+    } catch (err: any) {
+      alert('Failed to enrich: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
+  const cleanBaseUrl = (apiClient.defaults.baseURL || window.location.origin).replace('/api', '').replace(/\/$/, '');
+  const screenshotUrl = review.screenshot_path ? `${cleanBaseUrl}/${review.screenshot_path.replace(/\\/g, '/')}` : '';
+
+  return (
+    <div className="flex flex-col gap-5 min-w-0">
+      <div className="flex flex-wrap justify-between items-start border-b border-glass-border/30 pb-3 gap-3">
+        <div>
+          <h4 className="text-base font-bold text-white truncate max-w-[400px]">{review.medicine_name}</h4>
+          <span className="text-[10px] text-gray-400">Review and verify composition mappings for database catalog creation</span>
+        </div>
+        
+        {googleSearchStatus && (
+          <div className="bg-black/40 border border-glass-border/30 px-3 py-1.5 rounded-lg text-[10px] text-gray-300 font-mono self-start">
+            Google Limit: <span className="font-bold text-white">{googleSearchStatus.count}</span> / <span className="text-muted">{googleSearchStatus.limit}</span> day
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-5">
+        {/* Form Inputs (Left) */}
+        <div className="flex-1 flex flex-col gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Brand Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2.5 outline-none focus:border-primary font-semibold"
+              />
+            </div>
+            
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Active Composition (API)</label>
+              <input
+                type="text"
+                value={apiReference}
+                onChange={e => setApiReference(e.target.value)}
+                className="bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2.5 outline-none focus:border-primary font-semibold"
+                placeholder="e.g. Paracetamol + Caffeine"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Strength</label>
+              <input
+                type="text"
+                value={strength}
+                onChange={e => setStrength(e.target.value)}
+                className="bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2.5 outline-none focus:border-primary"
+                placeholder="e.g. 650 mg"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Dosage Form / Packaging</label>
+              <input
+                type="text"
+                value={packaging}
+                onChange={e => setPackaging(e.target.value)}
+                className="bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2.5 outline-none focus:border-primary"
+                placeholder="e.g. Tablet"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Manufacturer</label>
+              <input
+                type="text"
+                value={manufacturer}
+                onChange={e => setManufacturer(e.target.value)}
+                className="bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2.5 outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Marketed By</label>
+              <input
+                type="text"
+                value={marketedBy}
+                onChange={e => setMarketedBy(e.target.value)}
+                className="bg-black/60 border border-glass-border/60 text-white text-xs rounded-lg p-2.5 outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mt-4">
+            <button
+              onClick={handleApprove}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-green hover:bg-green/90 text-white text-xs font-bold rounded-lg shadow-lg hover:shadow-green/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Check size={14} /> Approve & Save
+            </button>
+            <button
+              onClick={handleReject}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <X size={14} /> Skip / Reject
+            </button>
+            <button
+              onClick={handleManualEnrich}
+              disabled={isEnriching}
+              className="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-glass-border text-gray-300 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50 ml-auto"
+            >
+              <RefreshCw size={14} className={isEnriching ? 'animate-spin' : ''} /> Enrich with Google Search
+            </button>
+          </div>
+
+          {review.raw_ocr_text && (
+            <details className="mt-4 border border-glass-border/30 rounded-lg overflow-hidden bg-black/40">
+              <summary className="p-3 text-[10px] font-bold text-gray-400 uppercase tracking-wide cursor-pointer hover:bg-white/5 select-none">
+                View Raw OCR Text Source
+              </summary>
+              <pre className="p-3 text-[10px] text-gray-500 font-mono whitespace-pre-wrap max-h-[150px] overflow-y-auto border-t border-glass-border/20">
+                {review.raw_ocr_text}
+              </pre>
+            </details>
+          )}
+        </div>
+
+        {/* Screenshot View (Right) */}
+        <div className="w-full lg:w-[40%] xl:w-[45%] shrink-0 flex flex-col gap-2 border border-glass-border/30 rounded-xl p-3 bg-black/40">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Google Search Results Snapshot</span>
+          
+          {screenshotUrl ? (
+            <div className="flex-1 rounded-lg overflow-hidden border border-glass-border/40 max-h-[350px] relative group cursor-zoom-in">
+              <img
+                src={screenshotUrl}
+                alt="Google Search results"
+                className="w-full h-full object-cover object-top hover:scale-[1.1] transition-all duration-300"
+              />
+              <span className="absolute bottom-2 right-2 px-2 py-1 bg-black/75 rounded text-[8px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                Screenshot captured at search time
+              </span>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-glass-border rounded-lg text-gray-500 min-h-[200px]">
+              <Loader2 size={32} className="animate-spin text-primary mb-2 text-amber-500" />
+              <h5 className="text-[11px] font-semibold text-white">Google Search Discovery Active</h5>
+              <p className="text-[10px] mt-1 text-gray-400">
+                Searching Google and capturing search snippet snapshots... Please wait a few seconds.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const CatalogUpload = () => {
@@ -143,6 +367,19 @@ const CatalogUpload = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // Staged Reviews & Google Extraction States
+  const [stagedReviews, setStagedReviews] = useState<any[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+  const [matchedPreviousJobId, setMatchedPreviousJobId] = useState<number | null>(null);
+  const [newlyDetectedColumns, setNewlyDetectedColumns] = useState<string[]>([]);
+  const [googleSearchStatus, setGoogleSearchStatus] = useState<{ count: number; limit: number } | null>(null);
+  const [isCaptchaActive, setIsCaptchaActive] = useState(false);
+  const [captchaMedicine, setCaptchaMedicine] = useState<string | null>(null);
+  const [selectedReview, setSelectedReview] = useState<any | null>(null);
+  const [activeReviewSubTab, setActiveReviewSubTab] = useState<'details' | 'staged'>('staged');
+  const [reviewSearchTerm, setReviewSearchTerm] = useState('');
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
 
   // Mapping States
   const [showMappingModal, setShowMappingModal] = useState(false);
@@ -216,18 +453,46 @@ const CatalogUpload = () => {
     }
   };
 
+  // Helper to fetch staged reviews for a catalog job
+  const fetchReviews = useCallback(async (id: number) => {
+    setLoadingReviews(true);
+    try {
+      const res = await api.getCatalogJobReviews(id);
+      if (res.success) {
+        setStagedReviews(res.reviews || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch staged reviews:', err);
+    } finally {
+      setLoadingReviews(false);
+    }
+  }, []);
+
+  // Helper to fetch Google Search rate limits and counters
+  const fetchSearchStatus = useCallback(async () => {
+    try {
+      const res = await api.getGoogleSearchStatus();
+      if (res.success) {
+        setGoogleSearchStatus({ count: res.count, limit: res.limit });
+      }
+    } catch (err) {
+      console.error('Failed to fetch search usage status:', err);
+    }
+  }, []);
+
   // Fetch previous jobs
   const fetchJobs = useCallback(async () => {
     setLoadingJobs(true);
     try {
       const jobs = await api.getCatalogJobs();
       setPreviousJobs(jobs || []);
+      fetchSearchStatus();
     } catch (err: any) {
       console.error('Failed to fetch catalog jobs:', err);
     } finally {
       setLoadingJobs(false);
     }
-  }, []);
+  }, [fetchSearchStatus]);
 
   useEffect(() => {
     fetchJobs();
@@ -236,7 +501,10 @@ const CatalogUpload = () => {
   const jobIdRef = useRef<number | null>(null);
   useEffect(() => {
     jobIdRef.current = jobId;
-  }, [jobId]);
+    if (jobId) {
+      fetchReviews(jobId);
+    }
+  }, [jobId, fetchReviews]);
 
   useEffect(() => {
     const backendUrl = apiClient.defaults.baseURL || window.location.origin;
@@ -347,6 +615,19 @@ const CatalogUpload = () => {
 
             // Fetch latest jobs to refresh stats and details
             fetchJobs();
+          } else if (type === 'catalog_review_updated' && payload) {
+            if (payload.jobId === jobIdRef.current) {
+              fetchReviews(payload.jobId);
+            }
+          } else if (type === 'google_verification_required' && payload) {
+            setIsCaptchaActive(true);
+            setCaptchaMedicine(payload.medicineName);
+          } else if (type === 'google_verification_solved' && payload) {
+            setIsCaptchaActive(false);
+            setCaptchaMedicine(null);
+            if (jobIdRef.current) {
+              fetchReviews(jobIdRef.current);
+            }
           }
         } catch (err) {
           console.error('Failed to parse catalog SSE message:', err);
@@ -398,6 +679,8 @@ const CatalogUpload = () => {
     setProgress(0);
     setPreviewRows([]);
     setJobId(null);
+    setMatchedPreviousJobId(null);
+    setNewlyDetectedColumns([]);
     
     try {
       const res = await api.uploadCatalogFile(file);
@@ -524,12 +807,20 @@ const CatalogUpload = () => {
       new: job.new_count || 0,
       duplicates: job.duplicate_count || 0
     });
+    setMatchedPreviousJobId(null);
+    setNewlyDetectedColumns([]);
 
     try {
       const data = await api.getCatalogJobStatus(job.id);
       if (data.previewData && data.previewData.length > 0) {
         setPreviewHeaders(Object.keys(data.previewData[0]));
         setPreviewRows(data.previewData);
+      }
+      if (data.matchedPreviousJobId) {
+        setMatchedPreviousJobId(data.matchedPreviousJobId);
+      }
+      if (data.newlyDetectedColumns) {
+        setNewlyDetectedColumns(data.newlyDetectedColumns);
       }
       setUploading(false);
       setActiveTab('upload');
@@ -775,87 +1066,271 @@ const CatalogUpload = () => {
                     </div>
                   </div>
 
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    {[
-                      { label: 'Total Products Found', value: stats.total, color: 'text-primary', clickable: false },
-                      { 
-                        label: 'Existing Products (Merge)', 
-                        value: stats.existing, 
-                        color: showExistingColor ? 'text-yellow-400 border-yellow-500/30' : 'text-muted border-glass-border opacity-50 grayscale', 
-                        clickable: true,
-                        active: showExistingColor,
-                        onClick: () => setShowExistingColor(p => !p)
-                      },
-                      { 
-                        label: 'New Products (Create)', 
-                        value: stats.new, 
-                        color: showNewColor ? 'text-green border-green/30' : 'text-muted border-glass-border opacity-50 grayscale', 
-                        clickable: true,
-                        active: showNewColor,
-                        onClick: () => setShowNewColor(p => !p)
-                      },
-                      { label: 'Duplicates in CSV', value: stats.duplicates, color: 'text-red-400', clickable: false }
-                    ].map((card, idx) => (
-                      <div 
-                        key={idx} 
-                        onClick={card.clickable ? card.onClick : undefined}
-                        className={`glass-panel p-5 text-center transition-all duration-300 ${card.clickable ? 'cursor-pointer select-none hover:scale-[1.02] border' : ''} ${card.clickable ? (card.active ? 'bg-bg3' : 'bg-bg') : ''}`}
-                      >
-                        <p className={`text-2xl font-black ${card.color.split(' ')[0]}`}>{card.value.toLocaleString()}</p>
-                        <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">{card.label}</p>
-                        {card.clickable && (
-                          <span className={`text-[8px] font-bold uppercase tracking-wider mt-1.5 px-1.5 py-0.5 rounded-full inline-block border ${card.active ? 'bg-glass-bg border-glass-border text-primary' : 'bg-bg border-glass-border text-muted'}`}>
-                            {card.active ? 'On / Highlighted' : 'Off / Muted'}
-                          </span>
-                        )}
+                  {/* Duplicate Catalog Alert Banner */}
+                  {matchedPreviousJobId && (
+                    <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-xl flex flex-col gap-2">
+                      <div className="flex items-center gap-2 font-bold text-sm">
+                        <AlertTriangle size={18} className="text-amber-500" />
+                        <span>Duplicate Catalog Detected</span>
                       </div>
-                    ))}
+                      <p className="text-xs text-muted">
+                        This catalog matches a previously uploaded catalog (Job ID: <span className="font-bold text-white">#{matchedPreviousJobId}</span>).
+                      </p>
+                      {newlyDetectedColumns.length > 0 ? (
+                        <div className="text-xs mt-1 flex items-center gap-2">
+                          <span className="font-semibold text-white">Newly detected columns:</span>
+                          <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded font-mono border border-blue-500/30">
+                            {newlyDetectedColumns.join(', ')}
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-xs mt-1 text-muted">No new columns detected in this upload.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Processing Summary Dashboard (8 Stats) */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-bg2 border border-border p-4 rounded-xl text-center flex flex-col justify-center">
+                      <p className="text-2xl font-black text-text">{stats.total.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">Total Uploaded</p>
+                    </div>
+                    
+                    <div 
+                      onClick={() => setShowNewColor(p => !p)}
+                      className={`bg-bg2 border border-border p-4 rounded-xl text-center cursor-pointer select-none hover:scale-[1.02] transition-transform ${showNewColor ? 'bg-bg3 border-green/30' : 'opacity-65'}`}
+                    >
+                      <p className="text-2xl font-black text-green">{stats.new.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">New Medicines</p>
+                      <span className={`text-[8px] font-bold uppercase tracking-wider mt-1.5 px-1.5 py-0.5 rounded-full inline-block border ${showNewColor ? 'bg-glass-bg border-glass-border text-green' : 'bg-bg border-glass-border text-muted'}`}>
+                        {showNewColor ? 'Highlighted' : 'Muted'}
+                      </span>
+                    </div>
+
+                    <div 
+                      onClick={() => setShowExistingColor(p => !p)}
+                      className={`bg-bg2 border border-border p-4 rounded-xl text-center cursor-pointer select-none hover:scale-[1.02] transition-transform ${showExistingColor ? 'bg-bg3 border-amber-500/30' : 'opacity-65'}`}
+                    >
+                      <p className="text-2xl font-black text-amber-500">{stats.existing.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">Existing Matched</p>
+                      <span className={`text-[8px] font-bold uppercase tracking-wider mt-1.5 px-1.5 py-0.5 rounded-full inline-block border ${showExistingColor ? 'bg-glass-bg border-glass-border text-amber-500' : 'bg-bg border-glass-border text-muted'}`}>
+                        {showExistingColor ? 'Highlighted' : 'Muted'}
+                      </span>
+                    </div>
+
+                    <div className="bg-bg2 border border-border p-4 rounded-xl text-center flex flex-col justify-center">
+                      <p className="text-2xl font-black text-red-400">{stats.duplicates.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">Duplicate Medicines</p>
+                    </div>
+
+                    <div className="bg-bg2 border border-border p-4 rounded-xl text-center flex flex-col justify-center">
+                      <p className="text-2xl font-black text-amber-500">{stagedReviews.filter(r => r.status === 'pending').length}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">Requiring Review</p>
+                    </div>
+
+                    <div className="bg-bg2 border border-border p-4 rounded-xl text-center flex flex-col justify-center">
+                      <p className="text-2xl font-black text-blue-400">{newlyDetectedColumns.length}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">New Columns</p>
+                    </div>
+
+                    <div className="bg-bg2 border border-border p-4 rounded-xl text-center flex flex-col justify-center">
+                      <p className="text-2xl font-black text-green">{stagedReviews.filter(r => r.status === 'approved').length}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">Successfully Approved</p>
+                    </div>
+
+                    <div className="bg-bg2 border border-border p-4 rounded-xl text-center flex flex-col justify-center">
+                      <p className="text-2xl font-black text-red-500">{stagedReviews.filter(r => r.status === 'rejected').length}</p>
+                      <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1">Rejected / Excluded</p>
+                    </div>
                   </div>
 
-                  {/* Dynamic Preview Header */}
-                  <h5 className="font-bold text-xs text-gray-400 mb-2 uppercase tracking-wider">
-                    Catalogue Preview (First 100 lines)
-                  </h5>
+                  {/* Tab Selector */}
+                  <div className="flex border-b border-border mb-4">
+                    <button
+                      onClick={() => setActiveReviewSubTab('staged')}
+                      className={`px-4 py-2 text-xs font-bold border-b-2 transition-all ${
+                        activeReviewSubTab === 'staged'
+                          ? 'border-primary text-text'
+                          : 'border-transparent text-muted hover:text-text'
+                      }`}
+                    >
+                      Preview Grid
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveReviewSubTab('details');
+                        if (jobId) fetchReviews(jobId);
+                      }}
+                      className={`px-4 py-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+                        activeReviewSubTab === 'details'
+                          ? 'border-primary text-text'
+                          : 'border-transparent text-muted hover:text-text'
+                      }`}
+                    >
+                      Review Queue ({stagedReviews.filter(r => r.status === 'pending').length} pending)
+                    </button>
+                  </div>
 
-                  {/* Preview Table */}
-                  <div className="flex-1 overflow-auto border border-glass-border/30 rounded-xl bg-black/20">
-                    <table className="w-full text-left text-xs text-gray-300">
-                      <thead className="sticky top-0 bg-[#18181b]/95 border-b border-glass-border">
-                        <tr>
-                          {previewHeaders.map((header) => (
-                            <th key={header} className="p-3 font-bold uppercase tracking-wide text-gray-400">{header}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewRows.map((row, ri) => {
-                          const isExisting = row.__is_existing === true;
-                          let rowClass = "border-b border-glass-border/10 hover:bg-white/5 transition-all duration-200";
-                          
-                          if (isExisting) {
-                            if (showExistingColor) {
-                              rowClass += " bg-amber-500/5 text-yellow-400/90";
-                            }
-                          } else {
-                            if (showNewColor) {
-                              rowClass += " bg-emerald-500/5 text-green/90";
-                            }
-                          }
-
-                          return (
-                            <tr key={ri} className={rowClass}>
+                  {/* Preview Grid Tab Content */}
+                  {activeReviewSubTab === 'staged' && (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                      <h5 className="font-bold text-xs text-gray-400 mb-2 uppercase tracking-wider">
+                        Catalogue Preview (First 100 lines)
+                      </h5>
+                      <div className="flex-1 overflow-auto border border-glass-border/30 rounded-xl bg-black/20">
+                        <table className="w-full text-left text-xs text-gray-300">
+                          <thead className="sticky top-0 bg-[#18181b]/95 border-b border-glass-border">
+                            <tr>
                               {previewHeaders.map((header) => (
-                                <td key={header} className="p-3 max-w-xs truncate" title={row[header]}>
-                                  {String(row[header] ?? '—')}
-                                </td>
+                                <th key={header} className="p-3 font-bold uppercase tracking-wide text-gray-400">{header}</th>
                               ))}
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          </thead>
+                          <tbody>
+                            {previewRows.map((row, ri) => {
+                              const isExisting = row.__is_existing === true;
+                              let rowClass = "border-b border-glass-border/10 hover:bg-white/5 transition-all duration-200";
+                              
+                              if (isExisting) {
+                                if (showExistingColor) {
+                                  rowClass += " bg-amber-500/5 text-yellow-400/90";
+                                }
+                              } else {
+                                if (showNewColor) {
+                                  rowClass += " bg-emerald-500/5 text-green/90";
+                                }
+                              }
+
+                              return (
+                                <tr key={ri} className={rowClass}>
+                                  {previewHeaders.map((header) => (
+                                    <td key={header} className="p-3 max-w-xs truncate" title={row[header]}>
+                                      {String(row[header] ?? '—')}
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Review Queue Tab Content */}
+                  {activeReviewSubTab === 'details' && (
+                    <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
+                      {/* Left Pane: Review Items List */}
+                      <div className="w-full md:w-[30%] lg:w-[25%] shrink-0 border border-border rounded-xl bg-bg2 p-4 flex flex-col gap-3 overflow-hidden">
+                        <div className="flex flex-col gap-2">
+                          <input
+                            type="text"
+                            placeholder="Search reviews..."
+                            value={reviewSearchTerm}
+                            onChange={e => setReviewSearchTerm(e.target.value)}
+                            className="w-full bg-black/40 border border-glass-border text-white text-xs rounded-lg p-2 outline-none focus:border-primary font-medium"
+                          />
+                          <select
+                            value={reviewStatusFilter}
+                            onChange={e => setReviewStatusFilter(e.target.value as any)}
+                            className="w-full bg-black/40 border border-glass-border text-white text-xs rounded-lg p-2 outline-none focus:border-primary font-medium"
+                          >
+                            <option value="pending">Pending Review</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                            <option value="all">All Records</option>
+                          </select>
+                        </div>
+
+                        {loadingReviews ? (
+                          <div className="flex-1 flex items-center justify-center">
+                            <Loader2 className="animate-spin text-primary" size={20} />
+                          </div>
+                        ) : (
+                          <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1">
+                            {stagedReviews
+                              .filter(r => {
+                                const matchesSearch = r.medicine_name.toLowerCase().includes(reviewSearchTerm.toLowerCase());
+                                const matchesFilter = 
+                                  reviewStatusFilter === 'all' || 
+                                  r.status === reviewStatusFilter;
+                                return matchesSearch && matchesFilter;
+                              })
+                              .map((r) => {
+                                const isSelected = selectedReview && selectedReview.id === r.id;
+                                return (
+                                  <button
+                                    key={r.id}
+                                    onClick={() => setSelectedReview(r)}
+                                    className={`w-full text-left p-3 rounded-lg border transition-all flex flex-col gap-1 ${
+                                      isSelected
+                                        ? 'bg-primary/10 border-primary text-text shadow-[0_0_10px_rgba(59,130,246,0.15)]'
+                                        : 'bg-bg border-glass-border text-muted hover:border-glass-border/80 hover:text-text'
+                                    }`}
+                                  >
+                                    <span className="text-xs font-bold truncate block text-white">{r.medicine_name}</span>
+                                    <div className="flex justify-between items-center w-full text-[9px] mt-1">
+                                      <span className={`px-1.5 py-0.5 rounded-full font-bold uppercase border ${
+                                        r.status === 'approved' ? 'bg-green-500/10 text-green border-green/20' :
+                                        r.status === 'rejected' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                        'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                      }`}>
+                                        {r.status}
+                                      </span>
+                                      {r.screenshot_path && (
+                                        <span className="text-green flex items-center gap-0.5 font-bold">
+                                          ✓ Enriched
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            {stagedReviews.filter(r => {
+                              const matchesSearch = r.medicine_name.toLowerCase().includes(reviewSearchTerm.toLowerCase());
+                              const matchesFilter = reviewStatusFilter === 'all' || r.status === reviewStatusFilter;
+                              return matchesSearch && matchesFilter;
+                            }).length === 0 && (
+                              <div className="text-center py-8 text-gray-500 text-xs italic">
+                                No reviews found matching filters.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Pane: Review Detail Pane */}
+                      <div className="flex-1 border border-border rounded-xl bg-bg2 p-5 overflow-y-auto">
+                        {selectedReview ? (
+                          <ReviewDetailPane
+                            review={selectedReview}
+                            googleSearchStatus={googleSearchStatus}
+                            onApproved={() => {
+                              if (jobId) {
+                                fetchReviews(jobId);
+                                fetchSearchStatus();
+                                setSelectedReview(null);
+                              }
+                            }}
+                            onRejected={() => {
+                              if (jobId) {
+                                fetchReviews(jobId);
+                                setSelectedReview(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-500">
+                            <FileText size={40} className="mb-2 text-gray-600" />
+                            <h5 className="text-xs font-semibold text-white">Select a Medicine to Review</h5>
+                            <p className="text-[11px] mt-1 max-w-xs text-muted">
+                              Medicines missing composition references are staged here. Click one from the list to review, search Google, or manually approve.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1321,6 +1796,35 @@ const CatalogUpload = () => {
           );
         })(),
         document.body
+      )}
+
+      {isCaptchaActive && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-bg2 border border-border p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col items-center text-center gap-4 animate-pulse">
+            <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center">
+              <AlertTriangle size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-white">Google Verification Required</h3>
+            <p className="text-xs text-muted">
+              Google has triggered a CAPTCHA challenge for medicine composition search:
+              <span className="block font-bold text-white mt-1 text-sm bg-black/40 p-2 rounded border border-border/30">
+                "{captchaMedicine || 'Active Medicine'}"
+              </span>
+            </p>
+            <div className="bg-amber-500/5 border border-amber-500/20 text-amber-300 text-[11px] p-3 rounded-lg text-left">
+              <strong>How to solve:</strong>
+              <ol className="list-decimal list-inside space-y-1 mt-1 text-[10px] text-muted">
+                <li>A headful Chrome browser window has been opened on your local server.</li>
+                <li>Please locate that window and solve the CAPTCHA challenge manually.</li>
+                <li>Once solved, the system will automatically detect the result and resume.</li>
+              </ol>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+              <Loader2 size={12} className="animate-spin text-amber-500" />
+              <span>Waiting for CAPTCHA resolution...</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1183,6 +1183,7 @@ const Learning: React.FC = () => {
                         >
                           <LogOut size={10} /> Log Out
                         </button>
+                      </div>
                     </div>
                   )}
                 </div>

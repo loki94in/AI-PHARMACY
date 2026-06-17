@@ -2,14 +2,14 @@ import { jest } from '@jest/globals';
 
 jest.unstable_mockModule('../src/whatsappClient.js', () => ({
   __esModule: true,
-  sendMessage: jest.fn().mockResolvedValue(true),
-  initClient: jest.fn().mockResolvedValue(true)
+  sendMessage: jest.fn(() => Promise.resolve(true)),
+  initClient: jest.fn(() => Promise.resolve(true))
 }));
 
 jest.unstable_mockModule('../src/telegramBot.js', () => ({
   __esModule: true,
   telegramBotService: {
-    sendDefaultNotification: jest.fn().mockResolvedValue(true)
+    sendDefaultNotification: jest.fn(() => Promise.resolve(true))
   }
 }));
 
@@ -174,7 +174,12 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
     }
     await db.close();
 
-    // 3. Verify WhatsApp notification is sent out
-    expect(mockSendMessage).toHaveBeenCalled();
+    // 3. Verify that the refill is marked as ready for manual send, and no auto WhatsApp is sent
+    const dbVerify = await open({ filename: dbPath, driver: sqlite3.default.Database });
+    const refill = await dbVerify.get('SELECT is_ready FROM patient_refills WHERE patient_name = ?', 'Alice Smith');
+    await dbVerify.close();
+
+    expect(refill.is_ready).toBe(1);
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });

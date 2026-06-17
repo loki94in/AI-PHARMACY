@@ -11,6 +11,413 @@ async function logAction(db: any, actionType: string, description: string) {
   );
 }
 
+// Timeline endpoint aggregating POS sales, purchases, customer returns, and adjustments with running stock calculation
+router.get('/timeline', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const {
+      q,
+      dateFrom,
+      dateTo,
+      medicineName,
+      batchNo,
+      salesBillNo,
+      purchaseBillNo,
+      patientName,
+      distributor,
+      type
+    } = req.query;
+
+    // Fetch all sales items
+    const salesPromise = db.all(`
+      SELECT
+        'Sale' AS type,
+        sinv.id AS invoice_id,
+        sinv.invoice_no AS reference,
+        sinv.date AS date,
+        c.name AS customer_name,
+        si.quantity AS quantity,
+        si.loose_qty AS loose_quantity,
+        si.batch_no AS batch_no,
+        m.name AS medicine_name,
+        m.id AS medicine_id,
+        im.id AS inventory_id,
+        im.expiry_date AS expiry_date,
+        im.mrp AS mrp
+      FROM sale_items si
+      JOIN sales_invoices sinv ON si.invoice_id = sinv.id
+      JOIN inventory_master im ON si.inventory_id = im.id
+      JOIN medicines m ON im.medicine_id = m.id
+      LEFT JOIN customers c ON sinv.customer_id = c.id
+    `);
+
+    // Fetch all purchase items
+    const purchasesPromise = db.all(`
+      SELECT
+        'Purchase' AS type,
+        p.id AS purchase_id,
+        p.invoice_no AS reference,
+        p.date AS date,
+        d.name AS distributor_name,
+        pi.quantity AS quantity,
+        pi.free_qty AS free_qty,
+        pi.batch_no AS batch_no,
+        m.name AS medicine_name,
+        m.id AS medicine_id,
+        im.id AS inventory_id,
+        pi.expiry_date AS expiry_date,
+        pi.mrp AS mrp
+      FROM purchase_items pi
+      JOIN purchases p ON pi.purchase_id = p.id
+      JOIN medicines m ON pi.medicine_id = m.id
+      LEFT JOIN distributors d ON p.distributor_id = d.id
+      LEFT JOIN inventory_master im ON im.medicine_id = pi.medicine_id AND im.batch_no = pi.batch_no
+    `);
+
+    // Fetch all return items
+    const returnsPromise = db.all(`
+      SELECT
+        'Return' AS type,
+        r.id AS return_id,
+        r.return_no AS reference,
+        r.date AS date,
+        c.name AS customer_name,
+        d.name AS distributor_name,
+        ri.quantity AS quantity,
+        ri.batch_no AS batch_no,
+        m.name AS medicine_name,
+        m.id AS medicine_id,
+        im.id AS inventory_id,
+        im.expiry_date AS expiry_date,
+        ri.mrp AS mrp,
+        r.type AS return_type,
+        r.reason AS reason
+      FROM return_items ri
+      JOIN returns r ON ri.return_id = r.id
+      JOIN medicines m ON ri.medicine_id = m.id
+      LEFT JOIN distributors d ON r.distributor_id = d.id
+      LEFT JOIN sales_invoices si ON r.original_invoice_id = si.id
+      LEFT JOIN customers c ON si.customer_id = c.id
+      LEFT JOIN inventory_master im ON im.medicine_id = ri.medicine_id AND im.batch_no = ri.batch_no
+    `);
+
+    // Fetch all action logs (adjustments)
+    const logsPromise = db.all(`
+      SELECT
+        'Adjustment' AS type,
+        al.id AS log_id,
+        al.action_type AS reference,
+        al.created_at AS date,
+        al.description AS detail
+      FROM action_logs al
+      WHERE al.action_type IN ('INVENTORY_CORRECTION', 'SALES_BILL_CORRECTION', 'PURCHASE_BILL_CORRECTION')
+    `);
+
+    // Run queries in parallel
+    const [sales, purchases, returns, logs] = await Promise.all([
+      salesPromise,
+      purchasesPromise,
+      returnsPromise,
+      logsPromise
+    ]);
+
+    // Fetch medicine and inventory master caches to resolve adjustment medicine_ids and inventory_ids
+    const medicinesList = await db.all('SELECT id, name FROM medicines');
+    const medMapByName = new Map(medicinesList.map(m => [m.name.toLowerCase().trim(), m.id]));
+
+    const inventoryList = await db.all('SELECT id, medicine_id, batch_no, expiry_date, mrp FROM inventory_master');
+    // Map by inventory ID
+    const invMapById = new Map(inventoryList.map(im => [im.id, im]));
+
+    // Map logs to timeline items
+    const adjustments: any[] = [];
+    for (const log of logs) {
+      const medMatch = log.detail.match(/Inventory correction for "([^"]+)"/i);
+      const batchMatch = log.detail.match(/Batch:\s*"([^"]+)"/i);
+      const idMatch = log.detail.match(/ID\s+(\d+)/i);
+
+      const parsedMedName = medMatch ? medMatch[1].toLowerCase().trim() : '';
+      const parsedBatch = batchMatch ? batchMatch[1] : '';
+      const parsedInvId = idMatch ? parseInt(idMatch[1], 10) : null;
+
+      let medicine_id = parsedMedName ? medMapByName.get(parsedMedName) : null;
+      let batch_no = parsedBatch;
+      let expiry_date = null;
+      let mrp = 0;
+      let inventory_id = parsedInvId;
+
+      if (parsedInvId && invMapById.has(parsedInvId)) {
+        const inv = invMapById.get(parsedInvId)!;
+        medicine_id = inv.medicine_id;
+        batch_no = inv.batch_no;
+        expiry_date = inv.expiry_date;
+        mrp = inv.mrp;
+      }
+
+      // Find medicine name
+      let medicine_name = '';
+      if (medicine_id) {
+        const med = medicinesList.find(m => m.id === medicine_id);
+        if (med) medicine_name = med.name;
+      }
+
+      adjustments.push({
+        type: 'Adjustment',
+        log_id: log.log_id,
+        reference: log.reference,
+        date: log.date,
+        customer_name: null,
+        distributor_name: null,
+        quantity: 0,
+        loose_quantity: 0,
+        batch_no,
+        medicine_name,
+        medicine_id,
+        inventory_id,
+        expiry_date,
+        mrp,
+        detail: log.detail
+      });
+    }
+
+    // Combine all transactions
+    let allTransactions: any[] = [];
+
+    // Format sales
+    for (const s of sales) {
+      allTransactions.push({
+        ...s,
+        purchase_qty: 0,
+        sale_qty: s.quantity,
+        sale_loose: s.loose_quantity,
+        purchase_return_qty: 0,
+        sales_return_qty: 0,
+        adj_qty: 0,
+        adj_loose: 0,
+        party: s.customer_name || 'Walk-in'
+      });
+    }
+
+    // Format purchases
+    for (const p of purchases) {
+      allTransactions.push({
+        ...p,
+        purchase_qty: p.quantity,
+        sale_qty: 0,
+        sale_loose: 0,
+        purchase_return_qty: 0,
+        sales_return_qty: 0,
+        adj_qty: 0,
+        adj_loose: 0,
+        party: p.distributor_name || 'Unknown'
+      });
+    }
+
+    // Format returns
+    for (const r of returns) {
+      const isSaleReturn = r.return_type === 'sale';
+      allTransactions.push({
+        ...r,
+        purchase_qty: 0,
+        sale_qty: 0,
+        sale_loose: 0,
+        purchase_return_qty: isSaleReturn ? 0 : r.quantity,
+        sales_return_qty: isSaleReturn ? r.quantity : 0,
+        adj_qty: 0,
+        adj_loose: 0,
+        party: isSaleReturn ? (r.customer_name || 'Walk-in') : (r.distributor_name || 'Unknown')
+      });
+    }
+
+    // Format adjustments
+    for (const adj of adjustments) {
+      // Parse quantities from detail log if possible
+      let adj_qty = 0;
+      let adj_loose = 0;
+      const qtyMatch = adj.detail.match(/Quantity:\s*(\d+)\s*->\s*(\d+)/i);
+      const looseMatch = adj.detail.match(/Loose(?:_quantity)?:\s*(\d+)\s*->\s*(\d+)/i);
+      
+      let target_qty = null;
+      let target_loose = null;
+      if (qtyMatch) {
+        const oldVal = parseInt(qtyMatch[1], 10);
+        const newVal = parseInt(qtyMatch[2], 10);
+        adj_qty = newVal - oldVal;
+        target_qty = newVal;
+      }
+      if (looseMatch) {
+        const oldVal = parseInt(looseMatch[1], 10);
+        const newVal = parseInt(looseMatch[2], 10);
+        adj_loose = newVal - oldVal;
+        target_loose = newVal;
+      }
+
+      allTransactions.push({
+        ...adj,
+        purchase_qty: 0,
+        sale_qty: 0,
+        sale_loose: 0,
+        purchase_return_qty: 0,
+        sales_return_qty: 0,
+        adj_qty,
+        adj_loose,
+        target_qty,
+        target_loose,
+        party: 'Admin'
+      });
+    }
+
+    // Sort all chronologically (oldest first) to compute running totals
+    allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Maps for tracking running totals
+    // Key: medicine_id + '_' + batch_no
+    const batchRunning = new Map<string, { qty: number; loose: number }>();
+    // Key: medicine_id
+    const medRunning = new Map<number, { qty: number; loose: number }>();
+
+    for (const tx of allTransactions) {
+      if (!tx.medicine_id) continue;
+
+      const batchKey = `${tx.medicine_id}_${tx.batch_no || ''}`;
+      
+      // Get previous batch stock
+      if (!batchRunning.has(batchKey)) {
+        batchRunning.set(batchKey, { qty: 0, loose: 0 });
+      }
+      const prevBatch = batchRunning.get(batchKey)!;
+      tx.opening_qty = prevBatch.qty;
+      tx.opening_loose = prevBatch.loose;
+
+      // Get previous med stock
+      if (!medRunning.has(tx.medicine_id)) {
+        medRunning.set(tx.medicine_id, { qty: 0, loose: 0 });
+      }
+      const prevMed = medRunning.get(tx.medicine_id)!;
+
+      // Update stocks
+      let newBatchQty = prevBatch.qty;
+      let newBatchLoose = prevBatch.loose;
+
+      let newMedQty = prevMed.qty;
+      let newMedLoose = prevMed.loose;
+
+      if (tx.type === 'Purchase') {
+        newBatchQty += tx.purchase_qty;
+        newMedQty += tx.purchase_qty;
+      } else if (tx.type === 'Sale') {
+        newBatchQty -= tx.sale_qty;
+        newBatchLoose -= tx.sale_loose;
+        newMedQty -= tx.sale_qty;
+        newMedLoose -= tx.sale_loose;
+      } else if (tx.type === 'Return') {
+        if (tx.return_type === 'sale') {
+          newBatchQty += tx.sales_return_qty;
+          newMedQty += tx.sales_return_qty;
+        } else {
+          newBatchQty -= tx.purchase_return_qty;
+          newMedQty -= tx.purchase_return_qty;
+        }
+      } else if (tx.type === 'Adjustment') {
+        if (tx.target_qty !== null) {
+          newMedQty += (tx.target_qty - newBatchQty);
+          newBatchQty = tx.target_qty;
+        } else {
+          newBatchQty += tx.adj_qty;
+          newMedQty += tx.adj_qty;
+        }
+        if (tx.target_loose !== null) {
+          newMedLoose += (tx.target_loose - newBatchLoose);
+          newBatchLoose = tx.target_loose;
+        } else {
+          newBatchLoose += tx.adj_loose;
+          newMedLoose += tx.adj_loose;
+        }
+      }
+
+      // Update maps
+      batchRunning.set(batchKey, { qty: newBatchQty, loose: newBatchLoose });
+      medRunning.set(tx.medicine_id, { qty: newMedQty, loose: newMedLoose });
+
+      tx.closing_qty = newBatchQty;
+      tx.closing_loose = newBatchLoose;
+
+      tx.medicine_stock_qty = newMedQty;
+      tx.medicine_stock_loose = newMedLoose;
+    }
+
+    // Now filter allTransactions according to user queries
+    let filtered = allTransactions;
+
+    if (q) {
+      const qLower = String(q).toLowerCase();
+      filtered = filtered.filter(tx => 
+        (tx.medicine_name && tx.medicine_name.toLowerCase().includes(qLower)) ||
+        (tx.batch_no && tx.batch_no.toLowerCase().includes(qLower)) ||
+        (tx.reference && tx.reference.toLowerCase().includes(qLower)) ||
+        (tx.party && tx.party.toLowerCase().includes(qLower)) ||
+        (tx.detail && tx.detail.toLowerCase().includes(qLower))
+      );
+    }
+
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom as string);
+      fromDate.setHours(0,0,0,0);
+      filtered = filtered.filter(tx => new Date(tx.date) >= fromDate);
+    }
+
+    if (dateTo) {
+      const toDate = new Date(dateTo as string);
+      toDate.setHours(23,59,59,999);
+      filtered = filtered.filter(tx => new Date(tx.date) <= toDate);
+    }
+
+    if (medicineName) {
+      const medLower = String(medicineName).toLowerCase();
+      filtered = filtered.filter(tx => tx.medicine_name && tx.medicine_name.toLowerCase().includes(medLower));
+    }
+
+    if (batchNo) {
+      const batchLower = String(batchNo).toLowerCase();
+      filtered = filtered.filter(tx => tx.batch_no && tx.batch_no.toLowerCase().includes(batchLower));
+    }
+
+    if (salesBillNo) {
+      const sBillLower = String(salesBillNo).toLowerCase();
+      filtered = filtered.filter(tx => tx.type === 'Sale' && tx.reference && tx.reference.toLowerCase().includes(sBillLower));
+    }
+
+    if (purchaseBillNo) {
+      const pBillLower = String(purchaseBillNo).toLowerCase();
+      filtered = filtered.filter(tx => tx.type === 'Purchase' && tx.reference && tx.reference.toLowerCase().includes(pBillLower));
+    }
+
+    if (patientName) {
+      const patientLower = String(patientName).toLowerCase();
+      filtered = filtered.filter(tx => tx.type === 'Sale' && tx.party && tx.party.toLowerCase().includes(patientLower));
+    }
+
+    if (distributor) {
+      const distLower = String(distributor).toLowerCase();
+      filtered = filtered.filter(tx => tx.type === 'Purchase' && tx.party && tx.party.toLowerCase().includes(distLower));
+    }
+
+    if (type && type !== 'All') {
+      filtered = filtered.filter(tx => tx.type === type);
+    }
+
+    // Sort descending by date/time (newest first)
+    filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // Limit to 150 items
+    res.json(filtered.slice(0, 150));
+  } catch (error) {
+    const err = error as Error;
+    console.error('Timeline fetch failed:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Search endpoint with multi-criteria filters
 router.get('/search', async (req, res) => {
   try {

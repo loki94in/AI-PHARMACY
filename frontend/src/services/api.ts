@@ -147,6 +147,7 @@ export interface Refill {
   status: string;
   hold_for_stock?: number;
   is_active: number;
+  is_ready?: number;
 }
 
 export interface AutomationNotification {
@@ -408,6 +409,11 @@ export const api = {
   pauseCatalogJob: (id: number) => apiClient.post(`/catalog/job/${id}/pause`).then(res => res.data),
   resumeCatalogJob: (id: number) => apiClient.post(`/catalog/job/${id}/resume`).then(res => res.data),
   deleteCatalogJob: (id: number) => apiClient.delete(`/catalog/job/${id}`).then(res => res.data),
+  getCatalogJobReviews: (id: number) => apiClient.get(`/catalog/job/${id}/reviews`).then(res => res.data),
+  approveCatalogReview: (id: number, approvedData: any) => apiClient.post(`/catalog/review/${id}/approve`, { approvedData }).then(res => res.data),
+  rejectCatalogReview: (id: number) => apiClient.post(`/catalog/review/${id}/reject`).then(res => res.data),
+  enrichCatalogReview: (id: number) => apiClient.post(`/catalog/review/${id}/enrich`).then(res => res.data),
+  getGoogleSearchStatus: () => apiClient.get(`/catalog/search-status`).then(res => res.data),
   
   // Reconciliation
   getReconciliationList: () => apiClient.get('/purchases/reconciliation').then(res => res.data),
@@ -438,6 +444,7 @@ export const api = {
 
   // Investigation Center
   searchInvestigation: (params: any) => apiClient.get('/investigation/search', { params }).then(res => res.data),
+  getInvestigationTimeline: (params: any) => apiClient.get('/investigation/timeline', { params }).then(res => res.data),
   getInvestigationDetails: (inventoryId: number) => apiClient.get(`/investigation/details/${inventoryId}`).then(res => res.data),
   updateInvestigationInventory: (inventoryId: number, data: any) => apiClient.put(`/investigation/inventory/${inventoryId}`, data).then(res => res.data),
   updateInvestigationSaleBill: (invoiceId: number, data: any) => apiClient.put(`/investigation/sales/${invoiceId}`, data).then(res => res.data),

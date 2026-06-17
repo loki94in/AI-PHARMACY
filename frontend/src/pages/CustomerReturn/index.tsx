@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../services/api';
 import { CheckCircle, RotateCcw, AlertCircle, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -94,6 +94,24 @@ export default function CustomerReturn() {
       setLoading(false);
     }
   };
+
+  const handleSubmitRef = useRef(handleSubmit);
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl + S: Save Returns Bill
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSubmitRef.current();
+        return;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const totalRefund = items.reduce((sum, item) => {
     const qty = returnQuantities[item.sale_item_id] || 0;
