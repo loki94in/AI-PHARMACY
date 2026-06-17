@@ -206,6 +206,23 @@ To maximize response efficiency and prevent main context bloat, agents **SHOULD*
 
 ---
 
+## Ponytail — Lazy Senior Dev Mode
+
+Ponytail is installed as an always-on ruleset at `.agents/rules/ponytail.md`.
+Source: https://github.com/DietrichGebert/ponytail (v4.7.0, MIT)
+
+Before writing any code, agents MUST stop at the first rung that holds:
+1. Does this need to exist? (YAGNI) → skip it
+2. Stdlib does it? → use it
+3. Native platform feature? → use it
+4. Installed dependency? → use it
+5. One line? → one line
+6. Only then: the minimum that works
+
+Intentional simplifications must be marked with a `ponytail:` comment.
+
+---
+
 ## UI Development Guidelines
 
 **CRITICAL RULE FOR ALL NEW UI COMPONENTS:**
