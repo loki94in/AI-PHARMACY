@@ -56,8 +56,18 @@ export async function autoCreateExpiryReturns(db: Database): Promise<void> {
     const distributorId = distKey === 'unknown' ? null : parseInt(distKey, 10);
     const distributorName = items[0].distributor_name || 'Unknown Distributor';
     
-    const now = new Date();
-    const returnNo = `RET-EXP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${distributorId || 'MKT'}-${Math.floor(Math.random() * 1000)}`;
+    const lastRet = await db.get("SELECT return_no FROM returns WHERE return_no LIKE 'PR-%' ORDER BY id DESC LIMIT 1");
+    let nextNum = 1;
+    if (lastRet && lastRet.return_no) {
+      const match = lastRet.return_no.match(/PR-(\d+)/);
+      if (match) {
+        nextNum = parseInt(match[1], 10) + 1;
+      } else {
+        const anyNum = lastRet.return_no.match(/\d+/);
+        if (anyNum) nextNum = parseInt(anyNum[0], 10) + 1;
+      }
+    }
+    const returnNo = `PR-${String(nextNum).padStart(3, '0')}`;
     const totalAmount = items.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 0)), 0);
 
     console.log(`[Auto Expiry Return] Creating return ${returnNo} for distributor: ${distributorName} containing ${items.length} items. Total claim amount: ₹${totalAmount.toFixed(2)}`);

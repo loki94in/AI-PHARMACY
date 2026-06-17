@@ -68,6 +68,19 @@ import { createBackup, initBackupScheduler } from './services/backupService.js';
 // Register process-level crash handler (logs to crash_log, exits(1) for watchdog restart)
 registerProcessGuardian();
 
+// ── SKIP_AUTH safety guard ──────────────────────────────────────────
+// Hard block: never allow auth bypass in production
+if (process.env.SKIP_AUTH === 'true' && process.env.NODE_ENV === 'production') {
+  throw new Error(
+    'FATAL: SKIP_AUTH=true is set while NODE_ENV=production. ' +
+    'This is forbidden. Unset SKIP_AUTH before deploying to production.'
+  );
+}
+if (process.env.SKIP_AUTH === 'true') {
+  console.warn('⚠️  AUTH BYPASS ACTIVE — SKIP_AUTH=true. DO NOT USE IN PRODUCTION.');
+}
+// ────────────────────────────────────────────────────────────────────
+
 const app = express();
 
 app.use((req, res, next) => {

@@ -8,6 +8,17 @@ import { HoverPriceIntelTable } from '../../components/HoverPriceIntelTable';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 interface Medicine {
   id: number;
   name: string;
@@ -84,13 +95,13 @@ const getInitialPurchasesTabs = () => {
       selectedDistributor: null,
       distributorSearch: '',
       invoiceNo: '',
-      grnNo: `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`,
+      grnNo: `P-${Math.floor(100 + Math.random()*900)}`,
       invoiceDate: new Date().toISOString().split('T')[0],
       globalCdPer: '',
       extraCredit: '',
       items: [
         {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           medicine_id: null,
           medicine_name: '',
           batch_no: '',
@@ -332,7 +343,7 @@ const Purchases: React.FC = () => {
       selectedDistributor: null,
       distributorSearch: '',
       invoiceNo: '',
-      grnNo: `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`,
+      grnNo: `P-${Math.floor(100 + Math.random()*900)}`,
       invoiceDate: new Date().toISOString().split('T')[0],
       globalCdPer: '',
       extraCredit: '',
@@ -378,7 +389,7 @@ const Purchases: React.FC = () => {
         selectedDistributor: null,
         distributorSearch: '',
         invoiceNo: '',
-        grnNo: `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`,
+        grnNo: `P-${Math.floor(100 + Math.random()*900)}`,
         invoiceDate: new Date().toISOString().split('T')[0],
         globalCdPer: '',
         extraCredit: '',
@@ -387,7 +398,7 @@ const Purchases: React.FC = () => {
         sourceFileHeaders: [],
         mappingConfig: {}
       }]);
-      setGrnNo(`GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`);
+      setGrnNo(`P-${Math.floor(100 + Math.random()*900)}`);
       return;
     }
 
@@ -413,8 +424,8 @@ const Purchases: React.FC = () => {
     })));
   };
 
-  const savePurchaseRef = useRef(savePurchase);
-  const addNewItemRef = useRef(addNewItem);
+  const savePurchaseRef = useRef<any>(null);
+  const addNewItemRef = useRef<any>(null);
   useEffect(() => {
     savePurchaseRef.current = savePurchase;
     addNewItemRef.current = addNewItem;
@@ -485,7 +496,7 @@ const Purchases: React.FC = () => {
 
   function createEmptyItem(): BillItem {
     return {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       medicine_id: null,
       medicine_name: '',
       batch_no: '',
@@ -846,7 +857,7 @@ const Purchases: React.FC = () => {
 
       if (Array.isArray(prefilledItems) && prefilledItems.length > 0) {
         const loadedItems = prefilledItems.map((item) => ({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           medicine_id: null,
           medicine_name: item.medicine_name || '',
           original_name: item.medicine_name || '',
@@ -1149,7 +1160,7 @@ const Purchases: React.FC = () => {
       })));
       setShowBarcodeModal(true);
       
-      const nextGrn = `GRN-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`;
+      const nextGrn = `P-${Math.floor(100 + Math.random()*900)}`;
       setItems([createEmptyItem()]);
       setSelectedDistributor(null);
       setDistributorSearch('');

@@ -594,6 +594,14 @@ export async function ensureSchema(dbPath: string) {
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('bluetooth_com_port', 'COM1')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('email_autodelete_enabled', 'true')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('email_autodelete_limit', '10')");
+  
+  // Remote Admin Operations Defaults
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_remote_mode', 'true')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_username', 'admin')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_password', 'admin123')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_unique_key', 'KEY-ADM-837261')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_authorized_device_id', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_authorized_device_name', '')");
 
   // Backup System Default Settings
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('backup_auto_enabled', 'true')");

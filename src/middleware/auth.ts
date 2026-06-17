@@ -1,3 +1,17 @@
+/**
+ * ─────────────────────────────────────────────────────────────────────
+ * DEV-ONLY AUTH BYPASS (SKIP_AUTH)
+ * ─────────────────────────────────────────────────────────────────────
+ * When SKIP_AUTH=true AND NODE_ENV !== 'production', the API key / session
+ * token check is skipped entirely and a mock auth context is injected.
+ *
+ * To disable:  unset SKIP_AUTH  (or remove it from .env)
+ * To enable:   set SKIP_AUTH=true in your local .env (never .env.example)
+ *
+ * This MUST NEVER reach the Inno Setup installer build or production.
+ * server.ts refuses to start if SKIP_AUTH=true && NODE_ENV=production.
+ * ─────────────────────────────────────────────────────────────────────
+ */
 import { Request, Response, NextFunction } from 'express';
 import { dbManager } from '../database/connection.js';
 import { config } from '../config/index.js';
@@ -15,8 +29,11 @@ async function getSessionToken(): Promise<string | null> {
 }
 
 export async function authenticateApiKey(req: Request, res: Response, next: NextFunction) {
-  // Skip auth in development and test environments
-  if (process.env.NODE_ENV !== 'production') {
+  // Dev-only bypass: requires explicit opt-in via SKIP_AUTH=true, or standard test environment (NODE_ENV=test)
+  if ((process.env.SKIP_AUTH === 'true' || process.env.NODE_ENV === 'test') && process.env.NODE_ENV !== 'production') {
+    // Inject mock authenticated session/user object
+    (req as any).user = { id: 'mock-dev-user', name: 'Mock Dev User', role: 'admin' };
+    (req as any).session = { token: 'mock-dev-session-token', isValid: true };
     return next();
   }
 

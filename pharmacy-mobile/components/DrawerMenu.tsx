@@ -7,10 +7,12 @@ import {
   Modal,
   Dimensions,
   TouchableWithoutFeedback,
+  DevSettings,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { colors, spacing, typography, radius } from '../lib/theme';
+import { isAdminMode, adminLogout, clearServerUrl } from '../lib/api';
 
 const { width } = Dimensions.get('window');
 const DRAWER_WIDTH = width * 0.75;
@@ -23,6 +25,13 @@ interface DrawerMenuProps {
 export default function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      isAdminMode().then(setIsAdmin);
+    }
+  }, [isOpen]);
 
   const menuItems = [
     { label: 'Assistant Chat', icon: 'chatbubble-ellipses', route: '/' },
@@ -36,10 +45,16 @@ export default function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
 
   const handleNavigate = (route: string) => {
     onClose();
-    // Use timeout to let the drawer close smoothly before navigating
     setTimeout(() => {
       router.push(route as any);
     }, 150);
+  };
+
+  const handleAdminLogout = async () => {
+    onClose();
+    await adminLogout();
+    await clearServerUrl();
+    DevSettings.reload();
   };
 
   return (
@@ -61,7 +76,15 @@ export default function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <Ionicons name="sparkles" size={24} color={colors.primary} />
-              <Text style={styles.logoText}>Genius OS</Text>
+              <View>
+                <Text style={styles.logoText}>Genius OS</Text>
+                {isAdmin && (
+                  <View style={styles.adminBadge}>
+                    <Ionicons name="shield-checkmark" size={10} color="#fff" />
+                    <Text style={styles.adminBadgeText}>Remote Admin</Text>
+                  </View>
+                )}
+              </View>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={24} color={colors.textSecondary} />
@@ -90,12 +113,30 @@ export default function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
                 </TouchableOpacity>
               );
             })}
+
+            {isAdmin && (
+              <TouchableOpacity
+                style={[styles.menuItem, styles.logoutMenuItem]}
+                onPress={handleAdminLogout}
+              >
+                <Ionicons
+                  name="log-out"
+                  size={22}
+                  color={colors.danger}
+                />
+                <Text style={[styles.menuLabel, styles.logoutMenuLabel]}>
+                  Logout Admin
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Drawer Footer */}
           <View style={styles.footer}>
             <Text style={styles.footerText}>AI Pharmacy OS v1.0.0</Text>
-            <Text style={styles.footerSub}>Connected locally</Text>
+            <Text style={styles.footerSub}>
+              {isAdmin ? 'Connected Remotely (Admin)' : 'Connected locally'}
+            </Text>
           </View>
         </View>
       </View>
@@ -148,6 +189,23 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.textPrimary,
   },
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    marginTop: 4,
+    gap: 4,
+    alignSelf: 'flex-start',
+  },
+  adminBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+    textTransform: 'uppercase',
+  },
   closeBtn: {
     padding: spacing.xs,
   },
@@ -175,6 +233,15 @@ const styles = StyleSheet.create({
   },
   activeMenuLabel: {
     color: colors.primary,
+  },
+  logoutMenuItem: {
+    marginTop: spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+  },
+  logoutMenuLabel: {
+    color: colors.danger,
   },
   footer: {
     padding: spacing.lg,

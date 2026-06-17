@@ -31,7 +31,11 @@ describe('API Auth Middleware', () => {
     app = express();
     app.use(express.json());
     app.get('/test-api', authenticateApiKey, (req, res) => {
-      res.json({ success: true });
+      res.json({
+        success: true,
+        user: (req as any).user,
+        session: (req as any).session
+      });
     });
   });
 
@@ -43,6 +47,7 @@ describe('API Auth Middleware', () => {
 
   afterEach(async () => {
     delete process.env.API_KEY;
+    delete process.env.SKIP_AUTH;
     process.env.NODE_ENV = originalNodeEnv || 'test';
     // Clean up session token
     try {
@@ -52,11 +57,14 @@ describe('API Auth Middleware', () => {
     } catch (_) {}
   });
 
-  test('should bypass authentication when NODE_ENV is test', async () => {
+  test('should bypass authentication when NODE_ENV is test and inject mock user/session', async () => {
     process.env.NODE_ENV = 'test';
+    process.env.SKIP_AUTH = 'true';
     const res = await request(app).get('/test-api');
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.user).toEqual({ id: 'mock-dev-user', name: 'Mock Dev User', role: 'admin' });
+    expect(res.body.session).toEqual({ token: 'mock-dev-session-token', isValid: true });
   });
 
   test('should block request without api key when NODE_ENV is not test', async () => {

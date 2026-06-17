@@ -1,10 +1,13 @@
 import * as SecureStore from './secureStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Linking, Platform } from 'react-native';
 
 const SERVER_KEY = 'pharmacy_server_url';
 const INVENTORY_CACHE_KEY = 'cached_inventory_master';
 const OFFLINE_QUEUE_KEY = 'offline_sales_queue';
 const PURCHASES_QUEUE_KEY = 'offline_purchases_queue';
+const OFFLINE_STOCK_KEY = 'offline_stock_updates';
+const MOBILE_AUTOMATION_KEY = 'mobile_automation_tasks';
 
 let cachedBaseUrl: string | null = null;
 
@@ -38,11 +41,22 @@ async function request<T = any>(
   const base = await getServerUrl();
   if (!base) throw new Error('Server URL not configured');
 
+  // Ensure device UUID is created
+  let deviceUuid = await SecureStore.getItemAsync('admin_device_uuid');
+  if (!deviceUuid) {
+    deviceUuid = 'DEV-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    await SecureStore.setItemAsync('admin_device_uuid', deviceUuid);
+  }
+
+  const sessionToken = await SecureStore.getItemAsync('admin_session_token');
+
   const url = `${base}/api${endpoint}`;
   const res = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+      'x-device-id': deviceUuid,
       ...(options.headers || {}),
     },
   });
@@ -442,6 +456,25 @@ export async function createSale(payload: SalePayload): Promise<{ success: boole
     const total = Math.round(subtotal + tax - (payload.discount || 0));
     const tempInvoiceNo = `TEMP-MOB-${Date.now()}`;
 
+    // Mobile fallback task creation for Admin Remote Operations
+    const adminActive = await isAdminMode();
+    if (adminActive) {
+      const message = `Dear ${payload.patient_name || 'Customer'},\n\nThank you for shopping with us! Your invoice ${tempInvoiceNo} for ₹${total} is created successfully.\n\n— AI Pharmacy OS`;
+      
+      if (payload.patient_phone) {
+        const task = await saveMobileAutomationTask({
+          type: 'whatsapp',
+          recipient: payload.patient_phone,
+          message: message,
+          status: 'pending',
+          invoice_no: tempInvoiceNo
+        });
+        
+        // Execute direct send in background
+        retryMobileFallbackTask(task.id).catch(console.error);
+      }
+    }
+
     return {
       success: true,
       invoice_no: tempInvoiceNo,
@@ -455,15 +488,18 @@ export async function createSale(payload: SalePayload): Promise<{ success: boole
 export async function syncOfflineSalesAndRefresh(): Promise<{ syncedCount: number; warnings: string[] }> {
   const salesQueue = await getOfflineSalesQueue();
   const purchasesQueue = await getOfflinePurchasesQueue();
+  const stockQueue = await getOfflineStockQueue();
   const warnings: string[] = [];
   let syncedCount = 0;
+
+  const adminActive = await isAdminMode();
 
   // 1. Sync Sales
   if (salesQueue.length > 0) {
     try {
       const result = await request<{ success: boolean; count: number; warnings?: string[] }>('/sales/sync', {
         method: 'POST',
-        body: JSON.stringify({ sales: salesQueue }),
+        body: JSON.stringify({ sales: salesQueue, adminMode: adminActive }),
       });
       if (result.success) {
         await clearOfflineSalesQueue();
@@ -491,6 +527,23 @@ export async function syncOfflineSalesAndRefresh(): Promise<{ syncedCount: numbe
     } catch (e: any) {
       console.error('Failed to sync offline purchases:', e);
       warnings.push(`Purchases Sync failed: ${e.message}`);
+    }
+  }
+
+  // 3. Sync Stock Updates
+  if (stockQueue.length > 0) {
+    try {
+      const result = await request<{ success: boolean; count: number }>('/inventory/sync', {
+        method: 'POST',
+        body: JSON.stringify({ updates: stockQueue }),
+      });
+      if (result.success) {
+        await clearOfflineStockQueue();
+        syncedCount += result.count;
+      }
+    } catch (e: any) {
+      console.error('Failed to sync stock overrides:', e);
+      warnings.push(`Stock Sync failed: ${e.message}`);
     }
   }
 
@@ -619,4 +672,334 @@ export async function clearAllNotifications(): Promise<void> {
   try {
     await AsyncStorage.removeItem('saved_notifications');
   } catch {}
+}
+
+// ─── Admin Remote Mode Operations ──────────────────────────────────────────
+
+export async function isAdminMode(): Promise<boolean> {
+  const val = await SecureStore.getItemAsync('is_admin_mode');
+  return val === 'true';
+}
+
+export async function adminLogin(payload: any): Promise<boolean> {
+  let deviceUuid = await SecureStore.getItemAsync('admin_device_uuid');
+  if (!deviceUuid) {
+    deviceUuid = 'DEV-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    await SecureStore.setItemAsync('admin_device_uuid', deviceUuid);
+  }
+
+  const base = await getServerUrl();
+  if (!base) throw new Error('Server URL not configured');
+
+  const url = `${base}/api/security/admin/login`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...payload,
+      deviceId: deviceUuid,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    let msg = 'Login failed';
+    try {
+      const parsed = JSON.parse(body);
+      msg = parsed.error || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const data = await res.json();
+  if (data.sessionToken) {
+    await SecureStore.setItemAsync('admin_session_token', data.sessionToken);
+    await SecureStore.setItemAsync('is_admin_mode', 'true');
+    return true;
+  }
+  return false;
+}
+
+export async function adminLogout(): Promise<void> {
+  await SecureStore.deleteItemAsync('admin_session_token');
+  await SecureStore.deleteItemAsync('is_admin_mode');
+}
+
+export interface StockOverridePayload {
+  inventory_id: number;
+  quantity: number;
+  reason: string;
+  updated_at: string;
+}
+
+export async function queueOfflineStockUpdate(payload: StockOverridePayload): Promise<void> {
+  try {
+    const currentQueue = await getOfflineStockQueue();
+    const cleanQueue = currentQueue.filter(item => item.inventory_id !== payload.inventory_id);
+    cleanQueue.push(payload);
+    await AsyncStorage.setItem(OFFLINE_STOCK_KEY, JSON.stringify(cleanQueue));
+  } catch (e) {
+    console.error('Failed to queue offline stock update:', e);
+  }
+}
+
+export async function getOfflineStockQueue(): Promise<StockOverridePayload[]> {
+  try {
+    const data = await AsyncStorage.getItem(OFFLINE_STOCK_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    console.error('Failed to get offline stock queue:', e);
+    return [];
+  }
+}
+
+export async function clearOfflineStockQueue(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(OFFLINE_STOCK_KEY);
+  } catch (e) {
+    console.error('Failed to clear offline stock queue:', e);
+  }
+}
+
+export async function updateStockOverride(inventoryId: number, quantity: number, reason: string): Promise<boolean> {
+  const payload: StockOverridePayload = {
+    inventory_id: inventoryId,
+    quantity,
+    reason,
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    await request('/inventory/override', {
+      method: 'POST',
+      body: JSON.stringify({ inventory_id: inventoryId, quantity, reason })
+    });
+    
+    // Sync local inventory cache
+    const cache = await getCachedInventory();
+    const cachedItem = cache.find(c => c.inventory_id === inventoryId);
+    if (cachedItem) {
+      cachedItem.quantity = quantity;
+      await cacheInventory(cache);
+    }
+    return true;
+  } catch (err) {
+    console.log('Online stock override failed, queueing offline:', err);
+    await queueOfflineStockUpdate(payload);
+    
+    // Update local cache
+    const cache = await getCachedInventory();
+    const cachedItem = cache.find(c => c.inventory_id === inventoryId);
+    if (cachedItem) {
+      cachedItem.quantity = quantity;
+      await cacheInventory(cache);
+    }
+    return true;
+  }
+}
+
+// ─── Direct Fallback Senders ────────────────────────────────────────────────
+
+export async function sendEmailViaGmailApiDirect(to: string, subject: string, body: string): Promise<boolean> {
+  try {
+    const auth = await syncGoogleAuthFromPc();
+    if (!auth || !auth.gmail_oauth_access_token) {
+      throw new Error('Google Gmail OAuth credentials not synced');
+    }
+
+    const token = await getValidGmailAccessToken(auth);
+    if (!token) throw new Error('Failed to acquire valid Google access token');
+
+    const mimeMessage = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'Content-Type: text/html; charset=utf-8',
+      'MIME-Version: 1.0',
+      '',
+      body
+    ].join('\r\n');
+
+    // Safe custom base64 encoder
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let rawEncoded = '';
+    let i = 0;
+    const bytes = [];
+    for (let j = 0; j < mimeMessage.length; j++) {
+      let c = mimeMessage.charCodeAt(j);
+      if (c < 128) { bytes.push(c); }
+      else if (c < 2048) {
+        bytes.push((c >> 6) | 192);
+        bytes.push((c & 63) | 128);
+      } else {
+        bytes.push((c >> 12) | 224);
+        bytes.push(((c >> 6) & 63) | 128);
+        bytes.push((c & 63) | 128);
+      }
+    }
+
+    while (i < bytes.length) {
+      const b1 = bytes[i++];
+      const b2 = i < bytes.length ? bytes[i++] : NaN;
+      const b3 = i < bytes.length ? bytes[i++] : NaN;
+
+      const enc1 = b1 >> 2;
+      const enc2 = ((b1 & 3) << 4) | (isNaN(b2) ? 0 : b2 >> 4);
+      const enc3 = isNaN(b2) ? 64 : ((b2 & 15) << 2) | (isNaN(b3) ? 0 : b3 >> 6);
+      const enc4 = isNaN(b3) ? 64 : b3 & 63;
+
+      rawEncoded += chars.charAt(enc1) + chars.charAt(enc2) +
+        (enc3 === 64 ? '' : chars.charAt(enc3)) +
+        (enc4 === 64 ? '' : chars.charAt(enc4));
+    }
+    const base64Encoded = rawEncoded.replace(/\+/g, '-').replace(/\//g, '_');
+
+    const response = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ raw: base64Encoded })
+      }
+    );
+
+    return response.ok;
+  } catch (err) {
+    console.error('Direct Gmail send failed:', err);
+    return false;
+  }
+}
+
+export interface MobileAutomationTask {
+  id: string;
+  type: 'email' | 'whatsapp';
+  recipient: string;
+  subject?: string;
+  message: string;
+  status: 'pending' | 'sent' | 'failed' | 'sent_manually';
+  error?: string;
+  created_at: string;
+  invoice_no?: string;
+}
+
+export async function getMobileAutomationTasks(): Promise<MobileAutomationTask[]> {
+  try {
+    const data = await AsyncStorage.getItem(MOBILE_AUTOMATION_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveMobileAutomationTask(task: Omit<MobileAutomationTask, 'id' | 'created_at'>): Promise<MobileAutomationTask> {
+  const tasks = await getMobileAutomationTasks();
+  const newTask: MobileAutomationTask = {
+    ...task,
+    id: 'TASK-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+    created_at: new Date().toISOString()
+  };
+  tasks.unshift(newTask);
+  await AsyncStorage.setItem(MOBILE_AUTOMATION_KEY, JSON.stringify(tasks.slice(0, 50)));
+  return newTask;
+}
+
+export async function updateMobileAutomationTaskStatus(id: string, status: MobileAutomationTask['status'], error?: string): Promise<void> {
+  const tasks = await getMobileAutomationTasks();
+  const updated = tasks.map(t => t.id === id ? { ...t, status, error: error || undefined } : t);
+  await AsyncStorage.setItem(MOBILE_AUTOMATION_KEY, JSON.stringify(updated));
+}
+
+export async function retryMobileFallbackTask(taskId: string): Promise<boolean> {
+  const tasks = await getMobileAutomationTasks();
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return false;
+
+  await updateMobileAutomationTaskStatus(taskId, 'pending');
+  
+  if (task.type === 'email') {
+    const ok = await sendEmailViaGmailApiDirect(task.recipient, task.subject || 'Pharmacy Invoice', task.message);
+    if (ok) {
+      await updateMobileAutomationTaskStatus(taskId, 'sent');
+      return true;
+    } else {
+      await updateMobileAutomationTaskStatus(taskId, 'failed', 'Gmail direct send failed');
+      return false;
+    }
+  } else {
+    // WhatsApp Fallback
+    try {
+      const auth = await syncGoogleAuthFromPc();
+      if (auth && (auth as any).wa_business_enabled === 'true' && (auth as any).wa_business_access_token) {
+        const phoneNumberId = (auth as any).wa_business_phone_number_id;
+        const token = (auth as any).wa_business_access_token;
+        const res = await fetch(`https://graph.facebook.com/v17.0/${phoneNumberId}/messages`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: task.recipient,
+            type: 'text',
+            text: { body: task.message }
+          })
+        });
+        if (res.ok) {
+          await updateMobileAutomationTaskStatus(taskId, 'sent');
+          return true;
+        }
+      }
+    } catch {}
+
+    // Deep link redirect WhatsApp App fallback
+    try {
+      const cleanPhone = task.recipient.replace(/[^0-9]/g, '');
+      const url = `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(task.message)}`;
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+        await updateMobileAutomationTaskStatus(taskId, 'sent_manually');
+        return true;
+      }
+    } catch {}
+
+    await updateMobileAutomationTaskStatus(taskId, 'failed', 'Could not open WhatsApp on device');
+    return false;
+  }
+}
+
+export async function getServerAutomationNotifications(): Promise<any[]> {
+  try {
+    return await request<any[]>('/automation/notifications');
+  } catch (err) {
+    console.warn('Failed to fetch server automation logs:', err);
+    return [];
+  }
+}
+
+export async function retryServerNotification(id: number | string): Promise<boolean> {
+  try {
+    const res = await request<{ success: boolean }>(`/automation/notifications/${id}/retry`, {
+      method: 'POST'
+    });
+    return res.success;
+  } catch (err) {
+    console.warn('Server notification retry failed:', err);
+    return false;
+  }
+}
+
+export async function markServerNotificationManual(id: number | string): Promise<boolean> {
+  try {
+    const res = await request<{ success: boolean }>(`/automation/notifications/${id}/manual`, {
+      method: 'POST'
+    });
+    return res.success;
+  } catch (err) {
+    console.warn('Server notification manual mark failed:', err);
+    return false;
+  }
 }

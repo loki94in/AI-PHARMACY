@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, shadows } from '../lib/theme';
-import { testConnection, setServerUrl } from '../lib/api';
+import { testConnection, setServerUrl, adminLogin } from '../lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
@@ -11,8 +11,16 @@ interface ServerSetupProps {
 }
 
 export default function ServerSetup({ onConnected }: ServerSetupProps) {
+  const [activeTab, setActiveTab] = useState<'staff' | 'admin'>('staff');
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('3000');
+  
+  // Admin fields
+  const [adminUrl, setAdminUrl] = useState('');
+  const [adminUser, setAdminUser] = useState('');
+  const [adminPass, setAdminPass] = useState('');
+  const [adminKey, setAdminKey] = useState('');
+
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
   const [showScanner, setShowScanner] = useState(false);
@@ -32,6 +40,42 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
       setError('Cannot reach server. Check IP & ensure backend is running.');
     }
     setTesting(false);
+  };
+
+  const handleAdminLogin = async () => {
+    let cleanUrl = adminUrl.trim();
+    if (!cleanUrl) {
+      setError('Server URL is required');
+      return;
+    }
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = `http://${cleanUrl}`;
+    }
+    if (!adminUser.trim() || !adminPass.trim() || !adminKey.trim()) {
+      setError('All admin credentials are required');
+      return;
+    }
+
+    setTesting(true);
+    setError('');
+
+    try {
+      await setServerUrl(cleanUrl);
+      const success = await adminLogin({
+        username: adminUser.trim(),
+        password: adminPass.trim(),
+        uniqueKey: adminKey.trim(),
+      });
+      if (success) {
+        onConnected();
+      } else {
+        setError('Failed to authenticate remote admin.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Connection or credential validation failed.');
+    } finally {
+      setTesting(false);
+    }
   };
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
@@ -143,62 +187,152 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
           <Ionicons name="server-outline" size={40} color={colors.primary} />
         </View>
         <Text style={styles.title}>Connect to Pharmacy Server</Text>
-        <Text style={styles.subtitle}>Enter your PC's local IP address{'\n'}(both devices must be on same Wi-Fi)</Text>
-
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, { flex: 2 }]}
-            value={ip}
-            onChangeText={setIp}
-            placeholder="192.168.1.100"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-            autoFocus
-          />
-          <Text style={styles.colon}>:</Text>
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            value={port}
-            onChangeText={setPort}
-            placeholder="3000"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-          />
+        
+        {/* Tab Selector */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'staff' && styles.tabButtonActive]}
+            onPress={() => { setActiveTab('staff'); setError(''); }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="people-outline" size={16} color={activeTab === 'staff' ? '#fff' : colors.textMuted} />
+            <Text style={[styles.tabText, activeTab === 'staff' && styles.tabTextActive]}>Staff QR Connect</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'admin' && styles.tabButtonActive]}
+            onPress={() => { setActiveTab('admin'); setError(''); }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="shield-checkmark-outline" size={16} color={activeTab === 'admin' ? '#fff' : colors.textMuted} />
+            <Text style={[styles.tabText, activeTab === 'admin' && styles.tabTextActive]}>Admin Remote Mode</Text>
+          </TouchableOpacity>
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {activeTab === 'staff' ? (
+          <>
+            <Text style={styles.subtitle}>Enter your PC's local IP address{'\n'}(both devices must be on same Wi-Fi)</Text>
 
-        <TouchableOpacity onPress={handleConnect} disabled={testing || !ip.trim()} activeOpacity={0.8}>
-          <LinearGradient
-            colors={[colors.primary, colors.primaryDark]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={[styles.button, (!ip.trim() || testing) && styles.buttonDisabled]}
-          >
-            {testing ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="link-outline" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Connect</Text>
-              </>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { flex: 2 }]}
+                value={ip}
+                onChangeText={setIp}
+                placeholder="192.168.1.100"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                autoFocus
+              />
+              <Text style={styles.colon}>:</Text>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={port}
+                onChangeText={setPort}
+                placeholder="3000"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+              />
+            </View>
 
-        <Text style={styles.orText}>OR</Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <TouchableOpacity onPress={() => setShowScanner(true)} activeOpacity={0.8}>
-          <LinearGradient
-            colors={[colors.accentDark, colors.accent]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.scanButton}
-          >
-            <Ionicons name="qr-code-outline" size={20} color="#fff" />
-            <Text style={styles.buttonText}>Scan Connection QR</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <TouchableOpacity onPress={handleConnect} disabled={testing || !ip.trim()} activeOpacity={0.8}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.button, (!ip.trim() || testing) && styles.buttonDisabled]}
+              >
+                {testing ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="link-outline" size={20} color="#fff" />
+                    <Text style={styles.buttonText}>Connect</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <Text style={styles.orText}>OR</Text>
+
+            <TouchableOpacity onPress={() => setShowScanner(true)} activeOpacity={0.8}>
+              <LinearGradient
+                colors={[colors.accentDark, colors.accent]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.scanButton}
+              >
+                <Ionicons name="qr-code-outline" size={20} color="#fff" />
+                <Text style={styles.buttonText}>Scan Connection QR</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.subtitle}>Log in remotely to manage sales, stock,{'\n'}and automated communications</Text>
+            
+            <TextInput
+              style={styles.adminInput}
+              value={adminUrl}
+              onChangeText={setAdminUrl}
+              placeholder="Server URL (e.g. http://192.168.1.100:3000)"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            
+            <TextInput
+              style={styles.adminInput}
+              value={adminUser}
+              onChangeText={setAdminUser}
+              placeholder="Admin Username"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            
+            <TextInput
+              style={styles.adminInput}
+              value={adminPass}
+              onChangeText={setAdminPass}
+              placeholder="Admin Password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            
+            <TextInput
+              style={styles.adminInput}
+              value={adminKey}
+              onChangeText={setAdminKey}
+              placeholder="Unique Admin Key"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <TouchableOpacity onPress={handleAdminLogin} disabled={testing || !adminUrl.trim() || !adminUser.trim() || !adminPass.trim() || !adminKey.trim()} activeOpacity={0.8}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.button, (testing || !adminUrl.trim() || !adminUser.trim() || !adminPass.trim() || !adminKey.trim()) && styles.buttonDisabled]}
+              >
+                {testing ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
+                    <Text style={styles.buttonText}>Admin Login</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -222,8 +356,36 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     ...shadows.card,
   },
-  title: { ...typography.h2, textAlign: 'center', marginBottom: spacing.sm },
+  title: { ...typography.h2, textAlign: 'center', marginBottom: spacing.md },
   subtitle: { ...typography.bodySmall, textAlign: 'center', marginBottom: spacing.xl },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.md,
+    padding: 4,
+    marginBottom: spacing.lg,
+    width: '100%',
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    gap: spacing.xs,
+  },
+  tabButtonActive: {
+    backgroundColor: colors.primary,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -240,6 +402,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     borderWidth: 1,
     borderColor: colors.cardBorder,
+  },
+  adminInput: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    fontSize: 16,
+    color: colors.textPrimary,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    marginBottom: spacing.md,
   },
   colon: { ...typography.h2, color: colors.textMuted },
   error: { ...typography.bodySmall, color: colors.danger, marginBottom: spacing.md, textAlign: 'center' },

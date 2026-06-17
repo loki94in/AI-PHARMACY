@@ -785,7 +785,7 @@ router.delete('/hold/:id', async (req, res) => {
 router.post('/sync', async (req, res) => {
   let db;
   try {
-    const { sales = [] } = req.body;
+    const { sales = [], adminMode = false } = req.body;
     if (!Array.isArray(sales)) {
       return res.status(400).json({ error: 'Sales array required for synchronization' });
     }
@@ -798,11 +798,66 @@ router.post('/sync', async (req, res) => {
       const { items = [], patient_name = '', patient_phone = '', discount = 0, sale_date = new Date().toISOString() } = sale;
       if (!Array.isArray(items) || items.length === 0) continue;
 
-      await db.run(
-        `INSERT INTO staged_sales (patient_name, patient_phone, discount, sale_date, items_json) VALUES (?, ?, ?, ?, ?)`,
-        [patient_name, patient_phone, Number(discount), sale_date, JSON.stringify(items)]
-      );
-      stagedCount++;
+      if (adminMode) {
+        // Direct commit for Admin Remote Operations
+        let customerId = null;
+        if (patient_name) {
+          const cleanPhone = patient_phone || '';
+          const existing = await db.get('SELECT id FROM customers WHERE name = ? AND phone = ?', [patient_name, cleanPhone]);
+          if (existing) {
+            customerId = existing.id;
+          } else {
+            const custResult = await db.run(
+              'INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)',
+              [patient_name, cleanPhone, '']
+            );
+            customerId = custResult.lastID;
+          }
+        }
+
+        let subtotal = 0;
+        for (const item of items) {
+          subtotal += (Number(item.quantity || 0) * Number(item.unit_price || 0));
+        }
+
+        const tax = Number((subtotal * 0.05).toFixed(2));
+        const total = Math.round(subtotal + tax - Number(discount));
+        const invoice_no = await generateInvoiceNo(db);
+        const invoiceDateValue = sale_date ? new Date(sale_date).toISOString() : new Date().toISOString();
+
+        const result = await db.run(
+          'INSERT INTO sales_invoices (invoice_no, customer_id, total_amount, tax_amount, payment_medium, payment_status, date, discount, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [invoice_no, customerId, total, tax, 'CASH', 'PAID', invoiceDateValue, Number(discount), subtotal]
+        );
+        const invoiceId = result.lastID;
+
+        for (const item of items) {
+          const { inventory_id, quantity, unit_price, loose_qty = 0 } = item;
+          const currentStock = await db.get('SELECT quantity FROM inventory_master WHERE id = ?', [inventory_id]);
+          if (!currentStock || currentStock.quantity < Number(quantity)) {
+            const needed = Number(quantity) - (currentStock ? currentStock.quantity : 0);
+            if (currentStock) {
+              await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [needed, inventory_id]);
+            } else {
+              throw new Error(`Inventory item ID ${inventory_id} does not exist during direct sync.`);
+            }
+          }
+
+          await db.run(
+            'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)',
+            [invoiceId, inventory_id, Number(quantity), Number(unit_price), Number(loose_qty)]
+          );
+          await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [Number(quantity), inventory_id]);
+        }
+        stagedCount++;
+      } else {
+        // Normal staged sync for non-admin staff
+        await db.run(
+          `INSERT INTO staged_sales (patient_name, patient_phone, discount, sale_date, items_json) VALUES (?, ?, ?, ?, ?)`,
+          [patient_name, patient_phone, Number(discount), sale_date, JSON.stringify(items)]
+        );
+        stagedCount++;
+      }
     }
     await db.run('COMMIT');
 

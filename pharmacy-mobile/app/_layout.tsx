@@ -10,7 +10,7 @@ import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import 'react-native-reanimated';
 import { colors } from '../lib/theme';
-import { getServerUrl, testConnection, getOfflineSalesQueue, syncOfflineSalesAndRefresh, registerPushToken, saveNotification } from '../lib/api';
+import { getServerUrl, testConnection, getOfflineSalesQueue, getOfflinePurchasesQueue, getOfflineStockQueue, syncOfflineSalesAndRefresh, registerPushToken, saveNotification, getMobileAutomationTasks, retryMobileFallbackTask } from '../lib/api';
 import ServerSetup from '../components/ServerSetup';
 import AppLock from '../components/AppLock';
 
@@ -125,21 +125,40 @@ export default function RootLayout() {
       const online = await testConnection(url);
       setIsServerOnline(online);
 
-      // Check current offline queue size
-      const queue = await getOfflineSalesQueue();
-      setPendingSyncCount(queue.length);
+      // Check current offline queues size
+      const salesQueue = await getOfflineSalesQueue();
+      const purchasesQueue = await getOfflinePurchasesQueue();
+      const stockQueue = await getOfflineStockQueue();
+      const totalPending = salesQueue.length + purchasesQueue.length + stockQueue.length;
+      setPendingSyncCount(totalPending);
 
-      if (online && queue.length > 0 && !syncingOffline) {
+      if (online && totalPending > 0 && !syncingOffline) {
         setSyncingOffline(true);
         try {
           const res = await syncOfflineSalesAndRefresh();
-          console.log(`Synced ${res.syncedCount} offline sale(s) successfully.`);
-          const updatedQueue = await getOfflineSalesQueue();
-          setPendingSyncCount(updatedQueue.length);
+          console.log(`Synced ${res.syncedCount} offline item(s) successfully.`);
+          const updatedSales = await getOfflineSalesQueue();
+          const updatedPurchases = await getOfflinePurchasesQueue();
+          const updatedStock = await getOfflineStockQueue();
+          setPendingSyncCount(updatedSales.length + updatedPurchases.length + updatedStock.length);
         } catch (syncErr) {
           console.warn('Background sync failed:', syncErr);
         } finally {
           setSyncingOffline(false);
+        }
+      }
+
+      // Auto-retry pending/failed mobile automation tasks (WhatsApp/Email) when online
+      if (online) {
+        try {
+          const tasks = await getMobileAutomationTasks();
+          const failedTasks = tasks.filter(t => t.status === 'failed');
+          for (const task of failedTasks) {
+            console.log(`Retrying failed mobile automation task ${task.id} in background...`);
+            await retryMobileFallbackTask(task.id);
+          }
+        } catch (err) {
+          console.warn('Failed to retry automation tasks in background:', err);
         }
       }
 

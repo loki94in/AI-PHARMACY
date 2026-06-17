@@ -666,22 +666,22 @@ router.post('/manual', async (req, res) => {
     const grandTotal = subtotal + totalCgst + totalSgst - globalCdDisc - extraCreditVal;
 
     // Generate app_invoice_no sequentially
-    const transactionDate = date ? new Date(date) : new Date();
-    const year = isNaN(transactionDate.getTime()) ? new Date().getFullYear() : transactionDate.getFullYear();
     const lastPur = await db.get(
       `SELECT app_invoice_no FROM purchases 
-       WHERE app_invoice_no LIKE ? 
-       ORDER BY id DESC LIMIT 1`,
-      [`PUR-${year}-%`]
+       WHERE app_invoice_no LIKE 'P-%' 
+       ORDER BY id DESC LIMIT 1`
     );
     let nextSeq = 1;
     if (lastPur && lastPur.app_invoice_no) {
-      const match = lastPur.app_invoice_no.match(/PUR-\d+-(\d+)/);
+      const match = lastPur.app_invoice_no.match(/P-(\d+)/);
       if (match) {
-        nextSeq = parseInt(match[1]) + 1;
+        nextSeq = parseInt(match[1], 10) + 1;
+      } else {
+        const anyNum = lastPur.app_invoice_no.match(/\d+/);
+        if (anyNum) nextSeq = parseInt(anyNum[0], 10) + 1;
       }
     }
-    const appInvoiceNo = `PUR-${year}-${nextSeq.toString().padStart(5, '0')}`;
+    const appInvoiceNo = `P-${nextSeq.toString().padStart(3, '0')}`;
 
     // 2. Insert into purchases
     const purchRes = await db.run(
@@ -1646,22 +1646,22 @@ router.post('/reconciliation/reissue', async (req, res) => {
     distId = dbDist.id;
 
     // Generate app_invoice_no sequentially
-    const transactionDate = email.date ? new Date(email.date) : new Date();
-    const year = isNaN(transactionDate.getTime()) ? new Date().getFullYear() : transactionDate.getFullYear();
     const lastPur = await db.get(
       `SELECT app_invoice_no FROM purchases 
-       WHERE app_invoice_no LIKE ? 
-       ORDER BY id DESC LIMIT 1`,
-      [`PUR-${year}-%`]
+       WHERE app_invoice_no LIKE 'P-%' 
+       ORDER BY id DESC LIMIT 1`
     );
     let nextSeq = 1;
     if (lastPur && lastPur.app_invoice_no) {
-      const match = lastPur.app_invoice_no.match(/PUR-\d+-(\d+)/);
+      const match = lastPur.app_invoice_no.match(/P-(\d+)/);
       if (match) {
-        nextSeq = parseInt(match[1]) + 1;
+        nextSeq = parseInt(match[1], 10) + 1;
+      } else {
+        const anyNum = lastPur.app_invoice_no.match(/\d+/);
+        if (anyNum) nextSeq = parseInt(anyNum[0], 10) + 1;
       }
     }
-    const appInvoiceNo = `PUR-${year}-${nextSeq.toString().padStart(5, '0')}`;
+    const appInvoiceNo = `P-${nextSeq.toString().padStart(3, '0')}`;
     const invoiceNo = orderInfo.invoiceNumber !== 'N/A' ? orderInfo.invoiceNumber : appInvoiceNo;
 
     // Check for duplicate invoice number

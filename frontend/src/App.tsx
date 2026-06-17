@@ -777,6 +777,15 @@ const Topbar = ({
             <span className="hidden sm:inline text-[9px] bg-black/40 border border-white/10 text-muted px-1.5 py-0.5 rounded font-mono font-normal">Alt + O</span>
           </button>
 
+          {/* Dev-only: TEST MODE banner when VITE_SKIP_AUTH=true */}
+          {import.meta.env.VITE_SKIP_AUTH === 'true' && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[10px] font-black uppercase tracking-widest animate-pulse select-none"
+              title="Auth bypass is active via SKIP_AUTH. Unset SKIP_AUTH to disable.">
+              <AlertTriangle size={12} className="shrink-0" />
+              <span>Test Mode — Auth Bypassed</span>
+            </div>
+          )}
+
 
           {/* ── Mobile Connection Status Indicators ── */}
           <div className="relative flex items-center gap-2" ref={popoverRef}>

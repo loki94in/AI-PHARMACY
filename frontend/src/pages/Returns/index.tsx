@@ -6,6 +6,17 @@ import { api, apiClient } from '../../services/api';
 import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera, X } from 'lucide-react';
 import AICamera from '../../components/AICamera';
 
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 interface ReturnItem {
   id: string;
   medicine_id: number | null;
@@ -47,7 +58,7 @@ const getInitialReturnsTabs = () => {
       name: 'Return 1',
       items: [
         {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           medicine_id: null,
           medicine_name: '',
           batch_no: '',
@@ -247,7 +258,7 @@ const Returns: React.FC = () => {
 
   function createEmptyItem(): ReturnItem {
     return {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       medicine_id: null,
       medicine_name: '',
       batch_no: '',
@@ -264,7 +275,7 @@ const Returns: React.FC = () => {
     const prefilledItems = location.state?.prefilledReturnItems;
     if (prefilledItems && prefilledItems.length > 0) {
       const mapped = prefilledItems.map((item: any) => ({
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         medicine_id: item.medicine_id ?? null,
         medicine_name: item.medicine_name || '',
         batch_no: item.batch_no || '',

@@ -49,6 +49,14 @@ const Settings = () => {
   const [emailAutodeleteLimit, setEmailAutodeleteLimit] = useState<number>(10);
   const [automationEnabled, setAutomationEnabled] = useState(false);
 
+  // Admin Remote Operations Mode state
+  const [adminRemoteMode, setAdminRemoteMode] = useState(true);
+  const [adminUsername, setAdminUsername] = useState('admin');
+  const [adminPassword, setAdminPassword] = useState('admin123');
+  const [adminUniqueKey, setAdminUniqueKey] = useState('KEY-ADM-837261');
+  const [adminAuthorizedDeviceId, setAdminAuthorizedDeviceId] = useState('');
+  const [adminAuthorizedDeviceName, setAdminAuthorizedDeviceName] = useState('');
+
   // Pharmarack Settings state
   const [prUsername, setPrUsername] = useState('');
   const [prPassword, setPrPassword] = useState('');
@@ -191,6 +199,12 @@ const Settings = () => {
           setEmailAutodeleteLimit(Number(data.email_autodelete_limit) || 10);
           setAutomationEnabled(data.automation_enabled === 'true');
 
+          setAdminRemoteMode(data.admin_remote_mode !== 'false');
+          setAdminUsername(data.admin_username || 'admin');
+          setAdminPassword(data.admin_password || 'admin123');
+          setAdminUniqueKey(data.admin_unique_key || 'KEY-ADM-837261');
+          setAdminAuthorizedDeviceId(data.admin_authorized_device_id || '');
+          setAdminAuthorizedDeviceName(data.admin_authorized_device_name || '');
 
           setDefaultTaxRate(Number(data.default_tax_rate) || 18);
           setInvoicePrefix(data.invoice_prefix || 'INV-');
@@ -264,6 +278,12 @@ const Settings = () => {
       email_autodelete_enabled: emailAutodeleteEnabled.toString(),
       email_autodelete_limit: emailAutodeleteLimit.toString(),
       automation_enabled: automationEnabled.toString(),
+      admin_remote_mode: adminRemoteMode.toString(),
+      admin_username: adminUsername,
+      admin_password: adminPassword,
+      admin_unique_key: adminUniqueKey,
+      admin_authorized_device_id: adminAuthorizedDeviceId,
+      admin_authorized_device_name: adminAuthorizedDeviceName,
 
 
       default_tax_rate: defaultTaxRate.toString(),
@@ -364,6 +384,12 @@ const Settings = () => {
       email_autodelete_enabled: emailAutodeleteEnabled.toString(),
       email_autodelete_limit: emailAutodeleteLimit.toString(),
       automation_enabled: automationEnabled.toString(),
+      admin_remote_mode: adminRemoteMode.toString(),
+      admin_username: adminUsername,
+      admin_password: adminPassword,
+      admin_unique_key: adminUniqueKey,
+      admin_authorized_device_id: adminAuthorizedDeviceId,
+      admin_authorized_device_name: adminAuthorizedDeviceName,
 
       default_tax_rate: defaultTaxRate.toString(),
       invoice_prefix: invoicePrefix,
@@ -501,6 +527,18 @@ const Settings = () => {
       toastEvent.trigger('Failed to restore backup', 'error');
     } finally {
       setRestoringFile(null);
+    }
+  };
+
+  const handleResetAdminDevice = async () => {
+    try {
+      await apiClient.post('/security/admin/reset-device');
+      setAdminAuthorizedDeviceId('');
+      setAdminAuthorizedDeviceName('');
+      toastEvent.trigger('Admin authorized device registration reset successfully.', 'success');
+    } catch (err: any) {
+      console.error('Failed to reset admin device:', err);
+      toastEvent.trigger('Failed to reset authorized device.', 'error');
     }
   };
 
@@ -734,6 +772,118 @@ const Settings = () => {
           >
             <Save size={16} />
             Save Preferences
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Admin Remote Operations Mode ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-6">
+          <Shield size={18} className="text-amber-500" />
+          Admin Remote Operations Mode
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+          <div className="space-y-2 flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer select-none group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={adminRemoteMode}
+                  onChange={(e) => setAdminRemoteMode(e.target.checked)}
+                  aria-label="Enable Admin Remote Operations Mode"
+                />
+                <div className="w-11 h-6 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+              </div>
+              <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                Enable Admin Remote Operations Mode
+              </span>
+            </label>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="adminUniqueKey" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Secure Admin Key (Mobile Scanner / Setup)
+            </label>
+            <input
+              id="adminUniqueKey"
+              type="text"
+              readOnly
+              className="premium-input w-full bg-zinc-800/40 text-muted font-mono cursor-not-allowed"
+              value={adminUniqueKey}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="adminUsername" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Admin Remote Username
+            </label>
+            <input
+              id="adminUsername"
+              type="text"
+              className="premium-input w-full"
+              placeholder="admin"
+              value={adminUsername}
+              onChange={(e) => setAdminUsername(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="adminPassword" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Admin Remote Password
+            </label>
+            <input
+              id="adminPassword"
+              type="password"
+              className="premium-input w-full"
+              placeholder="••••••••"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2 md:col-span-2 border border-glass-border/40 p-4 rounded-lg bg-zinc-900/20">
+            <label className="text-xs font-bold text-muted uppercase tracking-wider block mb-2">
+              Registered Mobile Device
+            </label>
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-semibold block text-zinc-100">
+                  {adminAuthorizedDeviceName || "No device registered yet."}
+                </span>
+                {adminAuthorizedDeviceId && (
+                  <span className="text-xs text-muted font-mono block mt-1">
+                    ID: {adminAuthorizedDeviceId}
+                  </span>
+                )}
+              </div>
+              {adminAuthorizedDeviceId ? (
+                <button
+                  type="button"
+                  onClick={handleResetAdminDevice}
+                  className="premium-btn bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1.5 flex items-center gap-1.5"
+                >
+                  <Trash2 size={13} />
+                  Reset Authorization
+                </button>
+              ) : (
+                <span className="text-xs text-muted">
+                  Ready to link device via Admin Remote Login.
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Admin Settings
           </button>
         </div>
       </div>

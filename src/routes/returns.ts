@@ -262,7 +262,18 @@ router.post('/process-returns', async (req, res) => {
     db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
 
-    const returnNo = 'RET-' + Date.now();
+    const lastRet = await db.get("SELECT return_no FROM returns WHERE return_no LIKE 'PR-%' ORDER BY id DESC LIMIT 1");
+    let nextNum = 1;
+    if (lastRet && lastRet.return_no) {
+      const match = lastRet.return_no.match(/PR-(\d+)/);
+      if (match) {
+        nextNum = parseInt(match[1], 10) + 1;
+      } else {
+        const anyNum = lastRet.return_no.match(/\d+/);
+        if (anyNum) nextNum = parseInt(anyNum[0], 10) + 1;
+      }
+    }
+    const returnNo = `PR-${String(nextNum).padStart(3, '0')}`;
     
     // Group return items by distributor to create individual return references if needed,
     // or aggregate under one single return transaction. Let's create one master return record:

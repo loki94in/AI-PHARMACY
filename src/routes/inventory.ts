@@ -123,7 +123,7 @@ router.get('/peek/:medicine_id', async (req, res) => {
     db = await dbManager.getConnection();
     // Simplified: return last purchase price from purchases table joined via inventory_master
     const rows = await db.all(
-      `SELECT im.batch_no, im.expiry_date, im.quantity, im.unit_price, im.cost_price
+      `SELECT im.id, im.batch_no, im.expiry_date, im.quantity, im.unit_price, im.cost_price
        FROM inventory_master im
        WHERE im.medicine_id = ?
        ORDER BY im.expiry_date ASC LIMIT 5`,
@@ -506,9 +506,54 @@ router.put('/medicines/:id/quick-edit', async (req, res) => {
   } catch (error: any) {
     if (db) {
       try { await db.run('ROLLBACK'); } catch(e) {}
-          }
+    }
     console.error('Universal Medicine update error:', error);
     res.status(500).json({ error: 'Internal server error during update' });
+  }
+});
+
+// Bulk Stock Overrides Sync (Remote operations mode fallback)
+router.post('/sync', async (req, res) => {
+  const { updates = [] } = req.body;
+  if (!Array.isArray(updates)) {
+    return res.status(400).json({ error: 'updates must be an array' });
+  }
+
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    await db.run('BEGIN TRANSACTION');
+
+    let count = 0;
+    for (const item of updates) {
+      const { inventory_id, quantity, reason = 'Remote Admin Stock Update' } = item;
+      if (!inventory_id || typeof quantity !== 'number' || quantity < 0) {
+        continue;
+      }
+
+      await db.run('UPDATE inventory_master SET quantity = ? WHERE id = ?', [quantity, inventory_id]);
+      
+      await db.run(
+        `INSERT INTO action_logs (action_type, description) VALUES ('STOCK_OVERRIDE', ?)`,
+        [`Override stock for inventory_id ${inventory_id} to ${quantity}. Reason: ${reason}`]
+      );
+
+      // Check if new stock triggers pending patient refills
+      const invItem = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', [inventory_id]);
+      if (invItem && invItem.medicine_id) {
+        await inventoryService.checkAndTriggerRefillsForMedicine(invItem.medicine_id);
+      }
+      count++;
+    }
+
+    await db.run('COMMIT');
+    res.json({ success: true, message: `Successfully synced ${count} stock override(s).`, count });
+  } catch (error: any) {
+    if (db) {
+      try { await db.run('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Failed to sync stock overrides:', error);
+    res.status(500).json({ error: error.message || 'Internal server error during stock sync' });
   }
 });
 
