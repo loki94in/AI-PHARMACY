@@ -716,10 +716,10 @@ const InvestigationCenter = () => {
               </span>
             </div>
 
-            {/* Filter Fields Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* Filter Fields Toolbar */}
+            <div className="flex flex-nowrap items-end gap-3 overflow-x-auto pb-2 custom-scrollbar select-none">
               {/* Global search */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-44 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Global Search</label>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 text-muted" size={13} />
@@ -735,35 +735,35 @@ const InvestigationCenter = () => {
               </div>
 
               {/* Date From */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-28 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Date From</label>
                 <div className="relative">
-                  <Calendar className="absolute left-2.5 top-2.5 text-muted" size={13} />
+                  <Calendar className="absolute left-2 top-2.5 text-muted" size={13} />
                   <input 
                     type="date"
                     value={filters.dateFrom}
                     onChange={e => handleFilterChange('dateFrom', e.target.value)}
-                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-7 pr-1.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary/50"
                   />
                 </div>
               </div>
 
               {/* Date To */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-28 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Date To</label>
                 <div className="relative">
-                  <Calendar className="absolute left-2.5 top-2.5 text-muted" size={13} />
+                  <Calendar className="absolute left-2 top-2.5 text-muted" size={13} />
                   <input 
                     type="date"
                     value={filters.dateTo}
                     onChange={e => handleFilterChange('dateTo', e.target.value)}
-                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
+                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-7 pr-1.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary/50"
                   />
                 </div>
               </div>
 
               {/* Medicine Name */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-32 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Medicine Name</label>
                 <input 
                   type="text"
@@ -776,7 +776,7 @@ const InvestigationCenter = () => {
               </div>
 
               {/* Batch Number */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-24 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Batch Number</label>
                 <input 
                   type="text"
@@ -789,11 +789,11 @@ const InvestigationCenter = () => {
               </div>
 
               {/* Sales Bill No */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-muted uppercase">Sales Bill No</label>
+              <div className="flex flex-col gap-1 w-24 shrink-0">
+                <label className="text-[10px] font-bold text-muted uppercase">Sales Bill</label>
                 <input 
                   type="text"
-                  placeholder="e.g. SL-501F..."
+                  placeholder="e.g. SL-501..."
                   value={filters.salesBillNo}
                   onChange={e => handleFilterChange('salesBillNo', e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && runSearch()}
@@ -802,11 +802,11 @@ const InvestigationCenter = () => {
               </div>
 
               {/* Purchase Bill No */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-muted uppercase">Purchase Bill No</label>
+              <div className="flex flex-col gap-1 w-24 shrink-0">
+                <label className="text-[10px] font-bold text-muted uppercase">Purchase Bill</label>
                 <input 
                   type="text"
-                  placeholder="e.g. PR-1402..."
+                  placeholder="e.g. PR-140..."
                   value={filters.purchaseBillNo}
                   onChange={e => handleFilterChange('purchaseBillNo', e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && runSearch()}
@@ -815,11 +815,11 @@ const InvestigationCenter = () => {
               </div>
 
               {/* Patient Name */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-32 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Patient Name</label>
                 <input 
                   type="text"
-                  placeholder="e.g. Ramesh Kumar"
+                  placeholder="Ramesh Kumar"
                   value={filters.patientName}
                   onChange={e => handleFilterChange('patientName', e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && runSearch()}
@@ -828,11 +828,11 @@ const InvestigationCenter = () => {
               </div>
 
               {/* Distributor */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-32 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Distributor</label>
                 <input 
                   type="text"
-                  placeholder="e.g. Apex Pharma"
+                  placeholder="Apex Pharma"
                   value={filters.distributor}
                   onChange={e => handleFilterChange('distributor', e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && runSearch()}
@@ -840,39 +840,50 @@ const InvestigationCenter = () => {
                 />
               </div>
 
-              {/* Activity Type */}
-              <div className="flex flex-col gap-1">
+              {/* Activity Type Pills */}
+              <div className="flex flex-col gap-1 shrink-0">
                 <label className="text-[10px] font-bold text-muted uppercase">Activity Type</label>
-                <select
-                  value={filters.type}
-                  onChange={e => handleFilterChange('type', e.target.value)}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-                >
-                  <option value="All">All Activities</option>
-                  <option value="Sale">POS Sales</option>
-                  <option value="Purchase">Purchases</option>
-                  <option value="Return">Returns</option>
-                  <option value="Adjustment">Adjustments</option>
-                </select>
+                <div className="flex bg-bg3 border border-glass-border rounded-lg p-0.5">
+                  {[
+                    { value: 'All', label: 'All' },
+                    { value: 'Sale', label: 'Sales' },
+                    { value: 'Purchase', label: 'Purchases' },
+                    { value: 'Return', label: 'Returns' },
+                    { value: 'Adjustment', label: 'Adjustments' }
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleFilterChange('type', opt.value)}
+                      className={`px-2.5 py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
+                        filters.type === opt.value
+                          ? 'bg-primary text-text shadow-sm'
+                          : 'text-muted hover:text-text'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-2 justify-end mt-1">
-              <button 
-                onClick={runSearch}
-                disabled={loading}
-                className="px-4 py-1.5 bg-primary text-white hover:bg-primary/95 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
-              >
-                {loading ? 'Searching...' : 'Apply Filters'}
-              </button>
-              <button 
-                onClick={handleClearFilters}
-                className="px-3 py-1.5 bg-bg3 hover:bg-bg2 text-muted hover:text-text border border-glass-border rounded-lg transition-colors text-xs font-bold flex items-center gap-1"
-                title="Reset Filters"
-              >
-                <RotateCcw size={13} /> Clear
-              </button>
+              {/* Action Buttons */}
+              <div className="flex gap-2 shrink-0 pb-0.5">
+                <button 
+                  onClick={runSearch}
+                  disabled={loading}
+                  className="px-4 py-1.5 bg-primary text-white hover:bg-primary/95 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-[0_0_15px_rgba(59,130,246,0.15)] h-8 cursor-pointer"
+                >
+                  {loading ? 'Searching...' : 'Apply'}
+                </button>
+                <button 
+                  onClick={handleClearFilters}
+                  className="px-3 py-1.5 bg-bg3 hover:bg-bg2 text-muted hover:text-text border border-glass-border rounded-lg transition-colors text-xs font-bold flex items-center gap-1 h-8 cursor-pointer"
+                  title="Reset Filters"
+                >
+                  <RotateCcw size={13} />
+                </button>
+              </div>
             </div>
           </div>
 

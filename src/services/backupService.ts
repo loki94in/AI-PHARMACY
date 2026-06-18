@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import cron, { type ScheduledTask } from 'node-cron';
 import { dbManager } from '../database/connection.js';
 import Database from 'better-sqlite3';
+import zlib from 'zlib';
+import { pipeline } from 'stream/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,13 +27,26 @@ export async function createBackup(reason: string = 'Manual'): Promise<{ filenam
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `app_backup_${timestamp}.db`;
+  const filename = `app_backup_${timestamp}.db.gz`;
   const backupPath = path.join(BACKUP_DIR, filename);
 
   // Use native better-sqlite3 backup API to safely checkpoint WAL and clone live SQLite database
+  const tempDbPath = backupPath.replace('.gz', '');
   const tempDb = new Database(DB_PATH);
-  await tempDb.backup(backupPath);
+  await tempDb.backup(tempDbPath);
   tempDb.close();
+
+  // Compress the backup using gzip (ponytail: native stdlib zlib)
+  const gzip = zlib.createGzip();
+  const source = fs.createReadStream(tempDbPath);
+  const destination = fs.createWriteStream(backupPath);
+  try {
+    await pipeline(source, gzip, destination);
+  } finally {
+    if (fs.existsSync(tempDbPath)) {
+      fs.unlinkSync(tempDbPath);
+    }
+  }
 
   // Log the action
   try {
@@ -60,7 +75,7 @@ export function listBackups(): { filename: string; sizeBytes: number; createdAt:
   }
 
   return fs.readdirSync(BACKUP_DIR)
-    .filter(f => f.endsWith('.db'))
+    .filter(f => f.endsWith('.db') || f.endsWith('.db.gz'))
     .map(filename => {
       const filePath = path.join(BACKUP_DIR, filename);
       const stats = fs.statSync(filePath);
@@ -80,7 +95,7 @@ export function listBackups(): { filename: string; sizeBytes: number; createdAt:
 export function deleteBackup(filename: string): void {
   // Security: strip any directory traversal from filename
   const sanitized = path.basename(filename);
-  if (!sanitized.endsWith('.db')) {
+  if (!sanitized.endsWith('.db') && !sanitized.endsWith('.db.gz')) {
     throw new Error('Invalid backup filename');
   }
 
@@ -105,7 +120,7 @@ export function deleteBackup(filename: string): void {
 export async function restoreBackup(filename: string): Promise<void> {
   // Security: strip any directory traversal from filename
   const sanitized = path.basename(filename);
-  if (!sanitized.endsWith('.db')) {
+  if (!sanitized.endsWith('.db') && !sanitized.endsWith('.db.gz')) {
     throw new Error('Invalid backup filename');
   }
 
@@ -124,7 +139,15 @@ export async function restoreBackup(filename: string): Promise<void> {
   // Close the active DB connection before overwriting
   await dbManager.close();
 
-  fs.copyFileSync(filePath, DB_PATH);
+  if (sanitized.endsWith('.gz')) {
+    // Decompress the gzip backup to the live database path (ponytail: native stdlib zlib)
+    const gunzip = zlib.createGunzip();
+    const source = fs.createReadStream(filePath);
+    const destination = fs.createWriteStream(DB_PATH);
+    await pipeline(source, gunzip, destination);
+  } else {
+    fs.copyFileSync(filePath, DB_PATH);
+  }
 
   // Re-open and log
   const db = await dbManager.getConnection();

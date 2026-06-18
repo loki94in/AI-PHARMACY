@@ -138,7 +138,47 @@ const Mail = () => {
   const [processing, setProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<any>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [previewContent, setPreviewContent] = useState<string>('');
+  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
   const syncInProgress = useRef(false);
+
+  // Asynchronously fetch attachment text preview for PDF, CSV, Excel, and TXT files
+  useEffect(() => {
+    const activeAtt = attachments.find(a => a.isSelected);
+    if (!activeAtt) {
+      setPreviewContent('');
+      setLoadingPreview(false);
+      return;
+    }
+
+    const ext = getFileExt(activeAtt.filename);
+    const previewableTypes = ['pdf', 'csv', 'txt', 'xlsx', 'xls'];
+    if (!previewableTypes.includes(ext)) {
+      setPreviewContent('');
+      setLoadingPreview(false);
+      return;
+    }
+
+    setLoadingPreview(true);
+    setPreviewContent('');
+
+    api.getAttachmentPreview(activeAtt.filename)
+      .then((res: any) => {
+        if (res && res.success) {
+          setPreviewContent(res.content || '');
+        } else {
+          setPreviewContent('Preview failed.');
+        }
+      })
+      .catch((err: any) => {
+        console.error('Failed to load attachment preview:', err);
+        setPreviewContent('Failed to load attachment preview: ' + (err.response?.data?.error || err.message));
+      })
+      .finally(() => {
+        setLoadingPreview(false);
+      });
+  }, [attachments]);
+  
 
   const [searchTerm, setSearchTerm] = useState(() => {
     return prefillState?.searchDistributor || prefillState?.searchProduct || '';
@@ -678,84 +718,142 @@ const Mail = () => {
                 </div>
               </div>
 
-              {/* Attachments Section */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-1.5">
-                    <Paperclip size={12} />
-                    Attachments ({attachments.length})
-                  </h4>
-                  {attachments.length > 0 && attachments.some(a => a.isSelected) && (
-                    <div className="flex gap-2">
-                      <button onClick={clearAll} className="text-[10px] font-bold text-muted hover:text-text">Clear Selection</button>
+              {/* Content Area */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                {/* Email Body */}
+                <div className="space-y-1.5">
+                  <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Message Content</h4>
+                  <div className="bg-bg3/25 border border-glass-border/30 rounded-xl p-3.5 text-xs text-text whitespace-pre-wrap font-medium leading-relaxed max-h-48 overflow-y-auto custom-scrollbar select-text">
+                    {selectedEmail.body ? selectedEmail.body.trim() : '(No message body)'}
+                  </div>
+                </div>
+
+                {/* Attachments Section */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-1.5">
+                      <Paperclip size={12} />
+                      Attachments ({attachments.length})
+                    </h4>
+                    {attachments.length > 0 && attachments.some(a => a.isSelected) && (
+                      <div className="flex gap-2">
+                        <button onClick={clearAll} className="text-[10px] font-bold text-muted hover:text-text cursor-pointer">Clear Selection</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {loadingAttachments ? (
+                    <div className="p-8 text-center text-muted flex flex-col items-center gap-2">
+                      <Loader className="animate-spin text-primary" size={20} />
+                      <span className="text-xs">Loading files...</span>
+                    </div>
+                  ) : attachments.length === 0 ? (
+                    <div className="p-8 text-center text-muted flex flex-col items-center gap-2 italic text-xs">
+                      <FileText size={24} className="opacity-50" />
+                      No attachments found for this email
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {attachments.map((att) => {
+                        const ext = getFileExt(att.filename);
+                        const Icon = FILE_ICONS[ext] || File;
+                        const color = FILE_COLORS[ext] || 'text-muted';
+                        return (
+                          <div
+                            key={att.filename}
+                            onClick={() => toggleAttachment(att.filename)}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                              att.isSelected
+                                ? 'bg-primary/10 border-primary/30 shadow-[0_0_8px_rgba(59,130,246,0.1)]'
+                                : 'bg-white/5 border-glass-border hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="radio"
+                                checked={att.isSelected}
+                                onChange={() => toggleAttachment(att.filename)}
+                                className="accent-primary w-4 h-4"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <div className={`p-2 rounded-lg bg-white/5 border border-glass-border flex-shrink-0 ${color}`}>
+                                <Icon size={16} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-bold text-text truncate">{att.filename}</div>
+                                <div className="text-[10px] text-muted mt-0.5">
+                                  {formatBytes(att.size)}
+                                  {att.contentType && <> &middot; {att.contentType}</>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => window.open(`/uploads/${encodeURIComponent(att.filename)}`, '_blank')}
+                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-muted hover:text-text border border-glass-border/60 transition-all cursor-pointer"
+                                  title="View file"
+                                >
+                                  <Eye size={14} />
+                                </button>
+                                {att.isSelected && <CheckCircle size={16} className="text-primary flex-shrink-0" />}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
 
-                {loadingAttachments ? (
-                  <div className="p-8 text-center text-muted flex flex-col items-center gap-2">
-                    <Loader className="animate-spin text-primary" size={20} />
-                    <span className="text-xs">Loading files...</span>
-                  </div>
-                ) : attachments.length === 0 ? (
-                  <div className="p-8 text-center text-muted flex flex-col items-center gap-2 italic text-xs">
-                    <FileText size={24} className="opacity-50" />
-                    No attachments found for this email
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {attachments.map((att) => {
-                      const ext = getFileExt(att.filename);
-                      const Icon = FILE_ICONS[ext] || File;
-                      const color = FILE_COLORS[ext] || 'text-muted';
-                      return (
-                        <div
-                          key={att.filename}
-                          onClick={() => toggleAttachment(att.filename)}
-                          className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                            att.isSelected
-                              ? 'bg-primary/10 border-primary/30 shadow-[0_0_8px_rgba(59,130,246,0.1)]'
-                              : 'bg-white/5 border-glass-border hover:bg-white/10'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="radio"
-                              checked={att.isSelected}
-                              onChange={() => toggleAttachment(att.filename)}
-                              className="accent-primary w-4 h-4"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                            <div className={`p-2 rounded-lg bg-white/5 border border-glass-border flex-shrink-0 ${color}`}>
-                              <Icon size={16} />
+                {/* Inline Attachment Preview */}
+                {attachments.find(a => a.isSelected) && (
+                  <div className="border border-glass-border/30 rounded-xl overflow-hidden bg-black/20 flex flex-col h-[400px]">
+                    <div className="p-2.5 bg-bg3/30 border-b border-glass-border/30 flex justify-between items-center text-xs font-bold text-muted uppercase tracking-wider">
+                      <span className="truncate max-w-[250px]">Preview: {attachments.find(a => a.isSelected)?.filename}</span>
+                      <button
+                        onClick={() => window.open(`/uploads/${encodeURIComponent(attachments.find(a => a.isSelected)!.filename)}`, '_blank')}
+                        className="text-primary hover:underline cursor-pointer font-bold shrink-0 uppercase"
+                      >
+                        Open in New Tab
+                      </button>
+                    </div>
+                    <div className="flex-1 bg-white/5 relative">
+                      {(() => {
+                        const selectedAtt = attachments.find(a => a.isSelected);
+                        if (!selectedAtt) return null;
+                        const ext = getFileExt(selectedAtt.filename);
+                        const previewableTypes = ['pdf', 'csv', 'txt', 'xlsx', 'xls'];
+
+                        if (loadingPreview) {
+                          return (
+                            <div className="h-full flex items-center justify-center text-xs text-muted flex-col gap-2 p-6 text-center uppercase">
+                              <Loader className="animate-spin text-primary" size={24} />
+                              <span>Parsing &amp; loading preview...</span>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs font-bold text-text truncate">{att.filename}</div>
-                              <div className="text-[10px] text-muted mt-0.5">
-                                {formatBytes(att.size)}
-                                {att.contentType && <> &middot; {att.contentType}</>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => window.open(`/uploads/${encodeURIComponent(att.filename)}`, '_blank')}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-muted hover:text-text border border-glass-border/60 transition-all"
-                                title="View file"
-                              >
-                                <Eye size={14} />
-                              </button>
-                              {att.isSelected && <CheckCircle size={16} className="text-primary flex-shrink-0" />}
-                            </div>
+                          );
+                        }
+
+                        if (previewableTypes.includes(ext)) {
+                          return (
+                            <pre className="w-full h-full p-4 overflow-auto text-xs font-mono text-text bg-bg2 whitespace-pre select-text uppercase">
+                              {previewContent || 'No text content extracted or empty file.'}
+                            </pre>
+                          );
+                        }
+
+                        return (
+                          <div className="h-full flex items-center justify-center text-xs text-muted flex-col gap-2 p-6 text-center uppercase">
+                            <FileText size={32} className="opacity-40" />
+                            <span>Preview not supported for this file type. Click "Open in New Tab" or process the file directly.</span>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })()}
+                    </div>
                   </div>
                 )}
 
                 {/* Process Result */}
                 {processResult && (
-                  <div className="mt-3 p-3 rounded-xl bg-green/10 border border-green/20 text-xs space-y-1">
+                  <div className="mt-3 p-3 rounded-xl bg-green/10 border border-green/20 text-xs space-y-1 uppercase">
                     <div className="font-bold text-green flex items-center gap-1">
                       <CheckCircle size={12} /> Processing Complete
                     </div>

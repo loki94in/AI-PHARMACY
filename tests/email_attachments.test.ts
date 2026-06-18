@@ -54,4 +54,14 @@ describe('Email Attachments API', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.count).toBe(2);
   });
+
+  test('GET /api/email/attachments/preview serves text content of CSV', async () => {
+    const res = await request(app)
+      .get('/api/email/attachments/preview')
+      .query({ filename: 'test_attachment_order.csv' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.type).toBe('text');
+    expect(res.body.content).toContain('Paracetamol 650mg');
+  });
 });

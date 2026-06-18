@@ -188,6 +188,51 @@ router.get('/:id/attachments', async (req, res) => {
   }
 });
 
+// GET /api/email/attachments/preview — serves a text preview of CSV, PDF, Excel, and TXT files
+router.get('/attachments/preview', async (req, res) => {
+  const filename = req.query.filename as string;
+  if (!filename) {
+    return res.status(400).json({ error: 'filename is required' });
+  }
+  try {
+    const uploadsDir = getUploadsDir();
+    const filePath = path.resolve(uploadsDir, filename);
+
+    // Prevent directory traversal attacks
+    if (!filePath.startsWith(uploadsDir)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Attachment file not found' });
+    }
+
+    const ext = path.extname(filename).toLowerCase();
+    if (ext === '.txt' || ext === '.csv') {
+      const text = fs.readFileSync(filePath, 'utf-8');
+      res.json({ success: true, type: 'text', content: text.substring(0, 50000) });
+    } else if (ext === '.pdf') {
+      const { default: pdfParse } = await import('pdf-parse');
+      const dataBuffer = fs.readFileSync(filePath);
+      const data = await pdfParse(dataBuffer);
+      res.json({ success: true, type: 'text', content: data.text });
+    } else if (ext === '.xlsx' || ext === '.xls') {
+      const { default: XLSX } = await import('xlsx');
+      const workbook = XLSX.readFile(filePath);
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const csv = XLSX.utils.sheet_to_csv(worksheet);
+      res.json({ success: true, type: 'text', content: csv.substring(0, 50000) });
+    } else {
+      res.status(400).json({ error: 'Preview not supported for this file type' });
+    }
+  } catch (error: any) {
+    console.error('Failed to generate file preview:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate file preview' });
+  }
+});
+
+
 // POST /api/email/attachments/parse
 router.post('/attachments/parse', async (req, res) => {
   const { filename, importData = true } = req.body;

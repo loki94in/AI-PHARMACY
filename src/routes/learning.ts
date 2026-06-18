@@ -197,7 +197,7 @@ router.get('/profiles', async (req, res) => {
   try {
     db = await dbManager.getConnection();
     const profiles = await db.all(`
-      SELECT d.id as distributor_id, d.name as distributor_name, d.email as distributor_email,
+      SELECT d.id as distributor_id, d.name as distributor_name, d.email as distributor_email, d.phone as distributor_phone,
              lp.last_updated,
              (SELECT COUNT(*) FROM distributor_historical_files WHERE distributor_id = d.id) as files_count,
              (SELECT status FROM distributor_historical_files WHERE distributor_id = d.id ORDER BY id DESC LIMIT 1) as last_status
@@ -205,7 +205,8 @@ router.get('/profiles', async (req, res) => {
       LEFT JOIN distributor_learning_profiles lp ON d.id = lp.distributor_id
       ORDER BY d.name ASC
     `);
-        res.json({ success: true, profiles });
+    await dbManager.close();
+    res.json({ success: true, profiles });
   } catch (error: any) {
     console.error('Failed to fetch learning profiles:', error);
     res.status(500).json({ error: 'Failed to fetch learning profiles' });

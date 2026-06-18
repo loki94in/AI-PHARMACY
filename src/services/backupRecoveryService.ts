@@ -7,6 +7,8 @@ import axios from 'axios';
 import { dbManager } from '../database/connection.js';
 import { telegramBotService } from '../telegramBot.js';
 import { eventService } from './eventService.js';
+import zlib from 'zlib';
+import { pipeline } from 'stream/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -100,15 +102,28 @@ export class BackupRecoveryService {
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS
-    const filename = `snapshot_${dateStr}_${timeStr}.db`;
+    const filename = `snapshot_${dateStr}_${timeStr}.db.gz`;
     const destPath = path.join(SNAPSHOTS_DIR, filename);
 
     console.log(`[Backup] Generating database snapshot: ${filename}...`);
 
-    // Safely clone database via checkpointed WAL copy
+    // Safely clone database via checkpointed WAL copy to temporary raw file
+    const tempDbPath = destPath.replace('.gz', '');
     const tempDb = new Database(DB_PATH);
-    await tempDb.backup(destPath);
+    await tempDb.backup(tempDbPath);
     tempDb.close();
+
+    // Compress raw database using gzip (ponytail: native stdlib zlib)
+    const gzip = zlib.createGzip();
+    const source = fs.createReadStream(tempDbPath);
+    const destination = fs.createWriteStream(destPath);
+    try {
+      await pipeline(source, gzip, destination);
+    } finally {
+      if (fs.existsSync(tempDbPath)) {
+        fs.unlinkSync(tempDbPath);
+      }
+    }
 
     // Log action to DB
     try {
@@ -118,6 +133,31 @@ export class BackupRecoveryService {
         ['BACKUP_SNAPSHOT', `Snapshot created automatically: ${filename}`]
       );
     } catch {}
+
+    // Same-day retention cleanup: Keep only the latest 5 snapshots for the current day
+    try {
+      const todayPrefix = `snapshot_${dateStr}_`;
+      const files = fs.readdirSync(SNAPSHOTS_DIR)
+        .filter(f => f.startsWith(todayPrefix) && (f.endsWith('.db') || f.endsWith('.db.gz')))
+        .map(f => {
+          const fp = path.join(SNAPSHOTS_DIR, f);
+          return { name: f, path: fp, time: fs.statSync(fp).mtime.getTime() };
+        })
+        .sort((a, b) => b.time - a.time); // newest first
+
+      const MAX_TODAY_SNAPSHOTS = 5;
+      if (files.length > MAX_TODAY_SNAPSHOTS) {
+        const toDelete = files.slice(MAX_TODAY_SNAPSHOTS);
+        for (const snap of toDelete) {
+          if (fs.existsSync(snap.path)) {
+            fs.unlinkSync(snap.path);
+            console.log(`[Backup] Same-day snapshot retention: deleted old snapshot ${snap.name}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Backup] Snapshot same-day retention cleanup failed:', err);
+    }
 
     // Check if daily compression should be performed (if we have previous days' snapshots)
     await this.compressPreviousDaysSnapshots();
@@ -133,7 +173,7 @@ export class BackupRecoveryService {
     if (!dailyCompressEnabled) return;
 
     try {
-      const files = fs.readdirSync(SNAPSHOTS_DIR).filter(f => f.startsWith('snapshot_') && f.endsWith('.db'));
+      const files = fs.readdirSync(SNAPSHOTS_DIR).filter(f => f.startsWith('snapshot_') && (f.endsWith('.db') || f.endsWith('.db.gz')));
       if (files.length === 0) return;
 
       const todayStr = new Date().toISOString().split('T')[0];
@@ -478,8 +518,8 @@ export class BackupRecoveryService {
    */
   public async restoreFromArchive(filename: string): Promise<void> {
     const sanitized = path.basename(filename);
-    if (!sanitized.endsWith('.zip') && !sanitized.endsWith('.db')) {
-      throw new Error('Invalid file format. Must be .zip archive or .db file.');
+    if (!sanitized.endsWith('.zip') && !sanitized.endsWith('.db') && !sanitized.endsWith('.db.gz')) {
+      throw new Error('Invalid file format. Must be .zip archive, .db file, or .db.gz file.');
     }
 
     let filePath = '';
@@ -517,10 +557,10 @@ export class BackupRecoveryService {
       zip.extractAllTo(tempExtractDir, true);
 
       // Find the newest/largest db file inside the unzipped folder
-      const dbFiles = fs.readdirSync(tempExtractDir).filter(f => f.endsWith('.db'));
+      const dbFiles = fs.readdirSync(tempExtractDir).filter(f => f.endsWith('.db') || f.endsWith('.db.gz'));
       if (dbFiles.length === 0) {
         fs.rmSync(tempExtractDir, { recursive: true, force: true });
-        throw new Error('No valid database file (.db) found inside the archive.');
+        throw new Error('No valid database file (.db or .db.gz) found inside the archive.');
       }
 
       // Sort by size or modification time
@@ -530,15 +570,28 @@ export class BackupRecoveryService {
       // Close live database connection
       await dbManager.close();
 
-      // Copy over app.db
-      fs.copyFileSync(targetDbPath, DB_PATH);
+      if (targetDbFile.endsWith('.gz')) {
+        const gunzip = zlib.createGunzip();
+        const source = fs.createReadStream(targetDbPath);
+        const destination = fs.createWriteStream(DB_PATH);
+        await pipeline(source, gunzip, destination);
+      } else {
+        fs.copyFileSync(targetDbPath, DB_PATH);
+      }
 
       // Clean temp folder
       fs.rmSync(tempExtractDir, { recursive: true, force: true });
     } else {
       // Direct DB file restore
       await dbManager.close();
-      fs.copyFileSync(filePath, DB_PATH);
+      if (sanitized.endsWith('.gz')) {
+        const gunzip = zlib.createGunzip();
+        const source = fs.createReadStream(filePath);
+        const destination = fs.createWriteStream(DB_PATH);
+        await pipeline(source, gunzip, destination);
+      } else {
+        fs.copyFileSync(filePath, DB_PATH);
+      }
     }
 
     // Re-open database connection and log successful restore

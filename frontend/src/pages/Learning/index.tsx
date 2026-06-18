@@ -30,6 +30,7 @@ interface LearningProfileSummary {
   distributor_id: number;
   distributor_name: string;
   distributor_email: string | null;
+  distributor_phone: string | null;
   last_updated: string | null;
   files_count: number;
   last_status: string | null;
@@ -1305,9 +1306,16 @@ const Learning: React.FC = () => {
                           {p.files_count > 0 ? `${p.files_count} ref` : 'no data'}
                         </span>
                       </div>
-                      {p.distributor_email && (
-                        <span className="text-[9px] text-muted/80 font-mono truncate w-full">{p.distributor_email}</span>
-                      )}
+                      <div className="flex flex-col gap-0.5 w-full">
+                        {p.distributor_phone && (
+                          <span className="text-[10px] text-sky font-semibold font-mono truncate w-full" title={p.distributor_phone}>
+                            📞 {p.distributor_phone}
+                          </span>
+                        )}
+                        {p.distributor_email && (
+                          <span className="text-[9px] text-muted/80 font-mono truncate w-full" title={p.distributor_email}>{p.distributor_email}</span>
+                        )}
+                      </div>
                       <div className="flex justify-between items-center w-full mt-1 pt-1.5 border-t border-glass-border/30 text-[9px] text-muted/65">
                         <span>Updated: {p.last_updated ? new Date(p.last_updated).toLocaleDateString() : 'Never'}</span>
                         {p.last_status && (
@@ -1374,11 +1382,11 @@ const Learning: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WhatsApp Phone</label>
+                      <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WhatsApp Phone(s) (comma sep.)</label>
                       <input
                         type="text"
                         className="premium-input w-full text-xs"
-                        placeholder="e.g. +919876543210"
+                        placeholder="e.g. +919876543210, +919900000000"
                         value={selectedProfile.distributor.phone || ''}
                         onChange={(e) => {
                           setSelectedProfile({
@@ -1698,11 +1706,11 @@ const Learning: React.FC = () => {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WhatsApp Phone No.</label>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WhatsApp Phone No(s). (comma sep.)</label>
                 <input
                   type="text"
                   className="premium-input w-full text-xs"
-                  placeholder="e.g. +919876543210"
+                  placeholder="e.g. +919876543210, +919900000000"
                   value={newDistPhone}
                   onChange={(e) => setNewDistPhone(e.target.value)}
                 />

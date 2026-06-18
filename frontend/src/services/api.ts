@@ -275,6 +275,8 @@ export const api = {
   markEmailSaved: (uid: number) => apiClient.post(`/email/${uid}/saved`).then(res => res.data),
   triggerEmailSync: () => apiClient.post('/email/sync').then(res => res.data),
   clearAttachmentsCache: () => apiClient.delete('/email/attachments/cache').then(res => res.data),
+  getAttachmentPreview: (filename: string) => apiClient.get('/email/attachments/preview', { params: { filename } }).then(res => res.data),
+  
   
   // Medicines Database
   getMedicines: (

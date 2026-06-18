@@ -390,7 +390,7 @@ router.post('/backup/manual', async (req, res) => {
     
     // Create new snapshot
     const snapshotFile = await backupRecoveryService.createSnapshot();
-    const files = fs.readdirSync(SNAPSHOTS_DIR).filter(f => f.startsWith('snapshot_') && f.endsWith('.db'));
+    const files = fs.readdirSync(SNAPSHOTS_DIR).filter(f => f.startsWith('snapshot_') && (f.endsWith('.db') || f.endsWith('.db.gz')));
     
     if (files.length > 0) {
       const zip = new AdmZip();

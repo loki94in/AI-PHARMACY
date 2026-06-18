@@ -356,9 +356,25 @@ const POS = () => {
       .catch(err => console.error('Error fetching special orders:', err));
   }, []);
 
+  const handleSavePatientProfile = async () => {
+    if (patientName.trim()) {
+      try {
+        await api.addPatient({ name: patientName.trim(), phone: patientPhone.trim() });
+      } catch (e) {
+        // Patient may already exist, ignore duplicate errors
+      }
+    }
+    setShowPatientModal(false);
+  };
+
   const handleCompleteSaleRef = useRef<any>(null);
+  const handleSavePatientProfileRef = useRef<any>(null);
+  const showPatientModalRef = useRef<boolean>(false);
+
   useEffect(() => {
     handleCompleteSaleRef.current = handleCompleteSale;
+    handleSavePatientProfileRef.current = handleSavePatientProfile;
+    showPatientModalRef.current = showPatientModal;
   });
 
   // Keyboard shortcut listeners (e.g. 'X' for camera, 'Alt+E' or 'F8' for quick edit medicine)
@@ -366,10 +382,14 @@ const POS = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement as HTMLElement | null;
 
-      // Ctrl + S: Save Bill
+      // Ctrl + S: Save Bill or Save Profile
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        handleCompleteSaleRef.current();
+        if (showPatientModalRef.current) {
+          handleSavePatientProfileRef.current();
+        } else {
+          handleCompleteSaleRef.current();
+        }
         return;
       }
 
@@ -2193,8 +2213,9 @@ const POS = () => {
                           type="number" 
                           className="premium-input text-sm font-mono py-1.5 px-3 w-20 text-center" 
                           value={refillDays}
-                          onChange={e => setRefillDays(Math.max(1, Number(e.target.value)))}
+                          onChange={e => setRefillDays(Math.min(100, Math.max(1, Number(e.target.value))))}
                           min="1"
+                          max="100"
                         />
                         <div className="flex gap-1 flex-1">
                           {[30, 60, 90].map(days => (
@@ -2208,6 +2229,23 @@ const POS = () => {
                             </button>
                           ))}
                         </div>
+                      </div>
+
+                      {/* Interactive 1-100 Days Slider */}
+                      <div className="space-y-1 pt-1">
+                        <div className="flex justify-between text-[10px] text-muted font-semibold">
+                          <span>1 day</span>
+                          <span className="text-primary font-bold">{refillDays} days</span>
+                          <span>100 days</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="100"
+                          value={refillDays}
+                          onChange={e => setRefillDays(Number(e.target.value))}
+                          className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
                       </div>
                     </div>
                   </div>
@@ -2224,19 +2262,10 @@ const POS = () => {
                 Cancel
               </button>
               <button 
-                onClick={async () => {
-                  if (patientName.trim()) {
-                    try {
-                      await api.addPatient({ name: patientName.trim(), phone: patientPhone.trim() });
-                    } catch (e) {
-                      // Patient may already exist, ignore duplicate errors
-                    }
-                  }
-                  setShowPatientModal(false);
-                }}
+                onClick={handleSavePatientProfile}
                 className="premium-btn bg-primary text-text hover:bg-teal-500 py-2 px-5 text-xs font-bold uppercase tracking-wider"
               >
-                Save Profile
+                Save Profile (Ctrl+S)
               </button>
             </div>
           </div>

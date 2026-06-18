@@ -629,8 +629,20 @@ const Purchases: React.FC = () => {
   };
 
   const saveDistributor = async () => {
-    if (!newDistributor.name) {
+    if (!newDistributor.name?.trim()) {
       alert('Distributor name is required');
+      return;
+    }
+    if (!newDistributor.phone?.trim()) {
+      alert('Distributor phone number is required');
+      return;
+    }
+    if (!newDistributor.address?.trim()) {
+      alert('Distributor address is required');
+      return;
+    }
+    if (!newDistributor.state_code?.trim()) {
+      alert('Distributor state code is required');
       return;
     }
 
@@ -1099,8 +1111,19 @@ const Purchases: React.FC = () => {
   };
 
   const savePurchase = async () => {
-    if (!selectedDistributor || !invoiceNo) {
-      alert('Please fill in distributor and invoice number');
+    const distExists = selectedDistributor && distributors.some(d => d.id === selectedDistributor);
+    const searchMatchExists = distributors.some(d => {
+      const name = d.name || d.distributor_name || '';
+      return name.trim().toLowerCase() === distributorSearch.trim().toLowerCase();
+    });
+
+    if (!selectedDistributor || !distExists || !searchMatchExists) {
+      alert('This distributor is new or unsaved. Please save the distributor details first by clicking the "+" button before saving the bill.');
+      return;
+    }
+
+    if (!invoiceNo) {
+      alert('Please fill in the invoice number');
       return;
     }
 
@@ -1578,7 +1601,18 @@ const Purchases: React.FC = () => {
               <button
                 onClick={() => {
                   setEditDistributorId(null);
-                  setNewDistributor({ name: '', phone: '', email: '', address: '', state_code: '' });
+                  let prefilledEmail = '';
+                  if (emailSource && emailSource.from) {
+                    const match = emailSource.from.match(/<([^>]+)>/);
+                    prefilledEmail = match ? match[1].trim() : emailSource.from.trim();
+                  }
+                  setNewDistributor({
+                    name: distributorSearch || '',
+                    phone: '',
+                    email: prefilledEmail,
+                    address: '',
+                    state_code: ''
+                  });
                   setShowDistributorModal(true);
                 }}
                 className="bg-blue-600 hover:bg-blue-700 text-white w-9 h-9 rounded-lg font-bold flex-shrink-0 flex items-center justify-center"
@@ -2112,7 +2146,7 @@ const Purchases: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Phone</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Phone *</label>
                 <input
                   type="tel"
                   value={newDistributor.phone}
@@ -2123,7 +2157,7 @@ const Purchases: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Email (Optional)</label>
                 <input
                   type="email"
                   value={newDistributor.email}
@@ -2134,7 +2168,7 @@ const Purchases: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Address</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Address *</label>
                 <textarea
                   value={newDistributor.address}
                   onChange={(e) => setNewDistributor({ ...newDistributor, address: e.target.value })}
@@ -2145,7 +2179,7 @@ const Purchases: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">State Code</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">State Code *</label>
                 <select
                   value={newDistributor.state_code}
                   onChange={(e) => setNewDistributor({ ...newDistributor, state_code: e.target.value })}

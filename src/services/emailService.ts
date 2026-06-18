@@ -3250,12 +3250,7 @@ export class EmailService {
       await connection.openBox('INBOX');
 
       // Mark as seen
-      await new Promise<void>((resolve, reject) => {
-        connection.imap.uid.addFlags(uid, '\\Seen', (err: any) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await connection.addFlags(uid, '\\Seen');
       return true;
     } catch (err) {
       console.error('markAsSeen error:', err);

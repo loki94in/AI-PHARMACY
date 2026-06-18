@@ -182,14 +182,12 @@ const BackupCenterModal: React.FC<BackupCenterModalProps> = ({
               <p className="text-xs text-muted">Visibility and management of database safety layers</p>
             </div>
           </div>
-          {!isStartupMode && (
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-white/5 transition-all"
-            >
-              <X size={18} />
-            </button>
-          )}
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-white/5 transition-all"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Modal Body */}
@@ -448,14 +446,12 @@ const BackupCenterModal: React.FC<BackupCenterModalProps> = ({
             >
               Create Manual Backup
             </button>
-            {!isStartupMode && (
-              <button
-                onClick={onClose}
-                className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 border border-glass-border text-text rounded-xl text-xs font-bold uppercase transition-all"
-              >
-                Close
-              </button>
-            )}
+            <button
+              onClick={onClose}
+              className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 border border-glass-border text-text rounded-xl text-xs font-bold uppercase transition-all"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
