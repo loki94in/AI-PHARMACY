@@ -288,6 +288,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE catalog_jobs ADD COLUMN matched_previous_job_id INTEGER DEFAULT NULL`,
     `ALTER TABLE catalog_jobs ADD COLUMN newly_detected_columns TEXT DEFAULT NULL`,
     `ALTER TABLE return_items ADD COLUMN expiry_date DATETIME`,
+    `ALTER TABLE emails ADD COLUMN medicine_names TEXT`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -483,7 +484,8 @@ export async function ensureSchema(dbPath: string) {
       is_saved        INTEGER DEFAULT 0,
       distributor_name TEXT,
       has_attachments INTEGER DEFAULT 0,
-      synced_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+      synced_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+      medicine_names  TEXT
     );
 
     -- Attachment records per email UID (offline-first)
@@ -635,6 +637,68 @@ export async function ensureSchema(dbPath: string) {
   ];
   for (const stmt of doctorAlters) {
     try { await db.run(stmt); } catch (_e) { /* already exists */ }
+  }
+
+  // Run background migration to populate medicine_names for existing emails
+  if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+    try {
+      (async () => {
+        const dbPathLocal = dbPath;
+        // Wait a bit to let the main boot complete
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const { open } = await import('sqlite');
+        const { default: sqlite3 } = await import('sqlite3');
+        const backgroundDb = await open({ filename: dbPathLocal, driver: sqlite3.Database });
+        try {
+          const unpopulated = await backgroundDb.all('SELECT uid, subject, body, from_addr FROM emails WHERE is_order = 1 AND medicine_names IS NULL');
+          if (unpopulated.length > 0) {
+            console.log(`[Database Migration] Populating medicine names for ${unpopulated.length} emails in background...`);
+            const { emailService } = await import('./services/emailService.js');
+            const fs = await import('fs');
+            for (const email of unpopulated) {
+              try {
+                const attachments = await backgroundDb.all('SELECT local_path, filename FROM email_attachments WHERE uid = ?', [email.uid]);
+                const parsedItems = [];
+                for (const att of attachments) {
+                  if (att.local_path && fs.existsSync(att.local_path)) {
+                    try {
+                      const resParse = await emailService.parseAndImportAttachment(att.local_path, false);
+                      if (resParse && resParse.success && resParse.items) {
+                        parsedItems.push(...resParse.items);
+                      }
+                    } catch (pe) {
+                      // Ignore parsing error for this attachment
+                    }
+                  }
+                }
+                if (parsedItems.length === 0) {
+                  const orderInfo = emailService.extractOrderInfo({
+                    subject: email.subject || '',
+                    body: email.body || '',
+                    from: email.from_addr || '',
+                    attachments: []
+                  });
+                  for (const med of orderInfo.medicines) {
+                    parsedItems.push({ name: med.name });
+                  }
+                }
+                const medNames = Array.from(new Set(parsedItems.map(i => i.name).filter(Boolean)));
+                await backgroundDb.run('UPDATE emails SET medicine_names = ? WHERE uid = ?', [JSON.stringify(medNames), email.uid]);
+              } catch (err) {
+                console.error(`[Database Migration] Failed to populate medicine names for email ${email.uid}:`, err);
+              }
+            }
+            console.log('[Database Migration] Background medicine name population completed.');
+          }
+        } catch (err) {
+          console.warn('[Database Migration] Failed in background query:', err);
+        } finally {
+          await backgroundDb.close();
+        }
+      })();
+    } catch (err) {
+      console.warn('[Database Migration] Failed to initialize background runner:', err);
+    }
   }
 
   await db.close();

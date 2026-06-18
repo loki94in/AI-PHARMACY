@@ -930,6 +930,35 @@ const Purchases: React.FC = () => {
         
         // Auto-resolve medicine IDs for the loaded items
         const resolveMedicines = async () => {
+          const calculateSimilarity = (s1: string, s2: string): number => {
+            const clean1 = s1.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const clean2 = s2.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (clean1 === clean2) return 1.0;
+            if (!clean1 || !clean2) return 0.0;
+
+            const track = Array(clean2.length + 1).fill(null).map(() =>
+              Array(clean1.length + 1).fill(null));
+            for (let i = 0; i <= clean1.length; i += 1) {
+              track[0][i] = i;
+            }
+            for (let j = 0; j <= clean2.length; j += 1) {
+              track[j][0] = j;
+            }
+            for (let j = 1; j <= clean2.length; j += 1) {
+              for (let i = 1; i <= clean1.length; i += 1) {
+                const indicator = clean1[i - 1] === clean2[j - 1] ? 0 : 1;
+                track[j][i] = Math.min(
+                  track[j][i - 1] + 1, // deletion
+                  track[j - 1][i] + 1, // insertion
+                  track[j - 1][i - 1] + indicator // substitution
+                );
+              }
+            }
+            const distance = track[clean2.length][clean1.length];
+            const maxLen = Math.max(clean1.length, clean2.length);
+            return 1.0 - distance / maxLen;
+          };
+
           const updatedItems = loadedItems.map(item => ({ ...item, original_name: item.medicine_name }));
           let hasChanges = false;
           
@@ -952,31 +981,74 @@ const Purchases: React.FC = () => {
                 continue;
               }
 
-              // 2. Fallback to catalog search for EXACT matches
-              const res = await api.catalogSearch(mName);
-              const matchedList = res || [];
+              // 2. Fallback to catalog search for EXACT matches or FUZZY matches
+              let searchResults = [];
+              try {
+                searchResults = await api.catalogSearch(mName);
+              } catch (e) {
+                searchResults = [];
+              }
+              
+              let matchedList = searchResults || [];
+              let bestMatch = null;
+
+              // Check for exact match first
               if (matchedList.length > 0) {
-                const match = matchedList.find((m: any) => m.name && m.name.toLowerCase() === mName.toLowerCase());
-                if (match) {
-                  updatedItems[i].medicine_id = match.id;
-                  updatedItems[i].medicine_name = match.name;
-                  updatedItems[i].mrp = updatedItems[i].mrp || match.mrp || 0;
-                  updatedItems[i].rate = updatedItems[i].rate || match.rate || 0;
-                  updatedItems[i].cgst_per = updatedItems[i].cgst_per || match.cgst_per || 0;
-                  updatedItems[i].sgst_per = updatedItems[i].sgst_per || match.sgst_per || 0;
-                  updatedItems[i].amount = calculateItemAmount(updatedItems[i]);
-                  hasChanges = true;
-                } else {
-                  // If not an exact match, make it empty so the user can fill the space
-                  updatedItems[i].medicine_id = null;
-                  updatedItems[i].medicine_name = '';
-                  updatedItems[i].amount = 0;
-                  hasChanges = true;
+                bestMatch = matchedList.find((m: any) => m.name && m.name.toLowerCase() === mName.toLowerCase());
+              }
+
+              // If no exact match, calculate similarities and find the best one >= 0.60
+              if (!bestMatch && matchedList.length > 0) {
+                const scored = matchedList.map((m: any) => ({
+                  item: m,
+                  score: calculateSimilarity(mName, m.name)
+                })).filter(s => s.score >= 0.60);
+                
+                if (scored.length > 0) {
+                  scored.sort((a, b) => b.score - a.score);
+                  bestMatch = scored[0].item;
                 }
+              }
+
+              // If still no match, try searching for the first word/token of length >= 3
+              if (!bestMatch) {
+                const parts = mName.split(/[\s\-]+/);
+                let tokens = parts[0];
+                const genericPrefixes = ['tab', 'tabs', 'cap', 'caps', 'inj', 'syp', 'susp', 'tablet', 'capsule', 'injection', 'syrup', 'drop', 'drops', 'ointment', 'cream', 'gel'];
+                if (tokens && (genericPrefixes.includes(tokens.toLowerCase()) || tokens.length < 3) && parts.length > 1) {
+                  tokens = parts[1];
+                }
+                if (tokens && tokens.length >= 3) {
+                  let tokenResults = [];
+                  try {
+                    tokenResults = await api.catalogSearch(tokens);
+                  } catch (e) {}
+                  
+                  const scored = (tokenResults || []).map((m: any) => ({
+                    item: m,
+                    score: calculateSimilarity(mName, m.name)
+                  })).filter(s => s.score >= 0.60);
+
+                  if (scored.length > 0) {
+                    scored.sort((a, b) => b.score - a.score);
+                    bestMatch = scored[0].item;
+                  }
+                }
+              }
+
+              if (bestMatch) {
+                updatedItems[i].medicine_id = bestMatch.id;
+                updatedItems[i].medicine_name = bestMatch.name;
+                updatedItems[i].mrp = updatedItems[i].mrp || bestMatch.mrp || 0;
+                updatedItems[i].rate = updatedItems[i].rate || bestMatch.rate || 0;
+                updatedItems[i].cgst_per = updatedItems[i].cgst_per || bestMatch.cgst_per || 0;
+                updatedItems[i].sgst_per = updatedItems[i].sgst_per || bestMatch.sgst_per || 0;
+                updatedItems[i].amount = calculateItemAmount(updatedItems[i]);
+                hasChanges = true;
               } else {
-                // No match, empty name
+                // Suggest the original parsed name so it is visible and user can modify/correct it
                 updatedItems[i].medicine_id = null;
-                updatedItems[i].medicine_name = '';
+                updatedItems[i].medicine_name = mName;
                 updatedItems[i].amount = 0;
                 hasChanges = true;
               }

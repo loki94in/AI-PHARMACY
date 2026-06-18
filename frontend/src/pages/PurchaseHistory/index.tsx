@@ -439,7 +439,7 @@ const PurchaseHistory = () => {
                     <th className="px-6 py-4 whitespace-nowrap">Distributor / Sender</th>
                     <th className="px-6 py-4 whitespace-nowrap">Subject Line</th>
                     <th className="px-6 py-4 whitespace-nowrap">Extracted Invoice No.</th>
-                    <th className="px-6 py-4 whitespace-nowrap text-center">Attachments</th>
+                    <th className="px-6 py-4 whitespace-nowrap">Medicines</th>
                     <th className="px-6 py-4 whitespace-nowrap text-center">Status</th>
                     <th className="px-6 py-4 whitespace-nowrap text-center">Action</th>
                   </tr>
@@ -480,14 +480,14 @@ const PurchaseHistory = () => {
                         <td className="px-6 py-4 font-mono text-white text-xs">
                           {recon.extracted_invoice_no || 'N/A'}
                         </td>
-                        <td className="px-6 py-4 text-center">
-                          {recon.attachments && recon.attachments.length > 0 ? (
-                            <span className="inline-flex items-center gap-1 bg-white/5 border border-glass-border/30 text-xs px-2 py-0.5 rounded text-gray-400" title={recon.attachments.map((a: any) => a.filename).join(', ')}>
-                              <Paperclip size={12} />
-                              {recon.attachments.length}
-                            </span>
+                        <td className="px-6 py-4">
+                          {recon.medicine_names && recon.medicine_names.length > 0 ? (
+                            <div className="text-gray-300 max-w-xs truncate" title={recon.medicine_names.join(', ')}>
+                              {recon.medicine_names.slice(0, 3).join(', ')}
+                              {recon.medicine_names.length > 3 && ` +${recon.medicine_names.length - 3} more`}
+                            </div>
                           ) : (
-                            <span className="text-gray-600 text-xs">-</span>
+                            <span className="text-gray-500 text-xs italic">No medicines detected</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -582,22 +582,23 @@ const PurchaseHistory = () => {
                 </div>
               </div>
 
-              {/* Attachments List */}
-              {selectedOrder.attachments && selectedOrder.attachments.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-sky uppercase tracking-wide">Email Attachments</h4>
+              {/* Medicines List */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-sky uppercase tracking-wide">Medicines in Order</h4>
+                {selectedOrder.medicine_names && selectedOrder.medicine_names.length > 0 ? (
                   <div className="space-y-1.5">
-                    {selectedOrder.attachments.map((att: any) => (
-                      <div key={att.filename} className="bg-white/5 border border-glass-border/20 p-3 rounded-xl flex justify-between items-center">
-                        <span className="font-mono text-xs text-gray-300 truncate max-w-[70%]">{att.filename}</span>
-                        <span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded border border-glass-border/20">
-                          {formatBytes(att.size)}
-                        </span>
+                    {selectedOrder.medicine_names.map((name: string, i: number) => (
+                      <div key={i} className="bg-white/5 border border-glass-border/20 p-3 rounded-xl flex justify-between items-center">
+                        <span className="font-medium text-xs text-gray-300">{name}</span>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="text-gray-500 text-xs italic bg-white/5 p-3 rounded-xl border border-glass-border/20">
+                    No medicines detected in this order
+                  </div>
+                )}
+              </div>
 
               {/* Reconciliation Analysis Card */}
               <div>

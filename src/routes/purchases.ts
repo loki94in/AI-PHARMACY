@@ -1473,7 +1473,7 @@ router.get('/reconciliation', async (req, res) => {
     
     // Fetch all emails that are flagged as orders
     const orderEmails = await db.all(`
-      SELECT uid, from_addr, subject, body, date, is_seen, is_saved, distributor_name, has_attachments 
+      SELECT uid, from_addr, subject, body, date, is_seen, is_saved, distributor_name, has_attachments, medicine_names
       FROM emails 
       WHERE is_order = 1 
       ORDER BY uid DESC
@@ -1506,7 +1506,7 @@ router.get('/reconciliation', async (req, res) => {
 
       // Fetch attachment filenames
       const attachments = await db.all(
-        'SELECT filename, size, content_type FROM email_attachments WHERE uid = ?',
+        'SELECT filename, size, content_type, local_path FROM email_attachments WHERE uid = ?',
         [email.uid]
       );
 
@@ -1514,6 +1514,38 @@ router.get('/reconciliation', async (req, res) => {
       let status = 'Missing';
       if (matchedPurchase) {
         status = 'Matched';
+      }
+
+      // Get or parse medicine names
+      let medNames: string[] = [];
+      if (email.medicine_names) {
+        try {
+          medNames = JSON.parse(email.medicine_names);
+        } catch (e) {
+          medNames = [];
+        }
+      } else {
+        const parsedItems = [];
+        for (const att of attachments) {
+          if (att.local_path && fs.existsSync(att.local_path)) {
+            try {
+              const resParse = await emailService.parseAndImportAttachment(att.local_path, false);
+              if (resParse && resParse.success && resParse.items) {
+                parsedItems.push(...resParse.items);
+              }
+            } catch (pe) {
+              // ignore
+            }
+          }
+        }
+        if (parsedItems.length === 0) {
+          for (const med of orderInfo.medicines) {
+            parsedItems.push({ name: med.name });
+          }
+        }
+        medNames = Array.from(new Set(parsedItems.map(i => i.name).filter(Boolean)));
+        // Cache it in DB
+        await db.run('UPDATE emails SET medicine_names = ? WHERE uid = ?', [JSON.stringify(medNames), email.uid]);
       }
 
       result.push({
@@ -1533,6 +1565,7 @@ router.get('/reconciliation', async (req, res) => {
           date: matchedPurchase.date
         } : null,
         status,
+        medicine_names: medNames,
         attachments: attachments.map(a => ({
           filename: a.filename,
           size: a.size,
