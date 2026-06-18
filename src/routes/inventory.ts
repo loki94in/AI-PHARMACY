@@ -305,14 +305,20 @@ router.get('/catalog-search', async (req, res) => {
     const q = (req.query.q as string || '').trim();
     if (q.length < 2) return res.json([]);
     db = await dbManager.getConnection();
+    const likeQ = `%${q}%`;
     const rows = await db.all(
-      `SELECT id, name, item_code, manufacturer, strength, packaging, mrp
+      `SELECT id, name, item_code, manufacturer, strength, packaging, mrp, generic_name
        FROM medicines
-       WHERE name LIKE ? OR api_reference LIKE ? OR item_code LIKE ?
-       ORDER BY name ASC LIMIT 15`,
-      [`%${q}%`, `%${q}%`, `%${q}%`]
+       WHERE name LIKE ? OR api_reference LIKE ? OR item_code LIKE ? OR manufacturer LIKE ?
+       UNION
+       SELECT m.id, m.name, m.item_code, m.manufacturer, m.strength, m.packaging, m.mrp, m.generic_name
+       FROM medicine_aliases a
+       JOIN medicines m ON a.medicine_id = m.id
+       WHERE a.alias_name LIKE ?
+       ORDER BY name ASC LIMIT 25`,
+      [likeQ, likeQ, likeQ, likeQ, likeQ]
     );
-        res.json(rows);
+    res.json(rows);
   } catch (error: any) {
     console.error('Catalog search error:', error.message);
     res.status(500).json({ error: 'Search failed' });

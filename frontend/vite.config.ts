@@ -24,5 +24,17 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['lucide-react']
-  }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split vendor libs into a stable cached chunk separate from page code
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-icons': ['lucide-react'],
+          'vendor-utils': ['axios', 'clsx', 'tailwind-merge'],
+        },
+      },
+    },
+  },
 })

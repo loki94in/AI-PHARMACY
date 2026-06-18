@@ -265,20 +265,27 @@ const Mail = () => {
       .catch(() => {});
   }, []);
 
-  // On mount: load local DB instantly, then trigger IMAP sync in background
+  // On mount: load local DB instantly.
+  // Only trigger IMAP sync if cache is cold (first visit or no cached data).
+  // After first visit the 2-minute periodic sync keeps data fresh in the background.
   useEffect(() => {
     loadLocalInbox();
-    // Small delay so local DB load completes first before IMAP connection
-    const syncDelay = setTimeout(() => triggerSync(), 1500);
 
-    // Periodic background refresh: re-read local DB every 10s
+    // Only do an immediate IMAP sync on first visit (cold cache)
+    // On subsequent visits the page shows cached data instantly with no flicker
+    let syncDelay: ReturnType<typeof setTimeout> | undefined;
+    if (cachedEmails.length === 0) {
+      syncDelay = setTimeout(() => triggerSync(), 1500);
+    }
+
+    // Periodic background refresh: re-read local DB every 10s (silent, no loading indicator)
     const refreshInterval = setInterval(() => silentRefreshLocal(), 10000);
 
     // Periodic IMAP sync every 2 minutes
     const syncInterval = setInterval(() => triggerSync(), 120000);
 
     return () => {
-      clearTimeout(syncDelay);
+      if (syncDelay) clearTimeout(syncDelay);
       clearInterval(refreshInterval);
       clearInterval(syncInterval);
     };
@@ -439,6 +446,7 @@ const Mail = () => {
             }))
           },
           emailSource: {
+            email_uid: selectedEmail.id,  // used by Purchases page to mark email as saved
             from: selectedEmail.from,
             subject: selectedEmail.subject,
             date: selectedEmail.date,

@@ -595,7 +595,7 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/manual', async (req, res) => {
-  const { distributor, distributor_id, invoice_no, date, cd_per, extra_credit, items, source_filename, source_file_headers, mapping_config } = req.body;
+  const { distributor, distributor_id, invoice_no, date, cd_per, extra_credit, items, source_filename, source_file_headers, mapping_config, email_uid } = req.body;
   try {
     const db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
@@ -815,6 +815,14 @@ router.post('/manual', async (req, res) => {
         }
       }
     })();
+
+    // Mark the source email as saved so it stays visible in Mail page for 3 days
+    // and is not deleted by the background cleanup job
+    if (email_uid) {
+      emailService.markEmailSaved(parseInt(email_uid, 10)).catch((err: any) => {
+        console.warn('[Purchase] Failed to mark source email as saved:', err);
+      });
+    }
 
     res.json({ success: true, message: 'Purchase saved successfully', app_invoice_no: appInvoiceNo });
   } catch (error) {

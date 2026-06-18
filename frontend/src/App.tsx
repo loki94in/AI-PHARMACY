@@ -31,7 +31,7 @@ import {
   QrCode,
   RefreshCw,
 } from 'lucide-react';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { toastEvent, quickOrderEvent } from './services/events';
 import type { ToastEventDetail } from './services/events';
 import { QuickOrderModal } from './components/QuickOrderModal';
@@ -41,32 +41,44 @@ import { api, apiClient } from './services/api';
 import { Agentation } from 'agentation';
 import BackupCenterModal from './components/BackupCenterModal';
 
-import Dashboard from './pages/Dashboard';
-import Inventory from './pages/Inventory';
-import POS from './pages/POS';
-import Purchases from './pages/Purchases';
-import CRM from './pages/CRM';
-import PurchaseHistory from './pages/PurchaseHistory';
-import Migration from './pages/Migration';
-import Doctors from './pages/Doctors';
-import Dispatch from './pages/Dispatch';
-import Reports from './pages/Reports';
-import License from './pages/License';
-import Settings from './pages/Settings';
-import Mail from './pages/Mail';
-import Returns from './pages/Returns';
-import CatalogUpload from './pages/CatalogUpload';
-import Orders from './pages/Orders';
-import Expiry from './pages/Expiry';
-import Sells from './pages/Sells';
-import Learning from './pages/Learning';
-import DatabasePage from './pages/Database';
-import CompositionQueue from './pages/CompositionQueue';
-import CustomerReturn from './pages/CustomerReturn';
-import CustomerReturnHistory from './pages/CustomerReturnHistory';
-import PharmarackCart from './pages/PharmarackCart';
-import AutomationCenter from './pages/AutomationCenter';
-import InvestigationCenter from './pages/Investigation';
+// ponytail: lazy-load all pages so each is its own JS chunk — avoids loading
+// all 26 pages upfront and eliminates the main cause of slow page switching.
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const POS = lazy(() => import('./pages/POS'));
+const Purchases = lazy(() => import('./pages/Purchases'));
+const CRM = lazy(() => import('./pages/CRM'));
+const PurchaseHistory = lazy(() => import('./pages/PurchaseHistory'));
+const Migration = lazy(() => import('./pages/Migration'));
+const Doctors = lazy(() => import('./pages/Doctors'));
+const Dispatch = lazy(() => import('./pages/Dispatch'));
+const Reports = lazy(() => import('./pages/Reports'));
+const License = lazy(() => import('./pages/License'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Mail = lazy(() => import('./pages/Mail'));
+const Returns = lazy(() => import('./pages/Returns'));
+const CatalogUpload = lazy(() => import('./pages/CatalogUpload'));
+const Orders = lazy(() => import('./pages/Orders'));
+const Expiry = lazy(() => import('./pages/Expiry'));
+const Sells = lazy(() => import('./pages/Sells'));
+const Learning = lazy(() => import('./pages/Learning'));
+const DatabasePage = lazy(() => import('./pages/Database'));
+const CompositionQueue = lazy(() => import('./pages/CompositionQueue'));
+const CustomerReturn = lazy(() => import('./pages/CustomerReturn'));
+const CustomerReturnHistory = lazy(() => import('./pages/CustomerReturnHistory'));
+const PharmarackCart = lazy(() => import('./pages/PharmarackCart'));
+const AutomationCenter = lazy(() => import('./pages/AutomationCenter'));
+const InvestigationCenter = lazy(() => import('./pages/Investigation'));
+
+// Minimal page-switch loading fallback — renders instantly, no layout shift
+const PageLoader = () => (
+  <div className="flex-1 flex items-center justify-center h-full">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+      <span className="text-xs text-muted font-semibold uppercase tracking-widest">Loading...</span>
+    </div>
+  </div>
+);
 
 // ──────────────────────────────────────────────
 // Notification Types
@@ -1226,42 +1238,44 @@ function App() {
   return (
     <BrowserRouter>
       <Layout theme={theme} setTheme={setTheme}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/pos" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/returns" element={<Returns />} />
-          <Route path="/expiry" element={<Expiry />} />
-          <Route path="/pos" element={<POS />} />
-          <Route path="/sells" element={<Sells />} />
-          <Route path="/investigation" element={<InvestigationCenter />} />
-          <Route path="/purchases" element={<Purchases />} />
-          <Route path="/manual-purchase" element={<Purchases />} />
-          <Route path="/purchase-history" element={<PurchaseHistory />} />
-          <Route path="/crm" element={<CRM />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/automation-center" element={<AutomationCenter />} />
-          <Route path="/pharmarack-cart" element={<PharmarackCart />} />
-          <Route path="/migration" element={<Migration />} />
-          <Route path="/doctors" element={<Doctors />} />
-          <Route path="/dispatch" element={<Dispatch />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/license" element={<License />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/mail" element={<Mail />} />
-          <Route path="/catalog" element={<CatalogUpload />} />
-          <Route path="/learning" element={<Learning />} />
-          <Route path="/database" element={<DatabasePage />} />
-          <Route path="/composition-queue" element={<CompositionQueue />} />
-          <Route path="/customer-returns" element={<CustomerReturn />} />
-          <Route path="/customer-returns-history" element={<CustomerReturnHistory />} />
-          <Route path="*" element={
-            <div className="flex flex-col items-center justify-center h-full text-muted">
-              <h1 className="text-2xl font-bold mb-2">Coming Soon</h1>
-              <p>This module is currently being migrated to React.</p>
-            </div>
-          } />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/pos" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/returns" element={<Returns />} />
+            <Route path="/expiry" element={<Expiry />} />
+            <Route path="/pos" element={<POS />} />
+            <Route path="/sells" element={<Sells />} />
+            <Route path="/investigation" element={<InvestigationCenter />} />
+            <Route path="/purchases" element={<Purchases />} />
+            <Route path="/manual-purchase" element={<Purchases />} />
+            <Route path="/purchase-history" element={<PurchaseHistory />} />
+            <Route path="/crm" element={<CRM />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/automation-center" element={<AutomationCenter />} />
+            <Route path="/pharmarack-cart" element={<PharmarackCart />} />
+            <Route path="/migration" element={<Migration />} />
+            <Route path="/doctors" element={<Doctors />} />
+            <Route path="/dispatch" element={<Dispatch />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/license" element={<License />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/mail" element={<Mail />} />
+            <Route path="/catalog" element={<CatalogUpload />} />
+            <Route path="/learning" element={<Learning />} />
+            <Route path="/database" element={<DatabasePage />} />
+            <Route path="/composition-queue" element={<CompositionQueue />} />
+            <Route path="/customer-returns" element={<CustomerReturn />} />
+            <Route path="/customer-returns-history" element={<CustomerReturnHistory />} />
+            <Route path="*" element={
+              <div className="flex flex-col items-center justify-center h-full text-muted">
+                <h1 className="text-2xl font-bold mb-2">Coming Soon</h1>
+                <p>This module is currently being migrated to React.</p>
+              </div>
+            } />
+          </Routes>
+        </Suspense>
       </Layout>
       <Agentation key={theme} />
     </BrowserRouter>

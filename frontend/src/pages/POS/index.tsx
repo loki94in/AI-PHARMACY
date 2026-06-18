@@ -899,9 +899,16 @@ const POS = () => {
       return;
     }
 
-    if (paymentMedium === 'CREDIT' && !patientName.trim()) {
-      alert('Patient/Customer Name is required for Credit transactions to track outstanding balance!');
-      return;
+    if (paymentMedium === 'CREDIT') {
+      if (!patientName.trim()) {
+        alert('Patient/Customer Name is required for Credit transactions to track outstanding balance!');
+        return;
+      }
+      if (!patientPhone.trim()) {
+        alert('Patient WhatsApp/Contact Number is required for Credit transactions to automatically generate the PDF and share it on WhatsApp! Redirecting to Patient Profile to fill it.');
+        setShowPatientModal(true);
+        return;
+      }
     }
 
     // Expiry check
@@ -950,7 +957,7 @@ const POS = () => {
         sale_date: date,
         paymentMedium: paymentMedium,
         paymentStatus: paymentMedium === 'CREDIT' ? 'UNPAID' : 'PAID',
-        sendWhatsApp: sendWhatsApp,
+        sendWhatsApp: paymentMedium === 'CREDIT' ? true : sendWhatsApp,
         refillEnabled: refillEnabled,
         refillDays: refillDays
       };
