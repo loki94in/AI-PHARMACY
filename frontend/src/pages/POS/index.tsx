@@ -454,6 +454,31 @@ const POS = () => {
       api.searchMedicine(searchTerm)
         .then(data => {
           if (Array.isArray(data)) {
+            // Premium Barcode Auto-Add Feature:
+            // If there is exactly one result, and the search term exactly matches its barcode (item_code),
+            // auto-add it to the cart and clear the search box.
+            const term = searchTerm.trim().toUpperCase();
+            if (data.length === 1) {
+              const matched = data[0];
+              const barcode = (matched.item_code || '').toUpperCase().trim();
+              if (barcode === term && matched.inventory_id && !matched.is_out_of_stock) {
+                addToCart({
+                  id: matched.inventory_id,
+                  medicine_id: matched.medicine_id,
+                  name: matched.medicine_name,
+                  batch: matched.batch_no,
+                  expiry: matched.expiry_date,
+                  mrp: matched.mrp,
+                  costPrice: matched.cost_price,
+                  salts: matched.salts || matched.hsn_code || 'Generic',
+                  packSize: matched.pack_size || 10
+                });
+                setSearchTerm('');
+                setSearchResults([]);
+                return;
+              }
+            }
+
             setSearchResults(data);
             
             const needsOnline = data.length === 0 || data.some(m => !m.api_reference || m.api_reference.trim() === '');
@@ -509,6 +534,17 @@ const POS = () => {
       api.searchMedicine(manualName)
         .then(data => {
           if (Array.isArray(data)) {
+            // Auto-fill on exact barcode match
+            const term = manualName.trim().toUpperCase();
+            if (data.length === 1) {
+              const matched = data[0];
+              const barcode = (matched.item_code || '').toUpperCase().trim();
+              if (barcode === term) {
+                selectManualSuggestion(matched);
+                return;
+              }
+            }
+
             setManualSuggestions(data.slice(0, 8));
             setShowManualSuggestions(true);
           }

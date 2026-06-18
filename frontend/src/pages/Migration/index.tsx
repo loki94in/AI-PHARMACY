@@ -230,6 +230,10 @@ const Migration = () => {
   const [viewingItemsRecord, setViewingItemsRecord] = useState<{ id: number; type: 'sales' | 'purchases' | 'returns'; name: string } | null>(null);
   const [viewingItems, setViewingItems] = useState<any[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editingItemData, setEditingItemData] = useState<any>(null);
+  const [newItemData, setNewItemData] = useState<any>({});
+  const [addingNewItem, setAddingNewItem] = useState<boolean>(false);
   const [rollingBack, setRollingBack] = useState(false);
   const [activeImportIdx, setActiveImportIdx] = useState(0); // which file is currently being imported
   
@@ -310,7 +314,7 @@ const Migration = () => {
   };
 
   // Staging Explorer & Editing States
-  const [activeStagingTab, setActiveStagingTab] = useState<'inventory' | 'sales' | 'purchases' | 'returns' | 'errors'>('inventory');
+  const [activeStagingTab, setActiveStagingTab] = useState<'inventory' | 'sales' | 'purchases' | 'returns' | 'errors' | 'skipped_rows'>('inventory');
   const [stagingSearchQuery, setStagingSearchQuery] = useState('');
   const [editingRecordType, setEditingRecordType] = useState<'inventory' | 'sales' | 'purchases' | 'returns' | null>(null);
   const [editingRecordData, setEditingRecordData] = useState<any>(null);
@@ -407,6 +411,64 @@ const Migration = () => {
       alert(`Failed to fetch items: ${err.message || 'Unknown error'}`);
     } finally {
       setLoadingItems(false);
+    }
+  };
+  const handleSaveStagedItem = async (itemId: number) => {
+    if (!viewingItemsRecord || !editingItemData) return;
+    try {
+      const type = viewingItemsRecord.type;
+      const invoiceId = viewingItemsRecord.id;
+      if (type === 'sales') {
+        await api.updateStagingSaleItem(invoiceId, itemId, editingItemData);
+      } else if (type === 'purchases') {
+        await api.updateStagingPurchaseItem(invoiceId, itemId, editingItemData);
+      } else if (type === 'returns') {
+        await api.updateStagingReturnItem(invoiceId, itemId, editingItemData);
+      }
+      setEditingItemId(null);
+      setEditingItemData(null);
+      await handleViewItems(type, { id: invoiceId, invoice_no: viewingItemsRecord.name, return_no: viewingItemsRecord.name });
+    } catch (err: any) {
+      alert(`Failed to update item: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteStagedItem = async (itemId: number) => {
+    if (!viewingItemsRecord) return;
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    try {
+      const type = viewingItemsRecord.type;
+      const invoiceId = viewingItemsRecord.id;
+      if (type === 'sales') {
+        await api.deleteStagingSaleItem(invoiceId, itemId);
+      } else if (type === 'purchases') {
+        await api.deleteStagingPurchaseItem(invoiceId, itemId);
+      } else if (type === 'returns') {
+        await api.deleteStagingReturnItem(invoiceId, itemId);
+      }
+      await handleViewItems(type, { id: invoiceId, invoice_no: viewingItemsRecord.name, return_no: viewingItemsRecord.name });
+    } catch (err: any) {
+      alert(`Failed to delete item: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleAddStagedItem = async () => {
+    if (!viewingItemsRecord) return;
+    try {
+      const type = viewingItemsRecord.type;
+      const invoiceId = viewingItemsRecord.id;
+      if (type === 'sales') {
+        await api.addStagingSaleItem(invoiceId, newItemData);
+      } else if (type === 'purchases') {
+        await api.addStagingPurchaseItem(invoiceId, newItemData);
+      } else if (type === 'returns') {
+        await api.addStagingReturnItem(invoiceId, newItemData);
+      }
+      setNewItemData({});
+      setAddingNewItem(false);
+      await handleViewItems(type, { id: invoiceId, invoice_no: viewingItemsRecord.name, return_no: viewingItemsRecord.name });
+    } catch (err: any) {
+      alert(`Failed to add item: ${err.message || 'Unknown error'}`);
     }
   };
 
@@ -1823,12 +1885,32 @@ const Migration = () => {
                   <Eye size={18} className="text-primary" />
                   Staged Items for {viewingItemsRecord.type === 'sales' ? 'Sales Invoice' : viewingItemsRecord.type === 'purchases' ? 'Purchase Bill' : 'Return'} — <span className="text-primary font-mono">{viewingItemsRecord.name}</span>
                 </h4>
-                <button
-                  onClick={() => setViewingItemsRecord(null)}
-                  className="text-muted hover:text-text transition-colors text-xs font-bold bg-bg3 px-2.5 py-1 rounded-lg border border-glass-border"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setAddingNewItem(true);
+                      setNewItemData({
+                        medicine_name: '',
+                        batch_no: 'BATCH',
+                        quantity: 1,
+                        loose_qty: 0,
+                        unit_price: 0,
+                        cost_price: 0,
+                        mrp: 0,
+                        expiry_date: viewingItemsRecord.type !== 'sales' ? '2028-12-01 00:00:00' : undefined
+                      });
+                    }}
+                    className="bg-primary hover:bg-primary/95 text-text text-xs font-bold px-3 py-1.5 rounded-lg border border-glass-border flex items-center gap-1 shadow-lg"
+                  >
+                    + Add Item
+                  </button>
+                  <button
+                    onClick={() => { setViewingItemsRecord(null); setEditingItemId(null); setAddingNewItem(false); }}
+                    className="text-muted hover:text-text transition-colors text-xs font-bold bg-bg3 px-2.5 py-1 rounded-lg border border-glass-border"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
               {/* Body */}
@@ -1838,7 +1920,7 @@ const Migration = () => {
                     <Loader2 className="animate-spin text-primary" size={32} />
                     <span className="text-xs font-semibold">Loading items...</span>
                   </div>
-                ) : viewingItems.length === 0 ? (
+                ) : viewingItems.length === 0 && !addingNewItem ? (
                   <div className="text-center py-12 text-muted text-xs">
                     No items found for this record.
                   </div>
@@ -1848,29 +1930,226 @@ const Migration = () => {
                       <tr>
                         <th className="p-3 text-muted font-bold">Medicine Name</th>
                         <th className="p-3 text-muted font-bold">Batch</th>
-                        {viewingItemsRecord.type === 'purchases' && <th className="p-3 text-muted font-bold">Expiry</th>}
+                        {(viewingItemsRecord.type === 'purchases' || viewingItemsRecord.type === 'returns') && <th className="p-3 text-muted font-bold">Expiry</th>}
                         <th className="p-3 text-muted font-bold text-center">Qty</th>
                         {viewingItemsRecord.type === 'sales' && <th className="p-3 text-muted font-bold text-center">Loose Qty</th>}
                         <th className="p-3 text-muted font-bold">{viewingItemsRecord.type === 'sales' ? 'Unit Price' : 'Cost Price'}</th>
                         <th className="p-3 text-muted font-bold">MRP</th>
-                        <th className="p-3 text-muted font-bold text-right">Total</th>
+                        <th className="p-3 text-muted font-bold text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
+                      {addingNewItem && (
+                        <tr className="bg-primary/5 border-b border-glass-border">
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              placeholder="Medicine Name"
+                              value={newItemData.medicine_name || ''}
+                              onChange={e => setNewItemData((prev: any) => ({ ...prev, medicine_name: e.target.value }))}
+                              className="bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              placeholder="Batch"
+                              value={newItemData.batch_no || ''}
+                              onChange={e => setNewItemData((prev: any) => ({ ...prev, batch_no: e.target.value }))}
+                              className="bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                            />
+                          </td>
+                          {(viewingItemsRecord.type === 'purchases' || viewingItemsRecord.type === 'returns') && (
+                            <td className="p-2">
+                              <input
+                                type="text"
+                                placeholder="YYYY-MM-DD"
+                                value={newItemData.expiry_date || ''}
+                                onChange={e => setNewItemData((prev: any) => ({ ...prev, expiry_date: e.target.value }))}
+                                className="bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none font-mono"
+                              />
+                            </td>
+                          )}
+                          <td className="p-2">
+                            <input
+                              type="number"
+                              placeholder="Qty"
+                              value={newItemData.quantity || 0}
+                              onChange={e => setNewItemData((prev: any) => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                              className="bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none text-center"
+                            />
+                          </td>
+                          {viewingItemsRecord.type === 'sales' && (
+                            <td className="p-2">
+                              <input
+                                type="number"
+                                placeholder="Loose Qty"
+                                value={newItemData.loose_qty || 0}
+                                onChange={e => setNewItemData((prev: any) => ({ ...prev, loose_qty: parseInt(e.target.value) || 0 }))}
+                                className="bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none text-center"
+                              />
+                            </td>
+                          )}
+                          <td className="p-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="Price"
+                              value={viewingItemsRecord.type === 'sales' ? (newItemData.unit_price || 0) : (newItemData.cost_price || 0)}
+                              onChange={e => {
+                                const val = parseFloat(e.target.value) || 0;
+                                setNewItemData((prev: any) => viewingItemsRecord.type === 'sales' ? ({ ...prev, unit_price: val }) : ({ ...prev, cost_price: val }));
+                              }}
+                              className="bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="MRP"
+                              value={newItemData.mrp || 0}
+                              onChange={e => setNewItemData((prev: any) => ({ ...prev, mrp: parseFloat(e.target.value) || 0 }))}
+                              className="bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                            />
+                          </td>
+                          <td className="p-2 text-right whitespace-nowrap space-x-2">
+                            <button
+                              onClick={handleAddStagedItem}
+                              className="text-green hover:underline font-bold text-xs"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={() => setAddingNewItem(false)}
+                              className="text-muted hover:underline font-bold text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+
                       {viewingItems.map((item: any, idx: number) => {
                         const qty = item.quantity || 0;
                         const price = viewingItemsRecord.type === 'sales' ? (item.unit_price || 0) : (item.cost_price || 0);
                         const total = viewingItemsRecord.type === 'returns' ? (item.total_price || (qty * price)) : (qty * price);
+                        
+                        const isEditing = editingItemId === item.id;
+
+                        if (isEditing) {
+                          return (
+                            <tr key={item.id || idx} className="border-b border-glass-border bg-bg3/60">
+                              <td className="p-2">
+                                <input
+                                  type="text"
+                                  value={editingItemData?.medicine_name || ''}
+                                  onChange={e => setEditingItemData((prev: any) => ({ ...prev, medicine_name: e.target.value }))}
+                                  className="bg-bg border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="text"
+                                  value={editingItemData?.batch_no || ''}
+                                  onChange={e => setEditingItemData((prev: any) => ({ ...prev, batch_no: e.target.value }))}
+                                  className="bg-bg border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                                />
+                              </td>
+                              {(viewingItemsRecord.type === 'purchases' || viewingItemsRecord.type === 'returns') && (
+                                <td className="p-2">
+                                  <input
+                                    type="text"
+                                    value={editingItemData?.expiry_date || ''}
+                                    onChange={e => setEditingItemData((prev: any) => ({ ...prev, expiry_date: e.target.value }))}
+                                    className="bg-bg border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none font-mono"
+                                  />
+                                </td>
+                              )}
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  value={editingItemData?.quantity || 0}
+                                  onChange={e => setEditingItemData((prev: any) => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                                  className="bg-bg border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none text-center"
+                                />
+                              </td>
+                              {viewingItemsRecord.type === 'sales' && (
+                                <td className="p-2">
+                                  <input
+                                    type="number"
+                                    value={editingItemData?.loose_qty || 0}
+                                    onChange={e => setEditingItemData((prev: any) => ({ ...prev, loose_qty: parseInt(e.target.value) || 0 }))}
+                                    className="bg-bg border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none text-center"
+                                  />
+                                </td>
+                              )}
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={viewingItemsRecord.type === 'sales' ? (editingItemData?.unit_price || 0) : (editingItemData?.cost_price || 0)}
+                                  onChange={e => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    setEditingItemData((prev: any) => viewingItemsRecord.type === 'sales' ? ({ ...prev, unit_price: val }) : ({ ...prev, cost_price: val }));
+                                  }}
+                                  className="bg-bg border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={editingItemData?.mrp || 0}
+                                  onChange={e => setEditingItemData((prev: any) => ({ ...prev, mrp: parseFloat(e.target.value) || 0 }))}
+                                  className="bg-bg border border-glass-border rounded px-2 py-1 text-xs text-text focus:border-primary w-full outline-none"
+                                />
+                              </td>
+                              <td className="p-2 text-right whitespace-nowrap space-x-2">
+                                <button
+                                  onClick={() => handleSaveStagedItem(item.id)}
+                                  className="text-green hover:underline font-bold text-xs"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => { setEditingItemId(null); setEditingItemData(null); }}
+                                  className="text-muted hover:underline font-bold text-xs"
+                                >
+                                  Cancel
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        }
+
                         return (
                           <tr key={item.id || idx} className="border-b border-glass-border/20 hover:bg-bg2/40 transition-colors">
                             <td className="p-3 font-semibold text-text">{item.medicine_name || 'Unknown Medicine'}</td>
                             <td className="p-3 font-mono text-muted">{item.batch_no || '—'}</td>
-                            {viewingItemsRecord.type === 'purchases' && <td className="p-3 font-mono text-muted">{item.expiry_date || '—'}</td>}
+                            {(viewingItemsRecord.type === 'purchases' || viewingItemsRecord.type === 'returns') && <td className="p-3 font-mono text-muted">{item.expiry_date || '—'}</td>}
                             <td className="p-3 text-center text-text font-semibold">{qty}</td>
                             {viewingItemsRecord.type === 'sales' && <td className="p-3 text-center text-muted">{item.loose_qty || 0}</td>}
                             <td className="p-3 text-text">₹{price}</td>
                             <td className="p-3 text-text">₹{item.mrp || 0}</td>
-                            <td className="p-3 text-right font-bold text-text">₹{total.toFixed(2)}</td>
+                            <td className="p-3 text-right text-text whitespace-nowrap">
+                              <span className="font-bold mr-3">₹{total.toFixed(2)}</span>
+                              <button
+                                onClick={() => {
+                                  setEditingItemId(item.id);
+                                  setEditingItemData({ ...item });
+                                }}
+                                className="text-primary hover:underline font-bold text-[11px] mr-2"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteStagedItem(item.id)}
+                                className="text-red-400 hover:underline font-bold text-[11px]"
+                              >
+                                Delete
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -1882,7 +2161,7 @@ const Migration = () => {
               {/* Footer */}
               <div className="p-4 border-t border-glass-border bg-bg2 flex justify-end">
                 <button
-                  onClick={() => setViewingItemsRecord(null)}
+                  onClick={() => { setViewingItemsRecord(null); setEditingItemId(null); setAddingNewItem(false); }}
                   className="bg-bg3 border border-glass-border hover:bg-bg3/80 text-text text-xs font-bold px-5 py-2 rounded-lg transition-colors"
                 >
                   Close

@@ -1,12 +1,12 @@
 // Global Event Bus helper for UI triggers
 export interface ToastEventDetail {
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'mail' | 'automation';
   link?: string; // optional route to navigate to
 }
 
 export const toastEvent = {
-  trigger: (message: string, type: 'success' | 'error' | 'info' = 'info', link?: string) => {
+  trigger: (message: string, type: 'success' | 'error' | 'info' | 'mail' | 'automation' = 'info', link?: string) => {
     window.dispatchEvent(
       new CustomEvent<ToastEventDetail>('app-show-toast', {
         detail: { message, type, link },

@@ -1074,6 +1074,48 @@ const Learning: React.FC = () => {
                   </label>
                 </div>
 
+                {/* 6.5 Operations & POS Automation */}
+                <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
+                  <div className="space-y-1 border-b border-glass-border/30 pb-2">
+                    <h4 className="text-xs font-bold text-text flex items-center gap-2">
+                      <Settings size={14} className="text-sky" />
+                      Operations & POS Automation
+                    </h4>
+                    <p className="text-[10px] text-muted leading-normal">
+                      Toggle operational automations, WhatsApp message dispatches, and print tasks.
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-2 text-left">
+                    {[
+                      { key: 'whatsapp_notif', label: 'Send WhatsApp Messages', desc: 'Trigger automatic refill reminders and bill ready alerts' },
+                      { key: 'auto_print', label: 'Auto Print Receipts', desc: 'Instantly prompt receipt printing upon sales creation' },
+                      { key: 'admin_remote_mode', label: 'Admin Remote Mode', desc: 'Enable cloud authorization and remote administration endpoints' },
+                    ].map(item => {
+                      const val = settingsData[item.key] === 'true';
+                      return (
+                        <div key={item.key} className="flex items-center justify-between cursor-pointer py-1.5 border-b border-glass-border/10 last:border-0 hover:bg-glass-bg/10 px-1 rounded transition-all select-none">
+                          <div className="min-w-0 pr-2">
+                            <span className="text-[11px] font-semibold text-text block">{item.label}</span>
+                            <span className="text-[9px] text-muted block leading-none mt-0.5">{item.desc}</span>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={val}
+                              onChange={() => handleToggleSetting(item.key)}
+                              disabled={savingSetting === item.key}
+                            />
+                            <div className="w-9 h-5 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors peer-disabled:opacity-50" />
+                            <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-4 peer-disabled:opacity-50" />
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* 7. Pharmarack Integration Settings */}
                 <div className="bg-bg3 border border-glass-border rounded-xl p-4 flex flex-col gap-3">
                   <div className="flex justify-between items-start">

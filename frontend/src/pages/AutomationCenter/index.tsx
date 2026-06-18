@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { Refill, AutomationNotification } from '../../services/api';
+import { toastEvent } from '../../services/events';
 
 const AutomationCenter = () => {
   const [activeTab, setActiveTab] = useState<'reminders' | 'logs'>('reminders');
@@ -56,8 +57,7 @@ const AutomationCenter = () => {
   // Manual Send Details Dialog State
   const [manualSendNotification, setManualSendNotification] = useState<AutomationNotification | null>(null);
   
-  // Toast notifications
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
 
   // Fetch Refill Reminders
   const fetchRefills = async () => {
@@ -103,10 +103,7 @@ const AutomationCenter = () => {
   }, [logsStatusFilter, logsTypeFilter]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
-    setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 5000);
+    toastEvent.trigger(message, type === 'success' ? 'automation' : type, '/automation-center');
   };
 
   // Debounced medicine autocomplete search
@@ -377,25 +374,7 @@ const AutomationCenter = () => {
   return (
     <div className="h-full flex flex-col fade-in gap-3 pb-4 overflow-hidden">
       
-      {/* Toast popup */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl animate-slide-in ${
-          toast.type === 'success' 
-            ? 'bg-green/15 border-green/30 text-green-200' 
-            : toast.type === 'error'
-              ? 'bg-red/15 border-red/30 text-red-200'
-              : 'bg-primary/15 border-primary/30 text-primary-light'
-        }`}>
-          {toast.type === 'success' ? (
-            <CheckCircle2 size={16} className="text-green animate-pulse" />
-          ) : toast.type === 'error' ? (
-            <AlertCircle size={16} className="text-red" />
-          ) : (
-            <Bell size={16} className="text-primary animate-bounce" />
-          )}
-          <span className="text-xs font-semibold">{toast.message}</span>
-        </div>
-      )}
+
 
       {/* Header and Tab Controls */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0 bg-white/[0.02] p-4 rounded-2xl border border-glass-border">

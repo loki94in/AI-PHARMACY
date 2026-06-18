@@ -74,7 +74,7 @@ import InvestigationCenter from './pages/Investigation';
 interface AppNotification {
   id: number;
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'mail' | 'automation';
   time: Date;
   read: boolean;
   link?: string;
@@ -230,7 +230,9 @@ const FlashToast = ({
     success: { bg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400', icon: <Check size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(16,185,129,0.15)]' },
     error:   { bg: 'bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400',                 icon: <AlertTriangle size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(239,68,68,0.15)]' },
     info:    { bg: 'bg-sky-500/10 border-sky-500/30 text-sky-600 dark:text-sky-400',                 icon: <Info size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(14,165,233,0.15)]' },
-  }[toast.type];
+    mail:    { bg: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400',     icon: <MailIcon size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(99,102,241,0.15)]' },
+    automation: { bg: 'bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400', icon: <Activity size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(168,85,247,0.15)]' },
+  }[toast.type] || { bg: 'bg-sky-500/10 border-sky-500/30 text-sky-600 dark:text-sky-400',                 icon: <Info size={15} className="shrink-0" />, glow: 'shadow-[0_0_20px_rgba(14,165,233,0.15)]' };
 
   const isStagedSync = toast.message.toLowerCase().includes('sync') || toast.message.toLowerCase().includes('staged');
 
@@ -303,6 +305,8 @@ const NotificationPanel = ({
   const typeConfig = (type: string) => {
     if (type === 'success') return { dot: 'bg-emerald-400', text: 'text-emerald-400', icon: <Check size={14} />, label: 'Success' };
     if (type === 'error')   return { dot: 'bg-red-400',     text: 'text-red-400',     icon: <AlertTriangle size={14} />, label: 'Error' };
+    if (type === 'mail')    return { dot: 'bg-indigo-400',  text: 'text-indigo-400',  icon: <MailIcon size={14} />,      label: 'Mail' };
+    if (type === 'automation') return { dot: 'bg-purple-400', text: 'text-purple-400', icon: <Activity size={14} />,      label: 'Automation' };
     return                         { dot: 'bg-sky-400',     text: 'text-sky-400',     icon: <Info size={14} />,          label: 'Info' };
   };
 
@@ -390,6 +394,8 @@ const NotificationPanel = ({
                     shrink-0 w-8 h-8 rounded-xl flex items-center justify-center mt-0.5
                     ${notif.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 
                       notif.type === 'error'   ? 'bg-red-500/10 text-red-400' : 
+                      notif.type === 'mail'    ? 'bg-indigo-500/10 text-indigo-400' :
+                      notif.type === 'automation' ? 'bg-purple-500/10 text-purple-400' :
                                                  'bg-sky-500/10 text-sky-400'}
                   `}>
                     {cfg.icon}
@@ -975,8 +981,36 @@ const Layout = ({
   const location = useLocation();
   const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart', '/automation-center', '/investigation'].includes(location.pathname);
 
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [hasUnread, setHasUnread] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const stored = localStorage.getItem('app_notifications');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.map((n: any) => ({ ...n, time: new Date(n.time) }));
+      }
+    } catch (e) {
+      console.warn('Failed to load notifications from localStorage:', e);
+    }
+    return [];
+  });
+  const [hasUnread, setHasUnread] = useState(() => {
+    try {
+      const stored = localStorage.getItem('app_notifications');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.some((n: any) => !n.read);
+      }
+    } catch {}
+    return false;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('app_notifications', JSON.stringify(notifications));
+    } catch (e) {
+      console.warn('Failed to save notifications to localStorage:', e);
+    }
+  }, [notifications]);
 
   const [showStagedReview, setShowStagedReview] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
@@ -1102,7 +1136,11 @@ const Layout = ({
   }, []);
 
   const handleMarkRead = useCallback((id: number) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    setNotifications(prev => {
+      const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
+      if (updated.every(n => n.read)) setHasUnread(false);
+      return updated;
+    });
   }, []);
 
   return (

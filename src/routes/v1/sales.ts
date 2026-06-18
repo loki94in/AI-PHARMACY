@@ -30,18 +30,20 @@ router.get('/search-medicine', asyncHandler(async (req: express.Request, res: ex
   // 1. Fetch in-stock inventory matching query
   const sql = `
     SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
+           m.item_code as item_code,
            im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
            m.cgst, m.sgst, m.igst, m.hsn_code
     FROM inventory_master im
     JOIN medicines m ON im.medicine_id = m.id
     WHERE (m.name LIKE ? 
        OR im.batch_no LIKE ? 
+       OR m.item_code LIKE ?
        OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?)
       AND im.quantity > 0
       AND date(im.expiry_date) >= date('now')
     LIMIT 20
   `;
-  const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery]);
+  const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery, likeQuery]);
   
   // Map found medicine_ids to easily exclude them from out-of-stock lookup
   const foundMedIds = new Set(rows.map(r => r.medicine_id));

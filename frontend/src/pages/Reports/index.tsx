@@ -1,36 +1,82 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Download, IndianRupee, ShoppingBag, Package, FileText, Info } from 'lucide-react';
+import { api } from '../../services/api';
 
 const Reports = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'purchases' | 'expiry'>('sales');
+  const [stats, setStats] = useState({ totalSales: 0, totalPurchases: 0, profitMargin: 0, itemsSold: 0 });
+  const [records, setRecords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchReportData = async () => {
+    setLoading(true);
+    try {
+      const [summaryData, tableData] = await Promise.all([
+        api.getReportsSummary({ fromDate, toDate }),
+        api.getReportsData({ type: activeTab, fromDate, toDate })
+      ]);
+      setStats(summaryData);
+      setRecords(tableData);
+    } catch (err) {
+      console.error('Error fetching report data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportData();
+  }, [activeTab]);
+
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    try {
+      let blob;
+      if (format === 'pdf') {
+        blob = await api.exportReportsPDF({ type: activeTab, fromDate, toDate });
+      } else {
+        blob = await api.exportReportsExcel({ type: activeTab, fromDate, toDate });
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report_${activeTab}_${Date.now()}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error(`Error exporting ${format}:`, err);
+      alert(`Failed to export ${format} report.`);
+    }
+  };
 
   const statsCards = [
     {
       label: 'Total Revenue',
-      value: '₹0.00',
+      value: `₹${(stats.totalSales || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: IndianRupee,
       color: 'green',
       gradient: 'rgba(16,185,129,0.15)',
     },
     {
       label: 'Total Purchases',
-      value: '₹0.00',
+      value: `₹${(stats.totalPurchases || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: ShoppingBag,
       color: 'sky',
       gradient: 'rgba(14,165,233,0.15)',
     },
     {
       label: 'Profit Margin',
-      value: '0%',
+      value: `${stats.profitMargin || 0}%`,
       icon: TrendingUp,
       color: 'amber',
       gradient: 'rgba(245,158,11,0.15)',
     },
     {
       label: 'Items Sold',
-      value: '0',
+      value: (stats.itemsSold || 0).toLocaleString('en-IN'),
       icon: Package,
       color: 'primary',
       gradient: 'rgba(59,130,246,0.15)',
@@ -56,8 +102,8 @@ const Reports = () => {
       {/* Date Controls & Action Row */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-bg2 border border-border p-3 rounded-xl flex-shrink-0">
         <div className="flex items-center gap-2">
-          <Info size={16} className="text-primary shrink-0 animate-pulse" />
-          <span className="text-xs text-muted font-medium">Placeholder stats shown. Engine incoming.</span>
+          <Info size={16} className="text-primary shrink-0" />
+          <span className="text-xs text-muted font-medium">Live reporting engine active. Filter by custom dates.</span>
         </div>
         <div className="flex gap-2 items-center flex-wrap w-full sm:w-auto justify-end">
           <div className="flex items-center gap-1.5 text-xs text-muted font-semibold">
@@ -81,6 +127,7 @@ const Reports = () => {
             />
           </div>
           <button
+            onClick={fetchReportData}
             className="bg-green hover:bg-green/95 text-white font-semibold px-4 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
             title="Generate Report"
           >
@@ -106,7 +153,7 @@ const Reports = () => {
                 {card.value}
               </div>
               <div className="text-[9px] text-muted font-medium">
-                No active records
+                {fromDate || toDate ? 'Filtered' : 'All-time'}
               </div>
             </div>
           );
@@ -148,13 +195,24 @@ const Reports = () => {
                   <FileText size={18} className="text-green" />
                   <span>Sales Records</span>
                 </h3>
-                <button
-                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
-                  aria-label="Download Sales Report"
-                  title="Download Sales Report"
-                >
-                  <Download size={15} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to PDF"
+                  >
+                    <FileText size={14} />
+                    <span>Export PDF</span>
+                  </button>
+                  <button
+                    onClick={() => handleExport('excel')}
+                    className="px-3 py-1.5 bg-green/10 hover:bg-green/20 border border-green/20 text-green rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to Excel"
+                  >
+                    <Download size={14} />
+                    <span>Export Excel</span>
+                  </button>
+                </div>
               </div>
               <div className="flex-1 overflow-auto">
                 <table className="w-full text-left border-collapse text-xs">
@@ -166,9 +224,23 @@ const Reports = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No sales records found</td>
-                    </tr>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">Loading records...</td>
+                      </tr>
+                    ) : records.length === 0 ? (
+                      <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">No sales records found</td>
+                      </tr>
+                    ) : (
+                      records.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                          <td className="p-3">{row.date ? row.date.substring(0, 10) : '—'}</td>
+                          <td className="p-3 font-semibold">{row.invoice_no || '—'}</td>
+                          <td className="p-3">₹{(row.total_amount || 0).toFixed(2)}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -182,13 +254,24 @@ const Reports = () => {
                   <Package size={18} className="text-sky" />
                   <span>Inventory Status</span>
                 </h3>
-                <button
-                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
-                  aria-label="Download Inventory Report"
-                  title="Download Inventory Report"
-                >
-                  <Download size={15} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to PDF"
+                  >
+                    <FileText size={14} />
+                    <span>Export PDF</span>
+                  </button>
+                  <button
+                    onClick={() => handleExport('excel')}
+                    className="px-3 py-1.5 bg-green/10 hover:bg-green/20 border border-green/20 text-green rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to Excel"
+                  >
+                    <Download size={14} />
+                    <span>Export Excel</span>
+                  </button>
+                </div>
               </div>
               <div className="flex-1 overflow-auto">
                 <table className="w-full text-left border-collapse text-xs">
@@ -200,9 +283,23 @@ const Reports = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No inventory records found</td>
-                    </tr>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">Loading records...</td>
+                      </tr>
+                    ) : records.length === 0 ? (
+                      <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">No inventory records found</td>
+                      </tr>
+                    ) : (
+                      records.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                          <td className="p-3 font-semibold">{row.medicine_name || '—'}</td>
+                          <td className="p-3">{row.stock ?? 0}</td>
+                          <td className="p-3">₹{(row.value || 0).toFixed(2)}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -216,27 +313,54 @@ const Reports = () => {
                   <ShoppingBag size={18} className="text-amber" />
                   <span>Purchase Logs</span>
                 </h3>
-                <button
-                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
-                  aria-label="Download Purchase Report"
-                  title="Download Purchase Report"
-                >
-                  <Download size={15} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to PDF"
+                  >
+                    <FileText size={14} />
+                    <span>Export PDF</span>
+                  </button>
+                  <button
+                    onClick={() => handleExport('excel')}
+                    className="px-3 py-1.5 bg-green/10 hover:bg-green/20 border border-green/20 text-green rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to Excel"
+                  >
+                    <Download size={14} />
+                    <span>Export Excel</span>
+                  </button>
+                </div>
               </div>
               <div className="flex-1 overflow-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="sticky top-0 bg-bg2 border-b border-glass-border shadow-sm">
                     <tr className="text-muted">
+                      <th className="p-3 font-semibold border-b border-glass-border">Date</th>
+                      <th className="p-3 font-semibold border-b border-glass-border">Invoice / Bill No</th>
                       <th className="p-3 font-semibold border-b border-glass-border">Distributor</th>
-                      <th className="p-3 font-semibold border-b border-glass-border">Invoice</th>
                       <th className="p-3 font-semibold border-b border-glass-border">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No purchase records found</td>
-                    </tr>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={4} className="p-12 text-center text-xs text-muted">Loading records...</td>
+                      </tr>
+                    ) : records.length === 0 ? (
+                      <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                        <td colSpan={4} className="p-12 text-center text-xs text-muted">No purchase records found</td>
+                      </tr>
+                    ) : (
+                      records.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                          <td className="p-3">{row.date ? row.date.substring(0, 10) : '—'}</td>
+                          <td className="p-3 font-semibold">{row.invoice_no || '—'}</td>
+                          <td className="p-3">{row.distributor || '—'}</td>
+                          <td className="p-3">₹{(row.total_amount || 0).toFixed(2)}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -250,13 +374,24 @@ const Reports = () => {
                   <BarChart3 size={18} className="text-red" />
                   <span>Expiry Warning List</span>
                 </h3>
-                <button
-                  className="p-1.5 hover:bg-bg3 rounded-lg text-muted hover:text-text transition-all"
-                  aria-label="Download Expiry Report"
-                  title="Download Expiry Report"
-                >
-                  <Download size={15} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to PDF"
+                  >
+                    <FileText size={14} />
+                    <span>Export PDF</span>
+                  </button>
+                  <button
+                    onClick={() => handleExport('excel')}
+                    className="px-3 py-1.5 bg-green/10 hover:bg-green/20 border border-green/20 text-green rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export to Excel"
+                  >
+                    <Download size={14} />
+                    <span>Export Excel</span>
+                  </button>
+                </div>
               </div>
               <div className="flex-1 overflow-auto">
                 <table className="w-full text-left border-collapse text-xs">
@@ -268,9 +403,23 @@ const Reports = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                      <td colSpan={3} className="p-12 text-center text-xs text-muted">No expiry records found</td>
-                    </tr>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">Loading records...</td>
+                      </tr>
+                    ) : records.length === 0 ? (
+                      <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">No expiry records found</td>
+                      </tr>
+                    ) : (
+                      records.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
+                          <td className="p-3 font-semibold">{row.medicine_name || '—'}</td>
+                          <td className="p-3">{row.batch_no || '—'}</td>
+                          <td className="p-3">{row.expiry_date || '—'}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

@@ -252,8 +252,19 @@ export const api = {
   updateStagingReturns: (id: number, data: any) => apiClient.put(`/migration/staging/returns/${id}`, data).then(r => r.data),
   deleteStagingReturns: (id: number) => apiClient.delete(`/migration/staging/returns/${id}`).then(r => r.data),
   getStagingSaleItems: (id: number) => apiClient.get(`/migration/staging/sales/${id}/items`).then(r => r.data),
+  updateStagingSaleItem: (invoiceId: number, itemId: number, data: any) => apiClient.put(`/migration/staging/sales/${invoiceId}/items/${itemId}`, data).then(r => r.data),
+  deleteStagingSaleItem: (invoiceId: number, itemId: number) => apiClient.delete(`/migration/staging/sales/${invoiceId}/items/${itemId}`).then(r => r.data),
+  addStagingSaleItem: (invoiceId: number, data: any) => apiClient.post(`/migration/staging/sales/${invoiceId}/items`, data).then(r => r.data),
+
   getStagingPurchaseItems: (id: number) => apiClient.get(`/migration/staging/purchases/${id}/items`).then(r => r.data),
+  updateStagingPurchaseItem: (purchaseId: number, itemId: number, data: any) => apiClient.put(`/migration/staging/purchases/${purchaseId}/items/${itemId}`, data).then(r => r.data),
+  deleteStagingPurchaseItem: (purchaseId: number, itemId: number) => apiClient.delete(`/migration/staging/purchases/${purchaseId}/items/${itemId}`).then(r => r.data),
+  addStagingPurchaseItem: (purchaseId: number, data: any) => apiClient.post(`/migration/staging/purchases/${purchaseId}/items`, data).then(r => r.data),
+
   getStagingReturnItems: (id: number) => apiClient.get(`/migration/staging/returns/${id}/items`).then(r => r.data),
+  updateStagingReturnItem: (returnId: number, itemId: number, data: any) => apiClient.put(`/migration/staging/returns/${returnId}/items/${itemId}`, data).then(r => r.data),
+  deleteStagingReturnItem: (returnId: number, itemId: number) => apiClient.delete(`/migration/staging/returns/${returnId}/items/${itemId}`).then(r => r.data),
+  addStagingReturnItem: (returnId: number, data: any) => apiClient.post(`/migration/staging/returns/${returnId}/items`, data).then(r => r.data),
   getStagingErrors: () => apiClient.get('/migration/staging/errors').then(r => r.data),
   finalizeMigration: (regenerateInvoices: boolean = false) => 
     apiClient.post('/migration/staging/finalize', { regenerateInvoices }).then(r => r.data),
@@ -456,4 +467,10 @@ export const api = {
   // Online enrichment & search
   onlineSearch: (q: string) => apiClient.get('/medicines/online-search', { params: { q } }).then(res => res.data),
   autoEnrich: (data: { name: string; api_reference: string; manufacturer?: string }) => apiClient.post('/medicines/auto-enrich', data).then(res => res.data),
+  
+  // Reports
+  getReportsSummary: (params: { fromDate?: string; toDate?: string }) => apiClient.get('/reports', { params }).then(res => res.data),
+  getReportsData: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/data', { params }).then(res => res.data),
+  exportReportsPDF: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-pdf', { params, responseType: 'blob' }).then(res => res.data),
+  exportReportsExcel: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-excel', { params, responseType: 'blob' }).then(res => res.data),
 };

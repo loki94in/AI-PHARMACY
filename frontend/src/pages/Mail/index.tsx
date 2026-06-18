@@ -17,6 +17,7 @@ import {
   CloudLightning,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { toastEvent } from '../../services/events';
 
 interface EmailRecord {
   id?: number;
@@ -243,6 +244,7 @@ const Mail = () => {
         // New emails downloaded — refresh the inbox view from local DB
         const data = await api.getEmailInbox(50);
         if (Array.isArray(data)) setEmails(data);
+        toastEvent.trigger(`Received ${res.synced} new distributor email(s).`, 'mail', '/mail');
       }
       setLastSyncedAt(new Date());
     } catch (err: any) {
@@ -293,12 +295,12 @@ const Mail = () => {
     }
     try {
       const res = await api.clearAttachmentsCache();
-      alert(res.message || 'Attachments cache cleared successfully.');
+      toastEvent.trigger(res.message || 'Attachments cache cleared successfully.', 'success', '/mail');
       setSelectedEmail(null);
       setAttachments([]);
       setProcessResult(null);
     } catch (err: any) {
-      alert('Failed to clear cache: ' + (err.response?.data?.error || err.message));
+      toastEvent.trigger('Failed to clear cache: ' + (err.response?.data?.error || err.message), 'error', '/mail');
     }
   };
 
@@ -394,7 +396,7 @@ const Mail = () => {
       setProcessResult(results);
 
       if (allItems.length === 0) {
-        alert('No items could be parsed from the selected attachment(s).');
+        toastEvent.trigger('No items could be parsed from the selected attachment(s).', 'error', '/mail');
         return;
       }
 
@@ -448,7 +450,7 @@ const Mail = () => {
       });
     } catch (err: any) {
       console.error('Error processing attachments:', err);
-      alert('Failed to process one or more files.');
+      toastEvent.trigger('Failed to process one or more files.', 'error', '/mail');
     } finally {
       setProcessing(false);
     }

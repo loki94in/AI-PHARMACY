@@ -9,6 +9,7 @@ import readline from 'readline';
 import csvParser from 'csv-parser';
 import * as XLSX from 'xlsx';
 import { eventService } from '../services/eventService.js';
+import { normalizeDate } from '../utils/migrationUtils.js';
 
 // PostgreSQL COPY parser
 import { parseCopyHeader, parseCopyDataRow, isCopyEndMarker, isPgDump } from './parsers/pgCopyParser.js';
@@ -674,6 +675,24 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
   await ensureMigrationErrorsTable(db);
 
+  if (skipLines > 0) {
+    try {
+      const content = fs.readFileSync(csvPath, 'utf8');
+      const lines = content.split(/\r?\n/).slice(0, skipLines);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line) {
+          await db.run(
+            'INSERT INTO migration_errors (file_name, row_index, raw_data, error_message) VALUES (?, ?, ?, ?)',
+            [path.basename(csvPath), i + 1, line, 'Skipped Row (Header)']
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[MigrationWorker] Failed to log skipped lines:', e);
+    }
+  }
+
   const tableInfo = await db.all('PRAGMA table_info(inventory_master)');
   const existingCols = tableInfo.map(c => c.name.toLowerCase());
 
@@ -860,7 +879,11 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
 
                 if (existingCols.includes(colName)) {
                   colsToInsert.push(`"${colName}"`);
-                  valuesToInsert.push(val);
+                  if (colName === 'expiry_date') {
+                    valuesToInsert.push(normalizeDate(String(val)) || val);
+                  } else {
+                    valuesToInsert.push(val);
+                  }
                   placeholders.push('?');
                 }
               }
@@ -1012,7 +1035,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
               const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
               const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
-              const expiryDate = expKey ? String(cleanRow[expKey] || '').trim() : '12/2028';
+              const expiryDate = expKey ? (normalizeDate(String(cleanRow[expKey] || '')) || String(cleanRow[expKey] || '').trim()) : '2028-12-01 00:00:00';
 
               await db.run(
                 `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp)
@@ -1073,16 +1096,18 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
               const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
               const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
+              const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
 
               const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
               const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
               const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
               const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
+              const expiryDate = expKey ? (normalizeDate(String(cleanRow[expKey] || '')) || String(cleanRow[expKey] || '').trim()) : null;
 
               await db.run(
-                `INSERT INTO return_items (return_id, medicine_id, batch_no, quantity, cost_price, mrp, total_price)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [retRecord.id, med.id, batchNo, quantity, costPrice, mrp, quantity * costPrice]
+                `INSERT INTO return_items (return_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp, total_price)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [retRecord.id, med.id, batchNo, expiryDate, quantity, costPrice, mrp, quantity * costPrice]
               );
             }
             else if (dataType === 'customers') {
@@ -1256,7 +1281,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                 const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
                 const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
                 const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
-                const expiryDate = expKey ? String(cleanRow[expKey] || '').trim() : '12/2028';
+                const expiryDate = expKey ? (normalizeDate(String(cleanRow[expKey] || '')) || String(cleanRow[expKey] || '').trim()) : '2028-12-01 00:00:00';
                 const rackLocation = rackKey ? String(cleanRow[rackKey] || '').trim() : '';
 
                 let inv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [medicineId, batchNo]);
@@ -1347,7 +1372,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                     const mrp = mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0;
                     const costPrice = costPriceKey ? parseFloat(cleanRow[costPriceKey]) || mrp : mrp;
                     const batchNo = batchNoKey ? String(cleanRow[batchNoKey] || '').trim() : 'BATCH';
-                    const expiryDate = expKey ? String(cleanRow[expKey] || '').trim() : '12/2028';
+                    const expiryDate = expKey ? (normalizeDate(String(cleanRow[expKey] || '')) || String(cleanRow[expKey] || '').trim()) : '2028-12-01 00:00:00';
 
                     await db.run(
                       `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp)

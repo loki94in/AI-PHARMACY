@@ -351,6 +351,7 @@ export interface InventoryItem {
   rack_location?: string;
   batch_no?: string;
   expiry_date?: string;
+  item_code?: string;
 }
 
 export async function getInventory(): Promise<InventoryItem[]> {
@@ -366,7 +367,8 @@ export async function getInventory(): Promise<InventoryItem[]> {
       quantity: item.quantity,
       mrp: 0,
       unit_price: 0,
-      cost_price: 0
+      cost_price: 0,
+      item_code: item.item_code || ''
     }));
     await cacheInventory(mapped);
     return items;
@@ -379,7 +381,8 @@ export async function getInventory(): Promise<InventoryItem[]> {
       medicine_name: c.medicine_name,
       quantity: c.quantity,
       batch_no: c.batch_no,
-      expiry_date: c.expiry_date
+      expiry_date: c.expiry_date,
+      item_code: c.item_code
     }));
   }
 }
@@ -400,6 +403,7 @@ export interface SearchMedicineResult {
   mrp: number;
   unit_price: number;
   cost_price: number;
+  item_code?: string;
 }
 
 export async function searchMedicine(q: string): Promise<SearchMedicineResult[]> {
@@ -411,7 +415,8 @@ export async function searchMedicine(q: string): Promise<SearchMedicineResult[]>
     const cleanQ = q.toLowerCase();
     return cache.filter(item => 
       item.medicine_name.toLowerCase().includes(cleanQ) || 
-      (item.batch_no && item.batch_no.toLowerCase().includes(cleanQ))
+      (item.batch_no && item.batch_no.toLowerCase().includes(cleanQ)) ||
+      (item.item_code && item.item_code.toLowerCase().includes(cleanQ))
     );
   }
 }

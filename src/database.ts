@@ -287,6 +287,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE push_tokens ADD COLUMN last_seen DATETIME DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE catalog_jobs ADD COLUMN matched_previous_job_id INTEGER DEFAULT NULL`,
     `ALTER TABLE catalog_jobs ADD COLUMN newly_detected_columns TEXT DEFAULT NULL`,
+    `ALTER TABLE return_items ADD COLUMN expiry_date DATETIME`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -443,6 +444,7 @@ export async function ensureSchema(dbPath: string) {
       sgst_value REAL DEFAULT 0,
       igst_value REAL DEFAULT 0,
       legacy_id TEXT,
+      expiry_date DATETIME,
       FOREIGN KEY(return_id) REFERENCES returns(id),
       FOREIGN KEY(medicine_id) REFERENCES medicines(id)
     );

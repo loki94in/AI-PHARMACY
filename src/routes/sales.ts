@@ -479,6 +479,7 @@ router.get('/search-medicine', async (req, res) => {
         m.id AS medicine_id, 
         m.name AS medicine_name, 
         m.api_reference,
+        m.item_code AS item_code,
         im.id AS inventory_id, 
         im.batch_no, 
         im.expiry_date, 
@@ -495,11 +496,12 @@ router.get('/search-medicine', async (req, res) => {
       JOIN medicines m ON im.medicine_id = m.id
       WHERE (m.name LIKE ? 
          OR im.batch_no LIKE ? 
+         OR m.item_code LIKE ?
          OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?)
       ORDER BY m.name ASC, im.quantity DESC
       LIMIT 30
     `;
-    const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery]);
+    const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery, likeQuery]);
     
     // Map SQLite numeric values back to boolean for is_out_of_stock compatibility
     for (const row of rows) {

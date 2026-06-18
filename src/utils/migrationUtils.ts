@@ -98,6 +98,55 @@ export function normalizeDate(dateStr: string): string | null | undefined {
         return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01 00:00:00`;
     }
 
+    // Try to match MM/YYYY format
+    const mmYYYYMatch = cleaned.match(/^(\d{1,2})\/(\d{4})$/);
+    if (mmYYYYMatch) {
+        const month = parseInt(mmYYYYMatch[1], 10);
+        const year = parseInt(mmYYYYMatch[2], 10);
+        if (month < 1 || month > 12) {
+            return null; // Invalid date
+        }
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01 00:00:00`;
+    }
+
+    // Try to match MM-YYYY format
+    const mmDashYYYYMatch = cleaned.match(/^(\d{1,2})-(\d{4})$/);
+    if (mmDashYYYYMatch) {
+        const month = parseInt(mmDashYYYYMatch[1], 10);
+        const year = parseInt(mmDashYYYYMatch[2], 10);
+        if (month < 1 || month > 12) {
+            return null; // Invalid date
+        }
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01 00:00:00`;
+    }
+
+    // Try to match MM-YY format
+    const mmDashYYMatch = cleaned.match(/^(\d{1,2})-(\d{2})$/);
+    if (mmDashYYMatch) {
+        const month = parseInt(mmDashYYMatch[1], 10);
+        let year = parseInt(mmDashYYMatch[2], 10);
+        if (year < 70) {
+            year += 2000;
+        } else {
+            year += 1900;
+        }
+        if (month < 1 || month > 12) {
+            return null; // Invalid date
+        }
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01 00:00:00`;
+    }
+
+    // Try to match YYYY-MM format
+    const yyyyMMMatch = cleaned.match(/^(\d{4})-(\d{1,2})$/);
+    if (yyyyMMMatch) {
+        const year = parseInt(yyyyMMMatch[1], 10);
+        const month = parseInt(yyyyMMMatch[2], 10);
+        if (month < 1 || month > 12) {
+            return null; // Invalid date
+        }
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01 00:00:00`;
+    }
+
     // Try to match DD-MM-YYYY format
     const ddMMYYYYMatch = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
     if (ddMMYYYYMatch) {
@@ -105,6 +154,18 @@ export function normalizeDate(dateStr: string): string | null | undefined {
         const month = parseInt(ddMMYYYYMatch[2], 10);
         const year = parseInt(ddMMYYYYMatch[3], 10);
         // Basic validation
+        if (month < 1 || month > 12 || day < 1 || day > 31) {
+            return null; // Invalid date
+        }
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
+    }
+
+    // Try to match DD/MM/YYYY format
+    const ddMMYYYYSlashMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddMMYYYYSlashMatch) {
+        const day = parseInt(ddMMYYYYSlashMatch[1], 10);
+        const month = parseInt(ddMMYYYYSlashMatch[2], 10);
+        const year = parseInt(ddMMYYYYSlashMatch[3], 10);
         if (month < 1 || month > 12 || day < 1 || day > 31) {
             return null; // Invalid date
         }

@@ -642,6 +642,189 @@ router.get('/staging/returns/:id/items', async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// Staging Items Resolution Helpers
+async function resolveMedicineId(db: any, name: string): Promise<number> {
+  const cleanName = name.trim();
+  let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [cleanName]);
+  if (!med) {
+    const result = await db.run('INSERT INTO medicines (name) VALUES (?)', [cleanName]);
+    return result.lastID;
+  }
+  return med.id;
+}
+
+async function resolveStagingInventoryId(db: any, medicineId: number): Promise<number> {
+  let inv = await db.get('SELECT id FROM inventory_master WHERE medicine_id = ? LIMIT 1', [medicineId]);
+  if (!inv) {
+    const result = await db.run('INSERT INTO inventory_master (medicine_id, quantity) VALUES (?, 0)', [medicineId]);
+    return result.lastID;
+  }
+  return inv.id;
+}
+
+// STAGED SALE ITEMS
+router.put('/staging/sales/:invoiceId/items/:itemId', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const { quantity, loose_qty, unit_price, mrp, batch_no, medicine_name } = req.body;
+    const updates = [];
+    const params = [];
+    if (medicine_name !== undefined) {
+      const medicineId = await resolveMedicineId(db, medicine_name);
+      const inventoryId = await resolveStagingInventoryId(db, medicineId);
+      updates.push('inventory_id = ?');
+      params.push(inventoryId);
+    }
+    if (quantity !== undefined) { updates.push('quantity = ?'); params.push(quantity); }
+    if (loose_qty !== undefined) { updates.push('loose_qty = ?'); params.push(loose_qty); }
+    if (unit_price !== undefined) { updates.push('unit_price = ?'); params.push(unit_price); }
+    if (mrp !== undefined) { updates.push('mrp = ?'); params.push(mrp); }
+    if (batch_no !== undefined) { updates.push('batch_no = ?'); params.push(batch_no); }
+
+    if (updates.length > 0) {
+      await db.run(`UPDATE sale_items SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.itemId]);
+    }
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/staging/sales/:invoiceId/items/:itemId', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    await db.run('DELETE FROM sale_items WHERE id = ?', [req.params.itemId]);
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/staging/sales/:invoiceId/items', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const { quantity, loose_qty, unit_price, mrp, batch_no, medicine_name } = req.body;
+    const medicineId = await resolveMedicineId(db, medicine_name || 'Unknown Medicine');
+    const inventoryId = await resolveStagingInventoryId(db, medicineId);
+
+    await db.run(
+      `INSERT INTO sale_items (invoice_id, inventory_id, quantity, loose_qty, unit_price, mrp, batch_no)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [req.params.invoiceId, inventoryId, quantity || 0, loose_qty || 0, unit_price || 0, mrp || 0, batch_no || 'BATCH']
+    );
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// STAGED PURCHASE ITEMS
+router.put('/staging/purchases/:purchaseId/items/:itemId', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
+    const updates = [];
+    const params = [];
+    if (medicine_name !== undefined) {
+      const medicineId = await resolveMedicineId(db, medicine_name);
+      updates.push('medicine_id = ?');
+      params.push(medicineId);
+    }
+    if (quantity !== undefined) { updates.push('quantity = ?'); params.push(quantity); }
+    if (cost_price !== undefined) { updates.push('cost_price = ?'); params.push(cost_price); }
+    if (mrp !== undefined) { updates.push('mrp = ?'); params.push(mrp); }
+    if (batch_no !== undefined) { updates.push('batch_no = ?'); params.push(batch_no); }
+    if (expiry_date !== undefined) { updates.push('expiry_date = ?'); params.push(expiry_date); }
+
+    if (updates.length > 0) {
+      await db.run(`UPDATE purchase_items SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.itemId]);
+    }
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/staging/purchases/:purchaseId/items/:itemId', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    await db.run('DELETE FROM purchase_items WHERE id = ?', [req.params.itemId]);
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/staging/purchases/:purchaseId/items', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
+    const medicineId = await resolveMedicineId(db, medicine_name || 'Unknown Medicine');
+
+    await db.run(
+      `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [req.params.purchaseId, medicineId, batch_no || 'BATCH', expiry_date || '2028-12-01 00:00:00', quantity || 0, cost_price || 0, mrp || 0]
+    );
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// STAGED RETURN ITEMS
+router.put('/staging/returns/:returnId/items/:itemId', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
+    const updates = [];
+    const params = [];
+    if (medicine_name !== undefined) {
+      const medicineId = await resolveMedicineId(db, medicine_name);
+      updates.push('medicine_id = ?');
+      params.push(medicineId);
+    }
+    if (quantity !== undefined) { updates.push('quantity = ?'); params.push(quantity); }
+    if (cost_price !== undefined) { updates.push('cost_price = ?'); params.push(cost_price); }
+    if (mrp !== undefined) { updates.push('mrp = ?'); params.push(mrp); }
+    if (batch_no !== undefined) { updates.push('batch_no = ?'); params.push(batch_no); }
+    if (expiry_date !== undefined) { updates.push('expiry_date = ?'); params.push(expiry_date); }
+
+    if (updates.length > 0) {
+      await db.run(`UPDATE return_items SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.itemId]);
+    }
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/staging/returns/:returnId/items/:itemId', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    await db.run('DELETE FROM return_items WHERE id = ?', [req.params.itemId]);
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/staging/returns/:returnId/items', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
+    const medicineId = await resolveMedicineId(db, medicine_name || 'Unknown Medicine');
+
+    await db.run(
+      `INSERT INTO return_items (return_id, medicine_id, batch_no, expiry_date, quantity, cost_price, mrp, total_price)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.params.returnId, medicineId, batch_no || 'BATCH', expiry_date || null, quantity || 0, cost_price || 0, mrp || 0, (quantity || 0) * (cost_price || 0)]
+    );
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 
 router.post('/staging/finalize', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
