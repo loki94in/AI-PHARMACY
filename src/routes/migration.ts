@@ -444,7 +444,9 @@ router.get('/staging/sales', async (req, res) => {
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
     const rows = await db.all(`
-      SELECT s.id, s.invoice_no, s.date, s.total_amount, c.name as patient_name, d.name as doctor_name
+      SELECT s.id, s.invoice_no, s.date, s.total_amount, c.name as patient_name, d.name as doctor_name,
+             (SELECT COALESCE(SUM(si.quantity),0) FROM sale_items si WHERE si.invoice_id = s.id) as total_qty,
+             (SELECT COUNT(*) FROM sale_items si WHERE si.invoice_id = s.id) as item_count
       FROM sales_invoices s
       LEFT JOIN customers c ON s.customer_id = c.id
       LEFT JOIN doctors d ON s.doctor_id = d.id
@@ -499,7 +501,9 @@ router.get('/staging/purchases', async (req, res) => {
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
     const rows = await db.all(`
-      SELECT p.id, p.invoice_no, p.date, p.total_amount, d.name as distributor_name
+      SELECT p.id, p.invoice_no, p.date, p.total_amount, d.name as distributor_name,
+             (SELECT COALESCE(SUM(pi.quantity),0) FROM purchase_items pi WHERE pi.purchase_id = p.id) as total_qty,
+             (SELECT COUNT(*) FROM purchase_items pi WHERE pi.purchase_id = p.id) as item_count
       FROM purchases p
       LEFT JOIN distributors d ON p.distributor_id = d.id
       ORDER BY p.id DESC LIMIT 100
@@ -550,7 +554,9 @@ router.get('/staging/returns', async (req, res) => {
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
     const rows = await db.all(`
-      SELECT r.id, r.return_no, r.date, r.total_amount, d.name as distributor_name
+      SELECT r.id, r.return_no, r.date, r.total_amount, d.name as distributor_name,
+             (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri WHERE ri.return_id = r.id) as total_qty,
+             (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id = r.id) as item_count
       FROM returns r
       LEFT JOIN distributors d ON r.distributor_id = d.id
       ORDER BY r.id DESC LIMIT 100

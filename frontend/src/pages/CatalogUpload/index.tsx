@@ -108,6 +108,11 @@ const getHighlightStyles = (targetCol: string, isHovered: boolean) => {
     };
   }
   
+  // ponytail: fallback for 'ignored' columns — prevents crash when accessing styles.header / styles.cell
+  return {
+    header: isHovered ? 'bg-white/10 text-gray-200 border-white/40' : 'bg-white/5 text-gray-500 border-glass-border opacity-50 grayscale',
+    cell: isHovered ? 'bg-white/5 border-r border-white/10 text-gray-200' : 'border-r border-glass-border/10 text-gray-500 opacity-50 grayscale'
+  };
 };
 
 interface ReviewDetailPaneProps {

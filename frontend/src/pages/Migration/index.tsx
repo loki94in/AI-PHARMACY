@@ -227,7 +227,7 @@ const Migration = () => {
   const [previewOpen, setPreviewOpen] = useState<number | null>(null);
 
   // Staging Items Preview modal state
-  const [viewingItemsRecord, setViewingItemsRecord] = useState<{ id: number; type: 'sales' | 'purchases' | 'returns'; name: string } | null>(null);
+  const [viewingItemsRecord, setViewingItemsRecord] = useState<{ id: number; type: 'sales' | 'purchases' | 'returns'; name: string; patient_name?: string; doctor_name?: string; distributor_name?: string } | null>(null);
   const [viewingItems, setViewingItems] = useState<any[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
@@ -394,7 +394,14 @@ const Migration = () => {
   };
 
   const handleViewItems = async (type: 'sales' | 'purchases' | 'returns', record: any) => {
-    setViewingItemsRecord({ id: record.id, type, name: record.invoice_no || record.return_no || `ID: ${record.id}` });
+    setViewingItemsRecord({
+      id: record.id,
+      type,
+      name: record.invoice_no || record.return_no || `ID: ${record.id}`,
+      patient_name: record.patient_name,
+      doctor_name: record.doctor_name,
+      distributor_name: record.distributor_name,
+    });
     setViewingItems([]);
     setLoadingItems(true);
     try {
@@ -495,6 +502,18 @@ const Migration = () => {
   useEffect(() => {
     fetchStagingData();
   }, [fetchStagingData]);
+
+  // Auto-advance to step 3 if staging data already exists (e.g. after page refresh)
+  useEffect(() => {
+    const hasData =
+      stagingData.inventory.length > 0 ||
+      stagingData.sales.length > 0 ||
+      stagingData.purchases.length > 0 ||
+      stagingData.returns.length > 0;
+    if (hasData && step === 1 && files.length === 0) {
+      setStep(3);
+    }
+  }, [stagingData]);
 
   // SSE EventSource tracking for migration progress
   useEffect(() => {
@@ -936,25 +955,36 @@ const Migration = () => {
       {/* ─── STEP 3: STAGING REVIEW ─────────────────────────────────────────── */}
       {step === 3 && (
         <div className="space-y-5">
-          {/* Progress */}
-          <div className="glass-panel p-5 border-primary/30">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="font-bold text-base">Import Progress</h3>
-                <p className="text-sky text-sm mt-1">{migrationStatus?.message || 'Processing...'}</p>
+          {/* Progress — shown while import is running */}
+          {(isPolling || migrationStatus) && (
+            <div className="glass-panel p-5 border-primary/30">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="font-bold text-base">Import Progress</h3>
+                  <p className="text-sky text-sm mt-1">{migrationStatus?.message || 'Processing...'}</p>
+                </div>
+                {isPolling && <Loader2 className="animate-spin text-primary" size={28} />}
+                {!isPolling && migrationStatus?.isStagingReady && <CheckCircle className="text-green" size={28} />}
               </div>
-              {isPolling && <Loader2 className="animate-spin text-primary" size={28} />}
-              {!isPolling && migrationStatus?.isStagingReady && <CheckCircle className="text-green" size={28} />}
+              {isPolling && (
+                <div className="w-full bg-white/5 rounded-full h-2 mt-3">
+                  <div className="bg-primary h-2 rounded-full animate-pulse" style={{ width: `${migrationStatus?.progress || 30}%` }} />
+                </div>
+              )}
             </div>
-            {isPolling && (
-              <div className="w-full bg-white/5 rounded-full h-2 mt-3">
-                <div className="bg-primary h-2 rounded-full animate-pulse" style={{ width: `${migrationStatus?.progress || 30}%` }} />
-              </div>
-            )}
-          </div>
+          )}
 
-          {/* Staging Summary */}
-          {!isPolling && migrationStatus?.isStagingReady && (
+          {/* Staging Summary — show whenever data exists OR migration just completed */}
+          {!isPolling && (() => {
+            const hasStagingData =
+              stagingData.inventory.length > 0 ||
+              stagingData.sales.length > 0 ||
+              stagingData.purchases.length > 0 ||
+              stagingData.returns.length > 0 ||
+              stagingData.errors.length > 0;
+            if (!hasStagingData && !migrationStatus?.isStagingReady) return null;
+            return (
+
             <div className="space-y-5">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
@@ -1094,6 +1124,8 @@ const Migration = () => {
                             <th className="p-3 text-muted font-bold">Invoice No</th>
                             <th className="p-3 text-muted font-bold">Date</th>
                             <th className="p-3 text-muted font-bold">Total Amount</th>
+                            <th className="p-3 text-muted font-bold text-center">Total Qty</th>
+                            <th className="p-3 text-muted font-bold text-center">Items</th>
                             <th className="p-3 text-muted font-bold">Patient Name</th>
                             <th className="p-3 text-muted font-bold">Doctor Name</th>
                             <th className="p-3 text-muted font-bold text-right">Actions</th>
@@ -1105,6 +1137,8 @@ const Migration = () => {
                               <td className="p-3 font-semibold text-text">{s.invoice_no}</td>
                               <td className="p-3 font-mono text-muted">{s.date || '—'}</td>
                               <td className="p-3 font-bold text-green">₹{s.total_amount || 0}</td>
+                              <td className="p-3 text-center font-bold text-sky">{s.total_qty ?? 0}</td>
+                              <td className="p-3 text-center text-muted">{s.item_count ?? 0}</td>
                               <td className="p-3 text-text">{s.patient_name || '—'}</td>
                               <td className="p-3 text-text">{s.doctor_name || '—'}</td>
                               <td className="p-3 text-right whitespace-nowrap">
@@ -1130,7 +1164,7 @@ const Migration = () => {
                             </tr>
                           ))}
                           {filtered.length === 0 && (
-                            <tr><td colSpan={6} className="p-6 text-center text-muted">No matching staging sales records found.</td></tr>
+                            <tr><td colSpan={8} className="p-6 text-center text-muted">No matching staging sales records found.</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -1151,6 +1185,8 @@ const Migration = () => {
                             <th className="p-3 text-muted font-bold">Invoice / Bill No</th>
                             <th className="p-3 text-muted font-bold">Date</th>
                             <th className="p-3 text-muted font-bold">Total Amount</th>
+                            <th className="p-3 text-muted font-bold text-center">Total Qty</th>
+                            <th className="p-3 text-muted font-bold text-center">Items</th>
                             <th className="p-3 text-muted font-bold">Distributor Name</th>
                             <th className="p-3 text-muted font-bold text-right">Actions</th>
                           </tr>
@@ -1161,6 +1197,8 @@ const Migration = () => {
                               <td className="p-3 font-semibold text-text">{p.invoice_no}</td>
                               <td className="p-3 font-mono text-muted">{p.date || '—'}</td>
                               <td className="p-3 font-bold text-primary">₹{p.total_amount || 0}</td>
+                              <td className="p-3 text-center font-bold text-sky">{p.total_qty ?? 0}</td>
+                              <td className="p-3 text-center text-muted">{p.item_count ?? 0}</td>
                               <td className="p-3 text-text">{p.distributor_name || '—'}</td>
                               <td className="p-3 text-right whitespace-nowrap">
                                 <button
@@ -1185,7 +1223,7 @@ const Migration = () => {
                             </tr>
                           ))}
                           {filtered.length === 0 && (
-                            <tr><td colSpan={5} className="p-6 text-center text-muted">No matching staging purchases records found.</td></tr>
+                            <tr><td colSpan={7} className="p-6 text-center text-muted">No matching staging purchases records found.</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -1206,6 +1244,8 @@ const Migration = () => {
                             <th className="p-3 text-muted font-bold">Return No</th>
                             <th className="p-3 text-muted font-bold">Date</th>
                             <th className="p-3 text-muted font-bold">Total Amount</th>
+                            <th className="p-3 text-muted font-bold text-center">Total Qty</th>
+                            <th className="p-3 text-muted font-bold text-center">Items</th>
                             <th className="p-3 text-muted font-bold">Distributor Name</th>
                             <th className="p-3 text-muted font-bold text-right">Actions</th>
                           </tr>
@@ -1216,6 +1256,8 @@ const Migration = () => {
                               <td className="p-3 font-semibold text-text">{r.return_no}</td>
                               <td className="p-3 font-mono text-muted">{r.date || '—'}</td>
                               <td className="p-3 font-bold text-rose-400">₹{r.total_amount || 0}</td>
+                              <td className="p-3 text-center font-bold text-sky">{r.total_qty ?? 0}</td>
+                              <td className="p-3 text-center text-muted">{r.item_count ?? 0}</td>
                               <td className="p-3 text-text">{r.distributor_name || '—'}</td>
                               <td className="p-3 text-right whitespace-nowrap">
                                 <button
@@ -1240,7 +1282,7 @@ const Migration = () => {
                             </tr>
                           ))}
                           {filtered.length === 0 && (
-                            <tr><td colSpan={5} className="p-6 text-center text-muted">No matching staging returns records found.</td></tr>
+                            <tr><td colSpan={7} className="p-6 text-center text-muted">No matching staging returns records found.</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -1302,7 +1344,8 @@ const Migration = () => {
                 </button>
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
       )}
 
@@ -1880,12 +1923,28 @@ const Migration = () => {
           <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="glass-panel w-full max-w-3xl rounded-2xl border border-glass-border shadow-2xl overflow-hidden bg-bg">
               {/* Header */}
-              <div className="p-4 border-b border-glass-border bg-bg2 flex justify-between items-center">
-                <h4 className="text-sm font-bold text-text flex items-center gap-2">
-                  <Eye size={18} className="text-primary" />
-                  Staged Items for {viewingItemsRecord.type === 'sales' ? 'Sales Invoice' : viewingItemsRecord.type === 'purchases' ? 'Purchase Bill' : 'Return'} — <span className="text-primary font-mono">{viewingItemsRecord.name}</span>
-                </h4>
-                <div className="flex items-center gap-2">
+              <div className="p-4 border-b border-glass-border bg-bg2 flex justify-between items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold text-text flex items-center gap-2">
+                    <Eye size={18} className="text-primary shrink-0" />
+                    Staged Items — <span className="text-primary font-mono">{viewingItemsRecord.name}</span>
+                  </h4>
+                  <div className="flex flex-wrap gap-3 mt-1.5">
+                    <span className="text-[10px] text-muted uppercase font-bold tracking-wider">
+                      {viewingItemsRecord.type === 'sales' ? 'Sales Invoice' : viewingItemsRecord.type === 'purchases' ? 'Purchase Bill' : 'Return'}
+                    </span>
+                    {viewingItemsRecord.patient_name && (
+                      <span className="text-[11px] text-purple-300 font-semibold">👤 {viewingItemsRecord.patient_name}</span>
+                    )}
+                    {viewingItemsRecord.doctor_name && (
+                      <span className="text-[11px] text-sky font-semibold">🩺 Dr. {viewingItemsRecord.doctor_name}</span>
+                    )}
+                    {viewingItemsRecord.distributor_name && (
+                      <span className="text-[11px] text-amber-300 font-semibold">🏭 {viewingItemsRecord.distributor_name}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => {
                       setAddingNewItem(true);
