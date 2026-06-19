@@ -563,6 +563,8 @@ const Topbar = ({
   const [connectedDevices, setConnectedDevices] = useState<{ token: string; device_name: string; os: string; is_online: number; last_seen: string }[]>([]);
   const [showDevicesPopover, setShowDevicesPopover] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const [renamingToken, setRenamingToken] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -575,9 +577,22 @@ const Topbar = ({
     }
   }, []);
 
+  const handleRenameDevice = useCallback(async (token: string, name: string) => {
+    if (!name.trim()) return;
+    try {
+      await apiClient.patch(`/notifications/devices/${token}/rename`, { name: name.trim() });
+      setConnectedDevices(prev => prev.map(d => d.token === token ? { ...d, device_name: name.trim() } : d));
+    } catch (err) {
+      console.warn('Failed to rename device:', err);
+    } finally {
+      setRenamingToken(null);
+      setRenameValue('');
+    }
+  }, []);
+
   useEffect(() => {
     fetchDevices();
-    const interval = setInterval(fetchDevices, 10000);
+    const interval = setInterval(fetchDevices, 5000);
     return () => clearInterval(interval);
   }, [fetchDevices]);
 
@@ -810,12 +825,12 @@ const Topbar = ({
           <div className="relative flex items-center gap-2" ref={popoverRef}>
             {connectedDevices.length === 0 ? (
               <button
-                onClick={() => setShowDevicesPopover(prev => !prev)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-glass-border bg-glass-bg/30 text-muted text-xs font-semibold hover:bg-white/5 transition-all"
-                title="No mobile devices registered. Open setup on the mobile app to connect."
+                onClick={onOpenConnectModal}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-glass-border bg-glass-bg/30 text-muted text-xs font-semibold hover:bg-white/5 transition-all animate-pulse-slow"
+                title="Connect mobile device via QR Code"
               >
-                <Smartphone size={13} className="opacity-50" />
-                <span className="text-[10px] uppercase tracking-wider opacity-60">No Devices</span>
+                <QrCode size={13} className="text-primary animate-pulse" />
+                <span className="text-[10px] uppercase tracking-wider font-bold">QR Connect</span>
               </button>
             ) : (
               connectedDevices.map(device => (
@@ -876,21 +891,46 @@ const Topbar = ({
                     </div>
                   ) : (
                     connectedDevices.map((device) => (
-                      <div key={device.token} className="flex items-center justify-between p-2 rounded-xl bg-bg2/40 border border-glass-border">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <DeviceIcon os={device.os} size={14} className={device.is_online === 1 ? 'text-green animate-pulse' : 'text-zinc-500'} />
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-text truncate">{device.device_name}</p>
-                            <p className="text-[9px] text-muted capitalize">{device.os}</p>
+                      <div key={device.token} className="flex flex-col gap-1.5 p-2 rounded-xl bg-bg2/40 border border-glass-border">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <DeviceIcon os={device.os} size={14} className={device.is_online === 1 ? 'text-green animate-pulse' : 'text-zinc-500'} />
+                            <div className="min-w-0">
+                              {renamingToken === device.token ? (
+                                <input
+                                  autoFocus
+                                  className="text-xs font-semibold bg-bg3 border border-primary/40 rounded px-1.5 py-0.5 text-text w-32 outline-none focus:border-primary"
+                                  value={renameValue}
+                                  onChange={e => setRenameValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleRenameDevice(device.token, renameValue);
+                                    if (e.key === 'Escape') { setRenamingToken(null); setRenameValue(''); }
+                                  }}
+                                  onBlur={() => handleRenameDevice(device.token, renameValue)}
+                                />
+                              ) : (
+                                <p className="text-xs font-semibold text-text truncate">{device.device_name}</p>
+                              )}
+                              <p className="text-[9px] text-muted capitalize">{device.os}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => { setRenamingToken(device.token); setRenameValue(device.device_name); }}
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-bg3 border border-glass-border text-muted hover:text-primary hover:border-primary/30 transition-all"
+                              title="Rename device"
+                            >
+                              Rename
+                            </button>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                              device.is_online === 1
+                                ? 'bg-green/10 text-green'
+                                : 'bg-zinc-500/10 text-muted'
+                            }`}>
+                              {device.is_online === 1 ? 'Online' : 'Offline'}
+                            </span>
                           </div>
                         </div>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                          device.is_online === 1
-                            ? 'bg-green/10 text-green'
-                            : 'bg-zinc-500/10 text-muted'
-                        }`}>
-                          {device.is_online === 1 ? 'Online' : 'Offline'}
-                        </span>
                       </div>
                     ))
                   )}

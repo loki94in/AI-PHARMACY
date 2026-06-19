@@ -67,8 +67,11 @@ router.post('/', async (req, res) => {
 // Also triggers a background IMAP delta sync for new emails
 router.get('/inbox', async (req, res) => {
   const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  // Default: last 7 days. Mobile can override with ?since=ISO_DATE
+  const since = req.query.since as string | undefined
+    || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   try {
-    const inbox = await emailService.fetchInbox(limit);
+    const inbox = await emailService.fetchInbox(limit, since);
     res.json(inbox);
   } catch (error) {
     console.error('Fetch inbox error:', error);

@@ -91,6 +91,8 @@ router.post('/notifications/register-token', async (req, res) => {
 router.get('/notifications/devices', async (req, res) => {
   try {
     const db = await dbManager.getConnection();
+    // Deduplicate: for each (device_name, os) pair keep only the most-recently-seen row
+    // A device offline = no last_seen update in 40 seconds (mobile pings every 15s)
     const rows = await db.all(`
       SELECT 
         token, 
@@ -99,16 +101,39 @@ router.get('/notifications/devices', async (req, res) => {
         created_at,
         last_seen,
         CASE 
-          WHEN last_seen IS NOT NULL AND (strftime('%s', 'now') - strftime('%s', last_seen) < 90) THEN 1 
+          WHEN last_seen IS NOT NULL AND (strftime('%s', 'now') - strftime('%s', last_seen) < 40) THEN 1 
           ELSE 0 
         END as is_online
       FROM push_tokens
+      WHERE rowid IN (
+        SELECT rowid FROM push_tokens p2
+        WHERE p2.device_name = push_tokens.device_name AND p2.os = push_tokens.os
+        ORDER BY last_seen DESC NULLS LAST
+        LIMIT 1
+      )
       ORDER BY last_seen DESC
     `);
     res.json({ success: true, devices: rows });
   } catch (err: any) {
     console.error('Failed to get registered devices:', err);
     res.status(500).json({ error: 'Failed to get devices: ' + err.message });
+  }
+});
+
+// Rename a registered device
+router.patch('/notifications/devices/:token/rename', async (req, res) => {
+  const { token } = req.params;
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    await db.run('UPDATE push_tokens SET device_name = ? WHERE token = ?', [name.trim(), token]);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Failed to rename device:', err);
+    res.status(500).json({ error: 'Failed to rename device: ' + err.message });
   }
 });
 

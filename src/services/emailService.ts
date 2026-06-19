@@ -2704,9 +2704,9 @@ export class EmailService {
    * Returns emails from the LOCAL database (offline-first, instant).
    * Also triggers a background IMAP delta sync so new emails appear automatically.
    */
-  public async fetchInbox(limit: number = 50): Promise<Array<any>> {
+  public async fetchInbox(limit: number = 50, since?: string): Promise<Array<any>> {
     // 1. Serve from local DB immediately (works offline)
-    const localEmails = await this.getLocalInbox(limit);
+    const localEmails = await this.getLocalInbox(limit, since);
 
     // 2. Trigger background IMAP delta sync (non-blocking, only new UIDs)
     this.syncNewEmailsFromIMAP().catch(err => {
@@ -2719,18 +2719,21 @@ export class EmailService {
   /**
    * Reads the local `emails` table and returns the latest N emails (offline-capable).
    */
-  public async getLocalInbox(limit: number = 50): Promise<Array<any>> {
+  public async getLocalInbox(limit: number = 50, since?: string): Promise<Array<any>> {
     try {
       await ensureSchema(getDbPath());
       const db = await dbManager.getConnection();
+      // Default: only return emails from the last 7 days
+      const sinceDate = since || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const rows = await db.all(
         `SELECT e.*, GROUP_CONCAT(ea.filename) as attachment_filenames
          FROM emails e
          LEFT JOIN email_attachments ea ON ea.uid = e.uid
+         WHERE e.date >= ?
          GROUP BY e.uid
          ORDER BY e.date DESC, e.uid DESC
          LIMIT ?`,
-        [limit]
+        [sinceDate, limit]
       );
       
       return rows.map((row: any) => ({

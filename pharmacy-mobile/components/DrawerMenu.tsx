@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { colors, spacing, typography, radius } from '../lib/theme';
-import { isAdminMode, adminLogout, clearServerUrl } from '../lib/api';
+import { isAdminMode, adminLogout, clearServerUrl, getServerUrl, testConnection } from '../lib/api';
 
 const { width } = Dimensions.get('window');
 const DRAWER_WIDTH = width * 0.75;
@@ -26,10 +26,22 @@ export default function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = React.useState(false);
+  const [isOnline, setIsOnline] = React.useState(true);
 
   React.useEffect(() => {
     if (isOpen) {
       isAdminMode().then(setIsAdmin);
+      
+      getServerUrl().then(async (url) => {
+        if (!url) {
+          setIsOnline(false);
+          return;
+        }
+        const online = await testConnection(url);
+        setIsOnline(online);
+      }).catch(() => {
+        setIsOnline(false);
+      });
     }
   }, [isOpen]);
 
@@ -135,7 +147,9 @@ export default function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
           <View style={styles.footer}>
             <Text style={styles.footerText}>AI Pharmacy OS v1.0.0</Text>
             <Text style={styles.footerSub}>
-              {isAdmin ? 'Connected Remotely (Admin)' : 'Connected locally'}
+              {isOnline 
+                ? (isAdmin ? 'Connected Remotely (Admin)' : 'Connected locally')
+                : 'Offline Mode (Local)'}
             </Text>
           </View>
         </View>

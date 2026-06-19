@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
-import { getDashboard, searchMedicine, SearchMedicineResult } from '../../lib/api';
+import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection } from '../../lib/api';
 import DrawerMenu from '../../components/DrawerMenu';
 
 import * as ImagePicker from 'expo-image-picker';
@@ -34,6 +34,41 @@ export default function AssistantScreen() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  
+  // Dynamic Connection Status States
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [serverUrl, setServerUrl] = useState<string>('');
+
+  useEffect(() => {
+    let active = true;
+    let intervalId: any;
+
+    const checkStatus = async () => {
+      try {
+        const url = await getServerUrl();
+        if (!url) {
+          if (active) {
+            setIsOnline(false);
+            setServerUrl('');
+          }
+          return;
+        }
+        if (active) setServerUrl(url);
+        const online = await testConnection(url);
+        if (active) setIsOnline(online);
+      } catch (err) {
+        if (active) setIsOnline(false);
+      }
+    };
+
+    checkStatus();
+    intervalId = setInterval(checkStatus, 10000); // Check connectivity every 10 seconds
+
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, []);
   
   // New States for User Role & ABC Checklist
   const [userRole, setUserRole] = useState<'staff' | 'distributor'>('staff');
@@ -265,8 +300,12 @@ export default function AssistantScreen() {
     >
       {/* Connectivity Status Bar */}
       <View style={styles.connectStatusBar}>
-        <View style={styles.connectDot} />
-        <Text style={styles.connectStatusText}>Connected: Wi-Fi (IP: 192.168.1.102) & Bluetooth Paired</Text>
+        <View style={[styles.connectDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
+        <Text style={styles.connectStatusText}>
+          {isOnline 
+            ? `Connected: Pharmacy Server (${serverUrl.replace(/^https?:\/\//, '')})`
+            : 'Offline Mode: Running locally (Sync pending)'}
+        </Text>
       </View>
 
       {/* Header */}
@@ -276,16 +315,29 @@ export default function AssistantScreen() {
             <Ionicons name="menu-outline" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <View style={styles.assistantStatus}>
-            <View style={styles.onlineDot} />
+            <View style={[styles.onlineDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
             <View>
               <Text style={styles.assistantTitle}>Pharmacy Genius AI</Text>
               <Text style={styles.assistantSubtitle}>Always active & ready</Text>
             </View>
           </View>
         </View>
-        <TouchableOpacity style={styles.clearBtn} onPress={() => setMessages([messages[0]])}>
-          <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity 
+            style={styles.clearBtn} 
+            onPress={() => router.push('/camera')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="camera-outline" size={20} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.clearBtn} 
+            onPress={() => setMessages([messages[0]])}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Role Toggle Selector */}

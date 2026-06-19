@@ -37,8 +37,19 @@ export async function authenticateApiKey(req: Request, res: Response, next: Next
     return next();
   }
 
-  // License routes are always open (needed for activation)
-  if (req.path.startsWith('/api/license')) {
+  // Public/open endpoints (health check, license status/activation, and notifications stream/tokens)
+  const path = req.path;
+  const originalUrl = req.originalUrl || '';
+  if (
+    originalUrl.startsWith('/api/license') ||
+    path.startsWith('/license') ||
+    originalUrl.startsWith('/api/notifications/stream') ||
+    path.startsWith('/notifications/stream') ||
+    originalUrl.startsWith('/api/notifications/register-token') ||
+    path.startsWith('/notifications/register-token') ||
+    originalUrl.startsWith('/api/health') ||
+    path === '/health'
+  ) {
     return next();
   }
 

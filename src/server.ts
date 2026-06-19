@@ -146,9 +146,12 @@ app.use('/data/search_screenshots', express.static(path.resolve(__dirname, '..',
 
 // Old test console routes have been removed. This server now acts purely as an API backend.
 
-// WhatsApp Business webhook endpoints must be public (Meta sends requests without our API key)
-// Only the GET and POST /webhook paths are public; other endpoints go through normal auth below.
 app.use('/api/wa-business/webhook', waBusinessRouter);
+
+// Public health check endpoint for mobile connection testing
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, status: 'ok', time: new Date().toISOString() });
+});
 
 // Session token auth for all other API routes
 app.use('/api', authenticateApiKey);

@@ -1,9 +1,12 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../lib/theme';
 import DeviceStatusHeader from '../../components/DeviceStatusHeader';
+import { View, TouchableOpacity } from 'react-native';
 
 export default function TabLayout() {
+  const router = useRouter();
+
   return (
     <Tabs
       screenOptions={{
@@ -26,7 +29,28 @@ export default function TabLayout() {
         },
         headerTintColor: colors.textPrimary,
         headerShadowVisible: false,
-        headerRight: () => <DeviceStatusHeader />,
+        headerRight: () => (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              onPress={() => router.push('/camera')}
+              style={{
+                marginRight: 8,
+                padding: 6,
+                backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                borderColor: 'rgba(255, 255, 255, 0.08)',
+                borderWidth: 1,
+                borderRadius: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              activeOpacity={0.7}
+              title="Launch AI Camera"
+            >
+              <Ionicons name="camera" size={16} color={colors.primary} />
+            </TouchableOpacity>
+            <DeviceStatusHeader />
+          </View>
+        ),
       }}
     >
       <Tabs.Screen
@@ -34,6 +58,7 @@ export default function TabLayout() {
         options={{
           title: 'Assistant',
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />,
+          headerShown: false,
         }}
       />
       <Tabs.Screen
@@ -61,14 +86,14 @@ export default function TabLayout() {
         name="inbox"
         options={{
           title: 'Inbox',
-          tabBarIcon: ({ color, size }) => <Ionicons name="mail-unread-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="mail-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: 'More',
-          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal-circle-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal-outline" size={size} color={color} />,
         }}
       />
     </Tabs>

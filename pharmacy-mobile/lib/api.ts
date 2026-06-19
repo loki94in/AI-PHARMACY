@@ -226,6 +226,11 @@ export interface GmailMessagePreview {
   snippet: string;
 }
 
+// ponytail: one-liner helper for 7-day cutoff
+const ONE_WEEK_AGO = () => Date.now() - 7 * 24 * 60 * 60 * 1000;
+const filterLastWeek = <T extends { date: string }>(list: T[]): T[] =>
+  list.filter(e => new Date(e.date).getTime() >= ONE_WEEK_AGO());
+
 export async function fetchGmailEmailsDirect(): Promise<GmailMessagePreview[]> {
   const auth = await syncGoogleAuthFromPc();
   if (!auth || !auth.gmail_oauth_access_token) {
@@ -278,14 +283,18 @@ export async function fetchGmailEmailsDirect(): Promise<GmailMessagePreview[]> {
     }
   }
 
-  await AsyncStorage.setItem('cached_mobile_emails', JSON.stringify(previews));
-  return previews;
+  // Only cache emails from the last 7 days
+  const recent = filterLastWeek(previews);
+  await AsyncStorage.setItem('cached_mobile_emails', JSON.stringify(recent));
+  return recent;
 }
 
 export async function getCachedEmails(): Promise<GmailMessagePreview[]> {
   try {
     const data = await AsyncStorage.getItem('cached_mobile_emails');
-    return data ? JSON.parse(data) : [];
+    const all: GmailMessagePreview[] = data ? JSON.parse(data) : [];
+    // Strip anything older than 7 days from cache
+    return filterLastWeek(all);
   } catch {
     return [];
   }
@@ -608,12 +617,18 @@ export function getReportsSummary() {
 // ─── Connection Test ────────────────────────────────────────────────────────
 
 export async function testConnection(serverUrl: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 seconds timeout
+
   try {
-    const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/dashboard`, {
+    const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/health`, {
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     return res.ok;
   } catch {
+    clearTimeout(timeoutId);
     return false;
   }
 }
@@ -1006,5 +1021,24 @@ export async function markServerNotificationManual(id: number | string): Promise
   } catch (err) {
     console.warn('Server notification manual mark failed:', err);
     return false;
+  }
+}
+
+export async function getEmailsFromServer(limit = 50): Promise<any[]> {
+  try {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    return await request<any[]>(`/email/inbox?limit=${limit}&since=${encodeURIComponent(since)}`);
+  } catch (err) {
+    console.warn('Failed to fetch emails from PC server:', err);
+    throw err;
+  }
+}
+
+export async function getAttachmentPreviewFromServer(filename: string): Promise<any> {
+  try {
+    return await request<any>(`/email/attachments/preview?filename=${encodeURIComponent(filename)}`);
+  } catch (err) {
+    console.warn('Failed to get attachment preview from PC server:', err);
+    throw err;
   }
 }

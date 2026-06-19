@@ -21,8 +21,10 @@ import {
   Plus,
   Pencil,
   X,
+  QrCode,
 } from 'lucide-react';
 import { toastEvent } from '../../services/events';
+import { MobileConnectionModal } from '../../components/MobileConnectionModal';
 
 interface DeliveryBoy {
   id: number;
@@ -56,6 +58,7 @@ const Settings = () => {
   const [adminUniqueKey, setAdminUniqueKey] = useState('KEY-ADM-837261');
   const [adminAuthorizedDeviceId, setAdminAuthorizedDeviceId] = useState('');
   const [adminAuthorizedDeviceName, setAdminAuthorizedDeviceName] = useState('');
+  const [showConnectModal, setShowConnectModal] = useState(false);
 
   // Pharmarack Settings state
   const [prUsername, setPrUsername] = useState('');
@@ -909,18 +912,16 @@ const Settings = () => {
             <label className="text-xs font-bold text-muted uppercase tracking-wider block mb-2">
               Registered Mobile Device
             </label>
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm font-semibold block text-zinc-100">
-                  {adminAuthorizedDeviceName || "No device registered yet."}
-                </span>
-                {adminAuthorizedDeviceId && (
+            {adminAuthorizedDeviceId ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-semibold block text-zinc-100">
+                    {adminAuthorizedDeviceName}
+                  </span>
                   <span className="text-xs text-muted font-mono block mt-1">
                     ID: {adminAuthorizedDeviceId}
                   </span>
-                )}
-              </div>
-              {adminAuthorizedDeviceId ? (
+                </div>
                 <button
                   type="button"
                   onClick={handleResetAdminDevice}
@@ -929,12 +930,27 @@ const Settings = () => {
                   <Trash2 size={13} />
                   Reset Authorization
                 </button>
-              ) : (
-                <span className="text-xs text-muted">
-                  Ready to link device via Admin Remote Login.
-                </span>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-semibold block text-zinc-100">
+                    No device registered yet.
+                  </span>
+                  <span className="text-xs text-muted">
+                    Scan connection QR code to establish link.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConnectModal(true)}
+                  className="premium-btn bg-primary text-white text-xs px-4 py-2 flex items-center gap-2"
+                >
+                  <QrCode size={14} />
+                  One-Click QR Connect
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1379,6 +1395,7 @@ const Settings = () => {
           </div>
         </div>
       </div>
+      {showConnectModal && <MobileConnectionModal onClose={() => setShowConnectModal(false)} />}
     </div>
   );
 };

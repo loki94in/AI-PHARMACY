@@ -24,6 +24,9 @@ import {
   queueOfflinePurchase,
   SearchMedicineResult,
   GmailMessagePreview,
+  getEmailsFromServer,
+  getAttachmentPreviewFromServer,
+  getServerUrl,
 } from '../../../lib/api';
 
 // ─── Base64 & CSV Parsing Utilities ─────────────────────────────────────────
@@ -90,6 +93,7 @@ function decodeBase64Url(str: string): string {
 }
 
 function getEmailBody(message: any): string {
+  if (message && message.bodyText) return message.bodyText;
   let body = '';
 
   function traverseParts(parts: any[]) {
@@ -247,11 +251,29 @@ export default function InboxScreen() {
       setEmails(directEmails);
       setIsOfflineMode(false);
     } catch (err: any) {
-      console.warn('Gmail fetch failed, loading local cache:', err);
-      const cached = await getCachedEmails();
-      setEmails(cached);
-      setIsOfflineMode(true);
-      setErrorText(err.message || 'Failed to fetch new emails. Showing cached items.');
+      console.warn('Gmail fetch failed, trying to sync from PC server:', err);
+      try {
+        const serverEmails = await getEmailsFromServer(50);
+        const mapped = serverEmails.map((e: any) => ({
+          id: String(e.id || e.uid),
+          threadId: String(e.uid),
+          subject: e.subject || '(No Subject)',
+          from: e.from || 'Unknown Sender',
+          date: e.date || new Date().toISOString(),
+          snippet: e.bodySnippet || e.body || '',
+          isFromServer: true,
+          body: e.body,
+          attachmentFilenames: e.attachmentFilenames || []
+        }));
+        setEmails(mapped);
+        setIsOfflineMode(false);
+      } catch (serverErr) {
+        console.warn('PC Server fetch also failed, falling back to local storage cache:', serverErr);
+        const cached = await getCachedEmails();
+        setEmails(cached);
+        setIsOfflineMode(true);
+        setErrorText('Failed to sync new emails. Displaying offline cached items.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -267,6 +289,29 @@ export default function InboxScreen() {
     setLoadingDetail(true);
     setEmailDetail(null);
     setAttachments([]);
+
+    if ((email as any).isFromServer) {
+      // Already has body and attachment list loaded from PC server database
+      setEmailDetail({
+        snippet: email.snippet,
+        bodyText: (email as any).body || email.snippet,
+        payload: {
+          body: { data: '' },
+          parts: []
+        }
+      });
+      const atts = ((email as any).attachmentFilenames || []).map((filename: string) => ({
+        id: filename,
+        filename: filename,
+        mimeType: filename.toLowerCase().endsWith('.csv') ? 'text/csv' : 'application/pdf',
+        size: 10240, // 10KB mock size
+        isFromServerFile: true
+      }));
+      setAttachments(atts);
+      setLoadingDetail(false);
+      return;
+    }
+
     try {
       const detail = await fetchGmailMessageDetail(email.id);
       setEmailDetail(detail);
@@ -288,14 +333,33 @@ export default function InboxScreen() {
     setProcessingAttachmentId(att.id);
 
     try {
-      // 1. Download base64 data
-      const base64Data = await fetchGmailAttachment(selectedEmail.id, att.id);
+      let csvText = '';
+      if (att.isFromServerFile) {
+        if (att.filename.toLowerCase().endsWith('.csv') || att.filename.toLowerCase().endsWith('.txt')) {
+          const preview = await getAttachmentPreviewFromServer(att.filename);
+          if (preview && preview.success) {
+            csvText = preview.content || '';
+          } else {
+            throw new Error(preview?.error || 'Failed to fetch file content from server');
+          }
+        } else {
+          Alert.alert(
+            'PDF/Excel File Notice',
+            'PDF/Excel parsing is handled automatically on the PC panel. You can check in this bill on the PC mail page, or manually enter the items on your phone.',
+            [{ text: 'Manual Entry' }]
+          );
+        }
+      } else {
+        const base64Data = await fetchGmailAttachment(selectedEmail.id, att.id);
+        if (base64Data) {
+          csvText = decodeBase64(base64Data);
+        }
+      }
 
       // 2. Decode and parse
       let items: ParsedItem[] = [];
-      if (att.filename.toLowerCase().endsWith('.csv')) {
-        const decodedText = decodeBase64(base64Data);
-        items = parseCSV(decodedText);
+      if (att.filename.toLowerCase().endsWith('.csv') && csvText) {
+        items = parseCSV(csvText);
       } else {
         Alert.alert(
           'Manual Entry Required',
