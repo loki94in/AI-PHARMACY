@@ -12,6 +12,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { toastEvent } from '../../services/events';
 
 interface ExpiryItem {
   id: number;
@@ -41,8 +42,7 @@ const Expiry = () => {
   const [maxQty, setMaxQty] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   
-  // Notification Toast State
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
 
   const fetchExpiryItems = async (days = daysFilter, showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -77,10 +77,7 @@ const Expiry = () => {
   }, [daysFilter]);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
-    setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 5000);
+    toastEvent.trigger(message, type, '/expiry');
   };
 
   const toggleSelect = (id: number) => {
@@ -187,25 +184,7 @@ const Expiry = () => {
   return (
     <div className="h-full flex flex-col fade-in space-y-6">
       
-      {/* Toast Notification */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl animate-slide-in ${
-          notification.type === 'success' 
-            ? 'bg-green/15 border-green/30 text-green-200' 
-            : notification.type === 'error'
-              ? 'bg-red/15 border-red/30 text-red-200'
-              : 'bg-primary/15 border-primary/30 text-primary-light'
-        }`}>
-          {notification.type === 'success' ? (
-            <Check className="text-green animate-bounce" size={16} />
-          ) : notification.type === 'error' ? (
-            <AlertCircle className="text-red" size={16} />
-          ) : (
-            <Bell className="text-primary animate-pulse" size={16} />
-          )}
-          <span className="text-xs font-semibold">{notification.message}</span>
-        </div>
-      )}
+
 
       {/* Title Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none">

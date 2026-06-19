@@ -565,3 +565,29 @@ input[type="date"]:focus {
   animation: pulseSubtle 2.5s ease-in-out infinite;
 }
 
+/* ──────────────────────────────────────────────
+   SOFT & SLOW TOAST LIFECYCLE ANIMATION
+   ────────────────────────────────────────────── */
+@keyframes softToastLifecycle {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -16px) scale(0.96);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  88% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -8px) scale(0.98);
+  }
+}
+
+.animate-soft-toast {
+  animation: softToastLifecycle 4.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

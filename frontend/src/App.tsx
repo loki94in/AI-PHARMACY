@@ -257,10 +257,9 @@ const FlashToast = ({
         fixed top-4 left-1/2 -translate-x-1/2 z-toast
         flex items-center gap-2.5 px-4 py-2.5 rounded-2xl
         border backdrop-blur-2xl ${cfg.bg} ${cfg.glow}
-        animate-in slide-in-from-top-3 fade-in duration-300
+        animate-soft-toast
         min-w-[260px] max-w-[450px]
       `}
-      style={{ animation: 'slideInDown 0.3s ease' }}
     >
       {cfg.icon}
       <span className="text-sm font-semibold flex-1 leading-snug">{toast.message}</span>
@@ -600,7 +599,7 @@ const Topbar = ({
       const id = Date.now();
       setFlashToast({ ...detail, id });
       clearTimeout(flashTimerRef.current);
-      flashTimerRef.current = setTimeout(() => setFlashToast(null), 4000);
+      flashTimerRef.current = setTimeout(() => setFlashToast(null), 4200);
     });
   }, [onNewNotification]);
 
@@ -1031,6 +1030,7 @@ const Layout = ({
   const [pendingStagedSalesCount, setPendingStagedSalesCount] = useState(0);
   const [pendingStagedPurchasesCount, setPendingStagedPurchasesCount] = useState(0);
 
+
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [isBackupStartupMode, setIsBackupStartupMode] = useState(false);
 
@@ -1134,6 +1134,21 @@ const Layout = ({
     };
     setNotifications(prev => [newNotif, ...prev].slice(0, 50));
     setHasUnread(true);
+
+    // Show native desktop notification if permission is granted
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        const title = `AI Pharmacy - ${detail.type.toUpperCase()}`;
+        const options = {
+          body: detail.message,
+          icon: '/favicon.ico',
+          tag: 'ai-pharmacy-notification',
+        };
+        new window.Notification(title, options);
+      } catch (err) {
+        console.warn('Failed to fire native Notification:', err);
+      }
+    }
   }, []);
 
   const handleClearAll = useCallback(() => {
@@ -1236,6 +1251,8 @@ function App() {
     }
     try { localStorage.setItem('theme', theme); } catch { }
   }, [theme]);
+
+
 
   return (
     <BrowserRouter>

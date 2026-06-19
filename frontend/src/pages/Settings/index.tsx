@@ -78,6 +78,30 @@ const Settings = () => {
   const [lowStockThreshold, setLowStockThreshold] = useState<number>(10);
   const [expiryAlertDays, setExpiryAlertDays] = useState<number>(90);
   const [dineshWhatsappNumber, setDineshWhatsappNumber] = useState('');
+  const [desktopNotifEnabled, setDesktopNotifEnabled] = useState(() => {
+    return 'Notification' in window && Notification.permission === 'granted';
+  });
+
+  const handleToggleDesktopNotifications = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    if (checked) {
+      if (!('Notification' in window)) {
+        toastEvent.trigger('Desktop notifications are not supported by this browser.', 'error');
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setDesktopNotifEnabled(true);
+        toastEvent.trigger('Desktop notifications enabled!', 'success');
+      } else {
+        setDesktopNotifEnabled(false);
+        toastEvent.trigger('Permission denied for desktop notifications.', 'error');
+      }
+    } else {
+      setDesktopNotifEnabled(false);
+      toastEvent.trigger('Desktop notifications can be disabled in your browser settings.', 'info');
+    }
+  };
 
   // Messaging Integrations
   const [telegramEnabled, setTelegramEnabled] = useState(false);
@@ -731,6 +755,25 @@ const Settings = () => {
               </div>
               <span className="text-sm font-semibold group-hover:text-white transition-colors">
                 Enable Email Alerts
+              </span>
+            </label>
+          </div>
+
+          <div className="space-y-2 flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer select-none group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={desktopNotifEnabled}
+                  onChange={handleToggleDesktopNotifications}
+                  aria-label="Enable Desktop Notifications"
+                />
+                <div className="w-11 h-6 rounded-full bg-zinc-700 peer-checked:bg-green transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform peer-checked:translate-x-5" />
+              </div>
+              <span className="text-sm font-semibold group-hover:text-white transition-colors">
+                Enable Desktop Popup Notifications
               </span>
             </label>
           </div>

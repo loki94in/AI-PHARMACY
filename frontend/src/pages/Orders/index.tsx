@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { SpecialOrder } from '../../services/api';
+import { toastEvent } from '../../services/events';
 
 const Orders = () => {
   const navigate = useNavigate();
@@ -29,8 +30,7 @@ const Orders = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   
-  // Alert/Notification State
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
 
   // New Request Form State
   const [product, setProduct] = useState('');
@@ -117,10 +117,7 @@ const Orders = () => {
   }, []);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
-    setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 5000);
+    toastEvent.trigger(message, type, '/orders');
   };
 
   // Submit new special order request
@@ -325,25 +322,7 @@ const Orders = () => {
   return (
     <div className="h-full flex flex-col fade-in gap-3 pb-4">
       
-      {/* Toast Notification */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl animate-slide-in ${
-          notification.type === 'success' 
-            ? 'bg-green/15 border-green/30 text-green-200' 
-            : notification.type === 'error'
-              ? 'bg-red/15 border-red/30 text-red-200'
-              : 'bg-primary/15 border-primary/30 text-primary-light'
-        }`}>
-          {notification.type === 'success' ? (
-            <Check size={16} className="text-green animate-bounce" />
-          ) : notification.type === 'error' ? (
-            <AlertCircle size={16} className="text-red" />
-          ) : (
-            <Bell size={16} className="text-primary animate-pulse" />
-          )}
-          <span className="text-xs font-semibold">{notification.message}</span>
-        </div>
-      )}
+
 
       {/* Page Controls */}
       <div className="flex justify-end items-center gap-3">

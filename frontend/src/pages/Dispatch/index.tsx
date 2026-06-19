@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Truck, Package, Clock, CheckCircle, MapPin, Plus, X, User, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
 import { api } from '../../services/api';
+import { toastEvent } from '../../services/events';
 
 interface DispatchOrder {
   id: number;
@@ -39,11 +40,10 @@ const Dispatch = () => {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
-  const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
 
   const showNotif = (msg: string, type: 'success' | 'error' = 'success') => {
-    setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 4000);
+    toastEvent.trigger(msg, type, '/dispatch');
   };
 
   const fetchAll = useCallback(async () => {
@@ -107,13 +107,7 @@ const Dispatch = () => {
 
   return (
     <div className="h-full flex flex-col p-6 gap-3 pb-4 animate-in fade-in duration-500">
-      {/* Toast */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-semibold
-          ${notification.type === 'success' ? 'bg-green/15 border-green/30 text-green-200' : 'bg-red/15 border-red/30 text-red-200'}`}>
-          {notification.msg}
-        </div>
-      )}
+
 
       {/* Header */}
       <div className="flex justify-between items-center">

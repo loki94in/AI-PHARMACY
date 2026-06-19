@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Users, UserPlus, Search, Trash2, Edit, X, Clock, ChevronRight, CheckCircle, MessageCircle, Send, RefreshCw, Mail, Smartphone, LogIn, LogOut, Paperclip, Smile, FileText, Download } from 'lucide-react';
 import { api } from '../../services/api';
+import { toastEvent } from '../../services/events';
 
 interface Patient {
   id: number;
@@ -110,7 +111,7 @@ const CRM = () => {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
 
   // WhatsApp states
   const [waChats, setWaChats] = useState<any[]>([]);
@@ -138,8 +139,7 @@ const CRM = () => {
   // Lightbox state
   const [lightbox, setLightbox] = useState<{ isOpen: boolean; src: string; name: string }>({ isOpen: false, src: '', name: '' });
   const showNotif = (msg: string, type: 'success' | 'error' = 'success') => {
-    setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 4000);
+    toastEvent.trigger(msg, type, '/crm');
   };
 
   const fetchPatients = useCallback(async () => {
@@ -585,14 +585,7 @@ const CRM = () => {
 
   return (
     <div className="h-full flex flex-col fade-in relative overflow-hidden">
-      {/* Toast */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-[999999] flex items-center gap-2 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-semibold
-          ${notification.type === 'success' ? 'bg-green/15 border-green/30 text-green-200' : 'bg-red/15 border-red/30 text-red-200'}`}>
-          <CheckCircle size={14} />
-          {notification.msg}
-        </div>
-      )}
+
 
       {/* 2-Column Split Layout (70/30 using grid grid-cols-10) */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-10 gap-5 min-h-0 overflow-hidden">
