@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
-import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection } from '../../lib/api';
+import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection, createSale } from '../../lib/api';
 import DrawerMenu from '../../components/DrawerMenu';
 
 import * as ImagePicker from 'expo-image-picker';
@@ -34,41 +36,44 @@ export default function AssistantScreen() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Quick Process Sale state
+  const [quickSaleItem, setQuickSaleItem] = useState<SearchMedicineResult | null>(null);
+  const [quickSaleQty, setQuickSaleQty] = useState('1');
+  const [quickSalePatient, setQuickSalePatient] = useState('');
+  const [quickSaleProcessing, setQuickSaleProcessing] = useState(false);
+  const [quickSaleSuccess, setQuickSaleSuccess] = useState<{ invoice_no: string; total: number; isOffline: boolean } | null>(null);
   
   // Dynamic Connection Status States
-  const [isOnline, setIsOnline] = useState<boolean>(true);
+  type ConnStatus = 'checking' | 'online' | 'no_url' | 'offline';
+  const [connStatus, setConnStatus] = useState<ConnStatus>('checking');
   const [serverUrl, setServerUrl] = useState<string>('');
+  // Derived: treat as online only when truly connected
+  const isOnline = connStatus === 'online';
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const url = await getServerUrl();
+      if (!url) {
+        setConnStatus('no_url');
+        setServerUrl('');
+        return;
+      }
+      setServerUrl(url);
+      const online = await testConnection(url);
+      setConnStatus(online ? 'online' : 'offline');
+    } catch {
+      setConnStatus('offline');
+    }
+  }, []);
 
   useEffect(() => {
-    let active = true;
     let intervalId: any;
-
-    const checkStatus = async () => {
-      try {
-        const url = await getServerUrl();
-        if (!url) {
-          if (active) {
-            setIsOnline(false);
-            setServerUrl('');
-          }
-          return;
-        }
-        if (active) setServerUrl(url);
-        const online = await testConnection(url);
-        if (active) setIsOnline(online);
-      } catch (err) {
-        if (active) setIsOnline(false);
-      }
-    };
-
+    setConnStatus('checking');
     checkStatus();
-    intervalId = setInterval(checkStatus, 10000); // Check connectivity every 10 seconds
-
-    return () => {
-      active = false;
-      clearInterval(intervalId);
-    };
-  }, []);
+    intervalId = setInterval(checkStatus, 12000);
+    return () => clearInterval(intervalId);
+  }, [checkStatus]);
   
   // New States for User Role & ABC Checklist
   const [userRole, setUserRole] = useState<'staff' | 'distributor'>('staff');
@@ -257,6 +262,50 @@ export default function AssistantScreen() {
     }
   };
 
+  // ── Quick Process: instant sale from medicine card ──
+  const handleQuickProcess = async () => {
+    if (!quickSaleItem) return;
+    const qty = parseInt(quickSaleQty, 10);
+    if (!qty || qty <= 0) { Alert.alert('Invalid Qty', 'Please enter a valid quantity.'); return; }
+    if (qty > quickSaleItem.quantity) { Alert.alert('Insufficient Stock', `Only ${quickSaleItem.quantity} in stock.`); return; }
+
+    setQuickSaleProcessing(true);
+    try {
+      const res = await createSale({
+        items: [{ inventory_id: quickSaleItem.inventory_id, quantity: qty, unit_price: quickSaleItem.mrp || quickSaleItem.unit_price || 0 }],
+        patient_name: quickSalePatient || undefined,
+        payment_medium: 'CASH',
+        payment_status: 'PAID',
+      });
+      const isOffline = res.invoice_no.startsWith('TEMP-MOB-');
+      setQuickSaleSuccess({ invoice_no: res.invoice_no, total: res.total, isOffline });
+
+      // Notify
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: isOffline ? '💾 Sale Saved (Offline)' : '⚡ Sale Processed',
+          body: `${quickSaleItem.medicine_name} x${qty} — ₹${res.total.toFixed(2)}. Invoice: ${res.invoice_no}`,
+        },
+        trigger: null,
+      }).catch(() => {});
+
+      // Add confirmation message to chat
+      const assistMsg: Message = {
+        id: Math.random().toString(),
+        sender: 'assistant',
+        text: isOffline
+          ? `💾 *Offline Sale Queued*\n${quickSaleItem.medicine_name} x${qty} → ₹${res.total.toFixed(2)}\nInvoice: ${res.invoice_no}\n\n⏳ Will sync when back online.`
+          : `✅ *Sale Processed*\n${quickSaleItem.medicine_name} x${qty} → ₹${res.total.toFixed(2)}\nInvoice: ${res.invoice_no}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, assistMsg]);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to process sale.');
+    } finally {
+      setQuickSaleProcessing(false);
+    }
+  };
+
   const handleSaveStagedSale = async () => {
     try {
       // Map to SalePayload format
@@ -298,15 +347,31 @@ export default function AssistantScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       style={styles.container}
     >
-      {/* Connectivity Status Bar */}
-      <View style={styles.connectStatusBar}>
-        <View style={[styles.connectDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
-        <Text style={styles.connectStatusText}>
-          {isOnline 
-            ? `Connected: Pharmacy Server (${serverUrl.replace(/^https?:\/\//, '')})`
-            : 'Offline Mode: Running locally (Sync pending)'}
+      {/* Connectivity Status Bar — tap to retry */}
+      <TouchableOpacity
+        style={[
+          styles.connectStatusBar,
+          { backgroundColor: connStatus === 'online' ? '#0c0a09' : connStatus === 'checking' ? '#1a1a2e' : '#1a0a0a' }
+        ]}
+        onPress={() => { setConnStatus('checking'); checkStatus(); }}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.connectDot, {
+          backgroundColor:
+            connStatus === 'online'   ? colors.success :
+            connStatus === 'checking' ? colors.warning  :
+            colors.danger
+        }]} />
+        <Text style={styles.connectStatusText} numberOfLines={1}>
+          {connStatus === 'online'   ? `✓ Server: ${serverUrl.replace(/^https?:\/\//, '')}` :
+           connStatus === 'checking' ? 'Checking connection...' :
+           connStatus === 'no_url'   ? 'No server configured — tap Settings to add PC IP' :
+           `Server unreachable — tap to retry`}
         </Text>
-      </View>
+        {connStatus !== 'online' && connStatus !== 'checking' && (
+          <Ionicons name="refresh-outline" size={12} color={colors.danger} style={{ marginLeft: 4 }} />
+        )}
+      </TouchableOpacity>
 
       {/* Header */}
       <View style={styles.header}>
@@ -432,12 +497,25 @@ export default function AssistantScreen() {
                       <Text style={styles.productDetail}>Exp: {item.expiry_date}</Text>
                       <Text style={styles.productDetail}>Stock: {item.quantity}</Text>
                       <Text style={styles.productPrice}>₹{Number(item.mrp).toFixed(2)}</Text>
-                      <TouchableOpacity
-                        style={styles.cardActionBtn}
-                        onPress={() => router.push('/(tabs)/billing')}
-                      >
-                        <Text style={styles.cardActionBtnText}>Add to Bill</Text>
-                      </TouchableOpacity>
+                      <View style={styles.cardActionRow}>
+                        <TouchableOpacity
+                          style={[styles.cardActionBtn, styles.cardActionBtnSecondary]}
+                          onPress={() => router.push('/(tabs)/billing')}
+                        >
+                          <Text style={styles.cardActionBtnTextSecondary}>+ Bill</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.cardActionBtn, styles.cardActionBtnProcess]}
+                          onPress={() => {
+                            setQuickSaleItem(item);
+                            setQuickSaleQty('1');
+                            setQuickSalePatient('');
+                            setQuickSaleSuccess(null);
+                          }}
+                        >
+                          <Text style={styles.cardActionBtnText}>⚡ Process</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
                 </ScrollView>
@@ -502,6 +580,115 @@ export default function AssistantScreen() {
           <Ionicons name="send" size={18} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {/* ── Quick Process Sale Modal ── */}
+      {quickSaleItem && (
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {quickSaleSuccess ? (
+              // ── Success state ──
+              <>
+                <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
+                  <Ionicons
+                    name={quickSaleSuccess.isOffline ? 'cloud-offline-outline' : 'checkmark-circle'}
+                    size={56}
+                    color={quickSaleSuccess.isOffline ? colors.primary : colors.success}
+                  />
+                  <Text style={[styles.modalTitle, { textAlign: 'center', marginTop: spacing.md, borderBottomWidth: 0 }]}>
+                    {quickSaleSuccess.isOffline ? '💾 Saved Offline' : '✅ Sale Processed!'}
+                  </Text>
+                  <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
+                    Invoice: {quickSaleSuccess.invoice_no}
+                  </Text>
+                  <Text style={[typography.h3, { color: colors.accent, marginTop: spacing.sm }]}>
+                    ₹{quickSaleSuccess.total.toFixed(2)}
+                  </Text>
+                  {quickSaleSuccess.isOffline && (
+                    <View style={styles.offlineBadge}>
+                      <Ionicons name="sync-outline" size={12} color={colors.primary} />
+                      <Text style={styles.offlineBadgeText}>Will sync when online</Text>
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnSave, { alignSelf: 'center', paddingHorizontal: spacing.xl }]}
+                  onPress={() => setQuickSaleItem(null)}
+                >
+                  <Text style={styles.modalBtnTextSave}>Done</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              // ── Form state ──
+              <>
+                <Text style={styles.modalTitle}>⚡ Quick Process Sale</Text>
+
+                <Text style={styles.fieldLabel}>Medicine</Text>
+                <View style={styles.quickMedRow}>
+                  <Text style={styles.quickMedName}>{quickSaleItem.medicine_name}</Text>
+                  <Text style={styles.quickMedBatch}>Batch: {quickSaleItem.batch_no}</Text>
+                  <Text style={[styles.quickMedBatch, { color: colors.accent }]}>₹{Number(quickSaleItem.mrp || quickSaleItem.unit_price).toFixed(2)}</Text>
+                  <Text style={[styles.quickMedBatch, { color: colors.textMuted }]}>Stock: {quickSaleItem.quantity}</Text>
+                </View>
+
+                <Text style={styles.fieldLabel}>Quantity</Text>
+                <TextInput
+                  value={quickSaleQty}
+                  onChangeText={setQuickSaleQty}
+                  style={styles.modalInput}
+                  keyboardType="number-pad"
+                  placeholder="1"
+                  placeholderTextColor={colors.textMuted}
+                />
+
+                <Text style={styles.fieldLabel}>Patient Name (optional)</Text>
+                <TextInput
+                  value={quickSalePatient}
+                  onChangeText={setQuickSalePatient}
+                  style={styles.modalInput}
+                  placeholder="Walk-in Customer"
+                  placeholderTextColor={colors.textMuted}
+                />
+
+                {/* Total Preview */}
+                <View style={styles.quickTotalRow}>
+                  <Text style={styles.quickTotalLabel}>Total</Text>
+                  <Text style={styles.quickTotalValue}>
+                    ₹{((parseInt(quickSaleQty, 10) || 0) * Number(quickSaleItem.mrp || quickSaleItem.unit_price)).toFixed(2)}
+                  </Text>
+                </View>
+
+                {/* Online/offline indicator */}
+                <View style={styles.connectionBadge}>
+                  <View style={[styles.connectDot, { backgroundColor: isOnline ? colors.success : colors.primary, width: 8, height: 8 }]} />
+                  <Text style={styles.connectionBadgeText}>
+                    {isOnline ? 'Online — Will save to server' : 'Offline — Will save locally & sync later'}
+                  </Text>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.modalBtnCancel]}
+                    onPress={() => setQuickSaleItem(null)}
+                    disabled={quickSaleProcessing}
+                  >
+                    <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.modalBtnSave, quickSaleProcessing && { opacity: 0.7 }]}
+                    onPress={handleQuickProcess}
+                    disabled={quickSaleProcessing}
+                  >
+                    {quickSaleProcessing
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={styles.modalBtnTextSave}>⚡ Process Sale</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Staged Prescription Form Overlay */}
       {showPrescriptionModal && (
@@ -726,18 +913,109 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: spacing.xs,
   },
-  cardActionBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.sm,
-    paddingVertical: 4,
+  cardActionRow: {
+    flexDirection: 'row',
+    gap: 4,
     marginTop: spacing.sm,
+  },
+  cardActionBtn: {
+    flex: 1,
+    borderRadius: radius.sm,
+    paddingVertical: 5,
     alignItems: 'center',
+  },
+  cardActionBtnProcess: {
+    backgroundColor: colors.primary,
+  },
+  cardActionBtnSecondary: {
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   cardActionBtnText: {
     ...typography.caption,
     fontWeight: '700',
     color: '#fff',
     fontSize: 10,
+  },
+  cardActionBtnTextSecondary: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    fontSize: 10,
+  },
+  // Quick Sale modal helpers
+  quickMedRow: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  quickMedName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  quickMedBatch: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  quickTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+  },
+  quickTotalLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  quickTotalValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  connectionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.md,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  connectionBadgeText: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  offlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: spacing.md,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: 'rgba(99,102,241,0.1)',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  offlineBadgeText: {
+    fontSize: 10,
+    color: colors.primary,
+    fontWeight: '600',
   },
   actionBtn: {
     backgroundColor: 'rgba(255,255,255,0.1)',

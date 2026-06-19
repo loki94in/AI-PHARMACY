@@ -29,6 +29,27 @@ import {
   getServerUrl,
 } from '../../../lib/api';
 
+// ── File-type icon config: returns Ionicons name + colors per extension ──
+function getFileIconConfig(filename: string): { icon: string; color: string; bg: string; label: string } {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  switch (ext) {
+    case 'csv':  return { icon: 'grid-outline',        color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   label: 'CSV'  };
+    case 'pdf':  return { icon: 'document-text-outline', color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   label: 'PDF'  };
+    case 'xls':
+    case 'xlsx': return { icon: 'stats-chart-outline',  color: '#10b981', bg: 'rgba(16,185,129,0.12)',  label: 'XLS'  };
+    case 'doc':
+    case 'docx': return { icon: 'document-outline',     color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  label: 'DOC'  };
+    case 'zip':
+    case 'rar':  return { icon: 'archive-outline',      color: '#f97316', bg: 'rgba(249,115,22,0.12)',  label: 'ZIP'  };
+    case 'txt':  return { icon: 'reader-outline',        color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', label: 'TXT'  };
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'webp': return { icon: 'image-outline',         color: '#a855f7', bg: 'rgba(168,85,247,0.12)',  label: 'IMG'  };
+    default:     return { icon: 'attach-outline',        color: '#64748b', bg: 'rgba(100,116,139,0.12)', label: 'FILE' };
+  }
+}
+
 // ─── Base64 & CSV Parsing Utilities ─────────────────────────────────────────
 
 function decodeBase64(base64: string): string {
@@ -666,10 +687,16 @@ export default function InboxScreen() {
 
                 <Text style={styles.attachmentsTitle}>Attachments ({attachments.length}):</Text>
 
-                {attachments.map((att, i) => (
+                {attachments.map((att, i) => {
+                  const fileIcon = getFileIconConfig(att.filename);
+                  return (
                   <View key={i} style={styles.attachmentRow}>
                     <View style={styles.attachmentInfo}>
-                      <Ionicons name="document-outline" size={24} color={colors.primary} />
+                      {/* Color-coded file type badge */}
+                      <View style={[styles.fileIconBadge, { backgroundColor: fileIcon.bg }]}>
+                        <Ionicons name={fileIcon.icon as any} size={20} color={fileIcon.color} />
+                        <Text style={[styles.fileIconLabel, { color: fileIcon.color }]}>{fileIcon.label}</Text>
+                      </View>
                       <View style={{ flex: 1, marginLeft: spacing.sm }}>
                         <Text style={styles.attachmentName} numberOfLines={1}>
                           {att.filename}
@@ -698,7 +725,8 @@ export default function InboxScreen() {
                       )}
                     </TouchableOpacity>
                   </View>
-                ))}
+                  );
+                })}
 
                 {attachments.length === 0 && (
                   <Text style={styles.noAttachmentsText}>No file attachments found in this email.</Text>
@@ -1011,6 +1039,19 @@ const styles = StyleSheet.create({
   attachmentInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   attachmentName: { ...typography.body, fontWeight: '600', color: colors.textPrimary },
   attachmentSize: { ...typography.caption },
+  fileIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  fileIconLabel: {
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
   proceedBtn: {
     flexDirection: 'row',
     alignItems: 'center',

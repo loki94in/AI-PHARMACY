@@ -103,7 +103,11 @@ router.get('/notifications/devices', async (req, res) => {
         CASE 
           WHEN last_seen IS NOT NULL AND (strftime('%s', 'now') - strftime('%s', last_seen) < 40) THEN 1 
           ELSE 0 
-        END as is_online
+        END as is_online,
+        CASE
+          WHEN last_seen IS NULL THEN 999999
+          ELSE (strftime('%s', 'now') - strftime('%s', last_seen))
+        END as offline_seconds
       FROM push_tokens
       WHERE rowid IN (
         SELECT rowid FROM push_tokens p2

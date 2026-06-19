@@ -1,6 +1,7 @@
 import * as SecureStore from './secureStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking, Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 const SERVER_KEY = 'pharmacy_server_url';
 const INVENTORY_CACHE_KEY = 'cached_inventory_master';
@@ -616,9 +617,98 @@ export function getReportsSummary() {
 
 // ─── Connection Test ────────────────────────────────────────────────────────
 
+export async function testConnectionWithTimeout(serverUrl: string, timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/health`, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return res.ok;
+  } catch {
+    clearTimeout(timeoutId);
+    return false;
+  }
+}
+
+export async function scanSubnetForServer(subnet: string): Promise<string | null> {
+  const port = 3000;
+  const batchSize = 25;
+
+  for (let i = 1; i <= 255; i += batchSize) {
+    const promises: Promise<string | null>[] = [];
+    for (let j = i; j < i + batchSize && j <= 255; j++) {
+      const url = `http://${subnet}.${j}:${port}`;
+      promises.push(
+        (async () => {
+          const ok = await testConnectionWithTimeout(url, 800);
+          return ok ? url : null;
+        })()
+      );
+    }
+    const results = await Promise.all(promises);
+    const found = results.find(r => r !== null);
+    if (found) return found;
+  }
+  return null;
+}
+
+export async function autoDiscoverServer(): Promise<string | null> {
+  // 1. Try cached server URL first
+  const cached = await SecureStore.getItemAsync(SERVER_KEY);
+  if (cached) {
+    const ok = await testConnection(cached);
+    if (ok) {
+      cachedBaseUrl = cached;
+      return cached;
+    }
+  }
+
+  // 2. Try Expo host URI if in development
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const parts = hostUri.split(':');
+    const devIp = parts[0];
+    if (devIp) {
+      const devServerUrl = `http://${devIp}:3000`;
+      const ok = await testConnection(devServerUrl);
+      if (ok) {
+        await setServerUrl(devServerUrl);
+        return devServerUrl;
+      }
+
+      // Try scanning the developer's subnet
+      const subnetParts = devIp.split('.');
+      if (subnetParts.length === 4) {
+        const subnet = `${subnetParts[0]}.${subnetParts[1]}.${subnetParts[2]}`;
+        const found = await scanSubnetForServer(subnet);
+        if (found) {
+          await setServerUrl(found);
+          return found;
+        }
+      }
+    }
+  }
+
+  // 3. Try scanning common subnet IP ranges as fallback
+  const commonSubnets = ['192.168.1', '192.168.0', '192.168.29', '192.168.31', '10.0.0'];
+  for (const subnet of commonSubnets) {
+    const found = await scanSubnetForServer(subnet);
+    if (found) {
+      await setServerUrl(found);
+      return found;
+    }
+  }
+
+  return null;
+}
+
 export async function testConnection(serverUrl: string): Promise<boolean> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 seconds timeout
+  const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 seconds timeout (local WiFi can be slow)
 
   try {
     const res = await fetch(`${serverUrl.replace(/\/+$/, '')}/api/health`, {

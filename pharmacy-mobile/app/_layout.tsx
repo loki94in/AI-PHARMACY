@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import 'react-native-reanimated';
 import { colors } from '../lib/theme';
-import { getServerUrl, testConnection, getOfflineSalesQueue, getOfflinePurchasesQueue, getOfflineStockQueue, syncOfflineSalesAndRefresh, registerPushToken, saveNotification, getMobileAutomationTasks, retryMobileFallbackTask } from '../lib/api';
+import { getServerUrl, testConnection, getOfflineSalesQueue, getOfflinePurchasesQueue, getOfflineStockQueue, syncOfflineSalesAndRefresh, registerPushToken, saveNotification, getMobileAutomationTasks, retryMobileFallbackTask, autoDiscoverServer } from '../lib/api';
 import ServerSetup from '../components/ServerSetup';
 import AppLock from '../components/AppLock';
 
@@ -129,7 +129,14 @@ export default function RootLayout() {
       const url = await getServerUrl();
       if (!url) return;
 
-      const online = await testConnection(url);
+      let online = await testConnection(url);
+      if (!online) {
+        // If connection is lost, attempt to auto-discover (IP might have changed)
+        const discovered = await autoDiscoverServer();
+        if (discovered) {
+          online = true;
+        }
+      }
       setIsServerOnline(online);
 
       // Check current offline queues size
@@ -198,7 +205,8 @@ export default function RootLayout() {
     if ((fontsLoaded || fontError) && !initRef.current) {
       initRef.current = true;
       (async () => {
-        const url = await getServerUrl();
+        // Try to automatically discover the server (checks cache first, then scans WiFi)
+        const url = await autoDiscoverServer();
         setHasServer(!!url);
 
         // Check if App Lock is enabled

@@ -57,43 +57,55 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Assistant',
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'sparkles' : 'sparkles-outline'} size={size} color={color} />
+          ),
           headerShown: false,
         }}
       />
       <Tabs.Screen
-        name="inventory"
+        name="inventory/index"
         options={{
           title: 'Inventory',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cube-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'medkit' : 'medkit-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="billing"
+        name="billing/index"
         options={{
           title: 'Billing',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cart-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'cash' : 'cash-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="purchases"
+        name="purchases/index"
         options={{
           title: 'Purchases',
-          tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'receipt' : 'receipt-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="inbox"
+        name="inbox/index"
         options={{
           title: 'Inbox',
-          tabBarIcon: ({ color, size }) => <Ionicons name="mail-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'mail-unread' : 'mail-unread-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="more"
+        name="more/index"
         options={{
           title: 'More',
-          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'menu' : 'menu-outline'} size={size} color={color} />
+          ),
         }}
       />
     </Tabs>

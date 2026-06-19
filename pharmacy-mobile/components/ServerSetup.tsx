@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, shadows } from '../lib/theme';
-import { testConnection, setServerUrl, adminLogin } from '../lib/api';
+import { testConnection, setServerUrl, adminLogin, autoDiscoverServer } from '../lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
@@ -11,15 +11,16 @@ interface ServerSetupProps {
 }
 
 export default function ServerSetup({ onConnected }: ServerSetupProps) {
-  const [activeTab, setActiveTab] = useState<'staff' | 'admin'>('staff');
-  const [ip, setIp] = useState('');
-  const [port, setPort] = useState('3000');
+  const [viewMode, setViewMode] = useState<'options' | 'credentials'>('options');
   
-  // Admin fields
-  const [adminUrl, setAdminUrl] = useState('');
+  // Credentials fields
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [adminKey, setAdminKey] = useState('');
+
+  // Auto-discovery state
+  const [discoveryStatus, setDiscoveryStatus] = useState<'searching' | 'found' | 'not_found'>('searching');
+  const [discoveredUrl, setDiscoveredUrl] = useState<string | null>(null);
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
@@ -27,30 +28,53 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
   const [scanned, setScanned] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
-  const handleConnect = async () => {
-    const url = `http://${ip.trim()}:${port.trim()}`;
-    setTesting(true);
-    setError('');
+  // Run auto-discovery on mount
+  useEffect(() => {
+    let active = true;
+    const runDiscovery = async () => {
+      setDiscoveryStatus('searching');
+      setError('');
+      try {
+        const url = await autoDiscoverServer();
+        if (!active) return;
+        if (url) {
+          setDiscoveredUrl(url);
+          setDiscoveryStatus('found');
+        } else {
+          setDiscoveryStatus('not_found');
+        }
+      } catch (err) {
+        if (active) setDiscoveryStatus('not_found');
+      }
+    };
+    runDiscovery();
+    return () => {
+      active = false;
+    };
+  }, []);
 
-    const ok = await testConnection(url);
-    if (ok) {
-      await setServerUrl(url);
-      onConnected();
+  const handleRetryDiscovery = async () => {
+    setDiscoveryStatus('searching');
+    setError('');
+    const url = await autoDiscoverServer();
+    if (url) {
+      setDiscoveredUrl(url);
+      setDiscoveryStatus('found');
     } else {
-      setError('Cannot reach server. Check IP & ensure backend is running.');
+      setDiscoveryStatus('not_found');
     }
-    setTesting(false);
   };
 
   const handleAdminLogin = async () => {
-    let cleanUrl = adminUrl.trim();
-    if (!cleanUrl) {
-      setError('Server URL is required');
+    // We need a server URL to authenticate. We'll use either:
+    // 1. The auto-discovered URL
+    // 2. The cached/configured server URL (if it is online)
+    const targetUrl = discoveredUrl;
+    if (!targetUrl) {
+      setError('No pharmacy server found. Ensure your PC is running and on the same Wi-Fi.');
       return;
     }
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      cleanUrl = `http://${cleanUrl}`;
-    }
+
     if (!adminUser.trim() || !adminPass.trim() || !adminKey.trim()) {
       setError('All admin credentials are required');
       return;
@@ -60,7 +84,7 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
     setError('');
 
     try {
-      await setServerUrl(cleanUrl);
+      await setServerUrl(targetUrl);
       const success = await adminLogin({
         username: adminUser.trim(),
         password: adminPass.trim(),
@@ -165,7 +189,7 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
         >
           <View style={styles.scannerOverlay}>
             <View style={styles.scannerFrame} />
-            <Text style={styles.scannerHint}>Align QR Code within the frame</Text>
+            <Text style={styles.scannerHint}>Align PC QR Code within the frame</Text>
             
             <TouchableOpacity 
               onPress={() => setShowScanner(false)} 
@@ -183,104 +207,112 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.inner}>
-        <View style={styles.iconCircle}>
-          <Ionicons name="server-outline" size={40} color={colors.primary} />
-        </View>
-        <Text style={styles.title}>Connect to Pharmacy Server</Text>
-        
-        {/* Tab Selector */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'staff' && styles.tabButtonActive]}
-            onPress={() => { setActiveTab('staff'); setError(''); }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="people-outline" size={16} color={activeTab === 'staff' ? '#fff' : colors.textMuted} />
-            <Text style={[styles.tabText, activeTab === 'staff' && styles.tabTextActive]}>Staff QR Connect</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'admin' && styles.tabButtonActive]}
-            onPress={() => { setActiveTab('admin'); setError(''); }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="shield-checkmark-outline" size={16} color={activeTab === 'admin' ? '#fff' : colors.textMuted} />
-            <Text style={[styles.tabText, activeTab === 'admin' && styles.tabTextActive]}>Admin Remote Mode</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Branding Logo */}
+        <LinearGradient
+          colors={[colors.primary, colors.primaryDark]}
+          style={styles.logoGradient}
+        >
+          <Ionicons name="sparkles" size={36} color="#fff" />
+        </LinearGradient>
+        <Text style={styles.title}>AI Pharmacy Genius OS</Text>
+        <Text style={styles.subtitle}>Smart Connection & Management Suite</Text>
 
-        {activeTab === 'staff' ? (
-          <>
-            <Text style={styles.subtitle}>Enter your PC's local IP address{'\n'}(both devices must be on same Wi-Fi)</Text>
+        {/* Discovery Status Banner */}
+        <TouchableOpacity
+          onPress={handleRetryDiscovery}
+          disabled={discoveryStatus === 'searching'}
+          style={[
+            styles.statusBanner,
+            discoveryStatus === 'found' && styles.statusBannerFound,
+            discoveryStatus === 'not_found' && styles.statusBannerNotFound,
+          ]}
+          activeOpacity={0.8}
+        >
+          {discoveryStatus === 'searching' && (
+            <>
+              <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.statusText}>Searching for Pharmacy Server on Wi-Fi...</Text>
+            </>
+          )}
+          {discoveryStatus === 'found' && (
+            <>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} style={{ marginRight: 6 }} />
+              <Text style={[styles.statusText, { color: colors.success }]}>
+                Connected to local server
+              </Text>
+            </>
+          )}
+          {discoveryStatus === 'not_found' && (
+            <>
+              <Ionicons name="cloud-offline" size={16} color={colors.warning} style={{ marginRight: 6 }} />
+              <Text style={[styles.statusText, { color: colors.warning }]}>
+                No local server found (Tap to retry search)
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
 
-            <View style={styles.inputRow}>
-              <TextInput
-                style={[styles.input, { flex: 2 }]}
-                value={ip}
-                onChangeText={setIp}
-                placeholder="192.168.1.100"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="numeric"
-                autoFocus
-              />
-              <Text style={styles.colon}>:</Text>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                value={port}
-                onChangeText={setPort}
-                placeholder="3000"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="numeric"
-              />
-            </View>
-
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            <TouchableOpacity onPress={handleConnect} disabled={testing || !ip.trim()} activeOpacity={0.8}>
+        {viewMode === 'options' ? (
+          <View style={styles.optionsContainer}>
+            {/* Option 1: QR Scan Connect */}
+            <TouchableOpacity
+              onPress={() => setShowScanner(true)}
+              activeOpacity={0.8}
+              style={styles.optionButton}
+            >
               <LinearGradient
                 colors={[colors.primary, colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.button, (!ip.trim() || testing) && styles.buttonDisabled]}
+                end={{ x: 1, y: 1 }}
+                style={styles.optionGradient}
               >
-                {testing ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="link-outline" size={20} color="#fff" />
-                    <Text style={styles.buttonText}>Connect</Text>
-                  </>
-                )}
+                <Ionicons name="qr-code-outline" size={24} color="#fff" />
+                <View style={styles.optionTextContainer}>
+                  <Text style={styles.optionTitle}>Scan QR Code Login</Text>
+                  <Text style={styles.optionDesc}>Quick setup using PC app QR Code</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#fff" style={{ opacity: 0.8 }} />
               </LinearGradient>
             </TouchableOpacity>
 
-            <Text style={styles.orText}>OR</Text>
-
-            <TouchableOpacity onPress={() => setShowScanner(true)} activeOpacity={0.8}>
+            {/* Option 2: ID & Password Login */}
+            <TouchableOpacity
+              onPress={() => setViewMode('credentials')}
+              activeOpacity={0.8}
+              style={styles.optionButton}
+            >
               <LinearGradient
-                colors={[colors.accentDark, colors.accent]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.scanButton}
+                colors={[colors.surfaceLight, colors.surfaceElevated]}
+                style={styles.optionGradientBorder}
               >
-                <Ionicons name="qr-code-outline" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Scan Connection QR</Text>
+                <Ionicons name="key-outline" size={24} color={colors.primary} />
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionTitle, { color: colors.textPrimary }]}>ID & Password Login</Text>
+                  <Text style={styles.optionDesc}>Sign in with Admin Credentials</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
               </LinearGradient>
             </TouchableOpacity>
-          </>
+          </View>
         ) : (
-          <>
-            <Text style={styles.subtitle}>Log in remotely to manage sales, stock,{'\n'}and automated communications</Text>
-            
-            <TextInput
-              style={styles.adminInput}
-              value={adminUrl}
-              onChangeText={setAdminUrl}
-              placeholder="Server URL (e.g. http://192.168.1.100:3000)"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            
+          <ScrollView
+            style={{ width: '100%', marginTop: spacing.md }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Header back row */}
+            <View style={styles.formHeader}>
+              <TouchableOpacity
+                onPress={() => { setViewMode('options'); setError(''); }}
+                style={styles.backBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={20} color={colors.textSecondary} />
+                <Text style={styles.backBtnText}>Back</Text>
+              </TouchableOpacity>
+              <Text style={styles.formTitle}>Admin Login</Text>
+            </View>
+
             <TextInput
               style={styles.adminInput}
               value={adminUser}
@@ -314,24 +346,29 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            <TouchableOpacity onPress={handleAdminLogin} disabled={testing || !adminUrl.trim() || !adminUser.trim() || !adminPass.trim() || !adminKey.trim()} activeOpacity={0.8}>
+            <TouchableOpacity
+              onPress={handleAdminLogin}
+              disabled={testing || discoveryStatus === 'searching'}
+              activeOpacity={0.8}
+              style={{ marginTop: spacing.sm }}
+            >
               <LinearGradient
                 colors={[colors.primary, colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={[styles.button, (testing || !adminUrl.trim() || !adminUser.trim() || !adminPass.trim() || !adminKey.trim()) && styles.buttonDisabled]}
+                style={[styles.button, (testing || discoveryStatus === 'searching') && styles.buttonDisabled]}
               >
                 {testing ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
                     <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
-                    <Text style={styles.buttonText}>Admin Login</Text>
+                    <Text style={styles.buttonText}>Authenticate & Connect</Text>
                   </>
                 )}
               </LinearGradient>
             </TouchableOpacity>
-          </>
+          </ScrollView>
         )}
       </View>
     </KeyboardAvoidingView>
@@ -345,63 +382,106 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.xl,
   },
-  inner: { alignItems: 'center' },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.surfaceLight,
+  inner: { alignItems: 'center', width: '100%' },
+  logoGradient: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     ...shadows.card,
   },
-  title: { ...typography.h2, textAlign: 'center', marginBottom: spacing.md },
-  subtitle: { ...typography.bodySmall, textAlign: 'center', marginBottom: spacing.xl },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceLight,
-    borderRadius: radius.md,
-    padding: 4,
-    marginBottom: spacing.lg,
-    width: '100%',
-  },
-  tabButton: {
-    flex: 1,
+  title: { ...typography.h2, textAlign: 'center', marginBottom: 4 },
+  subtitle: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.xl },
+  statusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surfaceLight,
     paddingVertical: 10,
-    borderRadius: radius.sm,
-    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    width: '100%',
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
-  tabButtonActive: {
-    backgroundColor: colors.primary,
+  statusBannerFound: {
+    backgroundColor: 'rgba(34, 197, 94, 0.08)',
+    borderColor: 'rgba(34, 197, 94, 0.2)',
   },
-  tabText: {
-    fontSize: 14,
+  statusBannerNotFound: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  statusText: {
+    fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
   },
-  tabTextActive: {
-    color: '#fff',
+  optionsContainer: {
+    width: '100%',
+    gap: spacing.md,
   },
-  inputRow: {
+  optionButton: {
+    width: '100%',
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    ...shadows.small,
+  },
+  optionGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  input: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: radius.md,
     padding: spacing.md,
-    fontSize: 18,
-    color: colors.textPrimary,
-    textAlign: 'center',
+    gap: spacing.md,
+  },
+  optionGradientBorder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.md,
     borderWidth: 1,
     borderColor: colors.cardBorder,
+    borderRadius: radius.md,
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  optionDesc: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  formHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: spacing.lg,
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceLight,
+  },
+  backBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  formTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
   },
   adminInput: {
     backgroundColor: colors.surfaceLight,
@@ -414,7 +494,6 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     marginBottom: spacing.md,
   },
-  colon: { ...typography.h2, color: colors.textMuted },
   error: { ...typography.bodySmall, color: colors.danger, marginBottom: spacing.md, textAlign: 'center' },
   button: {
     flexDirection: 'row',
@@ -424,27 +503,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: spacing.xl,
     borderRadius: radius.md,
-    minWidth: 200,
+    width: '100%',
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  orText: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginVertical: spacing.md,
-    textTransform: 'uppercase',
-    letterSpacing: 2,
-  },
-  scanButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.xl,
-    borderRadius: radius.md,
-    minWidth: 200,
-  },
   scannerCenter: {
     flex: 1,
     backgroundColor: colors.bg,

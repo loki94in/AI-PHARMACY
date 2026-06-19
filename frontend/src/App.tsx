@@ -560,7 +560,7 @@ const Topbar = ({
   }, []);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const [connectedDevices, setConnectedDevices] = useState<{ token: string; device_name: string; os: string; is_online: number; last_seen: string }[]>([]);
+  const [connectedDevices, setConnectedDevices] = useState<{ token: string; device_name: string; os: string; is_online: number; last_seen: string; offline_seconds?: number }[]>([]);
   const [showDevicesPopover, setShowDevicesPopover] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [renamingToken, setRenamingToken] = useState<string | null>(null);
@@ -820,7 +820,6 @@ const Topbar = ({
             </div>
           )}
 
-
           {/* ── Mobile Connection Status Indicators ── */}
           <div className="relative flex items-center gap-2" ref={popoverRef}>
             {connectedDevices.length === 0 ? (
@@ -833,40 +832,65 @@ const Topbar = ({
                 <span className="text-[10px] uppercase tracking-wider font-bold">QR Connect</span>
               </button>
             ) : (
-              connectedDevices.map(device => (
-                <button
-                  key={device.token}
-                  onClick={() => setShowDevicesPopover(prev => !prev)}
-                  className={`
-                    flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 border
-                    ${device.is_online === 1
-                      ? 'bg-green/10 border-green/20 text-green shadow-[0_0_12px_rgba(34,197,94,0.05)] hover:bg-green/15'
-                      : 'bg-glass-bg/30 border-glass-border/40 text-muted hover:bg-white/5'}
-                  `}
-                  title={`${device.device_name} (${device.os}) - ${device.is_online === 1 ? 'Connected' : 'Offline'}`}
-                >
-                  <DeviceIcon 
-                    os={device.os} 
-                    size={13} 
-                    className={device.is_online === 1 ? 'text-green animate-pulse' : 'text-muted opacity-40'} 
-                  />
-                  <span className="truncate max-w-[80px] text-[10px] uppercase tracking-wide">
-                    {device.device_name}
-                  </span>
-                  
-                  {/* Glowing/offline dot */}
-                  <span className="relative flex h-1.5 w-1.5">
-                    {device.is_online === 1 ? (
-                      <>
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green"></span>
-                      </>
+              connectedDevices.map(device => {
+                const offlineSeconds = device.offline_seconds ?? 999999;
+                const isOnline = device.is_online === 1;
+                const isRecentlyOffline = !isOnline && offlineSeconds < 180; // 3 minutes
+
+                // Styles based on status
+                let btnStyle = 'bg-glass-bg/30 border-glass-border/40 text-muted hover:bg-white/5';
+                let statusText = 'Offline';
+                let iconColor = 'text-muted opacity-40';
+                
+                if (isOnline) {
+                  btnStyle = 'bg-green/10 border-green/20 text-green shadow-[0_0_12px_rgba(34,197,94,0.05)] hover:bg-green/15';
+                  statusText = 'Connected';
+                  iconColor = 'text-green animate-pulse';
+                } else if (isRecentlyOffline) {
+                  btnStyle = 'bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.05)] hover:bg-amber-500/15';
+                  statusText = 'Checking';
+                  iconColor = 'text-amber-400 animate-pulse';
+                }
+
+                return (
+                  <button
+                    key={device.token}
+                    onClick={() => setShowDevicesPopover(prev => !prev)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 border ${btnStyle}`}
+                    title={`${device.device_name} (${device.os}) - ${statusText}`}
+                  >
+                    {isRecentlyOffline ? (
+                      <QrCode size={13} className={`${iconColor}`} />
                     ) : (
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-zinc-500/50"></span>
+                      <DeviceIcon 
+                        os={device.os} 
+                        size={13} 
+                        className={iconColor} 
+                      />
                     )}
-                  </span>
-                </button>
-              ))
+                    <span className="truncate max-w-[80px] text-[10px] uppercase tracking-wide">
+                      {device.device_name}
+                    </span>
+                    
+                    {/* Glowing/offline dot */}
+                    <span className="relative flex h-1.5 w-1.5">
+                      {isOnline ? (
+                        <>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green"></span>
+                        </>
+                      ) : isRecentlyOffline ? (
+                        <>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                        </>
+                      ) : (
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-zinc-500/50"></span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })
             )}
 
             {/* Devices Popover */}
@@ -890,33 +914,70 @@ const Topbar = ({
                       No mobile devices registered yet.
                     </div>
                   ) : (
-                    connectedDevices.map((device) => (
-                      <div key={device.token} className="flex flex-col gap-1.5 p-2 rounded-xl bg-bg2/40 border border-glass-border">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <DeviceIcon os={device.os} size={14} className={device.is_online === 1 ? 'text-green animate-pulse' : 'text-zinc-500'} />
-                            <div className="min-w-0">
-                              {renamingToken === device.token ? (
-                                <input
-                                  autoFocus
-                                  className="text-xs font-semibold bg-bg3 border border-primary/40 rounded px-1.5 py-0.5 text-text w-32 outline-none focus:border-primary"
-                                  value={renameValue}
-                                  onChange={e => setRenameValue(e.target.value)}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') handleRenameDevice(device.token, renameValue);
-                                    if (e.key === 'Escape') { setRenamingToken(null); setRenameValue(''); }
-                                  }}
-                                  onBlur={() => handleRenameDevice(device.token, renameValue)}
-                                />
+                    connectedDevices.map((device) => {
+                      const offlineSeconds = device.offline_seconds ?? 999999;
+                      const isOnline = device.is_online === 1;
+                      const isRecentlyOffline = !isOnline && offlineSeconds < 180;
+                      let badgeStyle = 'bg-zinc-500/10 text-muted';
+                      let badgeText = 'Offline';
+                      let iconColor = 'text-zinc-500';
+                      
+                      if (isOnline) {
+                        badgeStyle = 'bg-green/10 text-green';
+                        badgeText = 'Online';
+                        iconColor = 'text-green animate-pulse';
+                      } else if (isRecentlyOffline) {
+                        badgeStyle = 'bg-amber-500/10 text-amber-500';
+                        badgeText = 'Checking';
+                        iconColor = 'text-amber-500 animate-pulse';
+                      }
+
+                      return (
+                        <div key={device.token} className="flex flex-col gap-1.5 p-2 rounded-xl bg-bg2/40 border border-glass-border">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {isRecentlyOffline ? (
+                                <QrCode size={14} className={iconColor} />
                               ) : (
-                                <p className="text-xs font-semibold text-text truncate">{device.device_name}</p>
+                                <DeviceIcon os={device.os} size={14} className={iconColor} />
                               )}
-                              <p className="text-[9px] text-muted capitalize">{device.os}</p>
+                              <div className="min-w-0">
+                                {renamingToken === device.token ? (
+                                  <input
+                                    autoFocus
+                                    className="text-xs font-semibold bg-bg3 border border-primary/40 rounded px-1.5 py-0.5 text-text w-32 outline-none focus:border-primary"
+                                    value={renameValue}
+                                    onChange={e => setRenameValue(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') handleRenameDevice(device.token, renameValue);
+                                      if (e.key === 'Escape') { setRenamingToken(null); setRenameValue(''); }
+                                    }}
+                                    onBlur={() => handleRenameDevice(device.token, renameValue)}
+                                  />
+                                ) : (
+                                  <p className="text-xs font-semibold text-text truncate">{device.device_name}</p>
+                                )}
+                                <p className="text-[9px] text-muted capitalize">{device.os}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => { setRenamingToken(device.token); setRenameValue(device.device_name); }}
+                                className="text-[9px] px-1.5 py-0.5 rounded bg-bg3 border border-glass-border text-muted hover:text-primary hover:border-primary/30 transition-all"
+                                title="Rename device"
+                              >
+                                Rename
+                              </button>
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badgeStyle}`}>
+                                {badgeText}
+                              </span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => { setRenamingToken(device.token); setRenameValue(device.device_name); }}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>ce_name); }}
                               className="text-[9px] px-1.5 py-0.5 rounded bg-bg3 border border-glass-border text-muted hover:text-primary hover:border-primary/30 transition-all"
                               title="Rename device"
                             >
