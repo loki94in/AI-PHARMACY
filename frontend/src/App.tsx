@@ -69,6 +69,7 @@ const CustomerReturnHistory = lazy(() => import('./pages/CustomerReturnHistory')
 const PharmarackCart = lazy(() => import('./pages/PharmarackCart'));
 const AutomationCenter = lazy(() => import('./pages/AutomationCenter'));
 const InvestigationCenter = lazy(() => import('./pages/Investigation'));
+const PhoneSales = lazy(() => import('./pages/PhoneSales'));
 
 // Minimal page-switch loading fallback — renders instantly, no layout shift
 const PageLoader = () => (
@@ -108,6 +109,7 @@ const Sidebar = ({
   const menuItems = [
     { path: '/pos', label: 'Sales / POS', icon: <ShoppingCart size={18} /> },
     { path: '/sells', label: 'Sells / Bills', icon: <Receipt size={18} /> },
+    { path: '/phone-sales', label: 'Phone Sales', icon: <Smartphone size={18} /> },
     { path: '/investigation', label: 'Investigation Center', icon: <PackageSearch size={18} /> },
     { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
     { path: '/purchases', label: 'Purchases', icon: <Receipt size={18} /> },
@@ -991,7 +993,7 @@ const Layout = ({
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 }) => {
   const location = useLocation();
-  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart', '/automation-center', '/investigation'].includes(location.pathname);
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart', '/automation-center', '/investigation', '/phone-sales'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     try {
@@ -1247,6 +1249,7 @@ function App() {
             <Route path="/expiry" element={<Expiry />} />
             <Route path="/pos" element={<POS />} />
             <Route path="/sells" element={<Sells />} />
+            <Route path="/phone-sales" element={<PhoneSales />} />
             <Route path="/investigation" element={<InvestigationCenter />} />
             <Route path="/purchases" element={<Purchases />} />
             <Route path="/manual-purchase" element={<Purchases />} />

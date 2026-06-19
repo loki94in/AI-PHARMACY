@@ -283,10 +283,18 @@ ensureSchema(DB_PATH).then(async () => {
             if (!autoRow || autoRow.value !== 'true') {
               return;
             }
-            console.log('Running daily patient refill & overdue credit notes check...');
+            console.log('Running daily patient refill, bounced products & overdue credit notes check...');
             await checkAllRefills(db);
             await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
             await checkOverdueCreditNotes(db);
+            
+            // Check for bounced products
+            try {
+              const { bouncedAlertService } = await import('./services/bouncedAlertService.js');
+              await bouncedAlertService.checkAndSendBouncedProductsAlert();
+            } catch (bErr) {
+              console.error('Failed running bounced products alert check:', bErr);
+            }
             
             // Auto expiry return on 18th, 19th, 20th of the month
             const dayOfMonth = new Date().getDate();

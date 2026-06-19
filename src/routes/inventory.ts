@@ -306,24 +306,57 @@ router.get('/catalog-search', async (req, res) => {
     if (q.length < 2) return res.json([]);
     db = await dbManager.getConnection();
     const likeQ = `%${q}%`;
-    const rows = await db.all(
+    
+    // Pass 1: Query by name and aliases (extremely fast since name is primary search target)
+    const primaryRows = await db.all(
       `SELECT id, name, item_code, manufacturer, strength, packaging, mrp, generic_name
        FROM medicines
-       WHERE name LIKE ? OR api_reference LIKE ? OR item_code LIKE ? OR manufacturer LIKE ?
-       UNION
+       WHERE name LIKE ?
+       UNION ALL
        SELECT m.id, m.name, m.item_code, m.manufacturer, m.strength, m.packaging, m.mrp, m.generic_name
        FROM medicine_aliases a
        JOIN medicines m ON a.medicine_id = m.id
        WHERE a.alias_name LIKE ?
        ORDER BY name ASC LIMIT 25`,
-      [likeQ, likeQ, likeQ, likeQ, likeQ]
+      [likeQ, likeQ]
     );
+
+    const rows: any[] = [];
+    const seenIds = new Set<number>();
+    
+    for (const r of primaryRows) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        rows.push(r);
+      }
+    }
+
+    // Pass 2: Fall back to slower fields (api_reference, item_code, manufacturer) only if we need more results
+    if (rows.length < 25) {
+      const needed = 25 - rows.length;
+      const secondaryRows = await db.all(
+        `SELECT id, name, item_code, manufacturer, strength, packaging, mrp, generic_name
+         FROM medicines
+         WHERE api_reference LIKE ? OR item_code LIKE ? OR manufacturer LIKE ?
+         ORDER BY name ASC LIMIT ?`,
+        [likeQ, likeQ, likeQ, needed * 2]
+      );
+      for (const r of secondaryRows) {
+        if (!seenIds.has(r.id)) {
+          seenIds.add(r.id);
+          rows.push(r);
+          if (rows.length >= 25) break;
+        }
+      }
+    }
+
     res.json(rows);
   } catch (error: any) {
     console.error('Catalog search error:', error.message);
     res.status(500).json({ error: 'Search failed' });
   }
 });
+
 
 // Generate QR Code for an inventory item (Barcode/QR feature)
 import QRCode from 'qrcode';

@@ -2024,4 +2024,16 @@ router.post('/staged/:id/reject', async (req, res) => {
   }
 });
 
+// GET /reconciliation/bounced - Manually check and send bounced products alert
+router.get('/reconciliation/bounced', async (req, res) => {
+  try {
+    const { bouncedAlertService } = await import('../services/bouncedAlertService.js');
+    const sent = await bouncedAlertService.checkAndSendBouncedProductsAlert();
+    res.json({ success: true, notificationSent: sent });
+  } catch (error: any) {
+    console.error('Manual bounced alerts error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 export default router;

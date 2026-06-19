@@ -217,6 +217,8 @@ export const api = {
   catalogSearch: (q: string) => apiClient.get('/inventory/catalog-search', { params: { q } }).then(res => res.data),
   createMedicineAlias: (aliasName: string, medicineId: number) => apiClient.post('/inventory/medicines/alias', { alias_name: aliasName, medicine_id: medicineId }).then(res => res.data),
   getLearnedMapping: (name: string) => apiClient.get('/learning/mapping', { params: { name } }).then(res => res.data),
+  getManufacturers: (q: string) => apiClient.get('/manufacturers', { params: { q } }).then(res => res.data),
+
 
   
   // CRM
@@ -434,7 +436,7 @@ export const api = {
   resolveOrderManually: (emailUid: number) => apiClient.post('/purchases/reconciliation/resolve', { email_uid: emailUid }).then(res => res.data),
 
   // Staged / Offline Sync Review
-  getStagedSales: () => apiClient.get('/sales/staged').then(res => res.data),
+  getStagedSales: (all?: boolean) => apiClient.get(all ? '/sales/staged?all=true' : '/sales/staged').then(res => res.data),
   approveStagedSale: (id: number, data: any) => apiClient.post(`/sales/staged/${id}/approve`, data).then(res => res.data),
   rejectStagedSale: (id: number) => apiClient.post(`/sales/staged/${id}/reject`).then(res => res.data),
   getStagedPurchases: () => apiClient.get('/purchases/staged').then(res => res.data),

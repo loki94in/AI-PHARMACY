@@ -350,5 +350,41 @@ router.post('/auto-enrich', async (req, res) => {
   }
 });
 
+// GET unique manufacturers list matching search term
+router.get('/manufacturers', async (req, res) => {
+  let db;
+  try {
+    const q = (req.query.q as string || '').trim();
+    db = await dbManager.getConnection();
+    let rows;
+    if (q.length > 0) {
+      const likeQ = `%${q}%`;
+      rows = await db.all(
+        `SELECT DISTINCT manufacturer 
+         FROM medicines 
+         WHERE manufacturer LIKE ? AND manufacturer IS NOT NULL AND manufacturer != '' 
+         ORDER BY manufacturer ASC 
+         LIMIT 20`,
+        [likeQ]
+      );
+    } else {
+      rows = await db.all(
+        `SELECT DISTINCT manufacturer 
+         FROM medicines 
+         WHERE manufacturer IS NOT NULL AND manufacturer != '' 
+         ORDER BY manufacturer ASC 
+         LIMIT 20`
+      );
+    }
+    await dbManager.close();
+    res.json(rows.map(r => r.manufacturer));
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch manufacturers:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
+
 

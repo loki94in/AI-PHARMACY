@@ -881,12 +881,16 @@ router.post('/sync', async (req, res) => {
   }
 });
 
-// Retrieve pending staged sales
+// Retrieve pending or all staged sales
 router.get('/staged', async (req, res) => {
+  const { all } = req.query;
   let db;
   try {
     db = await dbManager.getConnection();
-    const rows = await db.all(`SELECT * FROM staged_sales WHERE status = 'pending' ORDER BY sale_date DESC`);
+    const query = all === 'true'
+      ? `SELECT * FROM staged_sales ORDER BY sale_date DESC`
+      : `SELECT * FROM staged_sales WHERE status = 'pending' ORDER BY sale_date DESC`;
+    const rows = await db.all(query);
     const parsed = rows.map(r => ({
       ...r,
       items: JSON.parse(r.items_json)
@@ -966,6 +970,20 @@ router.post('/staged/:id/approve', async (req, res) => {
     await db.run(`UPDATE staged_sales SET status = 'approved' WHERE id = ?`, [id]);
 
     await db.run('COMMIT');
+
+    // Automatically send WhatsApp Invoice PDF
+    if (invoiceId) {
+      try {
+        const { whatsappInvoiceService } = await import('../services/whatsappInvoiceService.js');
+        // Run in background to prevent blocking response
+        whatsappInvoiceService.sendInvoiceViaWhatsApp(invoiceId).catch(waErr => {
+          console.error('[WhatsApp] Failed to send invoice PDF for approved staged sale:', waErr);
+        });
+      } catch (importErr) {
+        console.error('[WhatsApp] Failed to import whatsappInvoiceService:', importErr);
+      }
+    }
+
     res.json({ success: true, invoice_no, total });
   } catch (error: any) {
     if (db) {

@@ -40,6 +40,7 @@ interface BillItem {
   medicine_id: number | null;
   medicine_name: string;
   original_name?: string;
+  manufacturer?: string;
   batch_no: string;
   expiry_date: string;
   qty: number;
@@ -499,6 +500,7 @@ const Purchases: React.FC = () => {
       id: generateUUID(),
       medicine_id: null,
       medicine_name: '',
+      manufacturer: '',
       batch_no: '',
       expiry_date: '',
       qty: '',
@@ -569,6 +571,29 @@ const Purchases: React.FC = () => {
   });
   const [savingMedicine, setSavingMedicine] = useState(false);
   const [activeMedicineIndex, setActiveMedicineIndex] = useState<number | null>(null);
+  const [mfgSuggestions, setMfgSuggestions] = useState<string[]>([]);
+  const [showMfgSuggestions, setShowMfgSuggestions] = useState(false);
+
+  const handleMfgChange = async (val: string) => {
+    setNewMedicine(prev => ({ ...prev, manufacturer: val }));
+    try {
+      const res = await api.getManufacturers(val);
+      setMfgSuggestions(res || []);
+      setShowMfgSuggestions(true);
+    } catch (err) {
+      console.error('Error fetching manufacturers:', err);
+    }
+  };
+
+  const handleMfgFocus = async (val: string) => {
+    try {
+      const res = await api.getManufacturers(val);
+      setMfgSuggestions(res || []);
+      setShowMfgSuggestions(true);
+    } catch (err) {
+      console.error('Error fetching manufacturers:', err);
+    }
+  };
 
   // Enrichment Drawer States
   const [selectedEnrichedItem, setSelectedEnrichedItem] = useState<any>(null);
@@ -785,6 +810,7 @@ const Purchases: React.FC = () => {
 
     item.medicine_id = medicine.id;
     item.medicine_name = medicine.name;
+    item.manufacturer = medicine.manufacturer;
     item.mrp = medicine.mrp;
     item.rate = medicine.rate;
     item.cgst_per = medicine.cgst_per;
@@ -972,6 +998,7 @@ const Purchases: React.FC = () => {
                 const match = learned.medicine;
                 updatedItems[i].medicine_id = match.id;
                 updatedItems[i].medicine_name = match.name;
+                updatedItems[i].manufacturer = match.manufacturer;
                 updatedItems[i].mrp = updatedItems[i].mrp || match.mrp || 0;
                 updatedItems[i].rate = updatedItems[i].rate || match.rate || 0;
                 updatedItems[i].cgst_per = updatedItems[i].cgst_per || match.cgst_per || 0;
@@ -1039,6 +1066,7 @@ const Purchases: React.FC = () => {
               if (bestMatch) {
                 updatedItems[i].medicine_id = bestMatch.id;
                 updatedItems[i].medicine_name = bestMatch.name;
+                updatedItems[i].manufacturer = bestMatch.manufacturer;
                 updatedItems[i].mrp = updatedItems[i].mrp || bestMatch.mrp || 0;
                 updatedItems[i].rate = updatedItems[i].rate || bestMatch.rate || 0;
                 updatedItems[i].cgst_per = updatedItems[i].cgst_per || bestMatch.cgst_per || 0;
@@ -1049,6 +1077,7 @@ const Purchases: React.FC = () => {
                 // Suggest the original parsed name so it is visible and user can modify/correct it
                 updatedItems[i].medicine_id = null;
                 updatedItems[i].medicine_name = mName;
+                updatedItems[i].manufacturer = '';
                 updatedItems[i].amount = 0;
                 hasChanges = true;
               }
@@ -1326,6 +1355,7 @@ const Purchases: React.FC = () => {
             const match = learned.medicine;
             newItems[i].medicine_id = match.id;
             newItems[i].medicine_name = match.name;
+            newItems[i].manufacturer = match.manufacturer;
             newItems[i].mrp = newItems[i].mrp || match.mrp || 0;
             newItems[i].rate = newItems[i].rate || match.rate || 0;
             newItems[i].cgst_per = newItems[i].cgst_per || match.cgst_per || 0;
@@ -1341,17 +1371,20 @@ const Purchases: React.FC = () => {
             if (match) {
               newItems[i].medicine_id = match.id;
               newItems[i].medicine_name = match.name;
+              newItems[i].manufacturer = match.manufacturer;
               newItems[i].mrp = newItems[i].mrp || match.mrp || 0;
               newItems[i].rate = newItems[i].rate || match.rate || 0;
               newItems[i].cgst_per = newItems[i].cgst_per || match.cgst_per || 0;
               newItems[i].sgst_per = newItems[i].sgst_per || match.sgst_per || 0;
             } else {
               newItems[i].medicine_id = null;
-              newItems[i].medicine_name = '';
+              newItems[i].medicine_name = mName;
+              newItems[i].manufacturer = '';
             }
           } else {
             newItems[i].medicine_id = null;
-            newItems[i].medicine_name = '';
+            newItems[i].medicine_name = mName;
+            newItems[i].manufacturer = '';
           }
         } catch (err) {
           console.error('Error auto-resolving uploaded medicine:', mName, err);
@@ -2393,15 +2426,62 @@ const Purchases: React.FC = () => {
               </div>
 
               {/* Row 4 - Mfg & Mkdt */}
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium text-gray-300 mb-1">Mfg (Manufacturer)</label>
                 <input
                   type="text"
                   value={newMedicine.manufacturer}
-                  onChange={(e) => setNewMedicine({ ...newMedicine, manufacturer: e.target.value })}
+                  onChange={(e) => handleMfgChange(e.target.value)}
+                  onFocus={(e) => handleMfgFocus(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowMfgSuggestions(false), 200)}
                   className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g. Cipla Ltd"
                 />
+                {showMfgSuggestions && (() => {
+                  const billMfgs = items.map(item => item.manufacturer || '').filter(Boolean);
+                  const query = newMedicine.manufacturer.toLowerCase();
+                  const uniqueBillMfgs = Array.from(new Set(billMfgs)).filter(m => m.toLowerCase().includes(query));
+                  
+                  const combinedMfgs = [...uniqueBillMfgs];
+                  mfgSuggestions.forEach(dbMfg => {
+                    if (!combinedMfgs.some(c => c.toLowerCase() === dbMfg.toLowerCase())) {
+                      combinedMfgs.push(dbMfg);
+                    }
+                  });
+
+                  if (combinedMfgs.length === 0) return null;
+
+                  return (
+                    <div className="absolute top-full left-0 w-full mt-1 bg-bg2 border border-glass-border rounded-lg shadow-lg max-h-40 overflow-y-auto z-dropdown">
+                      {combinedMfgs.slice(0, 15).map((mfgName, idx) => {
+                        const isInBill = billMfgs.some(m => m.toLowerCase() === mfgName.toLowerCase());
+                        const isInDb = mfgSuggestions.some(m => m.toLowerCase() === mfgName.toLowerCase());
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setNewMedicine(prev => ({ ...prev, manufacturer: mfgName }))}
+                            className="w-full text-left px-3 py-2 hover:bg-white/10 text-text border-b border-glass-border/10 last:border-0 flex items-center justify-between text-xs"
+                          >
+                            <span className="truncate pr-2 font-medium">{mfgName}</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {isInBill && (
+                                <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                                  In Bill
+                                </span>
+                              )}
+                              {isInDb && (
+                                <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                                  In Database
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div>

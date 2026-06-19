@@ -63,6 +63,29 @@ const DatabasePage = () => {
   const [bulkCategory, setBulkCategory] = useState('');
   const [adding, setAdding] = useState(false);
   const [addMessage, setAddMessage] = useState<string | null>(null);
+  const [mfgSuggestions, setMfgSuggestions] = useState<string[]>([]);
+  const [showMfgSuggestions, setShowMfgSuggestions] = useState(false);
+
+  const handleMfgChange = async (val: string) => {
+    setSingleForm(prev => ({ ...prev, manufacturer: val }));
+    try {
+      const res = await api.getManufacturers(val);
+      setMfgSuggestions(res || []);
+      setShowMfgSuggestions(true);
+    } catch (err) {
+      console.error('Error fetching manufacturers:', err);
+    }
+  };
+
+  const handleMfgFocus = async (val: string) => {
+    try {
+      const res = await api.getManufacturers(val);
+      setMfgSuggestions(res || []);
+      setShowMfgSuggestions(true);
+    } catch (err) {
+      console.error('Error fetching manufacturers:', err);
+    }
+  };
   
   // Pagination
   const [page, setPage] = useState(1);
@@ -793,15 +816,34 @@ const DatabasePage = () => {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
+                    <div className="relative">
                       <label className="block text-xs font-semibold text-muted mb-1">Manufacturer</label>
                       <input 
                         type="text" 
                         className="w-full px-3 py-2 bg-bg3 border border-glass-border rounded-lg text-sm text-text focus:border-green-500 focus:outline-none transition-all"
                         value={singleForm.manufacturer}
-                        onChange={e => setSingleForm({...singleForm, manufacturer: e.target.value})}
+                        onChange={(e) => handleMfgChange(e.target.value)}
+                        onFocus={(e) => handleMfgFocus(e.target.value)}
+                        onBlur={() => setTimeout(() => setShowMfgSuggestions(false), 200)}
                         placeholder="e.g. Cipla Ltd"
                       />
+                      {showMfgSuggestions && mfgSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 w-full mt-1 bg-bg2 border border-glass-border rounded-lg shadow-lg max-h-40 overflow-y-auto z-dropdown text-left">
+                          {mfgSuggestions.map((mfgName, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setSingleForm(prev => ({ ...prev, manufacturer: mfgName }))}
+                              className="w-full text-left px-3 py-2 hover:bg-white/10 text-text border-b border-glass-border/10 last:border-0 flex items-center justify-between text-xs"
+                            >
+                              <span className="truncate pr-2 font-medium">{mfgName}</span>
+                              <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0">
+                                In Database
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-muted mb-1">Marketed By</label>

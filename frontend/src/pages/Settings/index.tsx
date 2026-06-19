@@ -77,6 +77,7 @@ const Settings = () => {
   const [emailAlerts, setEmailAlerts] = useState(false);
   const [lowStockThreshold, setLowStockThreshold] = useState<number>(10);
   const [expiryAlertDays, setExpiryAlertDays] = useState<number>(90);
+  const [dineshWhatsappNumber, setDineshWhatsappNumber] = useState('');
 
   // Messaging Integrations
   const [telegramEnabled, setTelegramEnabled] = useState(false);
@@ -215,6 +216,7 @@ const Settings = () => {
           setEmailAlerts(data.email_alerts === 'true');
           setLowStockThreshold(Number(data.low_stock_threshold) || 10);
           setExpiryAlertDays(Number(data.expiry_alert_days) || 90);
+          setDineshWhatsappNumber(data.dinesh_whatsapp_number || '');
 
           setTelegramEnabled(data.telegram_enabled === 'true');
           setTelegramToken(data.telegram_token || '');
@@ -295,6 +297,7 @@ const Settings = () => {
       email_alerts: emailAlerts.toString(),
       low_stock_threshold: lowStockThreshold.toString(),
       expiry_alert_days: expiryAlertDays.toString(),
+      dinesh_whatsapp_number: dineshWhatsappNumber,
 
       telegram_enabled: telegramEnabled.toString(),
       telegram_token: telegramToken,
@@ -762,6 +765,21 @@ const Settings = () => {
               value={expiryAlertDays}
               onChange={(e) => setExpiryAlertDays(Number(e.target.value))}
             />
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <label htmlFor="dineshWhatsappNumber" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Bounced Alerts WhatsApp Number (Dinesh)
+            </label>
+            <input
+              id="dineshWhatsappNumber"
+              type="text"
+              className="premium-input w-full bg-bg border border-border"
+              placeholder="e.g. 9876543210 or 919876543210"
+              value={dineshWhatsappNumber}
+              onChange={(e) => setDineshWhatsappNumber(e.target.value)}
+            />
+            <p className="text-[10px] text-muted">Daily morning notification (at 9:00 AM) summarizing missing bills or bounced medicines will be sent to this number.</p>
           </div>
         </div>
 

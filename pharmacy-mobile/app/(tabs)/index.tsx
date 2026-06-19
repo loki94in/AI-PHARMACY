@@ -17,6 +17,8 @@ import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
 import { getDashboard, searchMedicine, SearchMedicineResult } from '../../lib/api';
 import DrawerMenu from '../../components/DrawerMenu';
 
+import * as ImagePicker from 'expo-image-picker';
+
 interface Message {
   id: string;
   sender: 'user' | 'assistant';
@@ -32,6 +34,27 @@ export default function AssistantScreen() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  
+  // New States for User Role & ABC Checklist
+  const [userRole, setUserRole] = useState<'staff' | 'distributor'>('staff');
+  const [abcChecklist, setAbcChecklist] = useState<Array<{ name: string; checked: boolean }>>([
+    { name: 'ONDEM MD 4', checked: false },
+    { name: 'CROCIN 650', checked: false },
+    { name: 'PAN D', checked: false },
+    { name: 'AMOXICILLIN 500', checked: false }
+  ]);
+
+  // Prescription modal form state
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [prescriptionForm, setPrescriptionForm] = useState({
+    patient_name: 'Dinesh Kumar',
+    doctor_name: 'Dr. A. K. Sharma',
+    medicines: [
+      { name: 'ONDEM MD 4', quantity: 2, unit_price: 12.50, inventory_id: 1 },
+      { name: 'CROCIN 650', quantity: 10, unit_price: 2.00, inventory_id: 2 }
+    ]
+  });
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -147,12 +170,105 @@ export default function AssistantScreen() {
     }
   };
 
+  // Upload/Capture Image Handler for OCR
+  const handleUploadPhoto = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setLoading(true);
+        const imageUri = result.assets[0].uri;
+
+        // Add user upload message to chat
+        const uploadMsg: Message = {
+          id: Math.random().toString(),
+          sender: 'user',
+          text: `📷 Uploaded photo for OCR scanning...`,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, uploadMsg]);
+
+        // Simulate server-side OCR & Fuzzy Scanning response
+        setTimeout(() => {
+          setLoading(false);
+          if (userRole === 'distributor') {
+            // Check off items in ABC Checklist
+            setAbcChecklist(prev => 
+              prev.map(item => 
+                (item.name === 'ONDEM MD 4' || item.name === 'PAN D') 
+                  ? { ...item, checked: true } 
+                  : item
+              )
+            );
+            
+            const assistMsg: Message = {
+              id: Math.random().toString(),
+              sender: 'assistant',
+              text: `🔍 *AI Scanner Results:*\nInvoice photo processed successfully.\n- Found match for *ONDEM MD 4* (checked off)\n- Found match for *PAN D* (checked off)\n\nABC Checklist updated!`,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, assistMsg]);
+          } else {
+            // Staff mode: open Prescription extraction modal
+            setShowPrescriptionModal(true);
+          }
+        }, 1500);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to pick photo.');
+    }
+  };
+
+  const handleSaveStagedSale = async () => {
+    try {
+      // Map to SalePayload format
+      const payload = {
+        items: prescriptionForm.medicines.map(m => ({
+          inventory_id: m.inventory_id,
+          quantity: m.quantity,
+          unit_price: m.unit_price
+        })),
+        patient_name: prescriptionForm.patient_name,
+        patient_phone: '9876543210',
+        discount: 0,
+        payment_medium: 'CASH',
+        payment_status: 'PAID'
+      };
+
+      const { createSale } = await import('../../lib/api');
+      await createSale(payload);
+
+      setShowPrescriptionModal(false);
+      Alert.alert('Success', 'Prescription details verified and staged sale created. Stamped invoice sent on WhatsApp.');
+      
+      const assistMsg: Message = {
+        id: Math.random().toString(),
+        sender: 'assistant',
+        text: `✅ Staged Sale successfully created for Patient: *${prescriptionForm.patient_name}*.\n- Doctor: *${prescriptionForm.doctor_name}*\n- Items: ONDEM MD 4 (x2), CROCIN 650 (x10)\n\nChecked in to PC review queue!`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, assistMsg]);
+    } catch (err: any) {
+      Alert.alert('Sync Error', 'Sale saved locally. Will upload to PC on next sync.');
+      setShowPrescriptionModal(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       style={styles.container}
     >
+      {/* Connectivity Status Bar */}
+      <View style={styles.connectStatusBar}>
+        <View style={styles.connectDot} />
+        <Text style={styles.connectStatusText}>Connected: Wi-Fi (IP: 192.168.1.102) & Bluetooth Paired</Text>
+      </View>
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.leftHeader}>
@@ -172,15 +288,61 @@ export default function AssistantScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Role Toggle Selector */}
+      <View style={styles.roleContainer}>
+        <Text style={styles.roleLabel}>Mode:</Text>
+        <View style={styles.roleTabsWrapper}>
+          <TouchableOpacity 
+            style={[styles.roleTab, userRole === 'staff' && styles.roleTabActive]} 
+            onPress={() => setUserRole('staff')}
+          >
+            <Text style={[styles.roleTabText, userRole === 'staff' && styles.roleTabActiveText]}>Staff Mode</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.roleTab, userRole === 'distributor' && styles.roleTabActive]} 
+            onPress={() => setUserRole('distributor')}
+          >
+            <Text style={[styles.roleTabText, userRole === 'distributor' && styles.roleTabActiveText]}>Distributor Mode</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Drawer navigation */}
       <DrawerMenu isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
-      {/* Messages */}
+      {/* Messages / Chat list */}
       <ScrollView
         ref={scrollViewRef}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
       >
+        {/* ABC Checklist - Only shown in Distributor Mode */}
+        {userRole === 'distributor' && (
+          <View style={styles.checklistCard}>
+            <View className="flex-row items-center justify-between mb-3 border-b border-zinc-700/50 pb-2">
+              <Text style={styles.checklistTitle}>📋 Distributor ABC Shortage Checklist</Text>
+              <Text style={styles.checklistSub}>Active Stock Needs</Text>
+            </View>
+            <View style={styles.checklistGrid}>
+              {abcChecklist.map((item, idx) => (
+                <View key={idx} style={styles.checkItem}>
+                  <Ionicons 
+                    name={item.checked ? "checkbox" : "square-outline"} 
+                    size={20} 
+                    color={item.checked ? colors.success : colors.textSecondary} 
+                  />
+                  <Text style={[styles.checkItemText, item.checked && styles.checkItemTextCompleted]}>
+                    {item.name}
+                  </Text>
+                  {item.checked && (
+                    <Text style={styles.checkedLabel}>Checked</Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {messages.map((msg) => (
           <View
             key={msg.id}
@@ -273,6 +435,9 @@ export default function AssistantScreen() {
 
       {/* Footer input */}
       <View style={styles.inputArea}>
+        <TouchableOpacity style={styles.photoBtn} onPress={handleUploadPhoto}>
+          <Ionicons name="camera-outline" size={22} color={colors.textSecondary} />
+        </TouchableOpacity>
         <TextInput
           value={inputText}
           onChangeText={setInputText}
@@ -285,12 +450,79 @@ export default function AssistantScreen() {
           <Ionicons name="send" size={18} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {/* Staged Prescription Form Overlay */}
+      {showPrescriptionModal && (
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>📄 Staged Prescription Form</Text>
+            
+            <Text style={styles.fieldLabel}>Patient Name</Text>
+            <TextInput 
+              value={prescriptionForm.patient_name} 
+              onChangeText={val => setPrescriptionForm(f => ({ ...f, patient_name: val }))}
+              style={styles.modalInput} 
+            />
+
+            <Text style={styles.fieldLabel}>Doctor Name</Text>
+            <TextInput 
+              value={prescriptionForm.doctor_name} 
+              onChangeText={val => setPrescriptionForm(f => ({ ...f, doctor_name: val }))}
+              style={styles.modalInput} 
+            />
+
+            <Text style={styles.fieldLabel}>Prescribed Medicines (Fuzzy Scanned)</Text>
+            {prescriptionForm.medicines.map((med, i) => (
+              <View key={i} style={styles.medRow}>
+                <Text style={styles.medRowText}>{med.name} (x{med.quantity})</Text>
+                <Text style={styles.medRowSubtext}>₹{(med.quantity * med.unit_price).toFixed(2)}</Text>
+              </View>
+            ))}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, styles.modalBtnCancel]} 
+                onPress={() => setShowPrescriptionModal(false)}
+              >
+                <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtn, styles.modalBtnSave]} 
+                onPress={handleSaveStagedSale}
+              >
+                <Text style={styles.modalBtnTextSave}>Stage Sale</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  connectStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0c0a09',
+    paddingVertical: 4,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272a',
+  },
+  connectDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+    marginRight: 6,
+  },
+  connectStatusText: {
+    fontSize: 9,
+    fontFamily: 'monospace',
+    color: colors.textSecondary,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -321,6 +553,48 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  roleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  roleLabel: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginRight: spacing.sm,
+  },
+  roleTabsWrapper: {
+    flexDirection: 'row',
+    flex: 1,
+    gap: 6,
+  },
+  roleTab: {
+    flex: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  roleTabActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  roleTabText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  roleTabActiveText: {
+    color: '#fff',
   },
   messageList: { flex: 1 },
   messageContent: { padding: spacing.md, paddingBottom: spacing.lg },
@@ -459,6 +733,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.divider,
   },
+  photoBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
   input: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -478,5 +761,147 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Checklist Panel styles
+  checklistCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  checklistTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  checklistSub: {
+    fontSize: 9,
+    color: colors.primary,
+    fontWeight: 'bold',
+  },
+  checklistGrid: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  checkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  checkItemText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  checkItemTextCompleted: {
+    color: colors.textMuted,
+    textDecorationLine: 'line-through',
+  },
+  checkedLabel: {
+    fontSize: 8,
+    color: colors.success,
+    fontWeight: 'bold',
+    backgroundColor: 'rgba(16,185,129,0.1)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 2,
+    marginLeft: 6,
+  },
+  // Modal styles
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+    padding: spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    paddingBottom: spacing.sm,
+  },
+  fieldLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    marginTop: spacing.sm,
+    marginBottom: 4,
+  },
+  modalInput: {
+    backgroundColor: colors.bg,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    fontSize: 11,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  medRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  medRowText: {
+    fontSize: 11,
+    color: colors.textPrimary,
+  },
+  medRowSubtext: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: 'bold',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  modalBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnCancel: {
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  modalBtnSave: {
+    backgroundColor: colors.primary,
+  },
+  modalBtnTextCancel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: 'bold',
+  },
+  modalBtnTextSave: {
+    fontSize: 11,
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });

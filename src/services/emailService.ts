@@ -2009,7 +2009,7 @@ export class EmailService {
             const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
             const pdfDoc = await pdfjsLib.getDocument({
               data: new Uint8Array(fileBuffer),
-              CanvasFactory: canvasFactory
+              CanvasFactory: NodeCanvasFactory
             } as any).promise;
             const numPages = pdfDoc.numPages;
             let ocrText = '';
@@ -2044,11 +2044,15 @@ export class EmailService {
             }
           } catch (ocrErr) {
             console.error('[emailService] OCR PDF rendering failed, attempting direct image OCR:', ocrErr);
-            try {
-              const directOcr = await aiCameraService.processImage(fileBuffer, true);
-              if (directOcr?.text) content = directOcr.text;
-            } catch (err2) {
-              console.error('[emailService] Direct image OCR also failed:', err2);
+            if (!filePath.toLowerCase().endsWith('.pdf')) {
+              try {
+                const directOcr = await aiCameraService.processImage(fileBuffer, true);
+                if (directOcr?.text) content = directOcr.text;
+              } catch (err2) {
+                console.error('[emailService] Direct image OCR fallback also failed:', err2);
+              }
+            } else {
+              console.warn('[emailService] Skipping direct image OCR fallback because file is a PDF.');
             }
           }
         };
