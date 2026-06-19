@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiClient, api } from '../../services/api';
 import {
   Settings as SettingsIcon,
@@ -909,9 +910,17 @@ const Settings = () => {
           </div>
 
           <div className="space-y-2 md:col-span-2 border border-glass-border/40 p-4 rounded-lg bg-zinc-900/20">
-            <label className="text-xs font-bold text-muted uppercase tracking-wider block mb-2">
-              Registered Mobile Device
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-muted uppercase tracking-wider block">
+                Registered Mobile Device
+              </label>
+              <Link
+                to="/device-logs"
+                className="text-[10px] font-bold text-sky hover:text-sky/80 transition-colors flex items-center gap-1"
+              >
+                <History size={11} /> View Connection Logs
+              </Link>
+            </div>
             {adminAuthorizedDeviceId ? (
               <div className="flex items-center justify-between">
                 <div>

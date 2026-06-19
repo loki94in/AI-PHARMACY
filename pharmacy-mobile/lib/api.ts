@@ -471,23 +471,20 @@ export async function createSale(payload: SalePayload): Promise<{ success: boole
     const total = Math.round(subtotal + tax - (payload.discount || 0));
     const tempInvoiceNo = `TEMP-MOB-${Date.now()}`;
 
-    // Mobile fallback task creation for Admin Remote Operations
-    const adminActive = await isAdminMode();
-    if (adminActive) {
-      const message = `Dear ${payload.patient_name || 'Customer'},\n\nThank you for shopping with us! Your invoice ${tempInvoiceNo} for ₹${total} is created successfully.\n\n— AI Pharmacy OS`;
+    // Mobile fallback task creation for independent operations
+    const message = `Dear ${payload.patient_name || 'Customer'},\n\nThank you for shopping with us! Your invoice ${tempInvoiceNo} for ₹${total} is created successfully.\n\n— AI Pharmacy OS`;
+    
+    if (payload.patient_phone) {
+      const task = await saveMobileAutomationTask({
+        type: 'whatsapp',
+        recipient: payload.patient_phone,
+        message: message,
+        status: 'pending',
+        invoice_no: tempInvoiceNo
+      });
       
-      if (payload.patient_phone) {
-        const task = await saveMobileAutomationTask({
-          type: 'whatsapp',
-          recipient: payload.patient_phone,
-          message: message,
-          status: 'pending',
-          invoice_no: tempInvoiceNo
-        });
-        
-        // Execute direct send in background
-        retryMobileFallbackTask(task.id).catch(console.error);
-      }
+      // Execute direct send in background
+      retryMobileFallbackTask(task.id).catch(console.error);
     }
 
     return {

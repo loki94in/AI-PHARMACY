@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, Modal, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as SecureStore from '../../../lib/secureStore';
@@ -17,12 +17,43 @@ export default function MoreScreen() {
   const router = useRouter();
   const [appLockEnabled, setAppLockEnabled] = useState(false);
 
+  // Gmail Direct Config state
+  const [gmailModalVisible, setGmailModalVisible] = useState(false);
+  const [gmailUser, setGmailUser] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [refreshToken, setRefreshToken] = useState('');
+
   useEffect(() => {
     (async () => {
       const enabled = await SecureStore.getItemAsync('app_lock_enabled');
       setAppLockEnabled(enabled === 'true');
+
+      // Load cached Gmail configs
+      setGmailUser((await SecureStore.getItemAsync('gmail_user')) || '');
+      setClientId((await SecureStore.getItemAsync('google_client_id')) || '');
+      setClientSecret((await SecureStore.getItemAsync('google_client_secret')) || '');
+      setRefreshToken((await SecureStore.getItemAsync('gmail_oauth_refresh_token')) || '');
     })();
   }, []);
+
+  const handleSaveGmailConfig = async () => {
+    try {
+      await SecureStore.setItemAsync('gmail_user', gmailUser.trim());
+      await SecureStore.setItemAsync('google_client_id', clientId.trim());
+      await SecureStore.setItemAsync('google_client_secret', clientSecret.trim());
+      await SecureStore.setItemAsync('gmail_oauth_refresh_token', refreshToken.trim());
+      
+      // Reset access token so it forces refresh with the new credentials
+      await SecureStore.deleteItemAsync('gmail_oauth_access_token');
+      await SecureStore.deleteItemAsync('gmail_oauth_token_expiry');
+
+      setGmailModalVisible(false);
+      Alert.alert('Settings Saved', 'Direct Gmail API credentials updated. The phone will now sync emails independently.');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save Gmail API settings.');
+    }
+  };
 
   const toggleAppLock = async (value: boolean) => {
     setAppLockEnabled(value);
@@ -117,6 +148,18 @@ export default function MoreScreen() {
         </TouchableOpacity>
       )}
 
+      <Text style={[typography.label, { marginTop: spacing.xl, marginBottom: spacing.md }]}>DIRECT GMAIL MODE</Text>
+      <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => setGmailModalVisible(true)}>
+        <View style={[styles.iconWrap, { backgroundColor: colors.accent + '20' }]}>
+          <Ionicons name="mail-unread-outline" size={24} color={colors.accent} />
+        </View>
+        <View style={styles.cardText}>
+          <Text style={typography.body}>Configure Direct Gmail API</Text>
+          <Text style={typography.bodySmall}>Run email inbox syncing directly on the phone</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+      </TouchableOpacity>
+
       <Text style={[typography.label, { marginTop: spacing.xl, marginBottom: spacing.md }]}>CONNECTION</Text>
       <TouchableOpacity style={[styles.card, styles.dangerCard]} activeOpacity={0.7} onPress={handleDisconnect}>
         <View style={[styles.iconWrap, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
@@ -128,6 +171,98 @@ export default function MoreScreen() {
         </View>
         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
       </TouchableOpacity>
+
+      {/* ─── DIRECT GMAIL API CONFIGURATION MODAL ───────────────────────── */}
+      <Modal
+        visible={gmailModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setGmailModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={typography.h2}>Direct Gmail API</Text>
+                <Text style={styles.modalSubtitle}>Configure direct phone-to-Google sync settings</Text>
+              </View>
+              <TouchableOpacity onPress={() => setGmailModalVisible(false)}>
+                <Ionicons name="close-circle-outline" size={28} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+              <View style={styles.formCard}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Gmail User Email</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={gmailUser}
+                    onChangeText={setGmailUser}
+                    placeholder="e.g. pharmacy@gmail.com"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Google Client ID</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={clientId}
+                    onChangeText={setClientId}
+                    placeholder="Enter Google Client ID"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Google Client Secret</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={clientSecret}
+                    onChangeText={setClientSecret}
+                    placeholder="Enter Google Client Secret"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    secureTextEntry
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>OAuth Refresh Token</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={refreshToken}
+                    onChangeText={setRefreshToken}
+                    placeholder="Enter Gmail OAuth Refresh Token"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnCancel]}
+                  onPress={() => setGmailModalVisible(false)}
+                >
+                  <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnSave]}
+                  onPress={handleSaveGmailConfig}
+                >
+                  <Text style={styles.modalBtnTextSave}>Save Settings</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -149,4 +284,43 @@ const styles = StyleSheet.create({
   dangerCard: { borderColor: 'rgba(239,68,68,0.2)' },
   iconWrap: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginRight: spacing.md },
   cardText: { flex: 1 },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  modalContent: {
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    height: '80%',
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    marginBottom: spacing.md,
+  },
+  modalSubtitle: { ...typography.bodySmall, color: colors.textMuted },
+  modalScroll: { flex: 1 },
+  formCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, gap: spacing.md },
+  inputGroup: { gap: 4 },
+  inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
+  textInput: {
+    backgroundColor: colors.bg,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    fontSize: 14,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.lg },
+  modalBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  modalBtnCancel: { backgroundColor: colors.surfaceLight },
+  modalBtnSave: { backgroundColor: colors.accent },
+  modalBtnTextCancel: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
+  modalBtnTextSave: { ...typography.bodySmall, color: colors.textInverse, fontWeight: '700' },
 });

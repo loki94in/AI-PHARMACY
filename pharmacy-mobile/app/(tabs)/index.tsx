@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,10 +31,43 @@ interface Message {
   products?: SearchMedicineResult[];
 }
 
+interface ChatInputProps {
+  onSend: (text: string) => void;
+  onUploadPhoto: () => void;
+}
+
+const ChatInput = React.memo(({ onSend, onUploadPhoto }: ChatInputProps) => {
+  const [text, setText] = useState('');
+
+  const handleSend = () => {
+    if (!text.trim()) return;
+    onSend(text);
+    setText('');
+  };
+
+  return (
+    <View style={styles.inputArea}>
+      <TouchableOpacity style={styles.photoBtn} onPress={onUploadPhoto}>
+        <Ionicons name="camera-outline" size={22} color={colors.textSecondary} />
+      </TouchableOpacity>
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        placeholder="Ask Pharmacy Genius..."
+        placeholderTextColor={colors.textMuted}
+        style={styles.input}
+        onSubmitEditing={handleSend}
+      />
+      <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+        <Ionicons name="send" size={18} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+});
+
 export default function AssistantScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
-  const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -141,7 +175,6 @@ export default function AssistantScreen() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputText('');
     setLoading(true);
 
     // Simulate AI thinking and responsive action logic
@@ -564,177 +597,186 @@ export default function AssistantScreen() {
       </View>
 
       {/* Footer input */}
-      <View style={styles.inputArea}>
-        <TouchableOpacity style={styles.photoBtn} onPress={handleUploadPhoto}>
-          <Ionicons name="camera-outline" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
-        <TextInput
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Ask Pharmacy Genius..."
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          onSubmitEditing={() => handleSend(inputText)}
-        />
-        <TouchableOpacity style={styles.sendBtn} onPress={() => handleSend(inputText)}>
-          <Ionicons name="send" size={18} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      <ChatInput onSend={handleSend} onUploadPhoto={handleUploadPhoto} />
 
       {/* ── Quick Process Sale Modal ── */}
-      {quickSaleItem && (
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            {quickSaleSuccess ? (
-              // ── Success state ──
-              <>
-                <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
-                  <Ionicons
-                    name={quickSaleSuccess.isOffline ? 'cloud-offline-outline' : 'checkmark-circle'}
-                    size={56}
-                    color={quickSaleSuccess.isOffline ? colors.primary : colors.success}
-                  />
-                  <Text style={[styles.modalTitle, { textAlign: 'center', marginTop: spacing.md, borderBottomWidth: 0 }]}>
-                    {quickSaleSuccess.isOffline ? '💾 Saved Offline' : '✅ Sale Processed!'}
-                  </Text>
-                  <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
-                    Invoice: {quickSaleSuccess.invoice_no}
-                  </Text>
-                  <Text style={[typography.h3, { color: colors.accent, marginTop: spacing.sm }]}>
-                    ₹{quickSaleSuccess.total.toFixed(2)}
-                  </Text>
-                  {quickSaleSuccess.isOffline && (
-                    <View style={styles.offlineBadge}>
-                      <Ionicons name="sync-outline" size={12} color={colors.primary} />
-                      <Text style={styles.offlineBadgeText}>Will sync when online</Text>
+      <Modal
+        visible={quickSaleItem !== null}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setQuickSaleItem(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView 
+            contentContainerStyle={styles.modalScrollContent}
+            keyboardShouldPersistTaps="handled"
+            style={{ width: '100%' }}
+          >
+            {quickSaleItem && (
+              <View style={styles.modalCard}>
+                {quickSaleSuccess ? (
+                  // ── Success state ──
+                  <>
+                    <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
+                      <Ionicons
+                        name={quickSaleSuccess.isOffline ? 'cloud-offline-outline' : 'checkmark-circle'}
+                        size={56}
+                        color={quickSaleSuccess.isOffline ? colors.primary : colors.success}
+                      />
+                      <Text style={[styles.modalTitle, { textAlign: 'center', marginTop: spacing.md, borderBottomWidth: 0 }]}>
+                        {quickSaleSuccess.isOffline ? '💾 Saved Offline' : '✅ Sale Processed!'}
+                      </Text>
+                      <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
+                        Invoice: {quickSaleSuccess.invoice_no}
+                      </Text>
+                      <Text style={[typography.h3, { color: colors.accent, marginTop: spacing.sm }]}>
+                        ₹{quickSaleSuccess.total.toFixed(2)}
+                      </Text>
+                      {quickSaleSuccess.isOffline && (
+                        <View style={styles.offlineBadge}>
+                          <Ionicons name="sync-outline" size={12} color={colors.primary} />
+                          <Text style={styles.offlineBadgeText}>Will sync when online</Text>
+                        </View>
+                      )}
                     </View>
-                  )}
-                </View>
-                <TouchableOpacity
-                  style={[styles.modalBtn, styles.modalBtnSave, { alignSelf: 'center', paddingHorizontal: spacing.xl }]}
-                  onPress={() => setQuickSaleItem(null)}
-                >
-                  <Text style={styles.modalBtnTextSave}>Done</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              // ── Form state ──
-              <>
-                <Text style={styles.modalTitle}>⚡ Quick Process Sale</Text>
+                    <TouchableOpacity
+                      style={[styles.modalBtn, styles.modalBtnSave, { alignSelf: 'center', paddingHorizontal: spacing.xl }]}
+                      onPress={() => setQuickSaleItem(null)}
+                    >
+                      <Text style={styles.modalBtnTextSave}>Done</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  // ── Form state ──
+                  <>
+                    <Text style={styles.modalTitle}>⚡ Quick Process Sale</Text>
 
-                <Text style={styles.fieldLabel}>Medicine</Text>
-                <View style={styles.quickMedRow}>
-                  <Text style={styles.quickMedName}>{quickSaleItem.medicine_name}</Text>
-                  <Text style={styles.quickMedBatch}>Batch: {quickSaleItem.batch_no}</Text>
-                  <Text style={[styles.quickMedBatch, { color: colors.accent }]}>₹{Number(quickSaleItem.mrp || quickSaleItem.unit_price).toFixed(2)}</Text>
-                  <Text style={[styles.quickMedBatch, { color: colors.textMuted }]}>Stock: {quickSaleItem.quantity}</Text>
-                </View>
+                    <Text style={styles.fieldLabel}>Medicine</Text>
+                    <View style={styles.quickMedRow}>
+                      <Text style={styles.quickMedName}>{quickSaleItem.medicine_name}</Text>
+                      <Text style={styles.quickMedBatch}>Batch: {quickSaleItem.batch_no}</Text>
+                      <Text style={[styles.quickMedBatch, { color: colors.accent }]}>₹{Number(quickSaleItem.mrp || quickSaleItem.unit_price).toFixed(2)}</Text>
+                      <Text style={[styles.quickMedBatch, { color: colors.textMuted }]}>Stock: {quickSaleItem.quantity}</Text>
+                    </View>
 
-                <Text style={styles.fieldLabel}>Quantity</Text>
-                <TextInput
-                  value={quickSaleQty}
-                  onChangeText={setQuickSaleQty}
-                  style={styles.modalInput}
-                  keyboardType="number-pad"
-                  placeholder="1"
-                  placeholderTextColor={colors.textMuted}
-                />
+                    <Text style={styles.fieldLabel}>Quantity</Text>
+                    <TextInput
+                      value={quickSaleQty}
+                      onChangeText={setQuickSaleQty}
+                      style={styles.modalInput}
+                      keyboardType="number-pad"
+                      placeholder="1"
+                      placeholderTextColor={colors.textMuted}
+                    />
 
-                <Text style={styles.fieldLabel}>Patient Name (optional)</Text>
-                <TextInput
-                  value={quickSalePatient}
-                  onChangeText={setQuickSalePatient}
-                  style={styles.modalInput}
-                  placeholder="Walk-in Customer"
-                  placeholderTextColor={colors.textMuted}
-                />
+                    <Text style={styles.fieldLabel}>Patient Name (optional)</Text>
+                    <TextInput
+                      value={quickSalePatient}
+                      onChangeText={setQuickSalePatient}
+                      style={styles.modalInput}
+                      placeholder="Walk-in Customer"
+                      placeholderTextColor={colors.textMuted}
+                    />
 
-                {/* Total Preview */}
-                <View style={styles.quickTotalRow}>
-                  <Text style={styles.quickTotalLabel}>Total</Text>
-                  <Text style={styles.quickTotalValue}>
-                    ₹{((parseInt(quickSaleQty, 10) || 0) * Number(quickSaleItem.mrp || quickSaleItem.unit_price)).toFixed(2)}
-                  </Text>
-                </View>
+                    {/* Total Preview */}
+                    <View style={styles.quickTotalRow}>
+                      <Text style={styles.quickTotalLabel}>Total</Text>
+                      <Text style={styles.quickTotalValue}>
+                        ₹{((parseInt(quickSaleQty, 10) || 0) * Number(quickSaleItem.mrp || quickSaleItem.unit_price)).toFixed(2)}
+                      </Text>
+                    </View>
 
-                {/* Online/offline indicator */}
-                <View style={styles.connectionBadge}>
-                  <View style={[styles.connectDot, { backgroundColor: isOnline ? colors.success : colors.primary, width: 8, height: 8 }]} />
-                  <Text style={styles.connectionBadgeText}>
-                    {isOnline ? 'Online — Will save to server' : 'Offline — Will save locally & sync later'}
-                  </Text>
-                </View>
+                    {/* Online/offline indicator */}
+                    <View style={styles.connectionBadge}>
+                      <View style={[styles.connectDot, { backgroundColor: isOnline ? colors.success : colors.primary, width: 8, height: 8 }]} />
+                      <Text style={styles.connectionBadgeText}>
+                        {isOnline ? 'Online — Will save to server' : 'Offline — Will save locally & sync later'}
+                      </Text>
+                    </View>
 
-                <View style={styles.modalActions}>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnCancel]}
-                    onPress={() => setQuickSaleItem(null)}
-                    disabled={quickSaleProcessing}
-                  >
-                    <Text style={styles.modalBtnTextCancel}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalBtn, styles.modalBtnSave, quickSaleProcessing && { opacity: 0.7 }]}
-                    onPress={handleQuickProcess}
-                    disabled={quickSaleProcessing}
-                  >
-                    {quickSaleProcessing
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Text style={styles.modalBtnTextSave}>⚡ Process Sale</Text>
-                    }
-                  </TouchableOpacity>
-                </View>
-              </>
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity
+                        style={[styles.modalBtn, styles.modalBtnCancel]}
+                        onPress={() => setQuickSaleItem(null)}
+                        disabled={quickSaleProcessing}
+                      >
+                        <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modalBtn, styles.modalBtnSave, quickSaleProcessing && { opacity: 0.7 }]}
+                        onPress={handleQuickProcess}
+                        disabled={quickSaleProcessing}
+                      >
+                        {quickSaleProcessing
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <Text style={styles.modalBtnTextSave}>⚡ Process Sale</Text>
+                        }
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+              </View>
             )}
-          </View>
+          </ScrollView>
         </View>
-      )}
+      </Modal>
 
       {/* Staged Prescription Form Overlay */}
-      {showPrescriptionModal && (
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>📄 Staged Prescription Form</Text>
-            
-            <Text style={styles.fieldLabel}>Patient Name</Text>
-            <TextInput 
-              value={prescriptionForm.patient_name} 
-              onChangeText={val => setPrescriptionForm(f => ({ ...f, patient_name: val }))}
-              style={styles.modalInput} 
-            />
+      <Modal
+        visible={showPrescriptionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPrescriptionModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView 
+            contentContainerStyle={styles.modalScrollContent}
+            keyboardShouldPersistTaps="handled"
+            style={{ width: '100%' }}
+          >
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>📄 Staged Prescription Form</Text>
+              
+              <Text style={styles.fieldLabel}>Patient Name</Text>
+              <TextInput 
+                value={prescriptionForm.patient_name} 
+                onChangeText={val => setPrescriptionForm(f => ({ ...f, patient_name: val }))}
+                style={styles.modalInput} 
+              />
 
-            <Text style={styles.fieldLabel}>Doctor Name</Text>
-            <TextInput 
-              value={prescriptionForm.doctor_name} 
-              onChangeText={val => setPrescriptionForm(f => ({ ...f, doctor_name: val }))}
-              style={styles.modalInput} 
-            />
+              <Text style={styles.fieldLabel}>Doctor Name</Text>
+              <TextInput 
+                value={prescriptionForm.doctor_name} 
+                onChangeText={val => setPrescriptionForm(f => ({ ...f, doctor_name: val }))}
+                style={styles.modalInput} 
+              />
 
-            <Text style={styles.fieldLabel}>Prescribed Medicines (Fuzzy Scanned)</Text>
-            {prescriptionForm.medicines.map((med, i) => (
-              <View key={i} style={styles.medRow}>
-                <Text style={styles.medRowText}>{med.name} (x{med.quantity})</Text>
-                <Text style={styles.medRowSubtext}>₹{(med.quantity * med.unit_price).toFixed(2)}</Text>
+              <Text style={styles.fieldLabel}>Prescribed Medicines (Fuzzy Scanned)</Text>
+              {prescriptionForm.medicines.map((med, i) => (
+                <View key={i} style={styles.medRow}>
+                  <Text style={styles.medRowText}>{med.name} (x{med.quantity})</Text>
+                  <Text style={styles.medRowSubtext}>₹{(med.quantity * med.unit_price).toFixed(2)}</Text>
+                </View>
+              ))}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity 
+                  style={[styles.modalBtn, styles.modalBtnCancel]} 
+                  onPress={() => setShowPrescriptionModal(false)}
+                >
+                  <Text style={styles.modalBtnTextCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.modalBtn, styles.modalBtnSave]} 
+                  onPress={handleSaveStagedSale}
+                >
+                  <Text style={styles.modalBtnTextSave}>Stage Sale</Text>
+                </TouchableOpacity>
               </View>
-            ))}
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={[styles.modalBtn, styles.modalBtnCancel]} 
-                onPress={() => setShowPrescriptionModal(false)}
-              >
-                <Text style={styles.modalBtnTextCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalBtn, styles.modalBtnSave]} 
-                onPress={handleSaveStagedSale}
-              >
-                <Text style={styles.modalBtnTextSave}>Stage Sale</Text>
-              </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
-      )}
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -1140,13 +1182,19 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   // Modal styles
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+  modalOverlay: {
+    flex: 1,
     backgroundColor: 'rgba(0,0,0,0.85)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 9999,
-    padding: spacing.lg,
+    padding: spacing.md,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: spacing.xl,
   },
   modalCard: {
     width: '100%',

@@ -29,7 +29,7 @@ export default function NotificationsScreen() {
   const navigation = useNavigation();
 
   // Admin and sync states
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(true); // Always enable automation task tab visibility
   const [pendingSales, setPendingSales] = useState(0);
   const [pendingPurchases, setPendingPurchases] = useState(0);
   const [pendingStock, setPendingStock] = useState(0);
@@ -43,53 +43,52 @@ export default function NotificationsScreen() {
     const alertsData = await getSavedNotifications();
     setNotifications(alertsData);
 
-    // Load admin info if applicable
-    const adminActive = await isAdminMode();
-    setIsAdmin(adminActive);
-    if (adminActive) {
-      const sQueue = await getOfflineSalesQueue();
-      const pQueue = await getOfflinePurchasesQueue();
-      const stQueue = await getOfflineStockQueue();
-      setPendingSales(sQueue.length);
-      setPendingPurchases(pQueue.length);
-      setPendingStock(stQueue.length);
+    // Bypass to always show automation center
+    setIsAdmin(true);
 
-      // Load automation tasks
-      const mobTasks = await getMobileAutomationTasks();
-      const srvTasks = await getServerAutomationNotifications();
+    const sQueue = await getOfflineSalesQueue();
+    const pQueue = await getOfflinePurchasesQueue();
+    const stQueue = await getOfflineStockQueue();
+    setPendingSales(sQueue.length);
+    setPendingPurchases(pQueue.length);
+    setPendingStock(stQueue.length);
 
-      // Normalize logs so they can be rendered in a unified list
-      const normalizedMob = mobTasks.map(t => ({
-        id: t.id,
-        isMobile: true,
-        type: t.type,
-        recipient: t.recipient,
-        subject: t.subject,
-        message: t.message,
-        status: t.status,
-        error: t.error,
-        created_at: t.created_at,
-        invoice_no: t.invoice_no
-      }));
+    // Load automation tasks
+    const mobTasks = await getMobileAutomationTasks();
+    const srvTasks = await getServerAutomationNotifications();
 
-      const normalizedSrv = srvTasks.map(t => ({
-        id: t.id,
-        isMobile: false,
-        type: t.type || 'whatsapp',
-        recipient: t.recipient_phone,
-        subject: undefined,
-        message: t.message,
-        status: t.status,
-        error: t.error_message,
-        created_at: t.created_at,
-        invoice_no: t.invoice_id ? `INV-${t.invoice_id}` : undefined
-      }));
+    // Normalize logs so they can be rendered in a unified list
+    const normalizedMob = mobTasks.map(t => ({
+      id: t.id,
+      isMobile: true,
+      type: t.type,
+      recipient: t.recipient,
+      subject: t.subject,
+      message: t.message,
+      status: t.status,
+      error: t.error,
+      created_at: t.created_at,
+      invoice_no: t.invoice_no
+    }));
 
-      const combined = [...normalizedMob, ...normalizedSrv].sort((a, b) => 
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setAutomationTasks(combined);
-    }
+    const normalizedSrv = srvTasks.map(t => ({
+      id: t.id,
+      isMobile: false,
+      type: t.type || 'whatsapp',
+      recipient: t.recipient_phone,
+      subject: undefined,
+      message: t.message,
+      status: t.status,
+      error: t.error_message,
+      created_at: t.created_at,
+      invoice_no: t.invoice_id ? `INV-${t.invoice_id}` : undefined
+    }));
+
+    const combined = [...normalizedMob, ...normalizedSrv].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    setAutomationTasks(combined);
+    
     setLoading(false);
   };
 
@@ -234,7 +233,7 @@ export default function NotificationsScreen() {
             onPress={() => setActiveSegment('tasks')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.segmentText, activeSegment === 'tasks' && styles.segmentTextActive]}>Admin Task Center</Text>
+            <Text style={[styles.segmentText, activeSegment === 'tasks' && styles.segmentTextActive]}>Automation Task Center</Text>
           </TouchableOpacity>
         </View>
       )}

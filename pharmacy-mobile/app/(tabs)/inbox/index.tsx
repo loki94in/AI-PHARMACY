@@ -11,8 +11,11 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  Platform,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../../lib/theme';
 import {
@@ -262,6 +265,11 @@ export default function InboxScreen() {
   const [searchResults, setSearchResults] = useState<SearchMedicineResult[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
 
+  // PDF Text Preview Modal
+  const [pdfPreviewVisible, setPdfPreviewVisible] = useState(false);
+  const [pdfPreviewText, setPdfPreviewText] = useState('');
+  const [pdfPreviewFilename, setPdfPreviewFilename] = useState('');
+
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -354,6 +362,43 @@ export default function InboxScreen() {
     setProcessingAttachmentId(att.id);
 
     try {
+      const isPdf = att.filename.toLowerCase().endsWith('.pdf');
+
+      if (isPdf) {
+        const serverUrl = await getServerUrl();
+        if (serverUrl) {
+          const pdfUrl = `${serverUrl.replace(/\/+$/, '')}/uploads/${encodeURIComponent(att.filename)}`;
+          try {
+            await WebBrowser.openBrowserAsync(pdfUrl, {
+              readerMode: false,
+              enableBarCollapsing: true,
+              dismissButtonStyle: 'close',
+            });
+            setProcessingAttachmentId(null);
+            return;
+          } catch (browserErr) {
+            console.warn('Failed to open PDF in WebBrowser overlay, falling back to system browser:', browserErr);
+            const supported = await Linking.canOpenURL(pdfUrl);
+            if (supported) {
+              await Linking.openURL(pdfUrl);
+              setProcessingAttachmentId(null);
+              return;
+            }
+          }
+        }
+
+        // Fallback to text preview
+        const preview = await getAttachmentPreviewFromServer(att.filename);
+        if (preview && preview.success) {
+          setPdfPreviewFilename(att.filename);
+          setPdfPreviewText(preview.content || 'No text content extracted from PDF.');
+          setPdfPreviewVisible(true);
+        } else {
+          throw new Error(preview?.error || 'Failed to fetch PDF text preview from server');
+        }
+        return;
+      }
+
       let csvText = '';
       if (att.isFromServerFile) {
         if (att.filename.toLowerCase().endsWith('.csv') || att.filename.toLowerCase().endsWith('.txt')) {
@@ -719,8 +764,14 @@ export default function InboxScreen() {
                         <ActivityIndicator size="small" color={colors.textInverse} />
                       ) : (
                         <>
-                          <Text style={styles.proceedBtnText}>Proceed</Text>
-                          <Ionicons name="arrow-forward" size={14} color={colors.textInverse} />
+                          <Text style={styles.proceedBtnText}>
+                            {att.filename.toLowerCase().endsWith('.pdf') ? 'Preview' : 'Proceed'}
+                          </Text>
+                          <Ionicons 
+                            name={att.filename.toLowerCase().endsWith('.pdf') ? 'eye-outline' : 'arrow-forward'} 
+                            size={14} 
+                            color={colors.textInverse} 
+                          />
                         </>
                       )}
                     </TouchableOpacity>
@@ -942,6 +993,37 @@ export default function InboxScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ─── PDF TEXT PREVIEW MODAL ───────────────────────────────────────── */}
+      <Modal
+        visible={pdfPreviewVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setPdfPreviewVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContentLarge}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, marginRight: spacing.md }}>
+                <Text style={typography.h3} numberOfLines={1}>PDF Text Preview</Text>
+                <Text style={styles.modalSubtitle} numberOfLines={1}>{pdfPreviewFilename}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setPdfPreviewVisible(false)}>
+                <Ionicons name="close-circle-outline" size={28} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll}>
+              <View style={styles.pdfTextContainer}>
+                <Text style={styles.pdfBoldText}>
+                  {pdfPreviewText}
+                </Text>
+              </View>
+              <View style={{ height: spacing.xxl }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1156,4 +1238,18 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   saveBillBtnText: { ...typography.body, color: colors.textInverse, fontWeight: '700' },
+  pdfTextContainer: {
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  pdfBoldText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 26,
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica' : 'monospace',
+  },
 });

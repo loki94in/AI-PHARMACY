@@ -577,6 +577,16 @@ export async function ensureSchema(dbPath: string) {
       last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Device Connection Activity Logs
+    CREATE TABLE IF NOT EXISTS device_connection_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT,
+      device_name TEXT,
+      os TEXT,
+      status TEXT CHECK(status IN ('connected', 'disconnected')),
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Crash telemetry: written by processGuardian on uncaught exceptions
     CREATE TABLE IF NOT EXISTS crash_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -55,6 +55,7 @@ const Dispatch = lazy(() => import('./pages/Dispatch'));
 const Reports = lazy(() => import('./pages/Reports'));
 const License = lazy(() => import('./pages/License'));
 const Settings = lazy(() => import('./pages/Settings'));
+const DeviceLogs = lazy(() => import('./pages/DeviceLogs'));
 const Mail = lazy(() => import('./pages/Mail'));
 const Returns = lazy(() => import('./pages/Returns'));
 const CatalogUpload = lazy(() => import('./pages/CatalogUpload'));
@@ -637,8 +638,8 @@ const Topbar = ({
           if (data.type === 'auth_failure' || data.type === 'auth_required' || data.type === 'notification') {
             toastEvent.trigger(
               data.payload?.message || data.message || 'Action required',
-              'error',
-              '/settings'
+              data.payload?.type || 'error',
+              data.payload?.link || '/settings'
             );
           } else if (data.type === 'catalog_job_progress' && data.payload) {
             const payload = data.payload;
@@ -746,6 +747,7 @@ const Topbar = ({
       '/sells': 'Sells / Bills',
       '/investigation': 'Medicine & Bill Investigation Center',
       '/settings': 'Settings',
+      '/device-logs': 'Device Connection Logs',
       '/returns': 'Supplier Returns',
     };
     // Extract base path (e.g. /pos/invoice -> /pos) for fallback matching if needed, though strictly exact match first
@@ -855,11 +857,11 @@ const Topbar = ({
                 return (
                   <button
                     key={device.token}
-                    onClick={() => setShowDevicesPopover(prev => !prev)}
+                    onClick={isOnline ? () => setShowDevicesPopover(prev => !prev) : onOpenConnectModal}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-300 border ${btnStyle}`}
-                    title={`${device.device_name} (${device.os}) - ${statusText}`}
+                    title={isOnline ? `${device.device_name} (${device.os}) - ${statusText}` : `Connect mobile device via QR Code`}
                   >
-                    {isRecentlyOffline ? (
+                    {!isOnline ? (
                       <QrCode size={13} className={`${iconColor}`} />
                     ) : (
                       <DeviceIcon 
@@ -869,7 +871,7 @@ const Topbar = ({
                       />
                     )}
                     <span className="truncate max-w-[80px] text-[10px] uppercase tracking-wide">
-                      {device.device_name}
+                      {isOnline ? device.device_name : 'QR Connect'}
                     </span>
                     
                     {/* Glowing/offline dot */}
@@ -936,7 +938,7 @@ const Topbar = ({
                         <div key={device.token} className="flex flex-col gap-1.5 p-2 rounded-xl bg-bg2/40 border border-glass-border">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              {isRecentlyOffline ? (
+                              {!isOnline ? (
                                 <QrCode size={14} className={iconColor} />
                               ) : (
                                 <DeviceIcon os={device.os} size={14} className={iconColor} />
@@ -976,24 +978,6 @@ const Topbar = ({
                         </div>
                       );
                     })
-                  )}
-                </div>ce_name); }}
-                              className="text-[9px] px-1.5 py-0.5 rounded bg-bg3 border border-glass-border text-muted hover:text-primary hover:border-primary/30 transition-all"
-                              title="Rename device"
-                            >
-                              Rename
-                            </button>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                              device.is_online === 1
-                                ? 'bg-green/10 text-green'
-                                : 'bg-zinc-500/10 text-muted'
-                            }`}>
-                              {device.is_online === 1 ? 'Online' : 'Offline'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))
                   )}
                 </div>
                 <div className="mt-3 pt-3 border-t border-glass-border">
@@ -1093,7 +1077,7 @@ const Layout = ({
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 }) => {
   const location = useLocation();
-  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart', '/automation-center', '/investigation', '/phone-sales'].includes(location.pathname);
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/migration', '/pharmarack-cart', '/automation-center', '/investigation', '/phone-sales', '/device-logs'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     try {
@@ -1382,6 +1366,7 @@ function App() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/license" element={<License />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/device-logs" element={<DeviceLogs />} />
             <Route path="/mail" element={<Mail />} />
             <Route path="/catalog" element={<CatalogUpload />} />
             <Route path="/learning" element={<Learning />} />
