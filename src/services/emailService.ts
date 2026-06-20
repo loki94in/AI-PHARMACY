@@ -1703,6 +1703,8 @@ export class EmailService {
     cgst?: number;
     sgst?: number;
     igst?: number;
+    cn_amount?: number;
+    cn_number?: string;
     needs_review?: boolean;
     mapping_config?: Record<string, string>;
     headers?: string[];

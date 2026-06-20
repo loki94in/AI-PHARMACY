@@ -10,6 +10,7 @@ export class BouncedAlertService {
    */
   async checkAndSendBouncedProductsAlert(): Promise<boolean> {
     let db;
+    let recipientPhone = '';
     try {
       db = await dbManager.getConnection();
       
@@ -21,7 +22,6 @@ export class BouncedAlertService {
       }
 
       // 2. Fetch recipient phone (Dinesh)
-      let recipientPhone = '';
       const phoneSetting = await db.get("SELECT value FROM app_settings WHERE key = 'dinesh_whatsapp_number'");
       if (phoneSetting && phoneSetting.value && phoneSetting.value.trim() !== '') {
         recipientPhone = phoneSetting.value.trim();
@@ -228,7 +228,7 @@ export class BouncedAlertService {
           await db.run(
             `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message)
              VALUES (?, ?, ?, ?, ?, ?)`,
-            ['whatsapp', 'Dinesh', phoneSetting?.value || 'Unknown', 'Bounced check failed', 'failed', err.message]
+            ['whatsapp', 'Dinesh', recipientPhone || 'Unknown', 'Bounced check failed', 'failed', err.message]
           );
         }
       } catch (logErr) {}
