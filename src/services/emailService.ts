@@ -201,6 +201,16 @@ async function getSuggestedMappingFromHeaders(headers: string[], db: any): Promi
       field: 'cd_rs',
       priority1: /^(cdamt|cdval|discamt|cdrs)$/i,
       priority2: /disc.*amt|cd.*amt|disc.*val|cd.*val/i
+    },
+    {
+      field: 'cn_amount',
+      priority1: /^(cnamount|cnamt|creditnoteamount|creditnoteamt|creditnoteval|extra_credit)$/i,
+      priority2: /cn.*amt|cn.*amount|credit.*note.*amount|credit.*note.*amt/i
+    },
+    {
+      field: 'cn_number',
+      priority1: /^(cnno|cnnumber|creditnoteno|creditnotenumber)$/i,
+      priority2: /cn.*no|cn.*num|credit.*note.*no|credit.*note.*num/i
     }
   ];
 
@@ -232,6 +242,12 @@ async function getSuggestedMappingFromHeaders(headers: string[], db: any): Promi
     }
     if (field === 'cd_per') {
       return /amt|val|rs|net/i.test(norm);
+    }
+    if (field === 'cn_amount') {
+      return /rate|mrp|tax|qty|free|disc|discount/i.test(norm);
+    }
+    if (field === 'cn_number') {
+      return /date|amt|amount|val|value/i.test(norm);
     }
     return false;
   };
@@ -866,6 +882,8 @@ function extractTotalsFromText(text: string) {
   let global_cd_per = 0;
   let total_discount = 0;
   let round_off = 0;
+  let cn_amount = 0;
+  let cn_number = '';
 
   for (const line of cleanLines) {
     // CGST
@@ -912,6 +930,28 @@ function extractTotalsFromText(text: string) {
         global_cd_per = val;
       }
     }
+
+    // Credit Note Amount (Deduction)
+    const cnAmtMatch = line.match(/(?:credit\s*note|cn|cr\.?\s*note|crn|credit\s*adj|cn\s*deduction)[^0-9#]*?\s*([+\-]?\s*\d+(?:\.\d{2})?)\s*$/i);
+    if (cnAmtMatch && !cn_amount) {
+      const matchText = cnAmtMatch[0].toLowerCase();
+      if (!/(?:\bno\b|\bno\.|\bnum\b|\bnumber\b|#|cn\-|cr\-)/i.test(matchText)) {
+        cn_amount = Math.abs(parseFloat(cnAmtMatch[1].replace(/\s+/g, ''))) || 0;
+      }
+    }
+
+    // Credit Note Number
+    const cnNoMatch = line.match(/(?:credit\s*note|cn|cr\.?\s*note|crn|credit\s*adj)(?:\s*(?:no\.?|num\.?|number|#))?\s*[:\-#]?\s*([a-zA-Z0-9\-\/]{3,})/i);
+    if (cnNoMatch && !cn_number) {
+      const candidate = cnNoMatch[1].trim();
+      if (/\d/.test(candidate) && !/^(?:amt|amount|val|value|rs|dr|cr)$/i.test(candidate)) {
+        const isDecimal = /^\d+\.\d{2}$/.test(candidate);
+        const hasNoIndicator = /(?:no\.?|num|number|#)/i.test(cnNoMatch[0]);
+        if (!isDecimal || hasNoIndicator) {
+          cn_number = candidate;
+        }
+      }
+    }
   }
 
   for (let i = 0; i < cleanLines.length; i++) {
@@ -954,7 +994,7 @@ function extractTotalsFromText(text: string) {
     }
   }
 
-  return { subtotal, cgst, sgst, igst, total_amount, global_cd_per, total_discount, round_off };
+  return { subtotal, cgst, sgst, igst, total_amount, global_cd_per, total_discount, round_off, cn_amount, cn_number };
 }
 
 export class EmailService {
@@ -1730,6 +1770,8 @@ export class EmailService {
       let cgst = 0;
       let sgst = 0;
       let igst = 0;
+      let cn_amount = 0;
+      let cn_number = '';
       let items: any[] = [];
       let mappingConfig: Record<string, string> = {};
       let rawHeaders: string[] = [];
@@ -1869,6 +1911,8 @@ export class EmailService {
             invoice_date = normalizeDateToYYYYMMDD(rawDate);
             global_cd_per = parseFloat(r0[headerMap.global_cd_per] || r0['disc_per'] || r0['cd_per'] || r0['global_cd_per'] || '0') || 0;
             total_amount = parseFloat(r0[headerMap.total_amount] || r0['debit'] || r0['net_amt'] || r0['total_amount'] || r0['grand_total'] || '0') || 0;
+            cn_amount = parseFloat(r0[headerMap.cn_amount] || r0['cn_amount'] || r0['cn_amt'] || r0['extra_credit'] || '0') || 0;
+            cn_number = r0[headerMap.cn_number] || r0['cn_number'] || r0['cn_no'] || '';
           }
 
           items = records.map((r: any) => {
@@ -2158,6 +2202,8 @@ export class EmailService {
           cgst = totals.cgst;
           sgst = totals.sgst;
           igst = totals.igst;
+          cn_amount = totals.cn_amount || 0;
+          cn_number = totals.cn_number || '';
 
           items = parseItemsFromTextLines(content, global_cd_per);
 
@@ -2339,6 +2385,8 @@ export class EmailService {
           cgst: cgst || 0,
           sgst: sgst || 0,
           igst: igst || 0,
+          cn_amount: cn_amount || 0,
+          cn_number: cn_number || '',
           needs_review: true,
           mapping_config: mappingConfig || {},
           headers: rawHeaders || [],
@@ -2410,6 +2458,8 @@ export class EmailService {
         cgst,
         sgst,
         igst,
+        cn_amount,
+        cn_number,
         needs_review: needsReview,
         mapping_config: mappingConfig,
         headers: rawHeaders,

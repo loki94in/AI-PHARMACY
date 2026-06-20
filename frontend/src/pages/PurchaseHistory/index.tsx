@@ -14,6 +14,9 @@ interface PurchaseTransaction {
   plan?: string;
   items?: any[];
   total_qty?: number;
+  cn_amount?: number;
+  cn_number?: string;
+  original_amount?: number;
 }
 
 const PurchaseHistory = () => {
@@ -129,6 +132,9 @@ const PurchaseHistory = () => {
             date: data.purchase.date,
             totalAmount: data.purchase.total_amount,
             globalCdPer: 0,
+            cnAmount: data.purchase.cn_amount || 0,
+            cnNumber: data.purchase.cn_number || '',
+            reconcileExpiryReturnId: data.purchase.reconcile_expiry_return_id || null,
             items: data.items.map((item: any) => ({
               medicine_id: item.medicine_id,
               medicine_name: item.medicine_name,
@@ -375,8 +381,26 @@ const PurchaseHistory = () => {
                         <td className="px-6 py-4 text-right text-gray-300 font-medium">
                           {tx.total_qty || 0}
                         </td>
-                        <td className="px-6 py-4 text-right text-white font-medium">
-                          ₹{tx.total_amount?.toFixed(2) || '0.00'}
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                          {tx.cn_amount && tx.cn_amount > 0 ? (
+                            <div className="flex flex-col items-end">
+                              <div className="flex items-center gap-1.5 justify-end">
+                                <span className="text-xs text-gray-500 line-through">
+                                  ₹{(tx.original_amount || (tx.total_amount + tx.cn_amount)).toFixed(2)}
+                                </span>
+                                <span className="text-white font-medium">
+                                  ₹{tx.total_amount?.toFixed(2) || '0.00'}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-sky-400 font-semibold px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 mt-1 transition-all hover:bg-sky-500/25">
+                                CN Applied: -₹{tx.cn_amount.toFixed(2)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-white font-medium">
+                              ₹{tx.total_amount?.toFixed(2) || '0.00'}
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <div className="flex items-center justify-center gap-2">
@@ -703,6 +727,40 @@ const PurchaseHistory = () => {
                     <strong className="text-green-400 text-sm font-bold">₹{viewPurchase.purchase.total_amount?.toFixed(2) || '0.00'}</strong>
                  </div>
               </div>
+
+              {viewPurchase.purchase.cn_amount > 0 && (
+                <div className="bg-sky-950/20 border border-sky-500/20 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 font-bold text-lg font-mono">
+                      CN
+                    </div>
+                    <div>
+                      <span className="text-xs text-sky-300 font-semibold block">Credit Note Applied</span>
+                      <span className="text-xs text-gray-400 font-mono">No: {viewPurchase.purchase.cn_number || 'N/A'}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="text-right">
+                      <span className="text-xs text-gray-500 block">Original Bill Total</span>
+                      <span className="text-sm text-gray-300 font-medium line-through">
+                        ₹{(viewPurchase.purchase.original_amount || (viewPurchase.purchase.total_amount + viewPurchase.purchase.cn_amount)).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-sky-400 block">CN Discount</span>
+                      <span className="text-sm text-sky-400 font-semibold">
+                        -₹{viewPurchase.purchase.cn_amount.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-gray-400 block">Net Amount Paid</span>
+                      <span className="text-sm text-green-400 font-bold">
+                        ₹{viewPurchase.purchase.total_amount.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <h4 className="text-sm font-bold text-gray-300 mb-3">Items</h4>

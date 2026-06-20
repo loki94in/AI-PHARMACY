@@ -207,6 +207,7 @@ export const api = {
   // Returns (Supplier)
   createManualPurchase: (data: any) => apiClient.post('/purchases/manual', data).then(res => res.data),
   getDistributors: () => apiClient.get('/distributors').then(res => res.data),
+  getPendingReturns: (distributorId: number) => apiClient.get(`/distributors/${distributorId}/pending-returns`).then(res => res.data),
   getLastPurchase: (name: string, distributorId?: number) => {
     const params: any = { name };
     if (distributorId) params.distributor_id = distributorId;
@@ -276,6 +277,17 @@ export const api = {
     apiClient.post('/migration/staging/finalize', { regenerateInvoices }).then(r => r.data),
   rollbackMigration: () =>
     apiClient.delete('/migration/staging/rollback').then(r => r.data),
+
+  // V2 endpoints
+  getProjects: () => apiClient.get('/migration/projects').then(r => r.data),
+  createProject: (name: string) => apiClient.post('/migration/projects', { name }).then(r => r.data),
+  deleteProject: (id: number) => apiClient.delete(`/migration/projects/${id}`).then(r => r.data),
+  getTemplates: () => apiClient.get('/migration/templates').then(r => r.data),
+  saveTemplate: (name: string, moduleType: string, mappings: any) => apiClient.post('/migration/templates', { name, moduleType, mappings }).then(r => r.data),
+  getStagingConflicts: () => apiClient.get('/migration/staging/conflicts').then(r => r.data),
+  resolveStagingConflict: (conflictId: number, resolution: string) => apiClient.post('/migration/staging/resolve', { conflictId, resolution }).then(r => r.data),
+  getSnapshots: () => apiClient.get('/migration/snapshots').then(r => r.data),
+  restoreSnapshot: (snapshotId: number) => apiClient.post('/migration/snapshots/restore', { snapshotId }).then(r => r.data),
 
   
   addPatient: (data: any) => apiClient.post('/crm/patients', data).then(res => res.data),

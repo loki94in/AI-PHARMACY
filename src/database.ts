@@ -213,6 +213,9 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE purchases ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE purchases ADD COLUMN business_date DATETIME`,
     `ALTER TABLE purchases ADD COLUMN app_invoice_no TEXT`,
+    `ALTER TABLE purchases ADD COLUMN cn_amount REAL DEFAULT 0`,
+    `ALTER TABLE purchases ADD COLUMN cn_number TEXT DEFAULT NULL`,
+    `ALTER TABLE purchases ADD COLUMN original_amount REAL DEFAULT NULL`,
     // Sales invoices extra columns
     `ALTER TABLE sales_invoices ADD COLUMN doctor_id INTEGER`,
     `ALTER TABLE sales_invoices ADD COLUMN payment_medium TEXT`,
@@ -239,6 +242,9 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE returns ADD COLUMN distributor_id INTEGER`,
     `ALTER TABLE returns ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE returns ADD COLUMN reason TEXT`,
+    `ALTER TABLE returns ADD COLUMN return_invoice_id TEXT DEFAULT NULL`,
+    `ALTER TABLE returns ADD COLUMN return_sub_type TEXT CHECK(return_sub_type IN ('expiry', 'good')) DEFAULT 'good'`,
+    `ALTER TABLE returns ADD COLUMN return_date_time DATETIME DEFAULT NULL`,
     // Distributors extra columns
     `ALTER TABLE distributors ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE distributors ADD COLUMN gstin TEXT`,
@@ -595,6 +601,39 @@ export async function ensureSchema(dbPath: string) {
       stack TEXT,
       app_version TEXT,
       recovered INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS migration_projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      status TEXT DEFAULT 'active'
+    );
+
+    CREATE TABLE IF NOT EXISTS migration_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      module_type TEXT NOT NULL,
+      mappings TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS migration_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER,
+      backup_path TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(project_id) REFERENCES migration_projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS migration_conflicts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER,
+      module_type TEXT,
+      raw_imported_data TEXT,
+      matching_record_id INTEGER,
+      conflict_reason TEXT,
+      status TEXT DEFAULT 'pending'
     );
   `);
 

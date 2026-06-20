@@ -175,6 +175,37 @@ describe('AI-Assisted Distributor Learning Engine Tests', () => {
     expect(result.items[0].rate).toBe(20);
   });
 
+  test('Credit note details are parsed from invoice text and CSV', async () => {
+    // 1. Text Parsing Test
+    const incomingText = `
+      TAX INVOICE
+      Distributor: MediPlus Wholesaler
+      Invoice No: INV-45678
+      Date: 20/06/2026
+      Net Amount: 2450.00
+      Credit Note Adjusted: 150.00
+      Credit Note No: CN-9988
+    `;
+    const tempTextPath = path.join(uploadsDir, 'incoming_invoice.txt');
+    fs.writeFileSync(tempTextPath, incomingText);
+    
+    const textResult = await emailService.parseAndImportAttachment(tempTextPath, false);
+    expect(textResult.success).toBe(true);
+    expect(textResult.cn_amount).toBe(150.00);
+    expect(textResult.cn_number).toBe('CN-9988');
+    
+    // 2. CSV Layout Mapping Test
+    const tempCsvPath = path.join(uploadsDir, 'incoming_cn.csv');
+    fs.writeFileSync(
+      tempCsvPath,
+      'medicine_name,qty,price,cn_amount,cn_number\nParacetamol,10,20,100,CN-CSV123'
+    );
+    const csvResult = await emailService.parseAndImportAttachment(tempCsvPath, false);
+    expect(csvResult.success).toBe(true);
+    expect(csvResult.cn_amount).toBe(100);
+    expect(csvResult.cn_number).toBe('CN-CSV123');
+  });
+
   test('POST /api/learning/profiles/:id/reset deletes all history and profile data', async () => {
     const res = await request(app).post(`/api/learning/profiles/${distributorId}/reset`);
     expect(res.status).toBe(200);

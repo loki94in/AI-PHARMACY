@@ -948,8 +948,39 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                 }
               }
 
-              const insertQuery = `INSERT INTO inventory_master (${colsToInsert.join(', ')}) VALUES (${placeholders.join(', ')})`;
-              await db.run(insertQuery, valuesToInsert);
+              const batchKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
+              const batchVal = batchKey ? String(cleanRow[batchKey] || '').trim() : '';
+              const existingBatch = batchVal ? await db.get(
+                'SELECT id FROM inventory_master WHERE medicine_id = ? AND batch_no = ?',
+                [med.id, batchVal]
+              ) : null;
+
+              if (existingBatch) {
+                const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+                const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty' || mapping?.[k] === 'loose_quantity');
+                const rackKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'rack_location');
+                const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
+                const costKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate');
+                const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
+
+                const rawImportedData = {
+                  medicine_id: med.id,
+                  quantity: qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0,
+                  loose_quantity: looseQtyKey ? parseInt(cleanRow[looseQtyKey]) || 0 : 0,
+                  rack_location: rackKey ? String(cleanRow[rackKey] || '').trim() : '',
+                  batch_no: batchVal,
+                  expiry_date: expKey ? (normalizeDate(String(cleanRow[expKey])) || String(cleanRow[expKey])) : '',
+                  cost_price: costKey ? parseFloat(cleanRow[costKey]) || 0 : 0,
+                  mrp: mrpKey ? parseFloat(cleanRow[mrpKey]) || 0 : 0,
+                };
+                await db.run(
+                  'INSERT INTO migration_conflicts (module_type, raw_imported_data, matching_record_id, conflict_reason) VALUES (?, ?, ?, ?)',
+                  ['inventory', JSON.stringify(rawImportedData), existingBatch.id, 'Duplicate Batch Number']
+                );
+              } else {
+                const insertQuery = `INSERT INTO inventory_master (${colsToInsert.join(', ')}) VALUES (${placeholders.join(', ')})`;
+                await db.run(insertQuery, valuesToInsert);
+              }
             }
             else if (dataType === 'sales') {
               const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no');
@@ -1122,11 +1153,17 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
               const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
               const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
+              const returnInvoiceIdKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_invoice_id');
+              const returnSubTypeKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_sub_type');
+              const returnDateTimeKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_date_time');
 
               const returnNo = returnNoKey ? String(cleanRow[returnNoKey] || '').trim() : `RET-${Date.now()}-${insertCount}`;
               const dateStr = dateKey ? cleanRow[dateKey] : new Date().toISOString();
               const distributorName = distributorKey ? String(cleanRow[distributorKey] || '').trim() : 'Unknown Supplier';
               const totalAmount = totalAmountKey ? parseFloat(cleanRow[totalAmountKey]) || 0 : 0;
+              const returnInvoiceId = returnInvoiceIdKey ? String(cleanRow[returnInvoiceIdKey] || '').trim() : null;
+              const returnSubType = returnSubTypeKey ? String(cleanRow[returnSubTypeKey] || '').trim() : 'good';
+              const returnDateTime = returnDateTimeKey ? cleanRow[returnDateTimeKey] : null;
 
               let distributor = await db.get('SELECT id FROM distributors WHERE LOWER(name) = LOWER(?)', [distributorName]);
               if (!distributor) {
@@ -1141,13 +1178,13 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                 for (const [key, val] of Object.entries(cleanRow)) {
                   const mappedTarget = mapping?.[key];
                   if (mappedTarget && mappedTarget.startsWith('custom_col_')) {
-                    const dbColName = mappedTarget.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
-                    retCols.push(`"${dbColName}"`);
-                    retVals.push(val);
+                     const dbColName = mappedTarget.substring(11).trim().replace(/\s+/g, '_').toLowerCase();
+                     retCols.push(`"${dbColName}"`);
+                     retVals.push(val);
                   }
                 }
-                const baseCols = ['return_no', 'distributor_id', 'type', 'date', 'total_amount'];
-                const baseVals = [returnNo, distributor.id, 'purchase', dateStr, totalAmount];
+                const baseCols = ['return_no', 'distributor_id', 'type', 'date', 'total_amount', 'return_invoice_id', 'return_sub_type', 'return_date_time'];
+                const baseVals = [returnNo, distributor.id, 'purchase', dateStr, totalAmount, returnInvoiceId, returnSubType, returnDateTime];
                 const colsStr = [...baseCols, ...retCols].join(', ');
                 const placeholdersStr = [...baseCols, ...retCols].map(() => '?').join(', ');
                 const result = await db.run(

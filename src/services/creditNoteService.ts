@@ -80,8 +80,21 @@ export async function reconcileCreditNote(
   if (purchaseId) {
     const purchase = await db.get('SELECT * FROM purchases WHERE id = ?', [purchaseId]);
     if (purchase) {
-      const newTotal = Math.max(0, purchase.total_amount - actualCreditAmount);
-      await db.run('UPDATE purchases SET total_amount = ? WHERE id = ?', [newTotal, purchaseId]);
+      const returnRec = oldestPending.return_id 
+        ? await db.get('SELECT return_no FROM returns WHERE id = ?', [oldestPending.return_id])
+        : null;
+      const cnNum = returnRec?.return_no || `CN-${oldestPending.id}`;
+      const originalAmount = purchase.original_amount !== null && purchase.original_amount !== undefined
+        ? purchase.original_amount
+        : purchase.total_amount;
+      const newTotal = Math.max(0, originalAmount - actualCreditAmount);
+      
+      await db.run(
+        `UPDATE purchases 
+         SET total_amount = ?, cn_amount = ?, cn_number = ?, original_amount = ? 
+         WHERE id = ?`,
+        [newTotal, actualCreditAmount, cnNum, originalAmount, purchaseId]
+      );
       message += ` Purchase bill ID ${purchaseId} updated. New Total: ₹${newTotal}.`;
     }
   }

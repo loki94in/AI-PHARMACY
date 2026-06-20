@@ -147,8 +147,8 @@ export function normalizeDate(dateStr: string): string | null | undefined {
         return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-01 00:00:00`;
     }
 
-    // Try to match DD-MM-YYYY format
-    const ddMMYYYYMatch = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    // Try to match DD-MM-YYYY format with optional time suffix
+    const ddMMYYYYMatch = cleaned.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:\s+(\d{1,2}):(\d{1,2}):(\d{1,2}))?$/);
     if (ddMMYYYYMatch) {
         const day = parseInt(ddMMYYYYMatch[1], 10);
         const month = parseInt(ddMMYYYYMatch[2], 10);
@@ -157,11 +157,14 @@ export function normalizeDate(dateStr: string): string | null | undefined {
         if (month < 1 || month > 12 || day < 1 || day > 31) {
             return null; // Invalid date
         }
-        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
+        const timePart = ddMMYYYYMatch[4] !== undefined 
+            ? ` ${ddMMYYYYMatch[4].padStart(2, '0')}:${ddMMYYYYMatch[5].padStart(2, '0')}:${ddMMYYYYMatch[6].padStart(2, '0')}`
+            : ' 00:00:00';
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}${timePart}`;
     }
 
-    // Try to match DD/MM/YYYY format
-    const ddMMYYYYSlashMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    // Try to match DD/MM/YYYY format with optional time suffix
+    const ddMMYYYYSlashMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2}):(\d{1,2}))?$/);
     if (ddMMYYYYSlashMatch) {
         const day = parseInt(ddMMYYYYSlashMatch[1], 10);
         const month = parseInt(ddMMYYYYSlashMatch[2], 10);
@@ -169,11 +172,14 @@ export function normalizeDate(dateStr: string): string | null | undefined {
         if (month < 1 || month > 12 || day < 1 || day > 31) {
             return null; // Invalid date
         }
-        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
+        const timePart = ddMMYYYYSlashMatch[4] !== undefined 
+            ? ` ${ddMMYYYYSlashMatch[4].padStart(2, '0')}:${ddMMYYYYSlashMatch[5].padStart(2, '0')}:${ddMMYYYYSlashMatch[6].padStart(2, '0')}`
+            : ' 00:00:00';
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}${timePart}`;
     }
 
-    // Try to match YYYY-MM-DD format (already ISO date)
-    const yyyymmddMatch = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    // Try to match YYYY-MM-DD format with optional time suffix
+    const yyyymmddMatch = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}):(\d{1,2}))?$/);
     if (yyyymmddMatch) {
         const year = parseInt(yyyymmddMatch[1], 10);
         const month = parseInt(yyyymmddMatch[2], 10);
@@ -182,7 +188,10 @@ export function normalizeDate(dateStr: string): string | null | undefined {
         if (month < 1 || month > 12 || day < 1 || day > 31) {
             return null; // Invalid date
         }
-        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00`;
+        const timePart = yyyymmddMatch[4] !== undefined 
+            ? ` ${yyyymmddMatch[4].padStart(2, '0')}:${yyyymmddMatch[5].padStart(2, '0')}:${yyyymmddMatch[6].padStart(2, '0')}`
+            : ' 00:00:00';
+        return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}${timePart}`;
     }
 
     // If none of the matched formats, return null to indicate failure

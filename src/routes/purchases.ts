@@ -541,6 +541,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       invoice_date: result.invoice_date,
       total_amount: result.total_amount,
       global_cd_per: result.global_cd_per,
+      cn_amount: result.cn_amount,
+      cn_number: result.cn_number,
       source_filename: tempPath,
       headers: result.headers,
       mapping_config: result.mapping_config,
@@ -579,7 +581,7 @@ router.get('/', async (req, res) => {
     }
     
     const purchases = await db.all(`
-      SELECT p.id, p.invoice_no, p.date, p.total_amount, d.name as distributor_name,
+      SELECT p.id, p.invoice_no, p.date, p.total_amount, p.cn_amount, p.cn_number, p.original_amount, d.name as distributor_name,
              COALESCE((SELECT SUM(quantity) FROM purchase_items WHERE purchase_id = p.id), 0) as total_qty
       FROM purchases p 
       LEFT JOIN distributors d ON p.distributor_id = d.id 
@@ -595,7 +597,7 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/manual', async (req, res) => {
-  const { distributor, distributor_id, invoice_no, date, cd_per, extra_credit, items, source_filename, source_file_headers, mapping_config, email_uid } = req.body;
+  const { distributor, distributor_id, invoice_no, date, cd_per, extra_credit, cn_amount, cn_number, reconcile_expiry_return_id, items, source_filename, source_file_headers, mapping_config, email_uid } = req.body;
   try {
     const db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
@@ -661,9 +663,10 @@ router.post('/manual', async (req, res) => {
       return discPer > 0 || discRs > 0;
     });
     const globalCdDisc = hasItemCd ? 0 : (subtotal * (cdPerVal / 100));
-    const extraCreditVal = parseFloat(extra_credit) || 0;
-
-    const grandTotal = subtotal + totalCgst + totalSgst - globalCdDisc - extraCreditVal;
+    const originalAmount = subtotal + totalCgst + totalSgst - globalCdDisc;
+    const cnAmountVal = parseFloat(cn_amount !== undefined ? cn_amount : extra_credit) || 0;
+    const cnNumberVal = cn_number || null;
+    const grandTotal = Math.max(0, originalAmount - cnAmountVal);
 
     // Generate app_invoice_no sequentially
     const lastPur = await db.get(
@@ -685,11 +688,22 @@ router.post('/manual', async (req, res) => {
 
     // 2. Insert into purchases
     const purchRes = await db.run(
-      `INSERT INTO purchases (distributor_id, invoice_no, app_invoice_no, date, total_amount, cgst_value, sgst_value) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [distId, invoice_no, appInvoiceNo, date, grandTotal, totalCgst, totalSgst]
+      `INSERT INTO purchases (distributor_id, invoice_no, app_invoice_no, date, total_amount, cgst_value, sgst_value, cn_amount, cn_number, original_amount) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [distId, invoice_no, appInvoiceNo, date, grandTotal, totalCgst, totalSgst, cnAmountVal, cnNumberVal, originalAmount]
     );
     const purchaseId = purchRes.lastID;
+
+    // Reconcile pending return credit
+    if (reconcile_expiry_return_id && cnAmountVal > 0) {
+      const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      await db.run(
+        `UPDATE expiry_returns_tracking 
+         SET status = 'reconciled', actual_credit_amount = ?, reconciled_date = ?, reconciled_purchase_id = ?
+         WHERE id = ?`,
+        [cnAmountVal, nowStr, purchaseId, reconcile_expiry_return_id]
+      );
+    }
 
     // 3. Process items
     const uniqueMedicineIds = new Set<number>();
@@ -871,7 +885,7 @@ router.get('/items/all', async (req, res) => {
 
 router.put('/:id/full', async (req, res) => {
   const { id } = req.params;
-  const { distributor, invoice_no, date, cd_per, extra_credit, items } = req.body;
+  const { distributor, distributor_id, invoice_no, date, cd_per, extra_credit, cn_amount, cn_number, reconcile_expiry_return_id, items } = req.body;
   try {
     const db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
@@ -934,16 +948,37 @@ router.put('/:id/full', async (req, res) => {
       return discPer > 0 || discRs > 0;
     });
     const globalCdDisc = hasItemCd ? 0 : (subtotal * (cdPerVal / 100));
-    const extraCreditVal = parseFloat(extra_credit) || 0;
-    const grandTotal = subtotal + totalCgst + totalSgst - globalCdDisc - extraCreditVal;
+    const originalAmount = subtotal + totalCgst + totalSgst - globalCdDisc;
+    const cnAmountVal = parseFloat(cn_amount !== undefined ? cn_amount : extra_credit) || 0;
+    const cnNumberVal = cn_number || null;
+    const grandTotal = Math.max(0, originalAmount - cnAmountVal);
+
+    // Revert old credit reconciliation
+    await db.run(
+      `UPDATE expiry_returns_tracking 
+       SET status = 'pending', actual_credit_amount = 0, reconciled_date = NULL, reconciled_purchase_id = NULL
+       WHERE reconciled_purchase_id = ?`,
+      [id]
+    );
 
     // 3. Update purchases record
     await db.run(
       `UPDATE purchases 
-       SET distributor_id = ?, invoice_no = ?, date = ?, total_amount = ?, cgst_value = ?, sgst_value = ? 
+       SET distributor_id = ?, invoice_no = ?, date = ?, total_amount = ?, cgst_value = ?, sgst_value = ?, cn_amount = ?, cn_number = ?, original_amount = ? 
        WHERE id = ?`,
-      [distRow.id, invoice_no, date, grandTotal, totalCgst, totalSgst, id]
+      [distRow.id, invoice_no, date, grandTotal, totalCgst, totalSgst, cnAmountVal, cnNumberVal, originalAmount, id]
     );
+
+    // Re-apply credit reconciliation if necessary
+    if (reconcile_expiry_return_id && cnAmountVal > 0) {
+      const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      await db.run(
+        `UPDATE expiry_returns_tracking 
+         SET status = 'reconciled', actual_credit_amount = ?, reconciled_date = ?, reconciled_purchase_id = ?
+         WHERE id = ?`,
+        [cnAmountVal, nowStr, id, reconcile_expiry_return_id]
+      );
+    }
 
     // 4. Insert new items
     for (const item of items) {
@@ -1813,8 +1848,11 @@ router.get('/:id', async (req, res) => {
     `, [id]);
     
     if (!purchase) {
-            return res.status(404).json({ error: 'Purchase not found' });
+      return res.status(404).json({ error: 'Purchase not found' });
     }
+
+    const reconciledReturn = await db.get('SELECT id FROM expiry_returns_tracking WHERE reconciled_purchase_id = ?', [id]);
+    purchase.reconcile_expiry_return_id = reconciledReturn?.id || null;
 
     const items = await db.all(`
       SELECT pi.*, m.name as medicine_name 

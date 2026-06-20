@@ -58,4 +58,25 @@ router.post('/returns/reconcile-credit', async (req, res) => {
   }
 });
 
+router.get('/:id/pending-returns', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const pendingReturns = await db.all(
+      `SELECT ert.*, r.return_no 
+       FROM expiry_returns_tracking ert
+       LEFT JOIN returns r ON ert.return_id = r.id
+       WHERE ert.distributor_id = ? AND ert.status IN ('pending', 'overdue')
+       ORDER BY ert.return_date ASC`,
+      [id]
+    );
+    await dbManager.close();
+    res.json(pendingReturns);
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch pending returns:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

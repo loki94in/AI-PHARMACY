@@ -45,7 +45,10 @@ describe('returnsParser', () => {
                 original_invoice_id INTEGER,
                 type TEXT CHECK(type IN ('sale', 'purchase')),
                 date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                total_amount REAL
+                total_amount REAL,
+                return_invoice_id TEXT DEFAULT NULL,
+                return_sub_type TEXT CHECK(return_sub_type IN ('expiry', 'good')) DEFAULT 'good',
+                return_date_time DATETIME DEFAULT NULL
             );
         `);
     });
@@ -125,5 +128,20 @@ describe('returnsParser', () => {
         const sqlLine = "INSERT INTO legacy_returns (return_no, original_invoice_number, type, date, total_amount) VALUES ('RET003', 'INV001', 'invalid', '2024-04-01', 40.0);";
         const result = await processReturnsLine(sqlLine, db);
         expect(result).toBe(false); // Should reject invalid type
+    });
+
+    test('should process legacy sales return with 8 values (new columns)', async () => {
+        // First insert a sale invoice to reference
+        await db.run('INSERT INTO sales_invoices (invoice_no, total_amount) VALUES (?, ?)', ['INV008', 100.0]);
+
+        const sqlLine = "INSERT INTO legacy_returns (return_no, original_invoice_number, type, date, total_amount, return_invoice_id, return_sub_type, return_date_time) VALUES ('RET008', 'INV008', 'sale', '2024-01-15', 50.0, 'RETI_123', 'good', '2024-01-15 10:30:00');";
+        const result = await processReturnsLine(sqlLine, db);
+        expect(result).toBe(true);
+
+        const rows = await db.all("SELECT * FROM returns WHERE return_no = 'RET008'");
+        expect(rows.length).toBe(1);
+        expect(rows[0].return_invoice_id).toBe('RETI_123');
+        expect(rows[0].return_sub_type).toBe('good');
+        expect(rows[0].return_date_time).toBe('2024-01-15 10:30:00');
     });
 });

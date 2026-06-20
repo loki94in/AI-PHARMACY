@@ -40,7 +40,7 @@ router.get('/', async (_req, res) => {
 router.post('/', async (req, res) => {
   let db;
   try {
-    const { return_no, original_invoice_id, type, total_amount, distributor_id, is_expiry, loss_percentage } = req.body;
+    const { return_no, original_invoice_id, type, total_amount, distributor_id, is_expiry, loss_percentage, return_invoice_id, return_sub_type, return_date_time } = req.body;
     if (!return_no) {
       return res.status(400).json({ error: 'return_no is required' });
     }
@@ -48,9 +48,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'original_invoice_id is required' });
     }
     db = await dbManager.getConnection();
+    const resolvedSubType = return_sub_type || (is_expiry ? 'expiry' : 'good');
     const result = await db.run(
-      'INSERT INTO returns (return_no, original_invoice_id, type, total_amount, distributor_id, reason) VALUES (?,?,?,?,?,?)',
-      [return_no, original_invoice_id, type || null, total_amount || 0, distributor_id || null, req.body.reason || 'Supplier Return']
+      'INSERT INTO returns (return_no, original_invoice_id, type, total_amount, distributor_id, reason, return_invoice_id, return_sub_type, return_date_time) VALUES (?,?,?,?,?,?,?,?,?)',
+      [return_no, original_invoice_id, type || null, total_amount || 0, distributor_id || null, req.body.reason || 'Supplier Return', return_invoice_id || null, resolvedSubType, return_date_time || null]
     );
     
     if (type === 'purchase' && is_expiry && distributor_id) {
@@ -295,10 +296,15 @@ router.post('/process-returns', async (req, res) => {
 
     const totalAmount = items.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 0)), 0);
     const result = await db.run(
-      'INSERT INTO returns (return_no, type, total_amount, distributor_id, original_invoice_id, date) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
-      [returnNo, 'purchase', totalAmount, distributorId, originalInvoiceId]
+      'INSERT INTO returns (return_no, type, total_amount, distributor_id, original_invoice_id, date, return_sub_type) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)',
+      [returnNo, 'purchase', totalAmount, distributorId, originalInvoiceId, 'expiry']
     );
     const returnId = result.lastID;
+    
+    if (distributorId) {
+      const { trackExpiryReturn } = await import('../services/creditNoteService.js');
+      await trackExpiryReturn(db, returnId as number, distributorId as number, totalAmount, 3.0);
+    }
 
     for (const item of items) {
       // Record return item

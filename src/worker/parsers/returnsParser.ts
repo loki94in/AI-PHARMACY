@@ -132,11 +132,15 @@ export async function processReturnsLine(sqlLine: string, db: Database): Promise
       return true;
     }
 
-    // Insert into returns table with normalized date
+    const returnInvoiceId = rawValues.length >= 6 ? cleanValue(rawValues[5]) : null;
+    const returnSubType = rawValues.length >= 7 ? cleanValue(rawValues[6]) : 'good';
+    const returnDateTime = rawValues.length >= 8 ? normalizeDate(cleanValue(rawValues[7])) : null;
+
+    // Insert into returns table with normalized date and new columns
     const normalizedDate = normalizeDate(dateStr);
     await db.run(
-      'INSERT INTO returns (return_no, original_invoice_id, type, date, total_amount) VALUES (?, ?, ?, ?, ?)',
-      [returnNo, originalInvoiceId, typeRaw, normalizedDate, totalAmount]
+      'INSERT INTO returns (return_no, original_invoice_id, type, date, total_amount, return_invoice_id, return_sub_type, return_date_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [returnNo, originalInvoiceId, typeRaw, normalizedDate, totalAmount, returnInvoiceId, returnSubType, returnDateTime]
     );
 
     return true;

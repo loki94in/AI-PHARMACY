@@ -76,6 +76,9 @@ const DB_TARGET_COLUMNS = [
   { value: 'return_no', label: 'Return Invoice No' },
   { value: 'date', label: 'Date' },
   { value: 'total_amount', label: 'Total Amount (₹)' },
+  { value: 'return_invoice_id', label: 'Return Invoice ID' },
+  { value: 'return_sub_type', label: 'Return Type (expiry/good)' },
+  { value: 'return_date_time', label: 'Return Date Time' },
   { value: 'patient_name', label: 'Patient / Customer Name' },
   { value: 'distributor_name', label: 'Distributor / Supplier Name' },
   { value: 'doctor_name', label: 'Doctor Name' },
@@ -114,6 +117,9 @@ const DB_TARGET_SECTIONS = [
       { value: 'return_no', label: 'Return Invoice No' },
       { value: 'date', label: 'Date' },
       { value: 'total_amount', label: 'Total Amount (₹)' },
+      { value: 'return_invoice_id', label: 'Return Invoice ID' },
+      { value: 'return_sub_type', label: 'Return Type (expiry/good)' },
+      { value: 'return_date_time', label: 'Return Date Time' },
       { value: 'cgst', label: 'CGST %' },
       { value: 'sgst', label: 'SGST %' },
       { value: 'discount', label: 'Discount %' }
@@ -352,6 +358,63 @@ const Migration = () => {
   const [simulationResult, setSimulationResult] = useState<any>(null);
   const [simulatingPreMigration, setSimulatingPreMigration] = useState(false);
 
+  // V2 Migration projects, templates, snapshots and conflicts states
+  const [projects, setProjects] = useState<any[]>([]);
+  const [activeProject, setActiveProject] = useState<any>(null);
+  const [newProjectName, setNewProjectName] = useState<string>('');
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [saveTemplateName, setSaveTemplateName] = useState<string>('');
+  const [stagingConflicts, setStagingConflicts] = useState<any[]>([]);
+  const [activePreviewHeader, setActivePreviewHeader] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+
+  const fetchV2Data = useCallback(async () => {
+    try {
+      const [projs, temps, snaps] = await Promise.all([
+        api.getProjects(),
+        api.getTemplates(),
+        api.getSnapshots(),
+      ]);
+      setProjects(projs || []);
+      setTemplates(temps || []);
+      setSnapshots(snaps || []);
+      if (projs && projs.length > 0 && !activeProject) {
+        setActiveProject(projs[0]);
+      }
+    } catch (e) {
+      console.error('Failed to load V2 migration data:', e);
+    }
+  }, [activeProject]);
+
+  useEffect(() => {
+    fetchV2Data();
+  }, []);
+
+  const fetchConflicts = useCallback(async () => {
+    try {
+      const conflicts = await api.getStagingConflicts();
+      setStagingConflicts(conflicts || []);
+    } catch (e) {
+      console.error('Failed to fetch staging conflicts:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (step === 3) {
+      fetchConflicts();
+    }
+  }, [step, fetchConflicts]);
+
+  const handleResolveConflict = async (conflict: any, resolution: string) => {
+    try {
+      await api.resolveStagingConflict(conflict.id, resolution);
+      await fetchConflicts();
+      await fetchStagingData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to resolve conflict');
+    }
+  };
+
   const openMappingModal = (idx: number) => {
     const file = files[idx];
     if (!file) return;
@@ -464,6 +527,9 @@ const Migration = () => {
           date: editingRecordData.date,
           total_amount: editingRecordData.total_amount,
           distributor_name: editingRecordData.distributor_name,
+          return_invoice_id: editingRecordData.return_invoice_id,
+          return_sub_type: editingRecordData.return_sub_type,
+          return_date_time: editingRecordData.return_date_time,
         });
       }
       await fetchStagingData();
@@ -952,9 +1018,58 @@ const Migration = () => {
         </div>
       )}
 
-      {/* ─── STEP 1: UPLOAD ──────────────────────────────────────────────────── */}
       {step === 1 && (
         <div className="space-y-5">
+          {/* Project Management Bar */}
+          <div className="glass-panel p-4 bg-bg2 border border-glass-border flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-muted uppercase">Active Migration Project:</span>
+              {projects.length > 0 ? (
+                <select
+                  value={activeProject?.id || ''}
+                  onChange={(e) => {
+                    const p = projects.find(proj => proj.id === parseInt(e.target.value));
+                    setActiveProject(p);
+                  }}
+                  className="bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 font-bold outline-none cursor-pointer"
+                >
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs text-muted">No projects found. Create one to get started.</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <input
+                type="text"
+                placeholder="New Project Name"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                className="flex-1 md:flex-initial bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2.5 outline-none focus:border-primary transition-all"
+              />
+              <button
+                onClick={async () => {
+                  if (!newProjectName.trim()) return;
+                  try {
+                    const res = await api.createProject(newProjectName);
+                    if (res.success) {
+                      setNewProjectName('');
+                      await fetchV2Data();
+                    }
+                  } catch (err: any) {
+                    alert(err.message || 'Failed to create project');
+                  }
+                }}
+                className="premium-btn bg-primary text-text text-xs font-bold py-2 px-4 shrink-0"
+              >
+                + Create Project
+              </button>
+            </div>
+          </div>
+
           {/* Drop Zone */}
           <label className="glass-panel p-12 flex flex-col items-center justify-center border-dashed border-2 border-primary/30 cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-all group">
             <UploadCloud size={56} className="text-primary/40 group-hover:text-primary/70 mb-5 transition-all" />
@@ -1595,7 +1710,6 @@ const Migration = () => {
               stagingData.errors.length > 0;
             if (!hasStagingData && !migrationStatus?.isStagingReady) return null;
             return (
-
             <div className="space-y-5">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
@@ -1610,6 +1724,94 @@ const Migration = () => {
                   </div>
                 ))}
               </div>
+
+              {/* Conflict Resolution Center Panel */}
+              {stagingConflicts.length > 0 && (
+                <div className="glass-panel p-4 border border-amber-500/30 bg-amber-500/5 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="text-amber-500" size={18} />
+                      <div>
+                        <h4 className="font-bold text-sm text-text">Migration Conflict Resolution Center ({stagingConflicts.length} pending)</h4>
+                        <p className="text-[11px] text-muted">Some imported rows match existing items in the live database. Action is required.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="max-h-[250px] overflow-y-auto border border-glass-border/20 rounded-lg bg-bg divide-y divide-glass-border/10 font-sans">
+                    {stagingConflicts.map((c: any) => {
+                      const rawRow = JSON.parse(c.raw_imported_data);
+                      return (
+                        <div key={c.id} className="p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0 flex-1">
+                            <span className="font-bold text-text block">Medicine ID: {rawRow.medicine_id} — Batch: {rawRow.batch_no}</span>
+                            <span className="text-[10px] text-muted block mt-0.5">Reason: {c.conflict_reason} | Staged Qty: {rawRow.quantity} | Staged Expiry: {rawRow.expiry_date}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleResolveConflict(c, 'merge')}
+                              className="px-2.5 py-1.5 rounded bg-sky/10 border border-sky/30 text-sky text-[10px] font-bold hover:bg-sky/20 transition-all cursor-pointer"
+                            >
+                              Merge Stock
+                            </button>
+                            <button
+                              onClick={() => handleResolveConflict(c, 'replace')}
+                              className="px-2.5 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold hover:bg-emerald-500/20 transition-all cursor-pointer"
+                            >
+                              Replace Live
+                            </button>
+                            <button
+                              onClick={() => handleResolveConflict(c, 'skip')}
+                              className="px-2.5 py-1.5 rounded bg-white/5 border border-glass-border text-muted text-[10px] font-bold hover:bg-white/10 transition-all cursor-pointer"
+                            >
+                              Skip Row
+                            </button>
+                            <button
+                              onClick={() => handleResolveConflict(c, 'create_new')}
+                              className="px-2.5 py-1.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-bold hover:bg-amber-500/20 transition-all cursor-pointer"
+                            >
+                              Create New
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Database Recovery Snapshots Panel */}
+              {snapshots.length > 0 && (
+                <div className="glass-panel p-4 border border-glass-border bg-bg2/50 rounded-xl space-y-3">
+                  <h4 className="font-bold text-xs uppercase tracking-wider text-muted flex items-center gap-1.5">
+                    <RotateCcw size={14} /> Database Recovery Snapshots / Rollbacks
+                  </h4>
+                  <div className="max-h-[150px] overflow-y-auto divide-y divide-glass-border/10 text-xs bg-bg/25 rounded-lg border border-glass-border/20 p-2">
+                    {snapshots.map(snap => (
+                      <div key={snap.id} className="py-2 flex items-center justify-between gap-3">
+                        <span className="font-mono text-muted text-[10px] truncate max-w-[400px]">{snap.backup_path.split('\\').pop() || snap.backup_path}</span>
+                        <span className="text-muted text-[10px]">{snap.created_at}</span>
+                        <button
+                          onClick={async () => {
+                            if (confirm('Are you sure you want to restore the database to this state? Current data will be replaced.')) {
+                              try {
+                                const res = await api.restoreSnapshot(snap.id);
+                                alert(res.message);
+                                window.location.reload();
+                              } catch (err: any) {
+                                alert(err.message || 'Failed to restore snapshot');
+                              }
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[10px] font-bold hover:bg-rose-500/20 transition-all cursor-pointer"
+                        >
+                          Restore DB
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Interactive Staging Explorer */}
               <div className="glass-panel overflow-hidden border border-glass-border">
@@ -1853,7 +2055,9 @@ const Migration = () => {
                         <thead className="sticky top-0 bg-bg2 border-b border-glass-border">
                           <tr>
                             <th className="p-3 text-muted font-bold">Return No</th>
-                            <th className="p-3 text-muted font-bold">Date</th>
+                            <th className="p-3 text-muted font-bold">Return Invoice ID</th>
+                            <th className="p-3 text-muted font-bold">Type</th>
+                            <th className="p-3 text-muted font-bold">Date / Time</th>
                             <th className="p-3 text-muted font-bold">Total Amount</th>
                             <th className="p-3 text-muted font-bold text-center">Total Qty</th>
                             <th className="p-3 text-muted font-bold text-center">Items</th>
@@ -1865,7 +2069,21 @@ const Migration = () => {
                           {filtered.map((r: any) => (
                             <tr key={r.id} className="border-b border-glass-border/20 hover:bg-bg2/40 transition-colors">
                               <td className="p-3 font-semibold text-text">{r.return_no}</td>
-                              <td className="p-3 font-mono text-muted">{r.date || '—'}</td>
+                              <td className="p-3 font-mono text-muted">{r.return_invoice_id || '—'}</td>
+                              <td className="p-3">
+                                {r.return_sub_type === 'expiry' ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-sky-500/10 border border-sky-500/20 text-sky-400">
+                                    Expiry
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-green-500/10 border border-green-500/20 text-green-400">
+                                    Good Return
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 font-mono text-muted whitespace-nowrap">
+                                {r.return_date_time || r.date || '—'}
+                              </td>
                               <td className="p-3 font-bold text-rose-400">₹{r.total_amount || 0}</td>
                               <td className="p-3 text-center font-bold text-sky">{r.total_qty ?? 0}</td>
                               <td className="p-3 text-center text-muted">{r.item_count ?? 0}</td>
@@ -2028,6 +2246,60 @@ const Migration = () => {
 
                 {/* Left Column: Mappings form */}
                 <div className="w-full lg:w-[48%] xl:w-[50%] p-4 md:p-5 overflow-y-auto border-b lg:border-b-0 lg:border-r border-glass-border flex flex-col gap-4">
+                  
+                  {/* Preset Mapping Templates Bar */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-bg3 p-3 rounded-lg border border-glass-border/30">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-muted">Load Mapping Preset:</span>
+                      <select
+                        onChange={(e) => {
+                          const template = templates.find(t => t.name === e.target.value);
+                          if (template) {
+                            try {
+                              const parsedMappings = typeof template.mappings === 'string' ? JSON.parse(template.mappings) : template.mappings;
+                              updateTempMappingWithHistory(parsedMappings);
+                            } catch (err) {
+                              console.error('Failed to apply template:', err);
+                            }
+                          }
+                        }}
+                        className="bg-bg border border-glass-border text-text text-xs rounded p-1.5 outline-none font-bold cursor-pointer"
+                      >
+                        <option value="">-- Select Template --</option>
+                        {templates.filter(t => t.module_type === file.userSelectedType).map(t => (
+                          <option key={t.id} value={t.name}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        placeholder="Save as template"
+                        value={saveTemplateName}
+                        onChange={(e) => setSaveTemplateName(e.target.value)}
+                        className="bg-bg border border-glass-border text-text text-xs rounded p-1.5 outline-none flex-1 sm:flex-initial"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!saveTemplateName.trim()) return;
+                          try {
+                            await api.saveTemplate(saveTemplateName, file.userSelectedType, tempMapping);
+                            setSaveTemplateName('');
+                            const temps = await api.getTemplates();
+                            setTemplates(temps || []);
+                            alert('Template saved successfully!');
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to save template');
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-primary/20 border border-primary/30 text-primary text-[11px] font-bold rounded hover:bg-primary/30 transition-all shrink-0"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+
                   {/* File Preprocessing Configurations inside Mapping Modal */}
                   <div className="flex flex-col gap-4 bg-bg2 p-4 rounded-xl border border-glass-border/30">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2136,9 +2408,31 @@ const Migration = () => {
                             <span className="text-xs font-bold text-text truncate block" title={header}>
                               {header}
                             </span>
-                            <span className="text-[10px] text-muted bg-bg px-1.5 py-0.5 rounded border border-glass-border truncate self-start block max-w-full font-medium" title={String(sampleValue)}>
-                              Sample: <span className="text-primary font-mono">{String(sampleValue)}</span>
-                            </span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] text-muted bg-bg px-1.5 py-0.5 rounded border border-glass-border truncate block max-w-full font-medium" title={String(sampleValue)}>
+                                Sample: <span className="text-primary font-mono">{String(sampleValue)}</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setActivePreviewHeader(activePreviewHeader === header ? null : header)}
+                                className="px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 text-[9px] font-bold shrink-0 transition-all"
+                                title="Toggle unique values preview"
+                              >
+                                Preview
+                              </button>
+                            </div>
+                            
+                            {activePreviewHeader === header && (
+                              <div className="bg-[#121214] border border-glass-border/40 p-2 rounded-lg text-[10px] text-muted space-y-1 max-h-28 overflow-y-auto font-mono">
+                                <div className="font-sans font-semibold text-text pb-1 border-b border-glass-border/10 flex justify-between items-center">
+                                  <span>Sample Values</span>
+                                  <button onClick={() => setActivePreviewHeader(null)} className="text-muted hover:text-white">✕</button>
+                                </div>
+                                {file.samples.slice(0, 10).map((s, idx) => (
+                                  <div key={idx} className="truncate">{s[header] !== undefined ? String(s[header]) : '—'}</div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           
                           <div className="flex items-center gap-1.5 w-full">
@@ -2599,11 +2893,33 @@ const Migration = () => {
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-bold text-muted uppercase">Date</label>
+                        <label className="text-[10px] font-bold text-muted uppercase">Return Invoice ID</label>
                         <input
                           type="text"
-                          value={editingRecordData.date || ''}
-                          onChange={(e) => setEditingRecordData({ ...editingRecordData, date: e.target.value })}
+                          value={editingRecordData.return_invoice_id || ''}
+                          onChange={(e) => setEditingRecordData({ ...editingRecordData, return_invoice_id: e.target.value })}
+                          className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Return Type</label>
+                        <select
+                          value={editingRecordData.return_sub_type || 'good'}
+                          onChange={(e) => setEditingRecordData({ ...editingRecordData, return_sub_type: e.target.value })}
+                          className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary"
+                        >
+                          <option value="good">Good Return</option>
+                          <option value="expiry">Expiry</option>
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Return Date / Time</label>
+                        <input
+                          type="text"
+                          value={editingRecordData.return_date_time || editingRecordData.date || ''}
+                          onChange={(e) => setEditingRecordData({ ...editingRecordData, return_date_time: e.target.value })}
                           className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary"
                         />
                       </div>

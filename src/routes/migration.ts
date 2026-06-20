@@ -711,7 +711,7 @@ router.get('/staging/returns', async (req, res) => {
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
     const rows = await db.all(`
-      SELECT r.id, r.return_no, r.date, r.total_amount, d.name as distributor_name,
+      SELECT r.id, r.return_no, r.date, r.total_amount, r.return_invoice_id, r.return_sub_type, r.return_date_time, d.name as distributor_name,
              (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri WHERE ri.return_id = r.id) as total_qty,
              (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id = r.id) as item_count
       FROM returns r
@@ -727,12 +727,15 @@ router.put('/staging/returns/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
     const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
-    const { return_no, date, total_amount, distributor_name } = req.body;
+    const { return_no, date, total_amount, distributor_name, return_invoice_id, return_sub_type, return_date_time } = req.body;
     const updates = [];
     const params = [];
     if (return_no !== undefined) { updates.push('return_no = ?'); params.push(return_no); }
     if (date !== undefined) { updates.push('date = ?'); params.push(date); }
     if (total_amount !== undefined) { updates.push('total_amount = ?'); params.push(total_amount); }
+    if (return_invoice_id !== undefined) { updates.push('return_invoice_id = ?'); params.push(return_invoice_id); }
+    if (return_sub_type !== undefined) { updates.push('return_sub_type = ?'); params.push(return_sub_type); }
+    if (return_date_time !== undefined) { updates.push('return_date_time = ?'); params.push(return_date_time); }
     
     if (updates.length > 0) {
       await db.run(`UPDATE returns SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.id]);
@@ -1011,9 +1014,19 @@ router.post('/staging/finalize', async (req, res) => {
     }
 
     // Backup the old app.db just in case
-    const backupPath = DB_PATH + '.bak_' + Date.now();
+    const timestamp = Date.now();
+    const backupPath = DB_PATH + '.bak_' + timestamp;
     if (fs.existsSync(DB_PATH)) {
       fs.copyFileSync(DB_PATH, backupPath);
+
+      // Save backup to snapshots table
+      try {
+        const coreDb = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        await coreDb.run('INSERT INTO migration_snapshots (backup_path) VALUES (?)', [backupPath]);
+        await coreDb.close();
+      } catch (dbErr) {
+        console.error('Failed to log snapshot:', dbErr);
+      }
     }
 
     // Replace app.db with staging.db
@@ -1028,6 +1041,145 @@ router.post('/staging/finalize', async (req, res) => {
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// --- V2 ENTERPRISE MIGRATION ENDPOINTS ---
+
+router.get('/projects', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const projects = await db.all('SELECT * FROM migration_projects ORDER BY id DESC');
+    res.json(projects);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/projects', async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Project name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    const result = await db.run('INSERT INTO migration_projects (name) VALUES (?)', [name.trim()]);
+    res.json({ success: true, id: result.lastID, name });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/projects/:id', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    await db.run('DELETE FROM migration_projects WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/templates', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const templates = await db.all('SELECT * FROM migration_templates ORDER BY name ASC');
+    res.json(templates);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/templates', async (req, res) => {
+  const { name, moduleType, mappings } = req.body;
+  if (!name || !moduleType || !mappings) {
+    return res.status(400).json({ error: 'name, moduleType, and mappings are required' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    await db.run(
+      'INSERT OR REPLACE INTO migration_templates (name, module_type, mappings) VALUES (?, ?, ?)',
+      [name.trim(), moduleType, typeof mappings === 'string' ? mappings : JSON.stringify(mappings)]
+    );
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/staging/conflicts', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const conflicts = await db.all('SELECT * FROM migration_conflicts WHERE status = "pending"');
+    await db.close();
+    res.json(conflicts);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/staging/resolve', async (req, res) => {
+  if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
+  const { conflictId, resolution } = req.body;
+  if (!conflictId || !resolution) {
+    return res.status(400).json({ error: 'conflictId and resolution are required' });
+  }
+  try {
+    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const conflict = await db.get('SELECT * FROM migration_conflicts WHERE id = ?', [conflictId]);
+    if (!conflict) {
+      await db.close();
+      return res.status(404).json({ error: 'Conflict not found' });
+    }
+    const rawRow = JSON.parse(conflict.raw_imported_data);
+    
+    if (conflict.module_type === 'inventory') {
+      if (resolution === 'skip') {
+        // Just resolve it
+      } else if (resolution === 'replace') {
+        if (conflict.matching_record_id) {
+          await db.run('DELETE FROM inventory_master WHERE id = ?', [conflict.matching_record_id]);
+        }
+        await db.run(
+          'INSERT INTO inventory_master (medicine_id, quantity, loose_quantity, rack_location, batch_no, expiry_date, cost_price, mrp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [rawRow.medicine_id, rawRow.quantity, rawRow.loose_quantity, rawRow.rack_location, rawRow.batch_no, rawRow.expiry_date, rawRow.cost_price, rawRow.mrp]
+        );
+      } else if (resolution === 'merge') {
+        const existing = await db.get('SELECT * FROM inventory_master WHERE id = ?', [conflict.matching_record_id]);
+        if (existing) {
+          const newQty = (existing.quantity || 0) + (rawRow.quantity || 0);
+          const newLooseQty = (existing.loose_quantity || 0) + (rawRow.loose_quantity || 0);
+          await db.run(
+            'UPDATE inventory_master SET quantity = ?, loose_quantity = ? WHERE id = ?',
+            [newQty, newLooseQty, conflict.matching_record_id]
+          );
+        }
+      } else if (resolution === 'create_new') {
+        const modifiedBatch = `${rawRow.batch_no || 'BATCH'}-NEW`;
+        await db.run(
+          'INSERT INTO inventory_master (medicine_id, quantity, loose_quantity, rack_location, batch_no, expiry_date, cost_price, mrp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [rawRow.medicine_id, rawRow.quantity, rawRow.loose_quantity, rawRow.rack_location, modifiedBatch, rawRow.expiry_date, rawRow.cost_price, rawRow.mrp]
+        );
+      }
+    }
+    
+    await db.run('UPDATE migration_conflicts SET status = ? WHERE id = ?', [`resolved_${resolution}`, conflictId]);
+    await db.close();
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/snapshots', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const snapshots = await db.all('SELECT * FROM migration_snapshots ORDER BY id DESC');
+    res.json(snapshots);
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/snapshots/restore', async (req, res) => {
+  const { snapshotId } = req.body;
+  if (!snapshotId) return res.status(400).json({ error: 'snapshotId is required' });
+  try {
+    const db = await dbManager.getConnection();
+    const snapshot = await db.get('SELECT * FROM migration_snapshots WHERE id = ?', [snapshotId]);
+    if (!snapshot) {
+      return res.status(404).json({ error: 'Snapshot not found' });
+    }
+    if (fs.existsSync(snapshot.backup_path)) {
+      await dbManager.close(true);
+      fs.copyFileSync(snapshot.backup_path, DB_PATH);
+      res.json({ success: true, message: 'Database successfully restored from recovery snapshot!' });
+    } else {
+      res.status(400).json({ error: 'Backup snapshot file does not exist on disk' });
+    }
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 export default router;

@@ -100,6 +100,9 @@ const getInitialPurchasesTabs = () => {
       invoiceDate: new Date().toISOString().split('T')[0],
       globalCdPer: '',
       extraCredit: '',
+      cnAmount: '',
+      cnNumber: '',
+      reconcileExpiryReturnId: null,
       items: [
         {
           id: generateUUID(),
@@ -223,6 +226,11 @@ const Purchases: React.FC = () => {
   const [invoiceDate, setInvoiceDate] = useState(initialActiveTab?.invoiceDate || '');
   const [globalCdPer, setGlobalCdPer] = useState(initialActiveTab?.globalCdPer !== undefined && initialActiveTab?.globalCdPer !== 0 ? initialActiveTab.globalCdPer : '');
   const [extraCredit, setExtraCredit] = useState(initialActiveTab?.extraCredit !== undefined && initialActiveTab?.extraCredit !== 0 ? initialActiveTab.extraCredit : '');
+  const [cnAmount, setCnAmount] = useState(initialActiveTab?.cnAmount !== undefined && initialActiveTab?.cnAmount !== 0 ? initialActiveTab.cnAmount : '');
+  const [cnNumber, setCnNumber] = useState(initialActiveTab?.cnNumber || '');
+  const [reconcileExpiryReturnId, setReconcileExpiryReturnId] = useState<number | null>(initialActiveTab?.reconcileExpiryReturnId || null);
+  const [pendingReturns, setPendingReturns] = useState<any[]>([]);
+  const [showCreditNotesPanel, setShowCreditNotesPanel] = useState(false);
   const [items, setItems] = useState<BillItem[]>(initialActiveTab?.items || []);
   const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistory[]>([]);
   const [sourceFilename, setSourceFilename] = useState(initialActiveTab?.sourceFilename || '');
@@ -259,6 +267,9 @@ const Purchases: React.FC = () => {
         t.invoiceDate !== invoiceDate ||
         t.globalCdPer !== globalCdPer ||
         t.extraCredit !== extraCredit ||
+        t.cnAmount !== cnAmount ||
+        t.cnNumber !== cnNumber ||
+        t.reconcileExpiryReturnId !== reconcileExpiryReturnId ||
         t.items !== items ||
         t.sourceFilename !== sourceFilename ||
         t.sourceFileHeaders !== sourceFileHeaders ||
@@ -275,6 +286,9 @@ const Purchases: React.FC = () => {
           invoiceDate,
           globalCdPer,
           extraCredit,
+          cnAmount,
+          cnNumber,
+          reconcileExpiryReturnId,
           items,
           sourceFilename,
           sourceFileHeaders,
@@ -293,6 +307,9 @@ const Purchases: React.FC = () => {
     invoiceDate,
     globalCdPer,
     extraCredit,
+    cnAmount,
+    cnNumber,
+    reconcileExpiryReturnId,
     items,
     sourceFilename,
     sourceFileHeaders,
@@ -326,6 +343,9 @@ const Purchases: React.FC = () => {
       setInvoiceDate(target.invoiceDate || '');
       setGlobalCdPer(target.globalCdPer !== undefined && target.globalCdPer !== 0 ? target.globalCdPer : '');
       setExtraCredit(target.extraCredit !== undefined && target.extraCredit !== 0 ? target.extraCredit : '');
+      setCnAmount(target.cnAmount !== undefined && target.cnAmount !== 0 ? target.cnAmount : '');
+      setCnNumber(target.cnNumber || '');
+      setReconcileExpiryReturnId(target.reconcileExpiryReturnId || null);
       setItems(target.items || [createEmptyItem()]);
       setSourceFilename(target.sourceFilename || '');
       setSourceFileHeaders(target.sourceFileHeaders || []);
@@ -348,6 +368,9 @@ const Purchases: React.FC = () => {
       invoiceDate: new Date().toISOString().split('T')[0],
       globalCdPer: '',
       extraCredit: '',
+      cnAmount: '',
+      cnNumber: '',
+      reconcileExpiryReturnId: null,
       items: [createEmptyItem()],
       sourceFilename: '',
       sourceFileHeaders: [],
@@ -362,6 +385,9 @@ const Purchases: React.FC = () => {
     setInvoiceDate(newTab.invoiceDate);
     setGlobalCdPer('');
     setExtraCredit('');
+    setCnAmount('');
+    setCnNumber('');
+    setReconcileExpiryReturnId(null);
     setItems([createEmptyItem()]);
     setSourceFilename('');
     setSourceFileHeaders([]);
@@ -380,6 +406,9 @@ const Purchases: React.FC = () => {
       setInvoiceNo('');
       setGlobalCdPer('');
       setExtraCredit('');
+      setCnAmount('');
+      setCnNumber('');
+      setReconcileExpiryReturnId(null);
       setItems([createEmptyItem()]);
       setSourceFilename('');
       setSourceFileHeaders([]);
@@ -394,6 +423,9 @@ const Purchases: React.FC = () => {
         invoiceDate: new Date().toISOString().split('T')[0],
         globalCdPer: '',
         extraCredit: '',
+        cnAmount: '',
+        cnNumber: '',
+        reconcileExpiryReturnId: null,
         items: [createEmptyItem()],
         sourceFilename: '',
         sourceFileHeaders: [],
@@ -413,6 +445,9 @@ const Purchases: React.FC = () => {
       setInvoiceDate(fallback.invoiceDate || '');
       setGlobalCdPer(fallback.globalCdPer !== undefined && fallback.globalCdPer !== 0 ? fallback.globalCdPer : '');
       setExtraCredit(fallback.extraCredit !== undefined && fallback.extraCredit !== 0 ? fallback.extraCredit : '');
+      setCnAmount(fallback.cnAmount !== undefined && fallback.cnAmount !== 0 ? fallback.cnAmount : '');
+      setCnNumber(fallback.cnNumber || '');
+      setReconcileExpiryReturnId(fallback.reconcileExpiryReturnId || null);
       setItems(fallback.items || [createEmptyItem()]);
       setSourceFilename(fallback.sourceFilename || '');
       setSourceFileHeaders(fallback.sourceFileHeaders || []);
@@ -632,6 +667,24 @@ const Purchases: React.FC = () => {
     fetchDistributors();
     fetchPurchaseHistory();
   }, []);
+
+  const fetchPendingReturns = async (distId: number) => {
+    try {
+      const response = await api.getPendingReturns(distId);
+      setPendingReturns(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error('Error fetching pending returns:', error);
+      setPendingReturns([]);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedDistributor) {
+      fetchPendingReturns(selectedDistributor);
+    } else {
+      setPendingReturns([]);
+    }
+  }, [selectedDistributor]);
 
   const fetchDistributors = async () => {
     try {
@@ -868,11 +921,14 @@ const Purchases: React.FC = () => {
   // Handle prefilled purchase data from navigation state (e.g. from Mail page)
   useEffect(() => {
     if (location.state?.prefilledPurchase) {
-      const { editPurchaseId, distributorName, invoiceNo: prefInvoiceNo, date: prefDate, items: prefilledItems, globalCdPer: prefGlobalCdPer, totalAmount: prefTotalAmount, source_filename, source_file_headers, mapping_config } = location.state.prefilledPurchase;
+      const { editPurchaseId, distributorName, invoiceNo: prefInvoiceNo, date: prefDate, items: prefilledItems, globalCdPer: prefGlobalCdPer, totalAmount: prefTotalAmount, cnAmount: prefCnAmount, cnNumber: prefCnNumber, reconcileExpiryReturnId: prefReconcileExpiryReturnId, source_filename, source_file_headers, mapping_config } = location.state.prefilledPurchase;
       
       if (editPurchaseId) setEditPurchaseId(editPurchaseId);
       if (prefInvoiceNo) setInvoiceNo(prefInvoiceNo);
       if (prefDate) setInvoiceDate(prefDate);
+      if (prefCnAmount !== undefined) setCnAmount(prefCnAmount);
+      if (prefCnNumber !== undefined) setCnNumber(prefCnNumber);
+      if (prefReconcileExpiryReturnId !== undefined) setReconcileExpiryReturnId(prefReconcileExpiryReturnId);
       if (prefGlobalCdPer !== undefined) setGlobalCdPer(prefGlobalCdPer);
       if (source_filename) setSourceFilename(source_filename);
       if (source_file_headers) setSourceFileHeaders(source_file_headers);
@@ -948,9 +1004,9 @@ const Purchases: React.FC = () => {
 
             const calculatedGrandTotal = subtotal + totalCgst + totalSgst;
             const diff = calculatedGrandTotal - prefTotalAmount;
-            setExtraCredit(diff === 0 ? '' : parseFloat(diff.toFixed(2)));
+            setCnAmount(diff === 0 ? '' : parseFloat(diff.toFixed(2)));
           } else {
-            setExtraCredit('');
+            setCnAmount('');
           }
         };
         
@@ -1198,8 +1254,8 @@ const Purchases: React.FC = () => {
       totalSgst += sgstAmount;
     });
 
-    const extra = parseFloat(extraCredit as any) || 0;
-    const grandTotal = subtotal + totalCgst + totalSgst - extra;
+    const cnVal = parseFloat(cnAmount as any) || 0;
+    const grandTotal = subtotal + totalCgst + totalSgst - cnVal;
 
     return {
       grossAmount,
@@ -1244,7 +1300,10 @@ const Purchases: React.FC = () => {
         invoice_no: invoiceNo,
         date: invoiceDate,
         cd_per: parseFloat(globalCdPer as any) || 0,
-        extra_credit: parseFloat(extraCredit as any) || 0,
+        extra_credit: parseFloat(cnAmount as any) || 0,
+        cn_amount: parseFloat(cnAmount as any) || 0,
+        cn_number: cnNumber,
+        reconcile_expiry_return_id: reconcileExpiryReturnId,
         source_filename: sourceFilename,
         source_file_headers: sourceFileHeaders,
         mapping_config: mappingConfig,
@@ -1295,6 +1354,9 @@ const Purchases: React.FC = () => {
       setGrnNo(nextGrn);
       setGlobalCdPer('');
       setExtraCredit('');
+      setCnAmount('');
+      setCnNumber('');
+      setReconcileExpiryReturnId(null);
       setSourceFilename('');
       setSourceFileHeaders([]);
       setMappingConfig({});
@@ -1449,11 +1511,18 @@ const Purchases: React.FC = () => {
           totalSgst += sgstAmount;
         });
 
-        const calculatedGrandTotal = subtotal + totalCgst + totalSgst;
-        const diff = calculatedGrandTotal - response.data.total_amount;
-        setExtraCredit(diff === 0 ? '' : parseFloat(diff.toFixed(2)));
+        const parsedCnAmt = parseFloat(response.data.cn_amount);
+        if (!isNaN(parsedCnAmt) && parsedCnAmt > 0) {
+          setCnAmount(parsedCnAmt);
+          setCnNumber(response.data.cn_number || (response.data.invoice_no ? `CN-${response.data.invoice_no}` : ''));
+        } else {
+          const diff = calculatedGrandTotal - response.data.total_amount;
+          setCnAmount(diff === 0 ? '' : parseFloat(diff.toFixed(2)));
+          setCnNumber(response.data.invoice_no ? `CN-${response.data.invoice_no}` : '');
+        }
       } else {
-        setExtraCredit('');
+        setCnAmount('');
+        setCnNumber('');
       }
 
       if (response.data.source_filename) {
@@ -1801,15 +1870,68 @@ const Purchases: React.FC = () => {
             />
           </div>
 
-          {/* Extra Credit */}
+          {/* Credit Note Application */}
+          <div className="w-48 relative">
+            <label className="block text-sm font-medium text-purple-300 mb-1 flex items-center justify-between">
+              <span>CN Number</span>
+              {pendingReturns.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCreditNotesPanel(!showCreditNotesPanel)}
+                  className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded hover:bg-purple-500/40 animate-pulse font-bold"
+                >
+                  💳 {pendingReturns.length} Available
+                </button>
+              )}
+            </label>
+            <input
+              type="text"
+              value={cnNumber}
+              onChange={(e) => {
+                setCnNumber(e.target.value);
+                setReconcileExpiryReturnId(null); // Clear ID if manually edited
+              }}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
+              placeholder="e.g. CN-102"
+            />
+            
+            {showCreditNotesPanel && pendingReturns.length > 0 && (
+              <div className="absolute z-dropdown w-64 mt-1 bg-gray-900/95 backdrop-blur-md border border-purple-500/30 rounded-xl shadow-2xl p-2 max-h-48 overflow-y-auto">
+                <p className="text-[10px] text-purple-300 font-bold uppercase tracking-wider mb-1.5 px-2 border-b border-purple-500/20 pb-1">Select Return Credit Note</p>
+                {pendingReturns.map(ret => (
+                  <button
+                    key={ret.id}
+                    type="button"
+                    onClick={() => {
+                      setCnNumber(ret.return_no || `CN-${ret.id}`);
+                      setCnAmount(ret.expected_credit_amount);
+                      setReconcileExpiryReturnId(ret.id);
+                      setShowCreditNotesPanel(false);
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded hover:bg-white/5 transition-colors border-b border-glass-border/10 last:border-0"
+                  >
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-mono text-white font-semibold">{ret.return_no || `CN-${ret.id}`}</span>
+                      <span className="text-emerald-400 font-bold">₹{ret.expected_credit_amount?.toFixed(2)}</span>
+                    </div>
+                    <div className="text-[9px] text-muted mt-0.5">
+                      Returned: {ret.return_date ? ret.return_date.substring(0,10) : 'N/A'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="w-28">
-            <label className="block text-sm font-medium text-gray-300 mb-1">Extra Credit</label>
+            <label className="block text-sm font-medium text-purple-300 mb-1">CN Amount</label>
             <input
               type="number"
-              value={extraCredit === 0 ? '' : extraCredit}
-              onChange={(e) => setExtraCredit(parseFloat(e.target.value) || 0)}
-              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={cnAmount === 0 ? '' : cnAmount}
+              onChange={(e) => setCnAmount(parseFloat(e.target.value) || 0)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-bold text-red-300"
               min="0"
+              placeholder="0.00"
             />
           </div>
 
@@ -2170,10 +2292,12 @@ const Purchases: React.FC = () => {
             <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">SGST</span>
             <span className="text-base font-bold text-white">₹{totals.totalSgst.toFixed(2)}</span>
           </div>
-          {/* Extra Credit */}
+          {/* Credit Note (CN) */}
           <div className="flex flex-col items-center justify-center py-2 px-3 gap-0.5">
-            <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Extra Credit</span>
-            <span className="text-base font-bold text-red-400">-₹{(parseFloat(extraCredit as any) || 0).toFixed(2)}</span>
+            <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">CN Applied</span>
+            <span className="text-base font-bold text-red-400" title={cnNumber ? `CN Ref: ${cnNumber}` : undefined}>
+              -₹{(parseFloat(cnAmount as any) || 0).toFixed(2)}
+            </span>
           </div>
         </div>
 

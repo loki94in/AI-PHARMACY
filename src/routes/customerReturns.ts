@@ -79,7 +79,7 @@ router.post('/', asyncHandler(async (req: express.Request, res: express.Response
 
     // Insert return record
     const retRes = await db.run(
-      `INSERT INTO returns (return_no, original_invoice_id, type, total_amount, reason) VALUES (?, ?, 'sale', ?, ?)`,
+      `INSERT INTO returns (return_no, original_invoice_id, type, total_amount, reason, return_sub_type) VALUES (?, ?, 'sale', ?, ?, 'good')`,
       [returnNo, original_invoice_id, totalRefund, reason || 'Customer Return']
     );
     const returnId = retRes.lastID;
@@ -143,7 +143,7 @@ router.post('/', asyncHandler(async (req: express.Request, res: express.Response
 router.get('/history', asyncHandler(async (req: express.Request, res: express.Response) => {
   const db = await dbManager.getConnection();
   const rows = await db.all(`
-    SELECT r.id, r.return_no, r.date, r.total_amount, si.invoice_no as original_invoice_no
+    SELECT r.*, si.invoice_no as original_invoice_no
     FROM returns r
     LEFT JOIN sales_invoices si ON r.original_invoice_id = si.id
     WHERE r.type = 'sale'
