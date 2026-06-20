@@ -18,8 +18,13 @@ router.get('/', async (_req, res) => {
   let db;
   try {
     db = await dbManager.getConnection();
-    const rows = await db.all('SELECT * FROM returns ORDER BY date DESC');
-        res.json(rows);
+    const rows = await db.all(`
+      SELECT r.*, d.name as distributor_name 
+      FROM returns r 
+      LEFT JOIN distributors d ON r.distributor_id = d.id 
+      ORDER BY r.date DESC
+    `);
+    res.json(rows);
   } catch (err: any) {
     if (db)     console.error(JSON.stringify({
       message: 'Returns fetch error',
@@ -277,10 +282,21 @@ router.post('/process-returns', async (req, res) => {
     
     // Group return items by distributor to create individual return references if needed,
     // or aggregate under one single return transaction. Let's create one master return record:
+    const firstItem = items[0];
+    const distributorId = firstItem?.distributor_id || null;
+    let originalInvoiceId = null;
+    
+    if (firstItem?.invoice_no && firstItem.invoice_no !== 'N/A') {
+      const purchase = await db.get('SELECT id FROM purchases WHERE invoice_no = ?', [firstItem.invoice_no]);
+      if (purchase) {
+        originalInvoiceId = purchase.id;
+      }
+    }
+
     const totalAmount = items.reduce((sum, item) => sum + ((item.cost_price || 0) * (item.quantity || 0)), 0);
     const result = await db.run(
-      'INSERT INTO returns (return_no, type, total_amount, date) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
-      [returnNo, 'purchase', totalAmount]
+      'INSERT INTO returns (return_no, type, total_amount, distributor_id, original_invoice_id, date) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+      [returnNo, 'purchase', totalAmount, distributorId, originalInvoiceId]
     );
     const returnId = result.lastID;
 
@@ -444,6 +460,25 @@ function extractMedicineInfo(text: string) {
 
   return info;
 }
+
+// Fetch return items for a specific return
+router.get('/:id/items', async (req, res) => {
+  let db;
+  try {
+    const { id } = req.params;
+    db = await dbManager.getConnection();
+    const rows = await db.all(`
+      SELECT ri.*, m.name as medicine_name
+      FROM return_items ri
+      LEFT JOIN medicines m ON ri.medicine_id = m.id
+      WHERE ri.return_id = ?
+    `, [id]);
+    res.json(rows);
+  } catch (err: any) {
+    console.error('Error fetching return items:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 export default router;
 

@@ -20,7 +20,7 @@ export const UniversalMedicineEditModal: React.FC<Props> = ({ medicineId, onClos
   const [showMfgSuggestions, setShowMfgSuggestions] = useState(false);
 
   const handleMfgChange = async (val: string) => {
-    setForm(prev => ({ ...prev, manufacturer: val }));
+    setForm((prev: any) => ({ ...prev, manufacturer: val }));
     try {
       const res = await api.getManufacturers(val);
       setMfgSuggestions(res || []);
@@ -206,7 +206,7 @@ export const UniversalMedicineEditModal: React.FC<Props> = ({ medicineId, onClos
                           <button
                             key={idx}
                             type="button"
-                            onClick={() => setForm(prev => ({ ...prev, manufacturer: mfgName }))}
+                            onClick={() => setForm((prev: any) => ({ ...prev, manufacturer: mfgName }))}
                             className="w-full text-left px-3 py-2 hover:bg-white/10 text-text border-b border-glass-border/10 last:border-0 flex items-center justify-between text-xs"
                           >
                             <span className="truncate pr-2 font-medium">{mfgName}</span>

@@ -69,6 +69,11 @@ const Settings = () => {
   const [isOpeningWindow, setIsOpeningWindow] = useState(false);
   const [isOpeningWaWindow, setIsOpeningWaWindow] = useState(false);
 
+  // System reset confirm & loading states
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+
 
   // Billing Preferences
   const [defaultTaxRate, setDefaultTaxRate] = useState<number>(18);
@@ -570,6 +575,35 @@ const Settings = () => {
     } catch (err: any) {
       console.error('Failed to reset admin device:', err);
       toastEvent.trigger('Failed to reset authorized device.', 'error');
+    }
+  };
+
+  const handleResetData = async () => {
+    if (!resetConfirm) {
+      setResetConfirm(true);
+      setResetConfirmText('');
+      return;
+    }
+    if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
+      toastEvent.trigger('Please type RESET to confirm.', 'error');
+      return;
+    }
+    setResetLoading(true);
+    try {
+      await apiClient.post('/utilities/reset-data', { wipeAll: true });
+      toastEvent.trigger('App reset to factory state. Reloading...', 'success');
+      setResetConfirm(false);
+      setResetConfirmText('');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err: any) {
+      console.error('Reset error:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to reset data.', 'error');
+      setResetConfirm(false);
+      setResetConfirmText('');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -1392,10 +1426,18 @@ const Settings = () => {
           System
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
           <button className="premium-btn bg-red text-white shadow-[0_4px_14px_rgba(239,68,68,0.4)] hover:bg-red-600 flex items-center gap-2 w-full justify-center">
             <Trash2 size={16} />
             Clear Cache
+          </button>
+
+          <button
+            onClick={() => { setResetConfirm(true); setResetConfirmText(''); }}
+            className="premium-btn bg-amber-600 text-white shadow-[0_4px_14px_rgba(245,158,11,0.4)] hover:bg-amber-700 flex items-center gap-2 w-full justify-center"
+          >
+            <Trash2 size={16} />
+            Reset All Stored Data
           </button>
 
           <div className="glass-panel p-4 flex items-center justify-between bg-bg3/30 border border-glass-border">
@@ -1404,6 +1446,70 @@ const Settings = () => {
           </div>
         </div>
       </div>
+
+      {/* ─── Factory Reset Confirmation Modal ─── */}
+      {resetConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}>
+          <div className="glass-panel w-full max-w-md p-8 flex flex-col gap-6 border border-red-500/40 shadow-[0_0_60px_rgba(239,68,68,0.3)]">
+            {/* Icon + Title */}
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                <AlertTriangle size={32} className="text-red-400" />
+              </div>
+              <h2 className="text-xl font-black text-text tracking-tight">Factory Reset</h2>
+              <p className="text-sm text-muted leading-relaxed">
+                This will <strong className="text-red-400">permanently delete</strong> all inventory, bills, purchases, customers,
+                settings, and every other record. The app will restart as if newly installed.
+              </p>
+              <p className="text-xs text-red-400/80 font-semibold uppercase tracking-wider">
+                This action cannot be undone.
+              </p>
+            </div>
+
+            {/* Typed confirmation */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-muted uppercase tracking-wider">
+                Type <span className="text-red-400 font-black">RESET</span> to confirm
+              </label>
+              <input
+                id="resetConfirmInput"
+                type="text"
+                className="premium-input w-full text-center font-mono font-bold tracking-widest"
+                placeholder="RESET"
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') handleResetData(); }}
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setResetConfirm(false); setResetConfirmText(''); }}
+                disabled={resetLoading}
+                className="premium-btn bg-bg3/60 text-muted hover:text-text hover:bg-bg3 flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetData}
+                disabled={resetLoading || resetConfirmText.trim().toUpperCase() !== 'RESET'}
+                className="premium-btn flex-1 flex items-center justify-center gap-2 text-white transition-all"
+                style={{
+                  background: resetConfirmText.trim().toUpperCase() === 'RESET' ? 'rgb(185,28,28)' : 'rgba(120,20,20,0.4)',
+                  cursor: resetConfirmText.trim().toUpperCase() === 'RESET' ? 'pointer' : 'not-allowed',
+                  opacity: resetConfirmText.trim().toUpperCase() === 'RESET' ? 1 : 0.5,
+                }}
+              >
+                {resetLoading ? <RefreshCw size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {resetLoading ? 'Resetting...' : 'Erase Everything'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showConnectModal && <MobileConnectionModal onClose={() => setShowConnectModal(false)} />}
     </div>
   );

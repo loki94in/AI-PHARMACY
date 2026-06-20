@@ -35,7 +35,8 @@ class DatabaseManager {
       await db.run('PRAGMA busy_timeout = 5000;');
 
       // Integrity check on cold start — must pass before any app code uses the DB
-      if (process.env.NODE_ENV !== 'test') {
+      const isProductionOrPkg = process.env.NODE_ENV === 'production' || typeof (process as any).pkg !== 'undefined';
+      if (isProductionOrPkg && process.env.NODE_ENV !== 'test') {
         const integrityResult = await db.get('PRAGMA integrity_check');
         if (integrityResult?.integrity_check !== 'ok') {
           console.error('[DB] Integrity check failed, attempting WAL checkpoint recovery...');

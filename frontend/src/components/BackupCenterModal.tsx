@@ -441,7 +441,7 @@ const BackupCenterModal: React.FC<BackupCenterModalProps> = ({
           <div className="flex gap-2">
             <button
               onClick={handleManualBackup}
-              disabled={actionLoading || (status && status.isPaused)}
+              disabled={actionLoading || !!(status && status.isPaused)}
               className="px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-blue-500/25 disabled:opacity-40"
             >
               Create Manual Backup

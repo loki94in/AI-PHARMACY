@@ -236,10 +236,14 @@ export const api = {
     apiClient.post('/migration/analyze', { fileName, skipLines }).then(r => r.data),
   analyzeZipFile: (fileName: string) =>
     apiClient.post('/migration/analyze-zip', { fileName }).then(r => r.data),
-  analyzeExcelFile: (fileName: string, sheetIndex?: number) =>
-    apiClient.post('/migration/analyze-excel', { fileName, sheetIndex }).then(r => r.data),
-  runMigration: (fileName: string, dataType: string, mapping: any, skipLines: number = 0) => 
-    apiClient.post('/migration/run', { fileName, dataType, mapping, skipLines }).then(r => r.data),
+  analyzeExcelFile: (fileName: string, sheetIndex?: number, skipLines?: number) =>
+    apiClient.post('/migration/analyze-excel', { fileName, sheetIndex, skipLines }).then(r => r.data),
+  preMigrationAnalyze: (fileName: string, skipLines: number = 0, sheetIndex: number = 0, userMapping?: any) =>
+    apiClient.post('/migration/pre-migration-analyze', { fileName, skipLines, sheetIndex, userMapping }).then(r => r.data),
+  preMigrationSimulate: (fileName: string, dataType: string, mapping: any, skipLines: number = 0, sheetIndex: number = 0, filters?: any) =>
+    apiClient.post('/migration/pre-migration-simulate', { fileName, dataType, mapping, skipLines, sheetIndex, filters }).then(r => r.data),
+  runMigration: (fileName: string, dataType: string, mapping: any, skipLines: number = 0, sheetIndex: number = 0, filters?: any, medicineActions?: any) => 
+    apiClient.post('/migration/run', { fileName, dataType, mapping, skipLines, sheetIndex, filters, medicineActions }).then(r => r.data),
   getMigrationStatus: () => apiClient.get('/migration/status').then(r => r.data),
   getStagingInventory: () => apiClient.get('/migration/staging/inventory').then(r => r.data),
   updateStagingInventory: (id: number, data: any) => apiClient.put(`/migration/staging/inventory/${id}`, data).then(r => r.data),

@@ -10,6 +10,7 @@ import csvParser from 'csv-parser';
 import * as XLSX from 'xlsx';
 import { eventService } from '../services/eventService.js';
 import { normalizeDate } from '../utils/migrationUtils.js';
+import { matchesFilters } from '../utils/preMigrationIntelligence.js';
 
 // PostgreSQL COPY parser
 import { parseCopyHeader, parseCopyDataRow, isCopyEndMarker, isPgDump } from './parsers/pgCopyParser.js';
@@ -131,7 +132,15 @@ function validateAndCleanCSVRow(row: any, mapping?: Record<string, string>): { i
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-export async function runManualMigration(fileName: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0): Promise<void> {
+export async function runManualMigration(
+  fileName: string,
+  dataType: string,
+  mapping?: Record<string, string>,
+  skipLines: number = 0,
+  sheetIndex: number = 0,
+  filters?: any,
+  medicineActions?: any
+): Promise<void> {
   if (migrationStatus.active) {
     throw new Error('A migration is already in progress.');
   }
@@ -148,10 +157,18 @@ export async function runManualMigration(fileName: string, dataType: string, map
     throw new Error('Unsupported file format for migration. Supported formats: .zip, .sql, .sql.gz/gz, .tar.gz/tgz, .csv, .xlsx, .xls');
   }
 
-  await processMigrationFile(filePath, dataType, mapping, skipLines);
+  await processMigrationFile(filePath, dataType, mapping, skipLines, sheetIndex, filters, medicineActions);
 }
 
-async function processMigrationFile(filePath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0) {
+async function processMigrationFile(
+  filePath: string,
+  dataType: string,
+  mapping?: Record<string, string>,
+  skipLines: number = 0,
+  sheetIndex: number = 0,
+  filters?: any,
+  medicineActions?: any
+) {
   let extractPath: string | undefined = undefined;
   let tempCsvPath: string | null = null;
   try {
@@ -174,7 +191,7 @@ async function processMigrationFile(filePath: string, dataType: string, mapping?
     if (ext === '.xlsx' || ext === '.xls') {
       migrationStatus.message = 'Excel file detected — converting to CSV...';
       const workbook = XLSX.readFile(filePath);
-      const sheetName = workbook.SheetNames[0];
+      const sheetName = workbook.SheetNames[sheetIndex] || workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const csvContent = XLSX.utils.sheet_to_csv(worksheet);
 
@@ -185,7 +202,7 @@ async function processMigrationFile(filePath: string, dataType: string, mapping?
 
     if (ext === '.csv' || ext === '.xlsx' || ext === '.xls') {
       migrationStatus.message = `CSV/Excel file detected — starting dynamic ${dataType} import into staging...`;
-      await parseAndImportCSV(actualFilePath, STAGING_DB_PATH, dataType, mapping, skipLines);
+      await parseAndImportCSV(actualFilePath, STAGING_DB_PATH, dataType, mapping, skipLines, filters, medicineActions);
       Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
       if (!filePath.includes('archived_migrations')) {
         fs.renameSync(filePath, path.join(archiveDir, basename));
@@ -671,7 +688,7 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
  * Dynamic CSV parser and importer for multiple data types.
  * Automatically creates missing columns in inventory_master or maps them using the provided mapping.
  */
-async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0) {
+async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0, filters?: any, medicineActions?: any) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
   await ensureMigrationErrorsTable(db);
 
@@ -787,6 +804,42 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               await new Promise(resolve => setImmediate(resolve));
             }
 
+            // Apply range boundaries and evaluate filters if provided
+            const rowNum = insertCount + 1;
+            if (filters) {
+              if (filters.ignoredRows && Array.isArray(filters.ignoredRows) && filters.ignoredRows.includes(rowNum)) {
+                insertCount++;
+                continue;
+              }
+              if (filters.rangeStart !== undefined && rowNum < Number(filters.rangeStart)) {
+                insertCount++;
+                continue;
+              }
+              if (filters.rangeEnd !== undefined && rowNum > Number(filters.rangeEnd)) {
+                insertCount++;
+                continue;
+              }
+              if (!matchesFilters(row, mapping || {}, filters)) {
+                insertCount++;
+                continue;
+              }
+            }
+
+            // Resolve medicine name and check for skips or merges
+            let nameKeyForAction = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
+            let resolvedMedName = nameKeyForAction ? String(row[nameKeyForAction] || '').trim() : '';
+            if (!resolvedMedName && (dataType === 'inventory' || dataType === 'sales' || dataType === 'purchases' || dataType === 'returns')) {
+              resolvedMedName = String(row['Medicine'] || row['name'] || '').trim();
+            }
+
+            if (resolvedMedName && medicineActions) {
+              const actionObj = medicineActions[resolvedMedName];
+              if (actionObj && actionObj.action === 'skip') {
+                insertCount++;
+                continue; // skip the whole row
+              }
+            }
+
             // Perform dynamic schema validation
             const validation = validateAndCleanCSVRow(row, mapping);
             if (!validation.isValid) {
@@ -804,7 +857,14 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
 
             if (dataType === 'inventory') {
               let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
-              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let rawName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let medName = rawName;
+              if (rawName && medicineActions) {
+                const actionObj = medicineActions[rawName];
+                if (actionObj && actionObj.action === 'merge' && actionObj.target) {
+                  medName = actionObj.target;
+                }
+              }
 
               const medCols: string[] = [];
               const medVals: any[] = [];
@@ -946,7 +1006,14 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               }
 
               let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
-              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let rawName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let medName = rawName;
+              if (rawName && medicineActions) {
+                const actionObj = medicineActions[rawName];
+                if (actionObj && actionObj.action === 'merge' && actionObj.target) {
+                  medName = actionObj.target;
+                }
+              }
 
               let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
               if (!med) {
@@ -1017,7 +1084,14 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               }
 
               let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
-              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let rawName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let medName = rawName;
+              if (rawName && medicineActions) {
+                const actionObj = medicineActions[rawName];
+                if (actionObj && actionObj.action === 'merge' && actionObj.target) {
+                  medName = actionObj.target;
+                }
+              }
 
               let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
               if (!med) {
@@ -1084,7 +1158,14 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               }
 
               let nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
-              const medName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let rawName = nameKey ? String(cleanRow[nameKey] || '').trim() : String(cleanRow['Medicine'] || cleanRow['name'] || 'Unknown Product').trim();
+              let medName = rawName;
+              if (rawName && medicineActions) {
+                const actionObj = medicineActions[rawName];
+                if (actionObj && actionObj.action === 'merge' && actionObj.target) {
+                  medName = actionObj.target;
+                }
+              }
 
               let med = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [medName]);
               if (!med) {
@@ -1212,7 +1293,14 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               let medicineId: number | null = null;
               const nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name');
               if (nameKey && cleanRow[nameKey]) {
-                const medName = String(cleanRow[nameKey] || '').trim();
+                let rawName = String(cleanRow[nameKey] || '').trim();
+                let medName = rawName;
+                if (rawName && medicineActions) {
+                  const actionObj = medicineActions[rawName];
+                  if (actionObj && actionObj.action === 'merge' && actionObj.target) {
+                    medName = actionObj.target;
+                  }
+                }
 
                 const medCols: string[] = [];
                 const medVals: any[] = [];

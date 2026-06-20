@@ -22,6 +22,7 @@ import {
   setScheduleConfig,
 } from '../services/backupService.js';
 import { backupRecoveryService } from '../services/backupRecoveryService.js';
+import { workerSupervisor } from '../worker/workerSupervisor.js';
 import Database from 'better-sqlite3';
 import AdmZip from 'adm-zip';
 
@@ -509,5 +510,191 @@ router.get('/test-connection', async (req, res) => {
     res.status(500).json({ error: 'Connection test failed' });
   }
 });
+
+// POST /api/utilities/reset-data
+router.post('/reset-data', async (req, res) => {
+  try {
+    // wipeAll=true means a full factory reset — settings are NOT preserved
+    const wipeAll = req.body?.wipeAll === true;
+
+    // 1. Read existing configurations BEFORE stopping workers
+    //    (only needed when we intend to restore them after the wipe)
+    let appSettingsRows: any[] = [];
+    let settingsRows: any[] = [];
+    if (!wipeAll) {
+      try {
+        const { open } = await import('sqlite');
+        const { default: sqlite3 } = await import('sqlite3');
+        const dbRaw = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        try {
+          appSettingsRows = await dbRaw.all('SELECT * FROM app_settings');
+        } catch (_) {}
+        try {
+          settingsRows = await dbRaw.all('SELECT * FROM settings');
+        } catch (_) {}
+        await dbRaw.close();
+      } catch (e) {
+        console.warn('[Reset] Failed to read configurations from DB:', e);
+      }
+    }
+
+    // 2. Stop all background worker processes FIRST so they release their
+    //    SQLite file locks (Catalog Worker + Email Poller each hold the DB open).
+    //    Without this step, unlinkSync on app.db fails with EBUSY on Windows.
+    try {
+      workerSupervisor.stop();
+    } catch (_) {}
+
+    // 3. Close the main DB connection manager
+    await dbManager.close(true);
+
+    // Give the OS 600ms to fully release all file handles from the
+    // now-terminated child processes before we attempt to delete the files.
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // 3. Delete database files
+    const deleteFile = (p: string) => {
+      try {
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      } catch (_) {}
+    };
+    deleteFile(DB_PATH);
+    deleteFile(`${DB_PATH}-wal`);
+    deleteFile(`${DB_PATH}-shm`);
+
+    // 4. Recreate database from scratch (runs clean schema migrations)
+    const { ensureSchema } = await import('../database.js');
+    await ensureSchema(DB_PATH);
+
+    // 5. Restore configurations into the fresh database (skipped for full factory reset)
+    if (!wipeAll) {
+      try {
+        const { open } = await import('sqlite');
+        const { default: sqlite3 } = await import('sqlite3');
+        const dbRaw = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        
+        await dbRaw.run('BEGIN TRANSACTION');
+        try {
+          for (const row of appSettingsRows) {
+            await dbRaw.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [row.key, row.value]);
+          }
+          for (const row of settingsRows) {
+            await dbRaw.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [row.key, row.value]);
+          }
+          // Log reset event
+          await dbRaw.run(
+            "INSERT INTO action_logs (action_type, description) VALUES ('SYSTEM_RESET', 'System data reset & database self-healed successfully')"
+          );
+          await dbRaw.run('COMMIT');
+        } catch (err) {
+          await dbRaw.run('ROLLBACK');
+          throw err;
+        }
+        await dbRaw.close();
+      } catch (err: any) {
+        console.error('[Reset] Failed to restore configurations:', err);
+      }
+    } else {
+      // Log the factory reset in the fresh DB + set flag to skip shutdown backup
+      try {
+        const { open } = await import('sqlite');
+        const { default: sqlite3 } = await import('sqlite3');
+        const dbRaw = await open({ filename: DB_PATH, driver: sqlite3.Database });
+        await dbRaw.run(
+          "INSERT INTO action_logs (action_type, description) VALUES ('FACTORY_RESET', 'Full factory reset — all data and settings wiped')"
+        );
+        // Flag tells gracefulShutdown to skip the next shutdown backup
+        await dbRaw.run(
+          "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('factory_reset_pending', 'true')"
+        );
+        await dbRaw.close();
+      } catch (_) {}
+    }
+
+    // 6. Clean up file directories on disk
+    const uploadsDir = path.resolve(__dirname, '..', '..', 'uploads');
+    const rawDir = path.resolve(__dirname, '..', '..', 'catalogue', 'raw');
+    const migrationReportsDir = path.resolve(__dirname, '..', '..', 'data', 'migration_reports');
+    const auditImagesDir = path.resolve(__dirname, '..', '..', 'data', 'audit_images');
+
+    const clearDir = (dirPath: string, preserveFiles: string[] = []) => {
+      if (!fs.existsSync(dirPath)) return;
+      const files = fs.readdirSync(dirPath);
+      for (const file of files) {
+        const filePath = path.join(dirPath, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          clearDir(filePath, preserveFiles);
+          try {
+            if (fs.readdirSync(filePath).length === 0) {
+              fs.rmdirSync(filePath);
+            }
+          } catch (_) {}
+        } else {
+          if (!preserveFiles.includes(file)) {
+            try {
+              fs.unlinkSync(filePath);
+            } catch (_) {}
+          }
+        }
+      }
+    };
+
+    clearDir(uploadsDir, ['custom_stamp.png', 'custom_signature.png']);
+    clearDir(rawDir);
+    clearDir(migrationReportsDir);
+    clearDir(auditImagesDir);
+
+    if (wipeAll) {
+      // Factory reset: also wipe all backup files, archives, snapshots
+      const backupDir = path.resolve(__dirname, '..', '..', 'backup');
+      clearDir(backupDir); // clears all .db.gz files, archives/, snapshots/ subdirs
+
+      // Wipe migration staging database (separate from app.db)
+      const dataDir = path.resolve(__dirname, '..', '..', 'data');
+      const stagingDbFiles = ['staging.db', 'staging.db-wal', 'staging.db-shm'];
+      for (const f of stagingDbFiles) {
+        try { if (fs.existsSync(path.join(dataDir, f))) fs.unlinkSync(path.join(dataDir, f)); } catch (_) {}
+      }
+
+      // Wipe uploaded migration source files (zip, csv, xlsx etc.)
+      const migrationSampelDir = path.resolve(__dirname, '..', '..', 'MIGRATION SAMPEL');
+      clearDir(migrationSampelDir);
+
+      // Wipe temp data directories
+      const tempDirs = [
+        path.resolve(__dirname, '..', '..', 'data', 'temp_migration'),
+        path.resolve(__dirname, '..', '..', 'data', 'temp_ocr'),
+        path.resolve(__dirname, '..', '..', 'data', 'search_screenshots'),
+        path.resolve(__dirname, '..', '..', 'data', 'archived_migrations'),
+      ];
+      for (const d of tempDirs) clearDir(d);
+
+      // Delete leftover .bak DB files and runtime JSON state files in data/
+      const runtimeDataFiles = ['audit_queue.json', 'ocr_corrections.json', 'suggested_names.json'];
+      if (fs.existsSync(dataDir)) {
+        for (const f of fs.readdirSync(dataDir)) {
+          const isBak = f.endsWith('.bak') || f.includes('.db.bak') || /\.db\.bak_\d+/.test(f) || f.includes('-shm') || f.includes('-wal');
+          const isRuntimeJson = runtimeDataFiles.includes(f);
+          if (isBak || isRuntimeJson) {
+            try { fs.unlinkSync(path.join(dataDir, f)); } catch (_) {}
+          }
+        }
+      }
+
+      // Wipe WhatsApp web.js auth/cache sessions (forces fresh auth on restart)
+      const wwwebAuthDir = path.resolve(__dirname, '..', '..', '.wwebjs_auth');
+      const wwwebCacheDir = path.resolve(__dirname, '..', '..', '.wwebjs_cache');
+      clearDir(wwwebAuthDir);
+      clearDir(wwwebCacheDir);
+    }
+
+    res.json({ success: true, message: wipeAll ? 'Factory reset complete. App is now in fresh installation state.' : 'All stored data reset and database self-healed successfully' });
+  } catch (error: any) {
+    console.error('Reset data error:', error);
+    res.status(500).json({ error: 'Failed to reset data: ' + error.message });
+  }
+});
+
 
 export default router;

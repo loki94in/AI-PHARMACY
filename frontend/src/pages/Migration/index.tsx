@@ -25,6 +25,7 @@ interface FileEntry {
   status: 'pending' | 'analyzing' | 'ready' | 'error';
   errorMsg?: string;
   rowCount?: number;
+  skipLines?: number;           // number of lines to skip
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -90,7 +91,6 @@ const DB_TARGET_SECTIONS = [
   {
     label: 'Common Fields',
     fields: [
-      { value: '', label: '-- Ignore Column --' },
       { value: 'name', label: 'Medicine Name ⭐' }
     ]
   },
@@ -131,6 +131,14 @@ const DB_TARGET_SECTIONS = [
     ]
   }
 ];
+
+const getFieldLabelAndSection = (value: string) => {
+  for (const section of DB_TARGET_SECTIONS) {
+    const field = section.fields.find(f => f.value === value);
+    if (field) return { section: section.label, label: field.label };
+  }
+  return { section: 'Unknown', label: value };
+};
 
 // ─── Smart auto-mapping: guess target field from column header ─────────────────
 function autoMapColumn(header: string): string {
@@ -226,6 +234,53 @@ const Migration = () => {
   const [stagingData, setStagingData] = useState<{ inventory: any[]; sales: any[]; purchases: any[]; returns: any[]; errors: any[] }>({ inventory: [], sales: [], purchases: [], returns: [], errors: [] });
   const [previewOpen, setPreviewOpen] = useState<number | null>(null);
 
+
+
+  const handleSkipLinesChange = async (idx: number, newSkipLines: number) => {
+    const file = files[idx];
+    if (!file) return;
+
+    setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'analyzing', skipLines: newSkipLines } : f));
+    try {
+      let analyzed: any = {};
+      if (file.ext === 'csv') {
+        analyzed = await api.analyzeMigrationFile(file.uploadedFileName, newSkipLines);
+      } else if (file.ext === 'xlsx' || file.ext === 'xls') {
+        analyzed = await api.analyzeExcelFile(file.uploadedFileName, 0, newSkipLines);
+      } else {
+        analyzed = { headers: file.headers, samples: file.samples };
+      }
+      
+      const headers = analyzed.headers || [];
+      const detectedType = (analyzed.detected?.type as DataType) || file.userSelectedType;
+      const autoMapping = Object.fromEntries(headers.map((h: string) => [h, autoMapColumn(h)]));
+
+      // Reset ignored rows in moduleFilters when headers change
+      setModuleFilters(prev => {
+        const current = prev[file.uploadedFileName] || {};
+        return {
+          ...prev,
+          [file.uploadedFileName]: { ...current, ignoredRows: [] }
+        };
+      });
+
+      setFiles(prev => prev.map((f, i) => i === idx ? {
+        ...f,
+        headers,
+        samples: analyzed.samples || [],
+        detected: analyzed.detected || f.detected,
+        mapping: autoMapping,
+        status: 'ready'
+      } : f));
+    } catch (err: any) {
+      setFiles(prev => prev.map((f, i) => i === idx ? {
+        ...f,
+        status: 'error',
+        errorMsg: err.message || 'Analysis failed'
+      } : f));
+    }
+  };
+
   // Staging Items Preview modal state
   const [viewingItemsRecord, setViewingItemsRecord] = useState<{ id: number; type: 'sales' | 'purchases' | 'returns'; name: string; patient_name?: string; doctor_name?: string; distributor_name?: string } | null>(null);
   const [viewingItems, setViewingItems] = useState<any[]>([]);
@@ -250,6 +305,52 @@ const Migration = () => {
   const [mappingHistory, setMappingHistory] = useState<Record<string, string>[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [showOnlyMapped, setShowOnlyMapped] = useState<boolean>(false);
+
+  // Sync mapping modal local state with file analysis state when active file changes or re-analyzes
+  useEffect(() => {
+    if (activeMappingFileIdx !== null && files[activeMappingFileIdx]) {
+      const currentFile = files[activeMappingFileIdx];
+      if (currentFile.status === 'ready') {
+        const tempKeys = Object.keys(tempMapping);
+        const headersMatch = currentFile.headers.length === tempKeys.length && currentFile.headers.every(h => tempKeys.includes(h));
+        if (!headersMatch) {
+          setTempMapping(currentFile.mapping);
+          const initialCustom = Object.values(currentFile.mapping).filter((val: any) => typeof val === 'string' && val.startsWith('custom_col_')) as string[];
+          setCustomColumns(Array.from(new Set(initialCustom)));
+          setMappingHistory([currentFile.mapping]);
+          setHistoryIndex(0);
+        }
+      }
+    }
+  }, [activeMappingFileIdx, files, tempMapping]);
+
+  // Guided Configurator State
+  const [configSubStep, setConfigSubStep] = useState<'modules' | 'filters' | 'medicines' | 'preview'>('modules');
+  const [selectedModules, setSelectedModules] = useState<Record<string, boolean>>({
+    combined: true,
+    inventory: true,
+    purchases: true,
+    sales: true,
+    customers: true,
+    returns: true,
+    unknown: true,
+  });
+  const [moduleFilters, setModuleFilters] = useState<Record<string, {
+    rangeStart?: string;
+    rangeEnd?: string;
+    onlyActiveStock?: boolean;
+    excludeExpired?: boolean;
+    minPurchaseDate?: string;
+    ignoredRows?: number[];
+  }>>({});
+  const [medicineActions, setMedicineActions] = useState<Record<string, {
+    action: 'import' | 'skip' | 'merge';
+    target?: string;
+  }>>({});
+  const [preMigrationAnalysis, setPreMigrationAnalysis] = useState<any>(null);
+  const [analyzingPreMigration, setAnalyzingPreMigration] = useState(false);
+  const [simulationResult, setSimulationResult] = useState<any>(null);
+  const [simulatingPreMigration, setSimulatingPreMigration] = useState(false);
 
   const openMappingModal = (idx: number) => {
     const file = files[idx];
@@ -612,6 +713,7 @@ const Migration = () => {
         userSelectedType: 'unknown',
         mapping: {},
         status: 'analyzing',
+        skipLines: 0,
       };
       setFiles(prev => [...prev, entry]);
       const idx = files.length + selected.indexOf(file);
@@ -639,6 +741,7 @@ const Migration = () => {
               userSelectedType: (zf.detected?.type as DataType) || 'unknown',
               mapping: Object.fromEntries((zf.headers || []).map((h: string) => [h, autoMapColumn(h)])),
               status: 'ready' as const,
+              skipLines: 0,
             }));
             return [...withoutPlaceholder, ...zipEntries];
           });
@@ -667,6 +770,7 @@ const Migration = () => {
                 userSelectedType: detectedType,
                 mapping: autoMapping,
                 status: 'ready',
+                skipLines: 0,
               }
             : f
         ));
@@ -693,24 +797,90 @@ const Migration = () => {
     try {
       setMigrationStatus({ message: `Importing ${file.originalName}...`, isStagingReady: false });
       setIsPolling(true);
-      await api.runMigration(file.uploadedFileName, file.userSelectedType, file.mapping, 0);
+      const filtersForFile = moduleFilters[file.uploadedFileName] || {};
+      await api.runMigration(
+        file.uploadedFileName,
+        file.userSelectedType,
+        file.mapping,
+        file.skipLines || 0, // skipLines
+        0, // sheetIndex
+        filtersForFile,
+        medicineActions
+      );
     } catch (err: any) {
       setError(`Failed to import ${file.originalName}: ${err.message}`);
       setIsPolling(false);
     }
-  }, []);
+  }, [moduleFilters, medicineActions]);
 
   // ─── Start all migrations in correct order ──────────────────────────────────
   const startMigration = async () => {
     const readyFiles = DATA_TYPE_ORDER.flatMap(type =>
-      files.filter(f => f.status === 'ready' && f.userSelectedType === type)
-    ).concat(files.filter(f => f.status === 'ready' && f.userSelectedType === 'unknown'));
+      files.filter(f => f.status === 'ready' && f.userSelectedType === type && selectedModules[type])
+    ).concat(files.filter(f => f.status === 'ready' && f.userSelectedType === 'unknown' && selectedModules['unknown']));
 
-    if (readyFiles.length === 0) { setError('No files ready to import.'); return; }
+    if (readyFiles.length === 0) { setError('No files selected for import.'); return; }
     setError(null);
     setActiveImportIdx(0);
     setStep(3);
     await importFile(readyFiles[0]);
+  };
+
+  const runPreMigrationAnalysis = async () => {
+    const mainFile = files.find(f => f.status === 'ready' && selectedModules[f.userSelectedType]);
+    if (!mainFile) {
+      setConfigSubStep('preview');
+      return;
+    }
+    setAnalyzingPreMigration(true);
+    try {
+      const data = await api.preMigrationAnalyze(mainFile.uploadedFileName, mainFile.skipLines || 0, 0, mainFile.mapping);
+      setPreMigrationAnalysis(data);
+      
+      const initialActions: Record<string, any> = {};
+      if (data.medicineCandidates) {
+        data.medicineCandidates.forEach((cand: string) => {
+          const suggestions = data.mergeSuggestions?.[cand] || [];
+          if (suggestions.length > 0) {
+            initialActions[cand] = { action: 'merge', target: suggestions[0] };
+          } else {
+            initialActions[cand] = { action: 'import' };
+          }
+        });
+      }
+      setMedicineActions(initialActions);
+      setConfigSubStep('medicines');
+    } catch (err: any) {
+      setError(`Analysis failed: ${err.message}`);
+    } finally {
+      setAnalyzingPreMigration(false);
+    }
+  };
+
+  const runPreMigrationSimulation = async () => {
+    const mainFile = files.find(f => f.status === 'ready' && selectedModules[f.userSelectedType]);
+    if (!mainFile) {
+      setConfigSubStep('preview');
+      return;
+    }
+    setSimulatingPreMigration(true);
+    try {
+      const filtersForFile = moduleFilters[mainFile.uploadedFileName] || {};
+      const data = await api.preMigrationSimulate(
+        mainFile.uploadedFileName,
+        mainFile.userSelectedType,
+        mainFile.mapping,
+        mainFile.skipLines || 0,
+        0,
+        filtersForFile
+      );
+      setSimulationResult(data.simulation);
+      setConfigSubStep('preview');
+    } catch (err: any) {
+      setError(`Simulation failed: ${err.message}`);
+    } finally {
+      setSimulatingPreMigration(false);
+    }
   };
 
   const finalizeMigration = async () => {
@@ -812,141 +982,582 @@ const Migration = () => {
       {/* ─── STEP 2: MAP & VERIFY ─────────────────────────────────────────────── */}
       {step === 2 && (
         <div className="space-y-4">
-          {/* Upload More */}
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-lg">
-              {files.length} file{files.length !== 1 ? 's' : ''} ready for import
-            </h3>
-            <label className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 cursor-pointer text-xs">
-              <UploadCloud size={13} /> Add More Files
-              <input type="file" accept=".csv,.xlsx,.xls,.zip,.sql" multiple className="hidden" onChange={handleFileDrop} />
-            </label>
-          </div>
-
-          {/* Import Order Hint */}
-          <div className="p-3 bg-amber-400/10 border border-amber-400/20 rounded-xl text-xs text-amber-300 flex items-start gap-2">
-            <Zap size={14} className="mt-0.5 shrink-0" />
-            <div>
-              <strong>Import order matters:</strong> App will process files in this order automatically —
-              <span className="text-sky"> Inventory</span> →
-              <span className="text-amber-400"> Purchases</span> →
-              <span className="text-purple-400"> Customers</span> →
-              <span className="text-green"> Sales</span>
-            </div>
-          </div>
-
-          {/* File Cards */}
-          {files.map((file, idx) => (
-            <div key={idx} className={`glass-panel overflow-hidden border
-              ${file.status === 'error' ? 'border-red-500/30' : file.status === 'analyzing' ? 'border-primary/30' : 'border-glass-border'}`}>
-
-              {/* File Header */}
-              <div className="flex items-center gap-3 p-4 bg-white/3">
-                {file.status === 'analyzing' && <Loader2 size={18} className="animate-spin text-primary shrink-0" />}
-                {file.status === 'ready' && <CheckCircle size={18} className="text-green shrink-0" />}
-                {file.status === 'error' && <AlertTriangle size={18} className="text-red-400 shrink-0" />}
-
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-sm truncate">{file.originalName}</p>
-                  <p className="text-[10px] text-muted font-mono uppercase">{file.ext} · {file.headers.length} columns</p>
-                </div>
-
-                {/* Data Type Selector */}
-                {file.status === 'ready' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted hidden sm:block">Type:</span>
-                    <select
-                      className={`text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer bg-transparent ${TYPE_COLORS[file.userSelectedType]}`}
-                      value={file.userSelectedType}
-                      onChange={e => updateType(idx, e.target.value as DataType)}
-                    >
-                      {Object.entries(DATA_TYPE_LABELS).map(([val, label]) => (
-                        <option key={val} value={val} className="bg-[#18181b] text-white">{label}</option>
-                      ))}
-                    </select>
-                    {file.detected.type !== 'unknown' && (
-                      <span className="text-[9px] text-muted hidden md:block">
-                        Auto-detected {file.detected.confidence}%
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {file.status === 'ready' && file.headers.length > 0 && !['sql'].includes(file.ext) && (
+          {/* Guided Configurator Sub-steps progress indicator */}
+          <div className="flex items-center gap-2 pb-2 border-b border-glass-border/30 overflow-x-auto">
+            {[
+              { key: 'modules', label: '1. Select Modules' },
+              { key: 'filters', label: '2. Mappings & Filters' },
+              { key: 'medicines', label: '3. Medicine Matcher' },
+              { key: 'preview', label: '4. Cart Preview' }
+            ].map((sub, i) => {
+              const active = configSubStep === sub.key;
+              return (
+                <React.Fragment key={sub.key}>
                   <button
+                    disabled={
+                      (sub.key === 'filters' && readyCount === 0) ||
+                      (sub.key === 'medicines' && readyCount === 0) ||
+                      (sub.key === 'preview' && readyCount === 0)
+                    }
                     onClick={() => {
-                      openMappingModal(idx);
+                      if (sub.key === 'medicines') {
+                        runPreMigrationAnalysis();
+                      } else if (sub.key === 'preview') {
+                        runPreMigrationSimulation();
+                      } else {
+                        setConfigSubStep(sub.key as any);
+                      }
                     }}
-                    className="text-[10px] bg-amber-500 hover:bg-amber-600 text-black px-2 py-1 rounded font-bold transition-all ml-2"
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
+                      active 
+                        ? 'bg-primary/20 text-primary border border-primary/50' 
+                        : 'text-muted hover:text-text bg-white/5 border border-glass-border'
+                    }`}
                   >
-                    Configure Mappings
+                    {sub.label}
                   </button>
-                )}
-                <button onClick={() => removeFile(idx)} className="p-1.5 rounded hover:bg-red/20 text-red-400" title="Remove">
-                  <X size={14} />
-                </button>
+                  {i < 3 && <span className="text-muted/40 text-[10px]">➔</span>}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {/* Sub-step 1: Choose Modules */}
+          {configSubStep === 'modules' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-lg text-text">Choose Modules to Migrate</h3>
+                <label className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 cursor-pointer text-xs">
+                  <UploadCloud size={13} /> Add More Files
+                  <input type="file" accept=".csv,.xlsx,.xls,.zip,.sql" multiple className="hidden" onChange={handleFileDrop} />
+                </label>
               </div>
 
-              {/* Card Body for Mapping UI */}
-              {file.status === 'ready' && file.headers.length > 0 && !['sql'].includes(file.ext) && (() => {
-                const mappedCount = Object.values(file.mapping).filter(v => v !== '').length;
-                const totalCount = file.headers.length;
-                return (
-                  <div className="px-4 py-3 bg-bg2/40 border-t border-glass-border/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex flex-col gap-0.5">
-                      <p className="text-xs font-bold text-text flex items-center gap-1.5">
-                        <Database size={13} className="text-amber-400" />
-                        <span>Column Mapping Configuration</span>
-                      </p>
-                      <p className="text-[10px] text-muted">
-                        {mappedCount === 0 
-                          ? 'No columns mapped yet. Click configure to map your CSV columns.' 
-                          : `${mappedCount} of ${totalCount} columns mapped to app database fields.`}
-                      </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {files.map((file, idx) => {
+                  const isChecked = selectedModules[file.userSelectedType];
+                  return (
+                    <div key={idx} className="glass-panel p-4 border border-glass-border/30 hover:border-glass-border/70 transition-all flex flex-col justify-between gap-3 bg-bg">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div className={`p-2 rounded-lg ${TYPE_COLORS[file.userSelectedType] || 'bg-white/5'}`}>
+                            {TYPE_ICONS[file.userSelectedType] || <FileText size={16} />}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-sm text-text truncate">{file.originalName}</h4>
+                            <p className="text-[10px] text-muted font-mono uppercase mt-0.5">{file.ext} · {file.headers.length} columns</p>
+                          </div>
+                        </div>
+                        <button onClick={() => removeFile(idx)} className="p-1 rounded hover:bg-red/10 text-red-400" title="Remove">
+                          <X size={14} />
+                        </button>
+                      </div>
+
+                      {file.status === 'ready' && (
+                        <div className="flex flex-col gap-2.5 bg-bg2 p-3 rounded-lg border border-glass-border/20">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted font-semibold">Enable Module:</span>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => setSelectedModules(prev => ({ ...prev, [file.userSelectedType]: e.target.checked }))}
+                              className="w-4 h-4 rounded border-glass-border bg-transparent text-primary focus:ring-primary focus:ring-offset-bg"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-muted">Module Type:</span>
+                            <select
+                              className={`text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer bg-[#18181b] ${TYPE_COLORS[file.userSelectedType]}`}
+                              value={file.userSelectedType}
+                              onChange={e => updateType(idx, e.target.value as DataType)}
+                            >
+                              {Object.entries(DATA_TYPE_LABELS).map(([val, label]) => (
+                                <option key={val} value={val} className="bg-[#18181b] text-text">{label}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {file.detected.type !== 'unknown' && (
+                            <p className="text-[10px] text-muted">
+                              Heuristic confidence: <strong className="text-primary">{file.detected.confidence}%</strong>
+                            </p>
+                          )}
+
+                          {file.headers.length > 0 && !['sql'].includes(file.ext) && (
+                            <button
+                              type="button"
+                              onClick={() => openMappingModal(idx)}
+                              className="mt-2 w-full premium-btn bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-[11px] font-bold py-1.5 flex items-center justify-center gap-1.5"
+                            >
+                              <Eye size={12} />
+                              Preview & Map Columns
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
+                  );
+                })}
+              </div>
+
+              {files.length > 0 && (
+                <div className="flex justify-end pt-4">
+                  <button
+                    onClick={() => setConfigSubStep('filters')}
+                    className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]"
+                  >
+                    Continue to Filters <ArrowRight size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sub-step 2: Columns & Scope Filters */}
+          {configSubStep === 'filters' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg text-text">Columns Mappings & Preprocessing Filters</h3>
+              
+              <div className="space-y-4">
+                {files.filter(f => selectedModules[f.userSelectedType]).map((file, idx) => {
+                  const absoluteIdx = files.indexOf(file);
+                  const mappedCount = Object.values(file.mapping).filter(v => v !== '').length;
+                  const totalCount = file.headers.length;
+                  const fileFilter = moduleFilters[file.uploadedFileName] || {};
+                  
+                  return (
+                    <div key={file.uploadedFileName} className="glass-panel p-4 border border-glass-border/30 space-y-4 bg-bg">
+                      {/* File Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-glass-border/20 pb-3">
+                        <div>
+                          <h4 className="font-bold text-sm text-text flex items-center gap-1.5">
+                            <span className={`p-1 rounded ${TYPE_COLORS[file.userSelectedType]}`}>
+                              {TYPE_ICONS[file.userSelectedType]}
+                            </span>
+                            {file.originalName}
+                          </h4>
+                          <p className="text-[10px] text-muted mt-0.5 font-mono">
+                            {mappedCount} of {totalCount} columns mapped.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {file.headers.length > 0 && !['sql'].includes(file.ext) && (
+                            <button
+                              onClick={() => openMappingModal(absoluteIdx)}
+                              className="premium-btn bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-xs px-3 py-1.5 font-bold flex items-center gap-1.5"
+                            >
+                              <Eye size={12} className="text-amber-400" />
+                              Preview & Map Columns
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Warnings */}
+                      {!hasNameMapped(file) && (
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300">
+                          ⚠ Please map at least one column to "Medicine Name" to enable import for this module.
+                        </div>
+                      )}
+
+                      {/* Mapped Columns Summary */}
+                      {mappedCount > 0 && (
+                        <div className="bg-bg2/50 p-3 rounded-lg border border-glass-border/25 space-y-1.5">
+                          <h5 className="text-[10px] font-bold text-muted uppercase tracking-wider">Active Column Mappings</h5>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Object.entries(file.mapping)
+                              .filter(([_, target]) => target !== '')
+                              .map(([source, target]) => {
+                                const customFieldName = target.startsWith('custom_col_') ? target.substring(11) : '';
+                                const targetLabel = customFieldName 
+                                  ? `Custom: ${customFieldName}` 
+                                  : (DB_TARGET_COLUMNS.find(c => c.value === target)?.label.replace(' ⭐', '') || target);
+                                return (
+                                  <div key={source} className="text-[10px] bg-primary/10 border border-primary/20 text-primary rounded px-2 py-0.5 font-medium flex items-center gap-1">
+                                    <span className="font-bold text-text truncate max-w-[100px]" title={source}>{source}</span>
+                                    <span className="text-muted">➔</span>
+                                    <span className="font-bold">{targetLabel}</span>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Scope & Preprocessing Filters */}
+                      {!['sql'].includes(file.ext) && (
+                        <div className="bg-bg2 p-4 rounded-lg border border-glass-border/25 space-y-3">
+                          <h5 className="font-bold text-xs text-text uppercase tracking-wider flex items-center gap-1">
+                            <span className="text-primary font-bold">Filter Options</span>
+                          </h5>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Row Index Range Selection */}
+                            <div className="space-y-1.5">
+                              <label className="text-xs text-muted block font-semibold">Row Index Range:</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  placeholder="Start Row (e.g. 1)"
+                                  value={fileFilter.rangeStart || ''}
+                                  onChange={(e) => setModuleFilters(prev => ({
+                                    ...prev,
+                                    [file.uploadedFileName]: { ...fileFilter, rangeStart: e.target.value }
+                                  }))}
+                                  className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary transition-all"
+                                />
+                                <span className="text-muted text-xs">to</span>
+                                <input
+                                  type="number"
+                                  placeholder="End Row"
+                                  value={fileFilter.rangeEnd || ''}
+                                  onChange={(e) => setModuleFilters(prev => ({
+                                    ...prev,
+                                    [file.uploadedFileName]: { ...fileFilter, rangeEnd: e.target.value }
+                                  }))}
+                                  className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary transition-all"
+                                />
+                              </div>
+                              <p className="text-[10px] text-muted">Leave empty to import all rows.</p>
+                            </div>
+
+                            {/* Manual Ignored Rows Selection */}
+                            <div className="space-y-1.5">
+                              <label className="text-xs text-muted block font-semibold">Ignore Specific Rows manually:</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 1, 2, 5, 12, 15 (comma-separated)"
+                                value={fileFilter.ignoredRows?.join(', ') || ''}
+                                onChange={(e) => {
+                                  const text = e.target.value;
+                                  const parsed = text.split(',')
+                                    .map(val => parseInt(val.trim()))
+                                    .filter(val => !isNaN(val) && val > 0);
+                                  setModuleFilters(prev => ({
+                                    ...prev,
+                                    [file.uploadedFileName]: { ...fileFilter, ignoredRows: parsed }
+                                  }));
+                                }}
+                                className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary transition-all font-mono"
+                              />
+                              <p className="text-[10px] text-muted">Allows ignoring rows that aren't visible in the first 10 rows preview.</p>
+                            </div>
+
+                            {/* Conditional filters based on DataType */}
+                            <div className="flex flex-col gap-2 justify-center">
+                              {(file.userSelectedType === 'inventory' || file.userSelectedType === 'combined') && (
+                                <>
+                                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!fileFilter.onlyActiveStock}
+                                      onChange={(e) => setModuleFilters(prev => ({
+                                        ...prev,
+                                        [file.uploadedFileName]: { ...fileFilter, onlyActiveStock: e.target.checked }
+                                      }))}
+                                      className="w-4 h-4 rounded border-glass-border bg-transparent text-primary focus:ring-primary focus:ring-offset-bg"
+                                    />
+                                    <span className="text-xs text-muted font-medium">Import only active stock (Quantity &gt; 0)</span>
+                                  </label>
+
+                                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!fileFilter.excludeExpired}
+                                      onChange={(e) => setModuleFilters(prev => ({
+                                        ...prev,
+                                        [file.uploadedFileName]: { ...fileFilter, excludeExpired: e.target.checked }
+                                      }))}
+                                      className="w-4 h-4 rounded border-glass-border bg-transparent text-primary focus:ring-primary focus:ring-offset-bg"
+                                    />
+                                    <span className="text-xs text-muted font-medium">Exclude expired products (Expiry &gt; Today)</span>
+                                  </label>
+                                </>
+                              )}
+
+                              {(file.userSelectedType === 'purchases' || file.userSelectedType === 'sales') && (
+                                <div className="space-y-1">
+                                  <label className="text-xs text-muted block font-semibold">Min Transaction Date:</label>
+                                  <input
+                                    type="date"
+                                    value={fileFilter.minPurchaseDate || ''}
+                                    onChange={(e) => setModuleFilters(prev => ({
+                                      ...prev,
+                                      [file.uploadedFileName]: { ...fileFilter, minPurchaseDate: e.target.value }
+                                    }))}
+                                    className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary transition-all"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-between pt-4">
+                <button
+                  onClick={() => setConfigSubStep('modules')}
+                  className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 text-xs"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={runPreMigrationAnalysis}
+                  className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]"
+                >
+                  {analyzingPreMigration ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin mr-1" /> Analyzing composition...
+                    </>
+                  ) : (
+                    <>
+                      Verify Medicines <ArrowRight size={14} />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Sub-step 3: Medicine Match & Merge Reviews */}
+          {configSubStep === 'medicines' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg text-text">Medicine Verification & Merge Resolver</h3>
+              <p className="text-xs text-muted">
+                Review medicine names extracted from the file. You can choose to import as new, merge with suggested database matches, or skip them.
+              </p>
+
+              {analyzingPreMigration ? (
+                <div className="glass-panel p-10 flex flex-col items-center justify-center border border-glass-border/30 bg-bg">
+                  <Loader2 size={32} className="animate-spin text-primary mb-3" />
+                  <p className="text-sm font-semibold text-text">Scanning Composition...</p>
+                  <p className="text-xs text-muted mt-1">Cross-referencing unique medicine names with database master...</p>
+                </div>
+              ) : !preMigrationAnalysis ? (
+                <div className="glass-panel p-10 text-center bg-bg border border-glass-border/30 rounded-xl max-w-md mx-auto space-y-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto text-primary">
+                    <Database size={16} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-text">Analysis Pending</h4>
+                    <p className="text-xs text-muted mt-1">
+                      Please go back to the previous step and click the "Verify Medicines" button to analyze this file.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setConfigSubStep('filters')}
+                    className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 text-xs mt-3 mx-auto flex items-center gap-1.5"
+                  >
+                    Go Back to Mappings & Filters
+                  </button>
+                </div>
+              ) : preMigrationAnalysis?.medicineCandidates?.length === 0 ? (
+                <div className="glass-panel p-8 text-center bg-bg border border-glass-border/30 rounded-xl space-y-4 max-w-xl mx-auto">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto text-primary">
+                    <Database size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-text">Direct Bill/Invoice Ingestion (No Item Mapping)</h4>
+                    <p className="text-xs text-muted mt-2 leading-relaxed">
+                      This file does not have a column mapped to <strong className="text-primary">Medicine Name</strong> (or contains no medicine item data). 
+                      It will be migrated directly as aggregate bill-wise records (e.g. return invoices, purchase bills, or sales invoices) containing total amounts, dates, and distributor/patient details.
+                    </p>
+                    <p className="text-xs text-muted mt-1">
+                      No individual medicine mapping is required.
+                    </p>
+                  </div>
+                  <div className="pt-2">
                     <button
-                      onClick={() => openMappingModal(idx)}
-                      className="premium-btn bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-[11px] px-3 py-1.5 shrink-0 transition-all font-bold flex items-center gap-1.5"
+                      onClick={runPreMigrationSimulation}
+                      className="premium-btn bg-primary hover:bg-primary/90 text-white font-bold px-6 py-2.5 rounded-lg shadow-md hover:shadow-primary/20 transition-all text-xs flex items-center justify-center gap-1.5 mx-auto"
                     >
-                      <Zap size={12} className="text-amber-400" />
-                      Configure Mappings
+                      {simulatingPreMigration ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" /> Simulating...
+                        </>
+                      ) : (
+                        <>
+                          <span>Continue to Preview</span>
+                          <ArrowRight size={14} />
+                        </>
+                      )}
                     </button>
                   </div>
-                );
-              })()}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="max-h-[400px] overflow-y-auto border border-glass-border/20 rounded-xl bg-bg divide-y divide-glass-border/10">
+                    {preMigrationAnalysis?.medicineCandidates?.map((cand: string) => {
+                      const suggestions = preMigrationAnalysis.mergeSuggestions?.[cand] || [];
+                      const actionObj = medicineActions[cand] || { action: 'import' };
+                      
+                      return (
+                        <div key={cand} className="p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-bold text-text block truncate" title={cand}>{cand}</span>
+                            {suggestions.length > 0 && actionObj.action === 'merge' && (
+                              <span className="text-[10px] text-green block mt-0.5">
+                                Maps to suggested master composition
+                              </span>
+                            )}
+                          </div>
 
-              {/* Error */}
-              {file.status === 'error' && (
-                <div className="px-4 pb-3 text-xs text-red-400">{file.errorMsg}</div>
-              )}
-              
-              {/* Missing mapping warning */}
-              {file.status === 'ready' && file.headers.length > 0 && !['sql'].includes(file.ext) && !hasNameMapped(file) && (
-                <div className="px-4 pb-3 border-t border-glass-border/30 bg-amber-500/5">
-                  <p className="text-amber-400 text-[10px] font-semibold flex items-center gap-1">
-                    ⚠ Map at least one column to "Medicine Name" to enable import.
-                  </p>
+                          <div className="flex items-center gap-3">
+                            {/* Action selector */}
+                            <div className="flex rounded-lg bg-bg2 border border-glass-border/30 p-0.5">
+                              {[
+                                { val: 'import', label: 'Import New' },
+                                { val: 'merge', label: 'Merge Suggestion', disabled: suggestions.length === 0 },
+                                { val: 'skip', label: 'Skip' }
+                              ].map(act => (
+                                <button
+                                  key={act.val}
+                                  disabled={act.disabled}
+                                  onClick={() => setMedicineActions(prev => ({
+                                    ...prev,
+                                    [cand]: { ...prev[cand], action: act.val as any }
+                                  }))}
+                                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all select-none ${
+                                    act.disabled ? 'opacity-30 cursor-not-allowed' :
+                                    actionObj.action === act.val 
+                                      ? 'bg-primary/20 text-primary border border-primary/30' 
+                                      : 'text-muted hover:text-text'
+                                  }`}
+                                >
+                                  {act.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* Dropdown for suggested merges */}
+                            {actionObj.action === 'merge' && suggestions.length > 0 && (
+                              <select
+                                className="bg-[#18181b] border border-glass-border/40 text-text text-[11px] rounded p-1 outline-none font-bold"
+                                value={actionObj.target || suggestions[0]}
+                                onChange={(e) => setMedicineActions(prev => ({
+                                  ...prev,
+                                  [cand]: { ...prev[cand], target: e.target.value }
+                                }))}
+                              >
+                                {suggestions.map((sug: string) => (
+                                  <option key={sug} value={sug} className="bg-[#18181b] text-text">{sug}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex justify-between pt-4">
+                    <button
+                      onClick={() => setConfigSubStep('filters')}
+                      className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 text-xs"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={runPreMigrationSimulation}
+                      className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]"
+                    >
+                      {simulatingPreMigration ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin mr-1" /> Simulating changes...
+                        </>
+                      ) : (
+                        <>
+                          Continue to Simulation <ArrowRight size={14} />
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
-          ))}
+          )}
 
-          {/* Action Bar */}
-          {files.length > 0 && (
-            <div className="flex items-center justify-between pt-2">
-              <button onClick={() => { setFiles([]); setStep(1); }} className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 text-xs">
-                <X size={13} /> Clear All
-              </button>
-              <div className="flex items-center gap-3">
-                <p className="text-xs text-muted">{readyCount} of {files.length} files ready</p>
-                <button
-                  onClick={startMigration}
-                  disabled={readyCount === 0}
-                  className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Database size={15} /> Start Import <ArrowRight size={14} />
-                </button>
-              </div>
+          {/* Sub-step 4: Migration Cart & Final Preview */}
+          {configSubStep === 'preview' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg text-text">Staging Ingestion Cart Preview</h3>
+              <p className="text-xs text-muted">
+                Review your migration cart items and simulation predictions before launching the SQLite staging load.
+              </p>
+
+              {simulatingPreMigration ? (
+                <div className="glass-panel p-10 flex flex-col items-center justify-center border border-glass-border/30 bg-bg">
+                  <Loader2 size={32} className="animate-spin text-primary mb-3" />
+                  <p className="text-sm font-semibold text-text">Running Simulation...</p>
+                  <p className="text-xs text-muted mt-1">Estimating target insertions and merges...</p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {/* Cart summary */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="glass-panel p-4 border border-glass-border/20 bg-bg">
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-muted mb-3">Cart Contents</h4>
+                      <div className="space-y-2 text-xs">
+                        {files.filter(f => selectedModules[f.userSelectedType]).map((f, i) => (
+                          <div key={i} className="flex justify-between border-b border-glass-border/10 pb-1.5">
+                            <span className="text-text font-medium truncate max-w-[200px]">{f.originalName}</span>
+                            <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] uppercase font-mono ${TYPE_COLORS[f.userSelectedType]}`}>
+                              {f.userSelectedType}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Simulation results prediction */}
+                    <div className="glass-panel p-4 border border-glass-border/20 bg-bg flex flex-col justify-between">
+                      <div>
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-muted mb-3">Simulation Prediction</h4>
+                        {simulationResult ? (
+                          <div className="space-y-2 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-muted">Will Create:</span>
+                              <span className="font-bold text-green">{simulationResult.created} medicines</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted">Will Update / Merge:</span>
+                              <span className="font-bold text-sky">{simulationResult.updated} medicines</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted">Will Skip:</span>
+                              <span className="font-bold text-amber-500">{simulationResult.skipped} records</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted">No simulation details available.</p>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-muted mt-3">Prediction counts based on a sample run of up to 1,000 rows.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between pt-4">
+                    <button
+                      onClick={() => setConfigSubStep('medicines')}
+                      className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 text-xs"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={startMigration}
+                      className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] font-bold"
+                    >
+                      <Database size={15} className="mr-1" /> Confirm & Start Ingestion <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1407,9 +2018,58 @@ const Migration = () => {
               </div>
 
               {/* Modal Body */}
-              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+                {file.status === 'analyzing' && (
+                  <div className="absolute inset-0 bg-black/60 backdrop-blur-xs z-20 flex flex-col items-center justify-center gap-3">
+                    <Loader2 size={36} className="animate-spin text-primary" />
+                    <span className="text-sm font-semibold text-text">Re-analyzing file with new skip lines...</span>
+                  </div>
+                )}
+
                 {/* Left Column: Mappings form */}
                 <div className="w-full lg:w-[48%] xl:w-[50%] p-4 md:p-5 overflow-y-auto border-b lg:border-b-0 lg:border-r border-glass-border flex flex-col gap-4">
+                  {/* File Preprocessing Configurations inside Mapping Modal */}
+                  <div className="flex flex-col gap-4 bg-bg2 p-4 rounded-xl border border-glass-border/30">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <label className="text-xs font-bold text-text whitespace-nowrap">Skip top metadata rows:</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={file.skipLines || 0}
+                          onChange={(e) => handleSkipLinesChange(activeMappingFileIdx, Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-16 bg-bg3 border border-glass-border text-text text-xs rounded-lg p-1.5 outline-none focus:border-primary text-center font-bold"
+                        />
+                        <span className="text-[10px] text-muted">(skips legacy header/shop metadata rows)</span>
+                      </div>
+                      
+                      <div className="text-[11px] text-muted font-semibold">
+                        Headers: <span className="font-mono text-primary font-bold">{file.headers.length} detected</span>
+                      </div>
+                    </div>
+
+                    <div className="w-full space-y-1.5 border-t border-glass-border/10 pt-3">
+                      <label className="text-xs font-bold text-text block">Ignore Specific Rows manually (comma-separated):</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 1, 2, 5, 12, 15"
+                        value={moduleFilters[file.uploadedFileName]?.ignoredRows?.join(', ') || ''}
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          const parsed = text.split(',')
+                            .map(val => parseInt(val.trim()))
+                            .filter(val => !isNaN(val) && val > 0);
+                          setModuleFilters(prev => ({
+                            ...prev,
+                            [file.uploadedFileName]: { ...(prev[file.uploadedFileName] || {}), ignoredRows: parsed }
+                          }));
+                        }}
+                        className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary font-mono"
+                      />
+                      <p className="text-[9px] text-muted">Allows ignoring rows that aren't visible in the first 10 rows preview.</p>
+                    </div>
+                  </div>
+
                   <div className="flex justify-between items-center">
                     <h5 className="text-xs font-semibold text-muted uppercase tracking-wider">Configure Column Mappings</h5>
                     
@@ -1432,23 +2092,23 @@ const Migration = () => {
                       
                       {/* Undo / Redo controls */}
                       <div className="flex items-center gap-2 bg-bg3 p-1 rounded-lg border border-glass-border">
-                      <button
-                        onClick={handleUndo}
-                        disabled={historyIndex <= 0}
-                        className="p-1 px-2 text-[10px] font-bold rounded hover:bg-bg2 disabled:opacity-30 disabled:pointer-events-none text-text transition-colors"
-                        title="Undo Mapping Change"
-                      >
-                        Undo
-                      </button>
-                      <div className="w-px h-3 bg-glass-border" />
-                      <button
-                        onClick={handleRedo}
-                        disabled={historyIndex >= mappingHistory.length - 1}
-                        className="p-1 px-2 text-[10px] font-bold rounded hover:bg-bg2 disabled:opacity-30 disabled:pointer-events-none text-text transition-colors"
-                        title="Redo Mapping Change"
-                      >
-                        Redo
-                      </button>
+                        <button
+                          onClick={handleUndo}
+                          disabled={historyIndex <= 0}
+                          className="p-1 px-2 text-[10px] font-bold rounded hover:bg-bg2 disabled:opacity-30 disabled:pointer-events-none text-text transition-colors"
+                          title="Undo Mapping Change"
+                        >
+                          Undo
+                        </button>
+                        <div className="w-px h-3 bg-glass-border" />
+                        <button
+                          onClick={handleRedo}
+                          disabled={historyIndex >= mappingHistory.length - 1}
+                          className="p-1 px-2 text-[10px] font-bold rounded hover:bg-bg2 disabled:opacity-30 disabled:pointer-events-none text-text transition-colors"
+                          title="Redo Mapping Change"
+                        >
+                          Redo
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1487,26 +2147,27 @@ const Migration = () => {
                               onFocus={() => setHoveredHeader(header)}
                               onBlur={() => setHoveredHeader(null)}
                               onChange={(e) => {
-                                if (e.target.value === 'CREATE_CUSTOM') {
-                                  const colName = window.prompt("Enter new custom database column name:");
-                                  if (colName) {
-                                    const cleanName = colName.trim().replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-                                    if (cleanName) {
-                                      const customVal = `custom_col_${cleanName}`;
-                                      if (!customColumns.includes(customVal)) {
-                                        setCustomColumns(prev => [...prev, customVal]);
+                                  if (e.target.value === 'CREATE_CUSTOM') {
+                                    const colName = window.prompt("Enter new custom database column name:");
+                                    if (colName) {
+                                      const cleanName = colName.trim().replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+                                      if (cleanName) {
+                                        const customVal = `custom_col_${cleanName}`;
+                                        if (!customColumns.includes(customVal)) {
+                                          setCustomColumns(prev => [...prev, customVal]);
+                                        }
+                                        const newMapping = { ...tempMapping, [header]: customVal };
+                                        updateTempMappingWithHistory(newMapping);
                                       }
-                                      const newMapping = { ...tempMapping, [header]: customVal };
-                                      updateTempMappingWithHistory(newMapping);
                                     }
+                                  } else {
+                                    const newMapping = { ...tempMapping, [header]: e.target.value };
+                                    updateTempMappingWithHistory(newMapping);
                                   }
-                                } else {
-                                  const newMapping = { ...tempMapping, [header]: e.target.value };
-                                  updateTempMappingWithHistory(newMapping);
-                                }
                               }}
                               className="flex-1 bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary transition-all cursor-pointer font-medium"
                             >
+                              <option value="" className="bg-bg text-text font-normal">-- Ignore --</option>
                               {DB_TARGET_SECTIONS.map((section) => (
                                 <optgroup key={section.label} label={section.label} className="bg-bg text-primary font-semibold">
                                   {section.fields.map((f) => (
@@ -1568,10 +2229,11 @@ const Migration = () => {
                     <table className="min-w-full divide-y divide-glass-border text-xs text-left">
                       <thead className="bg-bg2 sticky top-0 z-10">
                         <tr>
+                          <th className="px-3 py-2 text-muted font-bold w-[160px] text-center border-b border-glass-border">Row Actions</th>
                           {visibleHeaders.map((header) => {
                             const isMapped = tempMapping[header];
                             const customFieldName = isMapped && isMapped.startsWith('custom_col_') ? isMapped.substring(11) : '';
-                            const mappedLabel = isMapped ? (customFieldName ? `Custom Field: ${customFieldName}` : (DB_TARGET_COLUMNS.find(c => c.value === isMapped)?.label || isMapped)) : '';
+                            const fieldInfo = isMapped ? (customFieldName ? { section: 'Custom Column', label: customFieldName } : getFieldLabelAndSection(isMapped)) : null;
                             const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
                             return (
                               <th 
@@ -1582,9 +2244,18 @@ const Migration = () => {
                                 className={`px-4 py-3 font-bold border-b border-glass-border transition-all duration-150 truncate whitespace-nowrap cursor-pointer ${styles.header}`}
                               >
                                 {header}
-                                {isMapped && (
-                                  <span className="block text-[8px] font-bold mt-1 text-emerald-400 capitalize">
-                                    → {mappedLabel}
+                                {isMapped && fieldInfo && (
+                                  <span className="block text-[10px] font-bold mt-1 flex flex-wrap items-center gap-1">
+                                    <span className={`px-1.5 py-0.5 rounded border text-[8px] uppercase font-semibold ${
+                                      customFieldName 
+                                        ? 'bg-blue-400/10 text-blue-300 border-blue-400/20' 
+                                        : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/20'
+                                    }`}>
+                                      {fieldInfo.section}
+                                    </span>
+                                    <span className="truncate max-w-[120px] text-text font-normal">
+                                      {fieldInfo.label}
+                                    </span>
                                   </span>
                                 )}
                               </th>
@@ -1593,50 +2264,116 @@ const Migration = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-glass-border text-text font-mono">
-                        {file.samples.slice(0, 10).map((row, idx) => (
-                          <tr key={idx} className="hover:bg-bg2 transition-colors">
-                            {visibleHeaders.map((header) => {
-                              const isMapped = tempMapping[header];
-                              const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
-                              return (
-                                <td 
-                                  key={header} 
-                                  onMouseEnter={() => setHoveredHeader(header)}
-                                  onMouseLeave={() => setHoveredHeader(null)}
-                                  className={`px-4 py-2 truncate max-w-[200px] transition-all duration-150 ${styles.cell}`} 
-                                  title={row[header]}
-                                >
-                                  {row[header] !== undefined ? String(row[header]) : ''}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
+                        {file.samples.slice(0, 10).map((row, rowIdx) => {
+                          const absoluteRowIndex = rowIdx + (file.skipLines || 0) + 1; // 1-based index in the file
+                          const relativeRowIdx = rowIdx + 1; // 1-based relative index after skipLines
+                          const currentFilters = moduleFilters[file.uploadedFileName] || {};
+                          const isRowIgnored = currentFilters.ignoredRows?.includes(relativeRowIdx);
+
+                          return (
+                            <tr key={rowIdx} className={`hover:bg-bg2 transition-colors ${isRowIgnored ? 'bg-red-500/10 text-muted opacity-40 line-through' : ''}`}>
+                              <td className="px-2 py-1.5 border-r border-glass-border/20">
+                                <div className="flex items-center justify-center gap-2">
+                                  {/* Checkbox to Skip */}
+                                  <label className="inline-flex items-center gap-1 cursor-pointer select-none" title={isRowIgnored ? 'Include this row in migration' : 'Skip/Ignore this row'}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isRowIgnored}
+                                      onChange={() => {
+                                        const currentIgnored = currentFilters.ignoredRows || [];
+                                        const newIgnored = currentIgnored.includes(relativeRowIdx)
+                                          ? currentIgnored.filter((r: number) => r !== relativeRowIdx)
+                                          : [...currentIgnored, relativeRowIdx];
+                                        setModuleFilters(prev => ({
+                                          ...prev,
+                                          [file.uploadedFileName]: { ...currentFilters, ignoredRows: newIgnored }
+                                        }));
+                                      }}
+                                      className="rounded border-glass-border bg-bg3 text-primary focus:ring-0 focus:ring-offset-0 focus:outline-none w-3.5 h-3.5 cursor-pointer"
+                                    />
+                                    <span className="text-[10px] text-muted hover:text-text font-sans font-medium">Skip</span>
+                                  </label>
+
+                                  {/* Trash Icon Button to Delete (Ignore) Row */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentIgnored = currentFilters.ignoredRows || [];
+                                      const newIgnored = currentIgnored.includes(relativeRowIdx)
+                                        ? currentIgnored.filter((r: number) => r !== relativeRowIdx)
+                                        : [...currentIgnored, relativeRowIdx];
+                                      setModuleFilters(prev => ({
+                                        ...prev,
+                                        [file.uploadedFileName]: { ...currentFilters, ignoredRows: newIgnored }
+                                      }));
+                                    }}
+                                    className={`p-1 rounded border transition-all ${
+                                      isRowIgnored
+                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                                        : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                                    }`}
+                                    title={isRowIgnored ? 'Restore / Include row' : 'Delete / Ignore row'}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+
+                                  <div className="w-px h-3 bg-glass-border/30" />
+
+                                  {/* Set Header Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSkipLinesChange(activeMappingFileIdx, absoluteRowIndex)}
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all whitespace-nowrap"
+                                    title="Set this row as the header, skipping all rows above it"
+                                  >
+                                    Set Header
+                                  </button>
+                                </div>
+                              </td>
+
+                              {visibleHeaders.map((header) => {
+                                const isMapped = tempMapping[header];
+                                const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
+                                return (
+                                  <td 
+                                    key={header} 
+                                    onMouseEnter={() => setHoveredHeader(header)}
+                                    onMouseLeave={() => setHoveredHeader(null)}
+                                    className={`px-4 py-2 truncate max-w-[200px] transition-all duration-150 ${styles.cell}`} 
+                                    title={row[header]}
+                                  >
+                                    {row[header] !== undefined ? String(row[header]) : ''}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-glass-border bg-bg2 flex justify-between items-center">
-              <div className="text-xs text-muted flex items-center gap-1.5">
-                <AlertTriangle size={14} className="text-amber-500" />
-                <span>Verify mappings before importing. Ensure critical fields like Medicine Name are mapped.</span>
               </div>
-              
-              <button
-                onClick={commitMappings}
-                className="bg-primary hover:bg-primary/95 text-text text-xs font-bold px-6 py-3 rounded-lg flex items-center gap-2 shadow-lg hover:shadow-primary/20 transition-all"
-              >
-                <CheckCircle size={14} /> Confirm Mappings
-              </button>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-glass-border bg-bg2 flex justify-between items-center">
+                <div className="text-xs text-muted flex items-center gap-1.5">
+                  <AlertTriangle size={14} className="text-amber-500" />
+                  <span>Verify mappings before importing. Ensure critical fields like Medicine Name are mapped.</span>
+                </div>
+                
+                <button
+                  onClick={commitMappings}
+                  className="bg-primary hover:bg-primary/95 text-text text-xs font-bold px-6 py-3 rounded-lg flex items-center gap-2 shadow-lg hover:shadow-primary/20 transition-all"
+                >
+                  <CheckCircle size={14} /> Confirm Mappings
+                </button>
+              </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      );
-    })()}
+          </div>,
+          document.body
+        );
+      })()}
 
       {/* Interactive Staging Record Edit Modal */}
       {editingRecordType !== null && editingRecordData !== null && (

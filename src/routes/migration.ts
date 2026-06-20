@@ -12,6 +12,7 @@ import * as XLSX from 'xlsx';
 import { migrationStatus, runManualMigration } from '../worker/migrationWorker.js';
 import csvParser from 'csv-parser';
 import zlib from 'zlib';
+import { detectDataModules, autoMapColumn, matchesFilters, runSimulation } from '../utils/preMigrationIntelligence.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -132,7 +133,7 @@ router.get('/files', (req, res) => {
 
 // Trigger a manual migration script
 router.post('/run', async (req, res) => {
-  const { fileName, dataType, mapping, skipLines } = req.body;
+  const { fileName, dataType, mapping, skipLines, sheetIndex, filters, medicineActions } = req.body;
   if (!fileName) {
     return res.status(400).json({ error: 'fileName required' });
   }
@@ -145,7 +146,8 @@ router.post('/run', async (req, res) => {
     
     // Call the worker in the background
     const skipCount = parseInt(skipLines) || 0;
-    runManualMigration(fileName, dataType || 'inventory', mapping, skipCount).catch(error => {
+    const sheetIdx = parseInt(sheetIndex) || 0;
+    runManualMigration(fileName, dataType || 'inventory', mapping, skipCount, sheetIdx, filters, medicineActions).catch(error => {
       console.error('Background migration error:', error);
     });
 
@@ -153,6 +155,159 @@ router.post('/run', async (req, res) => {
   } catch (error: any) {
     console.error('Migration error:', error);
     res.status(500).json({ error: error.message || 'Failed to start migration' });
+  }
+});
+
+router.post('/pre-migration-analyze', async (req, res) => {
+  const { fileName, skipLines, sheetIndex, userMapping } = req.body;
+  if (!fileName) return res.status(400).json({ error: 'fileName required' });
+
+  const filePath = path.join(MIGRATION_DIR, fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+  try {
+    const ext = path.extname(fileName).toLowerCase().replace('.', '');
+    const skipCount = parseInt(skipLines) || 0;
+    const sheetIdx = parseInt(sheetIndex) || 0;
+
+    let headers: string[] = [];
+    let samples: any[] = [];
+    let sheetNames: string[] = [];
+
+    if (ext === 'csv') {
+      const r = await readCsvHeaders(filePath, skipCount);
+      headers = r.headers;
+      samples = r.samples;
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      const wb = XLSX.readFile(filePath, { sheetRows: skipCount + 100 });
+      sheetNames = wb.SheetNames;
+      const sheetName = wb.SheetNames[sheetIdx] || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[];
+      const headerRow = (rows[skipCount] as string[]) || [];
+      headers = headerRow.map(String).filter(h => h.trim());
+      samples = rows.slice(skipCount + 1, skipCount + 100).map(row =>
+        Object.fromEntries(headers.map((h, i) => [h, (row as any[])[i] ?? '']))
+      );
+    }
+
+    const detected = detectDataModules(headers);
+    const moduleResult = detected[0] || { type: 'unknown', confidence: 0 };
+
+    const autoMapping: Record<string, string> = {};
+    headers.forEach(h => {
+      autoMapping[h] = autoMapColumn(h);
+    });
+
+    const activeMapping = userMapping || autoMapping;
+    const unmappedColumns = headers.filter(h => !activeMapping[h]);
+
+    // Extract unique medicine candidates
+    const nameKey = Object.keys(activeMapping).find(k => activeMapping[k] === 'name');
+    const medicineCandidates: string[] = [];
+    if (nameKey) {
+      const candidates = new Set<string>();
+      samples.forEach(s => {
+        if (s[nameKey]) candidates.add(String(s[nameKey]).trim());
+      });
+      medicineCandidates.push(...Array.from(candidates));
+    }
+
+    // Get database medicines to check merge suggestions
+    const db = await dbManager.getConnection();
+    const dbMeds = await db.all('SELECT name FROM medicines');
+    const dbMedsList = dbMeds.map(m => String(m.name));
+
+    const mergeSuggestions: Record<string, string[]> = {};
+    medicineCandidates.forEach(cand => {
+      const matches = dbMedsList.filter(m => m.toLowerCase().includes(cand.toLowerCase()) || cand.toLowerCase().includes(m.toLowerCase()));
+      if (matches.length > 0) {
+        mergeSuggestions[cand] = matches.slice(0, 5);
+      }
+    });
+
+    res.json({
+      success: true,
+      module: moduleResult,
+      columns: headers,
+      autoMapping,
+      unmappedColumns,
+      medicineCandidates: medicineCandidates.slice(0, 100),
+      mergeSuggestions,
+      dependencyAlerts: [],
+      relationshipPreview: {
+        medicinesFound: medicineCandidates.length,
+        inventoryRecords: moduleResult.type === 'inventory' ? samples.length : 0,
+        purchaseBills: moduleResult.type === 'purchases' ? samples.length : 0,
+        salesBills: moduleResult.type === 'sales' ? samples.length : 0,
+      },
+      sheetNames
+    });
+  } catch (err: any) {
+    console.error('Pre-migration analyze error:', err);
+    res.status(500).json({ error: 'Pre-migration analysis failed', details: err.message });
+  }
+});
+
+router.post('/pre-migration-simulate', async (req, res) => {
+  const { fileName, dataType, mapping, skipLines, sheetIndex, filters } = req.body;
+  if (!fileName) return res.status(400).json({ error: 'fileName required' });
+
+  const filePath = path.join(MIGRATION_DIR, fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+  try {
+    const ext = path.extname(fileName).toLowerCase().replace('.', '');
+    const skipCount = parseInt(skipLines) || 0;
+    const sheetIdx = parseInt(sheetIndex) || 0;
+
+    let rows: any[] = [];
+    if (ext === 'csv') {
+      const r = await readCsvHeaders(filePath, skipCount);
+      // Read up to 1000 rows for simulation preview
+      const fullRows: any[] = [];
+      await new Promise<void>((resolve, reject) => {
+        fs.createReadStream(filePath)
+          .pipe(csvParser({ skipLines: skipCount }))
+          .on('data', (row: any) => { if (fullRows.length < 1000) fullRows.push(row); })
+          .on('end', resolve)
+          .on('error', reject);
+      });
+      rows = fullRows;
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      const wb = XLSX.readFile(filePath, { sheetRows: skipCount + 1000 });
+      const sheetName = wb.SheetNames[sheetIdx] || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const allRows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[];
+      const headerRow = (allRows[skipCount] as string[]) || [];
+      const headers = headerRow.map(String).filter(h => h.trim());
+      rows = allRows.slice(skipCount + 1, skipCount + 1000).map(row =>
+        Object.fromEntries(headers.map((h, i) => [h, (row as any[])[i] ?? '']))
+      );
+    }
+
+    const activeMapping = mapping || {};
+    const filteredRows = rows.filter((r, idx) => {
+      const rowNum = idx + 1;
+      if (filters && filters.ignoredRows && Array.isArray(filters.ignoredRows) && filters.ignoredRows.includes(rowNum)) {
+        return false;
+      }
+      return matchesFilters(r, activeMapping, filters);
+    });
+
+    const db = await dbManager.getConnection();
+    const rowsDb = await db.all('SELECT name FROM medicines');
+    const existingMedsList = rowsDb.map((r: any) => String(r.name));
+
+    const simulation = runSimulation(filteredRows, activeMapping, dataType || 'inventory', existingMedsList);
+
+    res.json({
+      success: true,
+      simulation
+    });
+  } catch (err: any) {
+    console.error('Pre-migration simulation error:', err);
+    res.status(500).json({ error: 'Pre-migration simulation failed', details: err.message });
   }
 });
 
@@ -206,7 +361,7 @@ router.post('/analyze', async (req, res) => {
 
 // ─── ANALYZE EXCEL FILE ───────────────────────────────────────────────────────
 router.post('/analyze-excel', async (req, res) => {
-  const { fileName, sheetIndex } = req.body;
+  const { fileName, sheetIndex, skipLines } = req.body;
   if (!fileName) return res.status(400).json({ error: 'fileName required' });
   const filePath = path.join(MIGRATION_DIR, fileName);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
@@ -215,12 +370,14 @@ router.post('/analyze-excel', async (req, res) => {
     return res.status(400).json({ error: 'Not an Excel file' });
   }
   try {
-    const wb = XLSX.readFile(filePath, { sheetRows: 6 });
+    const skipCount = parseInt(skipLines as string) || 0;
+    const wb = XLSX.readFile(filePath, { sheetRows: skipCount + 10 });
     const sheetName = wb.SheetNames[sheetIndex ?? 0] ?? wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
     const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[];
-    const headers = (rows[0] as string[]).map(String).filter(h => h.trim());
-    const samples = rows.slice(1, 6).map(row =>
+    const headerRow = (rows[skipCount] as string[]) || [];
+    const headers = headerRow.map(String).filter(h => h.trim());
+    const samples = rows.slice(skipCount + 1, skipCount + 6).map(row =>
       Object.fromEntries(headers.map((h, i) => [h, (row as any[])[i] ?? '']))
     );
     const stat = fs.statSync(filePath);
