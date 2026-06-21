@@ -127,6 +127,10 @@ app.use(cors({
     // Allow server-to-server requests with no origin (e.g., mobile, Postman)
     if (!origin) return callback(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    // Allow local network origins (localhost, 127.0.0.1, private IPv4 class A/B/C subnets) on any port
+    if (/^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
     callback(new Error(`CORS blocked: origin ${origin} not allowed`));
   },
   credentials: true

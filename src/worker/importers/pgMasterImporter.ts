@@ -23,6 +23,7 @@ export function clearAllMaps() {
   categoryMap.clear();
   manufacturerMap.clear();
   distributorMap.clear();
+  normalizedDistributorMap.clear();
   doctorMap.clear();
   patientMap.clear();
   medicineMap.clear();
@@ -83,13 +84,39 @@ export async function flushDistributors(db: Database) {
   if (distributorBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
   for (const d of distributorBatch) {
-    const result = await db.run(
-      `INSERT INTO distributors (name, contact, legacy_id, gstin, address, city, email, dl_no)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [d.name, d.contact, d.legacy_id, d.gstin, d.address, d.city, d.email, d.dl_no]
-    );
-    distributorMap.set(d.legacy_id, result.lastID!);
-    normalizedDistributorMap.set(d.normName, result.lastID!);
+    try {
+      const result = await db.run(
+        `INSERT INTO distributors (name, contact, legacy_id, gstin, address, city, email, dl_no)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [d.name, d.contact, d.legacy_id, d.gstin, d.address, d.city, d.email, d.dl_no]
+      );
+      distributorMap.set(d.legacy_id, result.lastID!);
+      normalizedDistributorMap.set(d.normName, result.lastID!);
+    } catch (err: any) {
+      if (err.message && err.message.includes('UNIQUE constraint failed: distributors.name')) {
+        // Retrieve existing distributor's ID to preserve mappings
+        const row = await db.get('SELECT id FROM distributors WHERE name = ?', [d.name]);
+        if (row) {
+          distributorMap.set(d.legacy_id, row.id);
+          normalizedDistributorMap.set(d.normName, row.id);
+          // Link legacy_id on existing record if it is not already set
+          await db.run('UPDATE distributors SET legacy_id = COALESCE(legacy_id, ?) WHERE id = ?', [d.legacy_id, row.id]);
+        } else {
+          // Check by case-insensitive name matching if name isn't exactly equal due to unicode/whitespace differences
+          const rows = await db.all('SELECT id, name FROM distributors');
+          const matched = rows.find(r => normalizeDistributorName(r.name) === d.normName);
+          if (matched) {
+            distributorMap.set(d.legacy_id, matched.id);
+            normalizedDistributorMap.set(d.normName, matched.id);
+            await db.run('UPDATE distributors SET legacy_id = COALESCE(legacy_id, ?) WHERE id = ?', [d.legacy_id, matched.id]);
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
   }
   await db.run('COMMIT');
   distributorBatch = [];

@@ -107,6 +107,11 @@ export class BackupRecoveryService {
 
     console.log(`[Backup] Generating database snapshot: ${filename}...`);
 
+    // Ensure snapshots directory exists before starting SQLite WAL backup
+    if (!fs.existsSync(SNAPSHOTS_DIR)) {
+      fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+    }
+
     // Safely clone database via checkpointed WAL copy to temporary raw file
     const tempDbPath = destPath.replace('.gz', '');
     const tempDb = new Database(DB_PATH);

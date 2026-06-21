@@ -17,10 +17,18 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [adminKey, setAdminKey] = useState('');
+  const [manualServerUrl, setManualServerUrl] = useState('');
 
   // Auto-discovery state
   const [discoveryStatus, setDiscoveryStatus] = useState<'searching' | 'found' | 'not_found'>('searching');
   const [discoveredUrl, setDiscoveredUrl] = useState<string | null>(null);
+
+  // Sync manual URL when discovery resolves
+  useEffect(() => {
+    if (discoveredUrl) {
+      setManualServerUrl(discoveredUrl);
+    }
+  }, [discoveredUrl]);
 
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
@@ -66,13 +74,19 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
   };
 
   const handleAdminLogin = async () => {
-    // We need a server URL to authenticate. We'll use either:
-    // 1. The auto-discovered URL
-    // 2. The cached/configured server URL (if it is online)
-    const targetUrl = discoveredUrl;
+    let targetUrl = manualServerUrl.trim();
+    if (!targetUrl && discoveredUrl) {
+      targetUrl = discoveredUrl;
+    }
+
     if (!targetUrl) {
-      setError('No pharmacy server found. Ensure your PC is running and on the same Wi-Fi.');
+      setError('Server URL is required. Ensure your PC is running and enter its IP.');
       return;
+    }
+
+    // Normalize URL
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = `http://${targetUrl}`;
     }
 
     if (!adminUser.trim() || !adminPass.trim() || !adminKey.trim()) {
@@ -84,6 +98,12 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
     setError('');
 
     try {
+      // Test manual connection first before writing to storage
+      const ok = await testConnection(targetUrl);
+      if (!ok) {
+        throw new Error('Cannot connect to specified Server URL. Check network or IP.');
+      }
+
       await setServerUrl(targetUrl);
       const success = await adminLogin({
         username: adminUser.trim(),
@@ -312,6 +332,16 @@ export default function ServerSetup({ onConnected }: ServerSetupProps) {
               </TouchableOpacity>
               <Text style={styles.formTitle}>Admin Login</Text>
             </View>
+
+            <TextInput
+              style={styles.adminInput}
+              value={manualServerUrl}
+              onChangeText={setManualServerUrl}
+              placeholder="Server URL (e.g. http://192.168.1.15:3000)"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
 
             <TextInput
               style={styles.adminInput}

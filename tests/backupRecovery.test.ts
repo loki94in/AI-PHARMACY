@@ -32,7 +32,11 @@ describe('Backup & Recovery Service and Routes', () => {
 
   afterAll(() => {
     // Restore the database path environment variable and clean up temporary directory
-    process.env.DB_PATH = originalDbPath;
+    if (originalDbPath === undefined) {
+      delete process.env.DB_PATH;
+    } else {
+      process.env.DB_PATH = originalDbPath;
+    }
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
   });
 

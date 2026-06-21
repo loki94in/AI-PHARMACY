@@ -37,7 +37,7 @@ export async function authenticateApiKey(req: Request, res: Response, next: Next
     return next();
   }
 
-  // Public/open endpoints (health check, license status/activation, and notifications stream/tokens)
+  // Public/open endpoints (health check, license status/activation, notifications stream/tokens, and remote login)
   const path = req.path;
   const originalUrl = req.originalUrl || '';
   if (
@@ -48,7 +48,9 @@ export async function authenticateApiKey(req: Request, res: Response, next: Next
     originalUrl.startsWith('/api/notifications/register-token') ||
     path.startsWith('/notifications/register-token') ||
     originalUrl.startsWith('/api/health') ||
-    path === '/health'
+    path === '/health' ||
+    originalUrl.startsWith('/api/security/admin/login') ||
+    path.startsWith('/security/admin/login')
   ) {
     return next();
   }

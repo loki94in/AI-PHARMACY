@@ -22,7 +22,7 @@ import {
   setScheduleConfig,
 } from '../services/backupService.js';
 import { backupRecoveryService } from '../services/backupRecoveryService.js';
-import { workerSupervisor } from '../worker/workerSupervisor.js';
+import { closeMessageDAO } from '../database/messageDAO.js';
 import Database from 'better-sqlite3';
 import AdmZip from 'adm-zip';
 
@@ -538,33 +538,46 @@ router.post('/reset-data', async (req, res) => {
       }
     }
 
-    // 2. Stop all background worker processes FIRST so they release their
-    //    SQLite file locks (Catalog Worker + Email Poller each hold the DB open).
-    //    Without this step, unlinkSync on app.db fails with EBUSY on Windows.
-    try {
-      workerSupervisor.stop();
-    } catch (_) {}
+    // 2. Instead of deleting the DB file (fails on Windows due to file locks held by
+    //    child workers, backup service, etc.), we wipe all data IN-PLACE using SQL.
+    //    This is reliable because we can write to the DB through the existing connection.
+    const db = await dbManager.getConnection();
 
-    // 3. Close the main DB connection manager
+    // 2a. Get all user-created table names
+    const tables = await db.all(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    );
+
+    // 2b. Drop every table
+    for (const { name } of tables) {
+      await db.run(`DROP TABLE IF EXISTS "${name}"`);
+    }
+
+    // 2c. Close the now-empty connection so ensureSchema gets a fresh one
     await dbManager.close(true);
 
-    // Give the OS 600ms to fully release all file handles from the
-    // now-terminated child processes before we attempt to delete the files.
-    await new Promise(resolve => setTimeout(resolve, 600));
+    // 2d. Also close the messageDAO connection so it reconnects to the fresh schema
+    try {
+      closeMessageDAO();
+    } catch (_) {}
 
-    // 3. Delete database files
-    const deleteFile = (p: string) => {
-      try {
-        if (fs.existsSync(p)) fs.unlinkSync(p);
-      } catch (_) {}
-    };
-    deleteFile(DB_PATH);
-    deleteFile(`${DB_PATH}-wal`);
-    deleteFile(`${DB_PATH}-shm`);
+    // 2e. Lock and close all active staging database connections to release file locks on Windows
+    try {
+      const { closeAllStagingConnections, lockStagingDb } = await import('./migration.js');
+      lockStagingDb();
+      await closeAllStagingConnections();
+    } catch (_) {}
 
-    // 4. Recreate database from scratch (runs clean schema migrations)
+    // 3. Recreate all tables from scratch via the schema migrations
     const { ensureSchema } = await import('../database.js');
     await ensureSchema(DB_PATH);
+
+    // 3b. Compact the DB file to reclaim space from dropped tables
+    try {
+      const freshDb = await dbManager.getConnection();
+      await freshDb.run('VACUUM');
+    } catch (_) {}
+
 
     // 5. Restore configurations into the fresh database (skipped for full factory reset)
     if (!wipeAll) {
@@ -652,10 +665,34 @@ router.post('/reset-data', async (req, res) => {
 
       // Wipe migration staging database (separate from app.db)
       const dataDir = path.resolve(__dirname, '..', '..', 'data');
+      const stagingDbPath = path.join(dataDir, 'staging.db');
+      if (fs.existsSync(stagingDbPath)) {
+        try {
+          const { open } = await import('sqlite');
+          const { default: sqlite3 } = await import('sqlite3');
+          const stagingDb = await open({ filename: stagingDbPath, driver: sqlite3.Database });
+          await stagingDb.run('PRAGMA foreign_keys = OFF');
+          const stagingTables = await stagingDb.all(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+          );
+          for (const { name } of stagingTables) {
+            await stagingDb.run(`DROP TABLE IF EXISTS "${name}"`);
+          }
+          await stagingDb.run('VACUUM');
+          await stagingDb.close();
+        } catch (err) {
+          console.warn('[Reset] Failed to wipe staging DB in-place:', err);
+        }
+      }
       const stagingDbFiles = ['staging.db', 'staging.db-wal', 'staging.db-shm'];
       for (const f of stagingDbFiles) {
         try { if (fs.existsSync(path.join(dataDir, f))) fs.unlinkSync(path.join(dataDir, f)); } catch (_) {}
       }
+      // Unlock staging database connections
+      try {
+        const { unlockStagingDb } = await import('./migration.js');
+        unlockStagingDb();
+      } catch (_) {}
 
       // Wipe uploaded migration source files (zip, csv, xlsx etc.)
       const migrationSampelDir = path.resolve(__dirname, '..', '..', 'MIGRATION SAMPEL');
@@ -670,15 +707,20 @@ router.post('/reset-data', async (req, res) => {
       ];
       for (const d of tempDirs) clearDir(d);
 
-      // Delete leftover .bak DB files and runtime JSON state files in data/
+      // Delete ALL temp/leftover DB files and runtime state files in data/
       const runtimeDataFiles = ['audit_queue.json', 'ocr_corrections.json', 'suggested_names.json'];
       if (fs.existsSync(dataDir)) {
         for (const f of fs.readdirSync(dataDir)) {
-          const isBak = f.endsWith('.bak') || f.includes('.db.bak') || /\.db\.bak_\d+/.test(f) || f.includes('-shm') || f.includes('-wal');
-          const isRuntimeJson = runtimeDataFiles.includes(f);
-          if (isBak || isRuntimeJson) {
-            try { fs.unlinkSync(path.join(dataDir, f)); } catch (_) {}
-          }
+          // Skip the freshly-created app.db and its journal files
+          if (f === 'app.db' || f === 'app.db-wal' || f === 'app.db-shm') continue;
+          // Skip model files and reference data needed for OCR/search
+          if (f === 'models' || f === 'reference_medicines.csv' || f === 'medicines_list.txt' || f === 'medicine_dict.txt' || f === 'medicine_patterns.txt') continue;
+          // Skip sub-directories already handled above
+          const fullPath = path.join(dataDir, f);
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) continue;
+          // Delete everything else: temp DBs, .bak files, test DBs, runtime JSON
+          try { fs.unlinkSync(fullPath); } catch (_) {}
         }
       }
 
@@ -691,6 +733,10 @@ router.post('/reset-data', async (req, res) => {
 
     res.json({ success: true, message: wipeAll ? 'Factory reset complete. App is now in fresh installation state.' : 'All stored data reset and database self-healed successfully' });
   } catch (error: any) {
+    try {
+      const { unlockStagingDb } = await import('./migration.js');
+      unlockStagingDb();
+    } catch (_) {}
     console.error('Reset data error:', error);
     res.status(500).json({ error: 'Failed to reset data: ' + error.message });
   }

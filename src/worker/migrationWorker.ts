@@ -370,9 +370,9 @@ async function detectDumpFormat(sqlPath: string): Promise<'pg_dump' | 'legacy'> 
  */
 async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
-
-  // Enable WAL mode for better concurrent write performance
-  await db.run('PRAGMA journal_mode = WAL');
+  try {
+    // Enable WAL mode for better concurrent write performance
+    await db.run('PRAGMA journal_mode = WAL');
   await db.run('PRAGMA synchronous = NORMAL');
   await db.run('PRAGMA cache_size = -64000'); // 64MB cache
 
@@ -501,16 +501,17 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   migrationStatus.progress = 95;
   console.log(migrationStatus.message);
 
-  // ─── Generate Summary Report ──────────────────────────────
-  migrationStatus.message = 'Generating migration summary report...';
-  await generateMigrationReport(db, stats);
+    // ─── Generate Summary Report ──────────────────────────────
+    migrationStatus.message = 'Generating migration summary report...';
+    await generateMigrationReport(db, stats);
 
-  await db.close();
-
-  migrationStatus.message = `Migration Complete! ${stats.medicines} medicines, ${stats.purchases} purchases, ${stats.salesInvoices} sales, ${stats.returns} returns imported.`;
-  migrationStatus.progress = 100;
-  console.log('=== MIGRATION COMPLETE ===');
-  console.log(JSON.stringify(stats, null, 2));
+    migrationStatus.message = `Migration Complete! ${stats.medicines} medicines, ${stats.purchases} purchases, ${stats.salesInvoices} sales, ${stats.returns} returns imported.`;
+    migrationStatus.progress = 100;
+    console.log('=== MIGRATION COMPLETE ===');
+    console.log(JSON.stringify(stats, null, 2));
+  } finally {
+    await db.close();
+  }
 }
 
 /**
@@ -617,71 +618,74 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
   migrationStatus.message = 'Parsing and Importing SQL Data (legacy format)...';
 
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
-  await ensureMigrationErrorsTable(db);
+  try {
+    await ensureMigrationErrorsTable(db);
 
-  const fileStream = fs.createReadStream(sqlPath);
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity
-  });
+    const fileStream = fs.createReadStream(sqlPath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
 
-  let linesProcessed = 0;
-  let linesMigrated = 0;
+    let linesProcessed = 0;
+    let linesMigrated = 0;
 
-  for await (const line of rl) {
-    const trimmedLine = line.trim();
+    for await (const line of rl) {
+      const trimmedLine = line.trim();
 
-    // Yield every 500 lines to keep event loop free
-    if (linesProcessed % 500 === 0) {
-      await new Promise(resolve => setImmediate(resolve));
-    }
+      // Yield every 500 lines to keep event loop free
+      if (linesProcessed % 500 === 0) {
+        await new Promise(resolve => setImmediate(resolve));
+      }
 
-    if (!trimmedLine) {
+      if (!trimmedLine) {
+        linesProcessed++;
+        if (linesProcessed % 1000 === 0) {
+          migrationStatus.progress = Math.min(99, Math.floor(linesProcessed / 1000));
+          migrationStatus.message = `Processed ${linesProcessed} lines, migrated ${linesMigrated} rows...`;
+        }
+        continue;
+      }
+
+      let migrated = false;
+
+      try {
+        if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_RETURNS')) {
+          migrated = await processReturnsLine(trimmedLine, db);
+        }
+        else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_STOCK') ||
+          trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_BATCHES')) {
+          migrated = await processInventoryLine(trimmedLine, db);
+        }
+        else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALES') ||
+          trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALEITEMS') ||
+          trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALE_ITEMS')) {
+          migrated = await processSalesLine(trimmedLine, db);
+        }
+      } catch (err: any) {
+        migrationStatus.errorCount++;
+        const errMsg = err.message || 'Unknown processing error';
+        await db.run(
+          'INSERT INTO migration_errors (file_name, row_index, raw_data, error_message) VALUES (?, ?, ?, ?)',
+          [path.basename(sqlPath), linesProcessed, trimmedLine.slice(0, 1000), errMsg]
+        );
+      }
+
+      if (migrated) {
+        linesMigrated++;
+      }
+
       linesProcessed++;
       if (linesProcessed % 1000 === 0) {
         migrationStatus.progress = Math.min(99, Math.floor(linesProcessed / 1000));
         migrationStatus.message = `Processed ${linesProcessed} lines, migrated ${linesMigrated} rows...`;
       }
-      continue;
     }
 
-    let migrated = false;
-
-    try {
-      if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_RETURNS')) {
-        migrated = await processReturnsLine(trimmedLine, db);
-      }
-      else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_STOCK') ||
-        trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_BATCHES')) {
-        migrated = await processInventoryLine(trimmedLine, db);
-      }
-      else if (trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALES') ||
-        trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALEITEMS') ||
-        trimmedLine.toUpperCase().startsWith('INSERT INTO LEGACY_SALE_ITEMS')) {
-        migrated = await processSalesLine(trimmedLine, db);
-      }
-    } catch (err: any) {
-      migrationStatus.errorCount++;
-      const errMsg = err.message || 'Unknown processing error';
-      await db.run(
-        'INSERT INTO migration_errors (file_name, row_index, raw_data, error_message) VALUES (?, ?, ?, ?)',
-        [path.basename(sqlPath), linesProcessed, trimmedLine.slice(0, 1000), errMsg]
-      );
-    }
-
-    if (migrated) {
-      linesMigrated++;
-    }
-
-    linesProcessed++;
-    if (linesProcessed % 1000 === 0) {
-      migrationStatus.progress = Math.min(99, Math.floor(linesProcessed / 1000));
-      migrationStatus.message = `Processed ${linesProcessed} lines, migrated ${linesMigrated} rows...`;
-    }
+    migrationStatus.message = `Migration Complete! Processed ${linesProcessed} lines, migrated ${linesMigrated} rows`;
+  } finally {
+    await db.close();
   }
-
-  await db.close();
-  migrationStatus.message = `Migration Complete! Processed ${linesProcessed} lines, migrated ${linesMigrated} rows`;
 }
 
 /**
@@ -690,7 +694,8 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
  */
 async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0, filters?: any, medicineActions?: any) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
-  await ensureMigrationErrorsTable(db);
+  try {
+    await ensureMigrationErrorsTable(db);
 
   if (skipLines > 0) {
     try {
@@ -956,11 +961,11 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               ) : null;
 
               if (existingBatch) {
-                const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+                const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity' || mapping?.[k] === 'quantity_sold' || mapping?.[k] === 'return_quantity');
                 const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty' || mapping?.[k] === 'loose_quantity');
                 const rackKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'rack_location');
                 const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
-                const costKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate');
+                const costKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate' || mapping?.[k] === 'unit_price');
                 const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
 
                 const rawImportedData = {
@@ -983,8 +988,8 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               }
             }
             else if (dataType === 'sales') {
-              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no');
-              const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
+              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no' || mapping?.[k] === 'bill_no');
+              const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date' || mapping?.[k] === 'return_date');
               const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
               const doctorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'doctor_name');
               const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
@@ -1058,10 +1063,10 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                 inv = { id: result.lastID };
               }
 
-              const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
-              const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty');
+              const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity' || mapping?.[k] === 'quantity_sold');
+              const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty' || mapping?.[k] === 'loose_quantity');
               const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
-              const rateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+              const rateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate' || mapping?.[k] === 'unit_price');
 
               const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
               const looseQty = looseQtyKey ? parseInt(cleanRow[looseQtyKey]) || 0 : 0;
@@ -1075,7 +1080,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               );
             }
             else if (dataType === 'purchases') {
-              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no');
+              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no' || mapping?.[k] === 'bill_id');
               const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
               const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
               const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
@@ -1132,7 +1137,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
 
               const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
               const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
-              const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+              const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate');
               const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
               const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
 
@@ -1150,11 +1155,11 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
             }
             else if (dataType === 'returns') {
               const returnNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_no');
-              const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
+              const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date' || mapping?.[k] === 'return_date');
               const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
               const totalAmountKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'total_amount');
-              const returnInvoiceIdKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_invoice_id');
-              const returnSubTypeKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_sub_type');
+              const returnInvoiceIdKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_invoice_id' || mapping?.[k] === 'invoice_no');
+              const returnSubTypeKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_sub_type' || mapping?.[k] === 'return_status');
               const returnDateTimeKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'return_date_time');
 
               const returnNo = returnNoKey ? String(cleanRow[returnNoKey] || '').trim() : `RET-${Date.now()}-${insertCount}`;
@@ -1210,9 +1215,9 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                 med = { id: result.lastID };
               }
 
-              const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
+              const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity' || mapping?.[k] === 'return_quantity');
               const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
-              const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+              const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate');
               const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
               const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
 
@@ -1230,12 +1235,12 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
             }
             else if (dataType === 'customers') {
               const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
-              const nameKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name') || patientKey;
+              const nameKeyCust = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name') || patientKey;
               const phoneKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'phone') || Object.keys(mapping || {}).find(k => mapping?.[k] === 'mobile');
               const addressKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'address');
               const notesKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'notes');
 
-              const name = nameKey ? String(cleanRow[nameKey] || '').trim() : 'Unnamed Customer';
+              const name = nameKeyCust ? String(cleanRow[nameKeyCust] || '').trim() : 'Unnamed Customer';
               const phone = phoneKey ? String(cleanRow[phoneKey] || '').trim() : '';
               const address = addressKey ? String(cleanRow[addressKey] || '').trim() : '';
               const notes = notesKey ? String(cleanRow[notesKey] || '').trim() : '';
@@ -1273,7 +1278,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
             else if (dataType === 'combined') {
               // 1. Customer
               let customerId: number | null = null;
-              const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
+              const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name' || mapping?.[k] === 'customer_name');
               const nameKeyCust = Object.keys(mapping || {}).find(k => mapping?.[k] === 'name') || patientKey;
               if (nameKeyCust && cleanRow[nameKeyCust] && patientKey) {
                 const patientName = String(cleanRow[nameKeyCust] || '').trim();
@@ -1314,7 +1319,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
 
               // 3. Distributor
               let distributorId: number | null = null;
-              const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
+              const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name' || mapping?.[k] === 'distributor');
               if (distributorKey && cleanRow[distributorKey]) {
                 const distributorName = String(cleanRow[distributorKey] || '').trim();
                 let distributor = await db.get('SELECT id FROM distributors WHERE LOWER(name) = LOWER(?)', [distributorName]);
@@ -1393,10 +1398,10 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               // 5. Inventory
               let inventoryId: number | null = null;
               if (medicineId) {
-                const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
-                const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty');
+                const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity' || mapping?.[k] === 'quantity_sold' || mapping?.[k] === 'return_quantity');
+                const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty' || mapping?.[k] === 'loose_quantity');
                 const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
-                const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+                const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate' || mapping?.[k] === 'unit_price');
                 const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
                 const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
                 const rackKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'rack_location');
@@ -1427,7 +1432,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               }
 
               // 6. Sale or Purchase Invoice
-              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no');
+              const invoiceNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'invoice_no' || mapping?.[k] === 'bill_no' || mapping?.[k] === 'bill_id');
               if (invoiceNoKey && cleanRow[invoiceNoKey]) {
                 const invoiceNo = String(cleanRow[invoiceNoKey] || '').trim();
                 const dateKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'date');
@@ -1441,8 +1446,8 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                 const sgstKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'sgst');
                 const sgstVal = sgstKey ? parseFloat(cleanRow[sgstKey]) || 0 : 0;
 
-                const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name');
-                const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name');
+                const patientKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'patient_name' || mapping?.[k] === 'customer_name');
+                const distributorKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'distributor_name' || mapping?.[k] === 'distributor');
 
                 if (patientKey && cleanRow[patientKey]) {
                   // Sale Invoice
@@ -1457,10 +1462,10 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                   }
 
                   if (medicineId && inventoryId) {
-                    const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
-                    const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty');
+                    const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity' || mapping?.[k] === 'quantity_sold');
+                    const looseQtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'loose_qty' || mapping?.[k] === 'loose_quantity');
                     const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
-                    const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+                    const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate' || mapping?.[k] === 'unit_price');
 
                     const quantity = qtyKey ? parseInt(cleanRow[qtyKey]) || 0 : 0;
                     const looseQty = looseQtyKey ? parseInt(cleanRow[looseQtyKey]) || 0 : 0;
@@ -1489,7 +1494,7 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                   if (medicineId) {
                     const qtyKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'quantity');
                     const mrpKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'mrp');
-                    const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price');
+                    const costPriceKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'cost_price' || mapping?.[k] === 'rate');
                     const batchNoKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'batch_no');
                     const expKey = Object.keys(mapping || {}).find(k => mapping?.[k] === 'expiry_date');
 
@@ -1519,11 +1524,12 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
         } catch (err: any) {
           await db.run('ROLLBACK');
           reject(err);
-        } finally {
-          await db.close();
         }
       })
       .on('end', () => { })
       .on('error', reject);
   });
+  } finally {
+    await db.close();
+  }
 }

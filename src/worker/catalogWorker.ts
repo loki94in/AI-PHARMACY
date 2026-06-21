@@ -980,6 +980,10 @@ export async function runCatalogImport(jobId: number) {
   }
 }
 
+let isWorking = false;
+const failedDiscoveryAttempts = new Map<string, number>();
+const DISCOVERY_RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+
 // Loop to poll jobs
 export async function startWorker() {
   // Reset stuck jobs on startup to allow resuming
@@ -994,7 +998,12 @@ export async function startWorker() {
     console.error('[Worker] Failed to reset stuck catalog jobs on startup:', err);
   }
 
+  // ponytail: concurrency lock to avoid CPU/memory leak
   setInterval(async () => {
+    if (isWorking) {
+      return;
+    }
+    isWorking = true;
     let db;
     try {
       db = await dbManager.getConnection();
@@ -1010,9 +1019,15 @@ export async function startWorker() {
           await runCatalogImport(job.id);
         } else {
           // Process staged reviews background enrichment
-          const pendingReview = await db.get(
-            "SELECT * FROM staged_medicine_reviews WHERE status = 'pending' AND screenshot_path IS NULL LIMIT 1"
+          const pendingReviews = await db.all(
+            "SELECT * FROM staged_medicine_reviews WHERE status = 'pending' AND screenshot_path IS NULL ORDER BY id ASC LIMIT 50"
           );
+          
+          const pendingReview = pendingReviews.find(r => {
+            const lastAttempt = failedDiscoveryAttempts.get(r.medicine_name);
+            return !lastAttempt || (Date.now() - lastAttempt > DISCOVERY_RETRY_DELAY_MS);
+          });
+
           if (pendingReview) {
             console.log(`[Worker] Found pending medicine review for "${pendingReview.medicine_name}", starting Google discovery...`);
             const { googleSearchService } = await import('../services/googleSearchService.js');
@@ -1039,6 +1054,8 @@ export async function startWorker() {
               );
               console.log(`[Worker] Enriched medicine review for "${pendingReview.medicine_name}".`);
               
+              failedDiscoveryAttempts.delete(pendingReview.medicine_name);
+
               eventService.broadcast('catalog_review_updated', {
                 jobId: pendingReview.job_id,
                 reviewId: pendingReview.id,
@@ -1047,6 +1064,7 @@ export async function startWorker() {
               });
             } else {
               console.log(`[Worker] Google discovery failed or throttled for "${pendingReview.medicine_name}".`);
+              failedDiscoveryAttempts.set(pendingReview.medicine_name, Date.now());
             }
           }
         }
@@ -1054,6 +1072,7 @@ export async function startWorker() {
     } catch (err) {
       console.error('Worker polling interval error:', err);
     } finally {
+      isWorking = false;
     }
   }, 10000);
 }

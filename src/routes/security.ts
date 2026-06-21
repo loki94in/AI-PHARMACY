@@ -24,6 +24,9 @@ router.post('/rotate-key', async (req, res) => {
 
 // Admin Remote Operations Login
 router.post('/admin/login', async (req, res) => {
+  if (!req.body) {
+    return res.status(400).json({ error: 'Missing request body.' });
+  }
   const { username, password, uniqueKey, deviceId, deviceName = 'Unknown Device', os = 'Unknown OS' } = req.body;
 
   if (!username || !password || !uniqueKey || !deviceId) {

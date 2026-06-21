@@ -28,14 +28,29 @@ interface FileEntry {
   skipLines?: number;           // number of lines to skip
 }
 
+interface ImportReport {
+  fileName: string;
+  recordsRead: number;
+  recordsImported: number;
+  recordsSkipped: number;
+  validationErrors: number;
+  duplicateRecords: number;
+  modulesUpdated: {
+    inventory: boolean;
+    purchase: boolean;
+    sales: boolean;
+    expiry: boolean;
+  };
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DATA_TYPE_LABELS: Record<DataType, string> = {
-  combined: '✨ All-in-One / Combined Sheet',
-  inventory: '📦 Inventory / Stock',
-  purchases: '🛒 Purchase Bills',
-  sales: '💰 Sales Invoices',
+  combined: '✨ All In One Migration',
+  inventory: '📦 Inventory',
+  purchases: '🛒 Purchase History',
+  sales: '💰 Sales History',
   customers: '👥 Customers / Patients',
-  returns: '🔄 Returns / Stock Ledger',
+  returns: '🔄 Expiry / Return',
   unknown: '❓ Unknown',
 };
 
@@ -61,81 +76,74 @@ const TYPE_ICONS: Record<DataType, React.ReactNode> = {
   unknown: <FileText size={14} />,
 };
 
-const DB_TARGET_COLUMNS = [
-  { value: '', label: '-- Ignore Column --' },
-  { value: 'name', label: 'Medicine Name ⭐' },
-  { value: 'batch_no', label: 'Batch Number' },
-  { value: 'expiry_date', label: 'Expiry Date' },
-  { value: 'quantity', label: 'Quantity / Stock' },
-  { value: 'loose_qty', label: 'Loose Quantity / Stock' },
-  { value: 'packaging', label: 'Pack Size / Packaging' },
-  { value: 'mrp', label: 'MRP (₹)' },
-  { value: 'cost_price', label: 'Cost / Purchase Price (₹)' },
-  { value: 'rack_location', label: 'Rack Location' },
-  { value: 'invoice_no', label: 'Invoice / Bill No' },
-  { value: 'return_no', label: 'Return Invoice No' },
-  { value: 'date', label: 'Date' },
-  { value: 'total_amount', label: 'Total Amount (₹)' },
-  { value: 'return_invoice_id', label: 'Return Invoice ID' },
-  { value: 'return_sub_type', label: 'Return Type (expiry/good)' },
-  { value: 'return_date_time', label: 'Return Date Time' },
-  { value: 'patient_name', label: 'Patient / Customer Name' },
-  { value: 'distributor_name', label: 'Distributor / Supplier Name' },
-  { value: 'doctor_name', label: 'Doctor Name' },
-  { value: 'phone', label: 'Phone / Mobile' },
-  { value: 'address', label: 'Address' },
-  { value: 'notes', label: 'Notes / Remarks' },
-  { value: 'cgst', label: 'CGST %' },
-  { value: 'sgst', label: 'SGST %' },
-  { value: 'discount', label: 'Discount %' },
-];
-
 const DB_TARGET_SECTIONS = [
   {
     label: 'Common Fields',
     fields: [
-      { value: 'name', label: 'Medicine Name ⭐' }
+      { value: 'name', label: 'Medicine Name ⭐' },
+      { value: 'batch_no', label: 'Batch ⭐' },
+      { value: 'expiry_date', label: 'Expiry Date ⭐' },
+      { value: 'mrp', label: 'MRP (₹)' }
     ]
   },
   {
-    label: '📦 Inventory / Stock',
+    label: '📦 Inventory',
     fields: [
-      { value: 'batch_no', label: 'Batch Number' },
-      { value: 'expiry_date', label: 'Expiry Date' },
-      { value: 'quantity', label: 'Quantity / Stock' },
-      { value: 'loose_qty', label: 'Loose Quantity / Stock' },
-      { value: 'packaging', label: 'Pack Size / Packaging' },
-      { value: 'mrp', label: 'MRP (₹)' },
-      { value: 'cost_price', label: 'Cost / Purchase Price (₹)' },
+      { value: 'manufacturing_date', label: 'Manufacturing Date' },
+      { value: 'manufactured_by', label: 'Manufactured By' },
+      { value: 'marketed_by', label: 'Marketed By' },
+      { value: 'hsn_code', label: 'HSN Code' },
+      { value: 'category', label: 'Category' },
+      { value: 'packing_type', label: 'Packing Type' },
+      { value: 'packaging', label: 'Product Packing / Packaging' },
+      { value: 'distributor_name', label: 'Distributor Name' },
+      { value: 'cgst', label: 'CGST %' },
+      { value: 'sgst', label: 'SGST %' },
+      { value: 'total_tax', label: 'Total Tax %' },
+      { value: 'cost_price', label: 'Rate (₹)' },
+      { value: 'quantity', label: 'Current Stock' },
+      { value: 'loose_qty', label: 'Loose Quantity' },
+      { value: 'minimum_stock', label: 'Minimum Stock' },
+      { value: 'maximum_stock', label: 'Maximum Stock' },
       { value: 'rack_location', label: 'Rack Location' }
     ]
   },
   {
-    label: '🛒 Sales & Purchases',
+    label: '🛒 Purchase History',
     fields: [
-      { value: 'invoice_no', label: 'Invoice / Bill No' },
-      { value: 'return_no', label: 'Return Invoice No' },
-      { value: 'date', label: 'Date' },
-      { value: 'total_amount', label: 'Total Amount (₹)' },
-      { value: 'return_invoice_id', label: 'Return Invoice ID' },
-      { value: 'return_sub_type', label: 'Return Type (expiry/good)' },
-      { value: 'return_date_time', label: 'Return Date Time' },
-      { value: 'cgst', label: 'CGST %' },
-      { value: 'sgst', label: 'SGST %' },
-      { value: 'discount', label: 'Discount %' }
+      { value: 'invoice_no', label: 'Invoice Number' },
+      { value: 'date', label: 'Purchase Date' },
+      { value: 'bill_id', label: 'Bill ID' },
+      { value: 'additional_tax', label: 'Additional Tax (₹)' },
+      { value: 'additional_discount', label: 'Additional Discount (₹)' },
+      { value: 'discount', label: 'Discount On Rate %' },
+      { value: 'total_amount', label: 'Total Value (₹)' }
     ]
   },
   {
-    label: '👥 Customer & Doctor',
+    label: '💰 Sales History',
     fields: [
-      { value: 'patient_name', label: 'Patient / Customer Name' },
-      { value: 'distributor_name', label: 'Distributor / Supplier Name' },
-      { value: 'doctor_name', label: 'Doctor Name' },
-      { value: 'phone', label: 'Phone / Mobile' },
-      { value: 'address', label: 'Address' },
-      { value: 'notes', label: 'Notes / Remarks' }
+      { value: 'bill_no', label: 'Bill Number' },
+      { value: 'patient_name', label: 'Customer Name' },
+      { value: 'quantity_sold', label: 'Quantity Sold' },
+      { value: 'salesperson', label: 'Salesperson' },
+      { value: 'payment_mode', label: 'Payment Mode' }
+    ]
+  },
+  {
+    label: '🔄 Expiry / Return',
+    fields: [
+      { value: 'return_quantity', label: 'Return Quantity' },
+      { value: 'return_no', label: 'Credit Note Number' },
+      { value: 'return_date', label: 'Return Date' },
+      { value: 'return_status', label: 'Return Status' }
     ]
   }
+];
+
+const DB_TARGET_COLUMNS = [
+  { value: '', label: '-- Ignore Column --' },
+  ...DB_TARGET_SECTIONS.flatMap(s => s.fields)
 ];
 
 const getFieldLabelAndSection = (value: string) => {
@@ -228,6 +236,45 @@ const getHighlightStyles = (targetCol: string, isHovered: boolean) => {
   };
 };
 
+function detectDataType(samples: any[], header: string): 'Text' | 'Numeric' | 'Date' {
+  if (!samples || samples.length === 0) return 'Text';
+  
+  let hasNumber = false;
+  let hasDate = false;
+  let hasText = false;
+  let nonNullCount = 0;
+  
+  for (const sample of samples) {
+    const val = sample[header];
+    if (val === undefined || val === null || String(val).trim() === '') continue;
+    
+    nonNullCount++;
+    const valStr = String(val).trim();
+    
+    // Check if it's a number
+    const num = Number(valStr.replace(/[^\d.-]/g, ''));
+    if (!isNaN(num) && valStr.match(/^[\d.,₹\s+-]+$/)) {
+      hasNumber = true;
+      continue;
+    }
+    
+    // Check if it's a date
+    const date = Date.parse(valStr);
+    if (!isNaN(date) && (valStr.includes('-') || valStr.includes('/') || valStr.match(/^\d{2,4}$/))) {
+      hasDate = true;
+      continue;
+    }
+    
+    hasText = true;
+  }
+  
+  if (nonNullCount === 0) return 'Text';
+  if (hasText) return 'Text';
+  if (hasDate) return 'Date';
+  if (hasNumber) return 'Numeric';
+  return 'Text';
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 const Migration = () => {
   const [step, setStep] = useState<WizardStep>(1);
@@ -311,6 +358,7 @@ const Migration = () => {
   const [mappingHistory, setMappingHistory] = useState<Record<string, string>[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [showOnlyMapped, setShowOnlyMapped] = useState<boolean>(false);
+  const [rightPreviewTab, setRightPreviewTab] = useState<'grid' | 'preview'>('preview');
 
   // Sync mapping modal local state with file analysis state when active file changes or re-analyzes
   useEffect(() => {
@@ -356,6 +404,8 @@ const Migration = () => {
   const [preMigrationAnalysis, setPreMigrationAnalysis] = useState<any>(null);
   const [analyzingPreMigration, setAnalyzingPreMigration] = useState(false);
   const [simulationResult, setSimulationResult] = useState<any>(null);
+  const [validationResult, setValidationResult] = useState<{ isValid: boolean; warnings: any[] } | null>(null);
+  const [ignoreValidationWarnings, setIgnoreValidationWarnings] = useState<boolean>(false);
   const [simulatingPreMigration, setSimulatingPreMigration] = useState(false);
 
   // V2 Migration projects, templates, snapshots and conflicts states
@@ -367,6 +417,28 @@ const Migration = () => {
   const [stagingConflicts, setStagingConflicts] = useState<any[]>([]);
   const [activePreviewHeader, setActivePreviewHeader] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<any[]>([]);
+
+  // Advanced Filters State
+  const [showAdvFilters, setShowAdvFilters] = useState(false);
+  const [advFilters, setAdvFilters] = useState({
+    medicineName: '',
+    batch: '',
+    expiry: '',
+    distributor: '',
+    invoiceNumber: '',
+    hsnCode: '',
+    category: '',
+    tax: '',
+    mrp: '',
+    rate: '',
+    manufacturer: '',
+    marketer: '',
+    startDate: '',
+    endDate: ''
+  });
+
+  // Final Ingestion Summary Report
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
 
   const fetchV2Data = useCallback(async () => {
     try {
@@ -761,7 +833,7 @@ const Migration = () => {
   }, [files]);
 
   // ─── Upload Handler ─────────────────────────────────────────────────────────
-  const handleFileDrop = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileDrop = useCallback(async (e: React.ChangeEvent<HTMLInputElement>, targetType?: DataType) => {
     const selected = Array.from(e.target.files || []);
     if (!selected.length) return;
     setUploading(true);
@@ -776,7 +848,7 @@ const Migration = () => {
         headers: [],
         samples: [],
         detected: { type: 'unknown', confidence: 0 },
-        userSelectedType: 'unknown',
+        userSelectedType: targetType || 'unknown',
         mapping: {},
         status: 'analyzing',
         skipLines: 0,
@@ -804,7 +876,7 @@ const Migration = () => {
               samples: zf.samples || [],
               sheetNames: zf.sheetNames,
               detected: zf.detected || { type: 'unknown', confidence: 0 },
-              userSelectedType: (zf.detected?.type as DataType) || 'unknown',
+              userSelectedType: targetType || (zf.detected?.type as DataType) || 'unknown',
               mapping: Object.fromEntries((zf.headers || []).map((h: string) => [h, autoMapColumn(h)])),
               status: 'ready' as const,
               skipLines: 0,
@@ -821,7 +893,7 @@ const Migration = () => {
         }
 
         const headers: string[] = analyzed.headers || [];
-        const detectedType = (analyzed.detected?.type as DataType) || 'unknown';
+        const detectedType = targetType || (analyzed.detected?.type as DataType) || 'unknown';
         const autoMapping = Object.fromEntries(headers.map((h: string) => [h, autoMapColumn(h)]));
 
         setFiles(prev => prev.map(f =>
@@ -849,13 +921,7 @@ const Migration = () => {
       }
     }
     setUploading(false);
-    if (files.length === 0 && selected.length > 0) setStep(2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files.length]);
-
-  // When files are added, auto-advance to step 2
-  useEffect(() => {
-    if (files.length > 0 && step === 1) setStep(2);
   }, [files.length]);
 
   // ─── Import a single file into staging ─────────────────────────────────────
@@ -941,6 +1007,8 @@ const Migration = () => {
         filtersForFile
       );
       setSimulationResult(data.simulation);
+      setValidationResult(data.validation || null);
+      setIgnoreValidationWarnings(false);
       setConfigSubStep('preview');
     } catch (err: any) {
       setError(`Simulation failed: ${err.message}`);
@@ -951,6 +1019,30 @@ const Migration = () => {
 
   const finalizeMigration = async () => {
     try {
+      const fileNames = files.map(f => f.originalName).join(', ');
+      const inventoryCount = stagingData.inventory.length;
+      const salesCount = stagingData.sales.length;
+      const purchasesCount = stagingData.purchases.length;
+      const returnsCount = stagingData.returns.length;
+      const errorsCount = stagingData.errors.length;
+      const totalImported = inventoryCount + salesCount + purchasesCount + returnsCount;
+      const totalRead = totalImported + errorsCount;
+
+      setImportReport({
+        fileName: fileNames || 'Uploaded File',
+        recordsRead: totalRead,
+        recordsImported: totalImported,
+        recordsSkipped: errorsCount,
+        validationErrors: errorsCount,
+        duplicateRecords: stagingConflicts.length,
+        modulesUpdated: {
+          inventory: inventoryCount > 0,
+          purchase: purchasesCount > 0,
+          sales: salesCount > 0,
+          expiry: returnsCount > 0
+        }
+      });
+
       await api.finalizeMigration(false);
       setStep(4);
     } catch (err: any) {
@@ -980,6 +1072,100 @@ const Migration = () => {
   const readyCount = files.filter(f => f.status === 'ready').length;
   const hasNameMapped = (f: FileEntry) =>
     ['sql', 'unknown'].includes(f.ext) || Object.values(f.mapping).includes('name');
+
+  const matchRecord = (record: any, type: string) => {
+    // Check main search query first
+    if (stagingSearchQuery) {
+      const query = stagingSearchQuery.toLowerCase();
+      const matchesQuery = 
+        (record.medicine_name || record.name || '').toLowerCase().includes(query) ||
+        (record.invoice_no || '').toLowerCase().includes(query) ||
+        (record.return_no || '').toLowerCase().includes(query) ||
+        (record.batch_no || '').toLowerCase().includes(query) ||
+        (record.distributor_name || '').toLowerCase().includes(query) ||
+        (record.patient_name || '').toLowerCase().includes(query) ||
+        (record.doctor_name || '').toLowerCase().includes(query);
+      if (!matchesQuery) return false;
+    }
+
+    // Advanced Filters
+    if (advFilters.medicineName) {
+      const medName = (record.medicine_name || record.name || '').toLowerCase();
+      if (!medName.includes(advFilters.medicineName.toLowerCase())) return false;
+    }
+    if (advFilters.batch) {
+      const batch = (record.batch_no || '').toLowerCase();
+      if (!batch.includes(advFilters.batch.toLowerCase())) return false;
+    }
+    if (advFilters.expiry) {
+      const exp = (record.expiry_date || '').toLowerCase();
+      if (!exp.includes(advFilters.expiry.toLowerCase())) return false;
+    }
+    if (advFilters.distributor) {
+      const dist = (record.distributor_name || '').toLowerCase();
+      if (!dist.includes(advFilters.distributor.toLowerCase())) return false;
+    }
+    if (advFilters.invoiceNumber) {
+      const inv = (record.invoice_no || record.return_no || record.return_invoice_id || '').toLowerCase();
+      if (!inv.includes(advFilters.invoiceNumber.toLowerCase())) return false;
+    }
+    if (advFilters.hsnCode) {
+      const hsn = (record.hsn_code || '').toLowerCase();
+      if (!hsn.includes(advFilters.hsnCode.toLowerCase())) return false;
+    }
+    if (advFilters.category) {
+      const cat = (record.category || '').toLowerCase();
+      if (!cat.includes(advFilters.category.toLowerCase())) return false;
+    }
+    if (advFilters.tax) {
+      const taxQuery = parseFloat(advFilters.tax);
+      if (!isNaN(taxQuery)) {
+        const rowCgst = parseFloat(record.cgst || record.cgst_value || 0);
+        const rowSgst = parseFloat(record.sgst || record.sgst_value || 0);
+        const rowTotal = rowCgst + rowSgst;
+        if (Math.abs(rowCgst - taxQuery) > 0.01 && Math.abs(rowSgst - taxQuery) > 0.01 && Math.abs(rowTotal - taxQuery) > 0.01) {
+          return false;
+        }
+      }
+    }
+    if (advFilters.mrp) {
+      const mrpQuery = parseFloat(advFilters.mrp);
+      if (!isNaN(mrpQuery)) {
+        const rowMrp = parseFloat(record.mrp || 0);
+        if (Math.abs(rowMrp - mrpQuery) > 0.01) return false;
+      }
+    }
+    if (advFilters.rate) {
+      const rateQuery = parseFloat(advFilters.rate);
+      if (!isNaN(rateQuery)) {
+        const rowRate = parseFloat(record.cost_price || record.unit_price || 0);
+        if (Math.abs(rowRate - rateQuery) > 0.01) return false;
+      }
+    }
+    if (advFilters.manufacturer) {
+      const mfg = (record.manufacturer || '').toLowerCase();
+      if (!mfg.includes(advFilters.manufacturer.toLowerCase())) return false;
+    }
+    if (advFilters.marketer) {
+      const mrk = (record.marketed_by || '').toLowerCase();
+      if (!mrk.includes(advFilters.marketer.toLowerCase())) return false;
+    }
+    if (advFilters.startDate || advFilters.endDate) {
+      const dateStr = record.date || record.return_date_time || record.expiry_date || '';
+      if (dateStr) {
+        const recTime = new Date(dateStr).getTime();
+        if (advFilters.startDate) {
+          const startTime = new Date(advFilters.startDate).getTime();
+          if (!isNaN(startTime) && recTime < startTime) return false;
+        }
+        if (advFilters.endDate) {
+          const endTime = new Date(advFilters.endDate).getTime() + 86400000;
+          if (!isNaN(endTime) && recTime > endTime) return false;
+        }
+      }
+    }
+    return true;
+  };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1012,7 +1198,7 @@ const Migration = () => {
 
       {/* Error Banner */}
       {error && (
-        <div className="p-4 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl flex items-center gap-3">
+        <div className="p-4 bg-red-bg text-red border border-red/20 rounded-xl flex items-center gap-3">
           <AlertTriangle size={18} /> <span className="font-semibold text-sm">{error}</span>
           <button className="ml-auto text-muted hover:text-white" onClick={() => setError(null)}><X size={14} /></button>
         </div>
@@ -1070,25 +1256,171 @@ const Migration = () => {
             </div>
           </div>
 
-          {/* Drop Zone */}
-          <label className="glass-panel p-12 flex flex-col items-center justify-center border-dashed border-2 border-primary/30 cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-all group">
-            <UploadCloud size={56} className="text-primary/40 group-hover:text-primary/70 mb-5 transition-all" />
-            <h3 className="text-xl font-bold mb-2">Drop files here or click to browse</h3>
-            <p className="text-muted text-sm text-center max-w-md mb-2">
-              Supports <strong className="text-sky">.csv</strong>, <strong className="text-green">.xlsx / .xls</strong>,
-              <strong className="text-amber-400"> .zip</strong> (multiple files), <strong className="text-purple-400">.sql</strong>
-            </p>
-            <p className="text-muted text-xs">You can upload multiple files at once</p>
-            {uploading && <div className="mt-4 flex items-center gap-2 text-sky text-sm"><Loader2 size={16} className="animate-spin" /> Uploading & analyzing...</div>}
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls,.zip,.sql"
-              multiple
-              className="hidden"
-              onChange={handleFileDrop}
-              disabled={uploading}
-            />
-          </label>
+          {/* 4 Dedicated Upload Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {[
+              { type: 'inventory', label: '📦 Inventory', desc: 'Medicine stocks, rack locations, batch numbers, and reorder levels.', color: 'border-sky/30 bg-sky/5 text-sky hover:border-sky/60' },
+              { type: 'purchases', label: '🛒 Purchase History', desc: 'Distributor invoices, purchases, historical cost prices, and supply logs.', color: 'border-amber-400/30 bg-amber-400/5 text-amber-400 hover:border-amber-400/60' },
+              { type: 'sales', label: '💰 Sales History', desc: 'Sales invoices, retail receipts, historical margins, and customer billing.', color: 'border-green/30 bg-green/5 text-green hover:border-green/60' },
+              { type: 'returns', label: '🔄 Expiry / Return', desc: 'Expired medicine return notes, credit notes, and supplier return logs.', color: 'border-rose-400/30 bg-rose-400/5 text-rose-400 hover:border-rose-400/60' }
+            ].map(module => {
+              const moduleFiles = files.filter(f => f.userSelectedType === module.type);
+              return (
+                <div key={module.type} className={`glass-panel p-5 border flex flex-col justify-between gap-4 transition-all duration-300 relative group bg-bg ${module.color}`}>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-base font-bold flex items-center gap-2 text-text">
+                        {TYPE_ICONS[module.type as DataType]} {module.label}
+                      </h3>
+                      {moduleFiles.length > 0 && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                          {moduleFiles.length} file(s)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-muted text-xs leading-relaxed">{module.desc}</p>
+                    
+                    {/* List of files under this module */}
+                    {moduleFiles.length > 0 && (
+                      <div className="mt-4 space-y-2.5">
+                        {moduleFiles.map((f, fIdx) => {
+                          const originalIdx = files.indexOf(f);
+                          return (
+                            <div key={fIdx} className="bg-black/30 border border-glass-border/40 p-2.5 rounded-lg flex items-center justify-between gap-3 text-text">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <FileText size={13} className="text-muted shrink-0" />
+                                  <span className="text-xs font-semibold truncate" title={f.originalName}>{f.originalName}</span>
+                                </div>
+                                {f.status === 'ready' && (
+                                  <p className="text-[10px] text-muted font-mono mt-0.5">
+                                    {f.ext.toUpperCase()} · {f.headers.length} columns
+                                  </p>
+                                )}
+                                {f.status === 'analyzing' && (
+                                  <div className="flex items-center gap-1 text-[10px] text-sky mt-0.5">
+                                    <Loader2 size={10} className="animate-spin" /> Analyzing...
+                                  </div>
+                                )}
+                                {f.status === 'error' && (
+                                  <p className="text-[10px] text-red mt-0.5 truncate" title={f.errorMsg}>{f.errorMsg || 'Failed to extract'}</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => removeFile(originalIdx)}
+                                className="p-1 rounded text-muted hover:text-red hover:bg-red-bg transition-all shrink-0"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-2">
+                    <label className="w-full flex items-center justify-center gap-1.5 border border-dashed border-glass-border/60 hover:border-primary/50 hover:bg-primary/5 rounded-lg py-3 cursor-pointer text-xs font-bold text-muted hover:text-text transition-all">
+                      <UploadCloud size={14} className="text-muted group-hover:text-primary" />
+                      Upload {module.label.replace(/[^a-zA-Z ]/g, '').trim()} File
+                      <input
+                        type="file"
+                        accept=".csv,.xlsx,.xls,.zip,.sql"
+                        className="hidden"
+                        onChange={(e) => handleFileDrop(e, module.type as DataType)}
+                        disabled={uploading}
+                      />
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Fallback Combined Upload Zone */}
+          <div className="glass-panel p-4 bg-bg2 border border-glass-border">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-bold text-muted uppercase">Or Upload Combined / Bulk Dump (SQL / ZIP)</h4>
+              {files.filter(f => !['inventory', 'purchases', 'sales', 'returns'].includes(f.userSelectedType)).length > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                  {files.filter(f => !['inventory', 'purchases', 'sales', 'returns'].includes(f.userSelectedType)).length} file(s)
+                </span>
+              )}
+            </div>
+            
+            {/* List of general files */}
+            {files.filter(f => !['inventory', 'purchases', 'sales', 'returns'].includes(f.userSelectedType)).length > 0 && (
+              <div className="mb-3 space-y-2">
+                {files.filter(f => !['inventory', 'purchases', 'sales', 'returns'].includes(f.userSelectedType)).map((f, fIdx) => {
+                  const originalIdx = files.indexOf(f);
+                  return (
+                    <div key={fIdx} className="bg-black/30 border border-glass-border/40 p-2.5 rounded-lg flex items-center justify-between gap-3 text-text">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <FileText size={13} className="text-muted shrink-0" />
+                          <span className="text-xs font-semibold truncate" title={f.originalName}>{f.originalName}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/20 text-muted font-bold uppercase">{f.userSelectedType}</span>
+                        </div>
+                        {f.status === 'ready' && (
+                          <p className="text-[10px] text-muted font-mono mt-0.5">
+                            {f.ext.toUpperCase()} · {f.headers.length} columns
+                          </p>
+                        )}
+                        {f.status === 'analyzing' && (
+                          <div className="flex items-center gap-1 text-[10px] text-sky mt-0.5">
+                            <Loader2 size={10} className="animate-spin" /> Analyzing...
+                          </div>
+                        )}
+                        {f.status === 'error' && (
+                          <p className="text-[10px] text-red mt-0.5 truncate" title={f.errorMsg}>{f.errorMsg || 'Failed to extract'}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => removeFile(originalIdx)}
+                        className="p-1 rounded text-muted hover:text-red hover:bg-red-bg transition-all shrink-0"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <label className="flex flex-col items-center justify-center border-dashed border border-glass-border hover:border-primary/50 hover:bg-primary/5 rounded-xl py-6 cursor-pointer group transition-all">
+              <UploadCloud size={32} className="text-muted/60 group-hover:text-primary mb-2 transition-all" />
+              <span className="text-xs font-bold mb-1">Click to browse or drop combined migration files</span>
+              <span className="text-[10px] text-muted">Supports SQL database dumps and bulk ZIP archives containing multiple modules</span>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls,.zip,.sql"
+                multiple
+                className="hidden"
+                onChange={(e) => handleFileDrop(e)}
+                disabled={uploading}
+              />
+            </label>
+          </div>
+
+          {/* Loader Overlay for analyzing state */}
+          {uploading && (
+            <div className="flex items-center justify-center gap-2 text-sky text-sm p-4 bg-sky/5 border border-sky/20 rounded-xl">
+              <Loader2 size={16} className="animate-spin" />
+              <span>Uploading and extracting headers...</span>
+            </div>
+          )}
+
+          {/* Continue Action Button */}
+          {files.length > 0 && (
+            <div className="flex justify-end pt-3">
+              <button
+                onClick={() => setStep(2)}
+                className="premium-btn bg-primary text-text text-xs font-bold py-2.5 px-6 shadow-[0_0_20px_rgba(59,130,246,0.3)] flex items-center gap-2"
+              >
+                Continue to Map & Verify <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
 
 
         </div>
@@ -1163,7 +1495,7 @@ const Migration = () => {
                             <p className="text-[10px] text-muted font-mono uppercase mt-0.5">{file.ext} · {file.headers.length} columns</p>
                           </div>
                         </div>
-                        <button onClick={() => removeFile(idx)} className="p-1 rounded hover:bg-red/10 text-red-400" title="Remove">
+                        <button onClick={() => removeFile(idx)} className="p-1 rounded hover:bg-red-bg text-red" title="Remove">
                           <X size={14} />
                         </button>
                       </div>
@@ -1614,8 +1946,8 @@ const Migration = () => {
                 </div>
               ) : (
                 <div className="space-y-5">
-                  {/* Cart summary */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Cart and Ingestion Checklist summary */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="glass-panel p-4 border border-glass-border/20 bg-bg">
                       <h4 className="font-bold text-xs uppercase tracking-wider text-muted mb-3">Cart Contents</h4>
                       <div className="space-y-2 text-xs">
@@ -1655,7 +1987,102 @@ const Migration = () => {
                       </div>
                       <p className="text-[10px] text-muted mt-3">Prediction counts based on a sample run of up to 1,000 rows.</p>
                     </div>
+
+                    {/* Ingestion Checklist Summary */}
+                    {(() => {
+                      const mainFile = files.find(f => f.status === 'ready' && selectedModules[f.userSelectedType]);
+                      const mappedFieldsCount = mainFile ? Object.values(mainFile.mapping).filter(v => v && v !== 'IGNORE').length : 0;
+                      const unmappedFieldsCount = mainFile ? mainFile.headers.length - mappedFieldsCount : 0;
+                      const totalSimCount = simulationResult ? (simulationResult.created + simulationResult.updated) : 0;
+
+                      const recordCounts = {
+                        inventory: mainFile?.userSelectedType === 'inventory' ? totalSimCount : (mainFile?.userSelectedType === 'combined' ? totalSimCount : 0),
+                        purchase: mainFile?.userSelectedType === 'purchases' ? totalSimCount : (mainFile?.userSelectedType === 'combined' ? totalSimCount : 0),
+                        sales: mainFile?.userSelectedType === 'sales' ? totalSimCount : 0,
+                        expiry: mainFile?.userSelectedType === 'returns' ? totalSimCount : 0,
+                      };
+
+                      return (
+                        <div className="glass-panel p-4 border border-glass-border/20 bg-bg">
+                          <h4 className="font-bold text-xs uppercase tracking-wider text-muted mb-3">Import Summary</h4>
+                          <div className="space-y-2 text-xs">
+                            <div className="flex justify-between border-b border-glass-border/10 pb-1">
+                              <span className="text-muted">Inventory Records:</span>
+                              <span className="font-bold text-text">{recordCounts.inventory}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-glass-border/10 pb-1">
+                              <span className="text-muted">Purchase Records:</span>
+                              <span className="font-bold text-text">{recordCounts.purchase}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-glass-border/10 pb-1">
+                              <span className="text-muted">Sales Records:</span>
+                              <span className="font-bold text-text">{recordCounts.sales}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-glass-border/10 pb-1">
+                              <span className="text-muted">Expiry Records:</span>
+                              <span className="font-bold text-text">{recordCounts.expiry}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-glass-border/10 pb-1">
+                              <span className="text-muted">Mapped Fields:</span>
+                              <span className="font-bold text-green">{mappedFieldsCount}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted">Unmapped Fields:</span>
+                              <span className="font-bold text-amber-500">{unmappedFieldsCount}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
+
+                  {/* Validation Checks checklist alerts */}
+                  {validationResult && (
+                    <div className={`p-4 rounded-xl border ${
+                      validationResult.isValid
+                        ? 'border-green/20 bg-green/5 text-green'
+                        : 'border-amber-500/20 bg-amber-500/5 text-amber-300'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <AlertTriangle size={18} />
+                        <h4 className="font-bold text-sm">
+                          {validationResult.isValid 
+                            ? 'All Data Validated Successfully!' 
+                            : 'Data Validation Checklist & Warnings'}
+                        </h4>
+                      </div>
+
+                      {validationResult.isValid ? (
+                        <p className="text-xs">No formatting, date format, or duplicate issues were detected in the file mapping.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                            {validationResult.warnings.map((w, idx) => (
+                              <div key={idx} className="flex justify-between items-start gap-4 text-xs bg-bg2/40 p-2.5 rounded border border-glass-border/10">
+                                <div>
+                                  <span className="font-bold block text-text">{w.message}</span>
+                                  <span className="text-[10px] text-muted">Validation rules checker result</span>
+                                </div>
+                                <span className="px-2 py-0.5 rounded bg-red-bg text-red font-mono text-[10px] font-bold shrink-0">
+                                  {w.affectedCount} rows affected
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <label className="flex items-start gap-2.5 pt-2 select-none cursor-pointer text-xs text-text font-semibold">
+                            <input
+                              type="checkbox"
+                              checked={ignoreValidationWarnings}
+                              onChange={(e) => setIgnoreValidationWarnings(e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded border-glass-border bg-transparent text-primary focus:ring-primary focus:ring-offset-bg cursor-pointer"
+                            />
+                            <span>Bypass warnings and proceed with data ingestion anyway.</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex justify-between pt-4">
                     <button
@@ -1666,7 +2093,8 @@ const Migration = () => {
                     </button>
                     <button
                       onClick={startMigration}
-                      className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] font-bold"
+                      disabled={!!(validationResult && !validationResult.isValid && !ignoreValidationWarnings)}
+                      className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] font-bold disabled:opacity-40 disabled:pointer-events-none"
                     >
                       <Database size={15} className="mr-1" /> Confirm & Start Ingestion <ArrowRight size={14} />
                     </button>
@@ -1850,25 +2278,203 @@ const Migration = () => {
                 </div>
 
                 {/* Filter and Search */}
-                <div className="p-4 border-b border-glass-border bg-bg/50">
-                  <input
-                    type="text"
-                    placeholder={`Search staged ${activeStagingTab} records...`}
-                    value={stagingSearchQuery}
-                    onChange={(e) => setStagingSearchQuery(e.target.value)}
-                    className="w-full max-w-md bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2.5 outline-none focus:border-primary transition-all"
-                  />
+                <div className="p-4 border-b border-glass-border bg-bg/50 space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+                    <input
+                      type="text"
+                      placeholder={`Search staged ${activeStagingTab} records...`}
+                      value={stagingSearchQuery}
+                      onChange={(e) => setStagingSearchQuery(e.target.value)}
+                      className="w-full sm:max-w-md bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2.5 outline-none focus:border-primary transition-all"
+                    />
+                    
+                    <div className="flex gap-2 w-full sm:w-auto shrink-0">
+                      <button
+                        onClick={() => setShowAdvFilters(!showAdvFilters)}
+                        className={`premium-btn text-xs font-bold py-2 px-3.5 flex items-center gap-1.5 transition-all w-full sm:w-auto ${
+                          showAdvFilters 
+                            ? 'bg-primary/20 text-primary border border-primary/50' 
+                            : 'bg-bg3 border border-glass-border text-muted hover:text-text'
+                        }`}
+                      >
+                        <ChevronDown size={14} className={`transform transition-transform ${showAdvFilters ? 'rotate-180' : ''}`} />
+                        Advanced Filters
+                      </button>
+                      
+                      <button
+                        onClick={() => setAdvFilters({
+                          medicineName: '',
+                          batch: '',
+                          expiry: '',
+                          distributor: '',
+                          invoiceNumber: '',
+                          hsnCode: '',
+                          category: '',
+                          tax: '',
+                          mrp: '',
+                          rate: '',
+                          manufacturer: '',
+                          marketer: '',
+                          startDate: '',
+                          endDate: ''
+                        })}
+                        className="premium-btn bg-bg3 border border-glass-border text-muted hover:text-text text-xs font-bold py-2 px-3.5 shrink-0"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  {showAdvFilters && (
+                    <div className="glass-panel p-4 bg-bg2/40 border border-glass-border/30 rounded-xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Medicine Name</label>
+                        <input
+                          type="text"
+                          value={advFilters.medicineName}
+                          onChange={(e) => setAdvFilters({ ...advFilters, medicineName: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter medicine name"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Batch Number</label>
+                        <input
+                          type="text"
+                          value={advFilters.batch}
+                          onChange={(e) => setAdvFilters({ ...advFilters, batch: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none font-mono"
+                          placeholder="Filter batch number"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Expiry Date</label>
+                        <input
+                          type="text"
+                          value={advFilters.expiry}
+                          onChange={(e) => setAdvFilters({ ...advFilters, expiry: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none font-mono"
+                          placeholder="e.g. 12/2028"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Distributor</label>
+                        <input
+                          type="text"
+                          value={advFilters.distributor}
+                          onChange={(e) => setAdvFilters({ ...advFilters, distributor: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter distributor name"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Invoice / Bill Number</label>
+                        <input
+                          type="text"
+                          value={advFilters.invoiceNumber}
+                          onChange={(e) => setAdvFilters({ ...advFilters, invoiceNumber: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter invoice number"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">HSN Code</label>
+                        <input
+                          type="text"
+                          value={advFilters.hsnCode}
+                          onChange={(e) => setAdvFilters({ ...advFilters, hsnCode: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter HSN"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Category</label>
+                        <input
+                          type="text"
+                          value={advFilters.category}
+                          onChange={(e) => setAdvFilters({ ...advFilters, category: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter category"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Tax Percentage (%)</label>
+                        <input
+                          type="number"
+                          value={advFilters.tax}
+                          onChange={(e) => setAdvFilters({ ...advFilters, tax: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter tax rate"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">MRP (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advFilters.mrp}
+                          onChange={(e) => setAdvFilters({ ...advFilters, mrp: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter MRP"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Rate / Cost Price (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advFilters.rate}
+                          onChange={(e) => setAdvFilters({ ...advFilters, rate: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter cost rate"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Manufacturer</label>
+                        <input
+                          type="text"
+                          value={advFilters.manufacturer}
+                          onChange={(e) => setAdvFilters({ ...advFilters, manufacturer: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter manufacturer"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Marketer</label>
+                        <input
+                          type="text"
+                          value={advFilters.marketer}
+                          onChange={(e) => setAdvFilters({ ...advFilters, marketer: e.target.value })}
+                          className="bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          placeholder="Filter marketer"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1 sm:col-span-2">
+                        <label className="text-[10px] font-bold text-muted uppercase">Date Range</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="date"
+                            value={advFilters.startDate}
+                            onChange={(e) => setAdvFilters({ ...advFilters, startDate: e.target.value })}
+                            className="w-full bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          />
+                          <span className="text-muted text-xs flex items-center">to</span>
+                          <input
+                            type="date"
+                            value={advFilters.endDate}
+                            onChange={(e) => setAdvFilters({ ...advFilters, endDate: e.target.value })}
+                            className="w-full bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Data Tables */}
                 <div className="overflow-auto max-h-[450px] bg-bg/20">
                   {activeStagingTab === 'inventory' && (() => {
-                    const filtered = stagingData.inventory.filter(i => {
-                      const query = stagingSearchQuery.toLowerCase();
-                      return (i.medicine_name || '').toLowerCase().includes(query) ||
-                             (i.batch_no || '').toLowerCase().includes(query) ||
-                             (i.rack_location || '').toLowerCase().includes(query);
-                    });
+                    const filtered = stagingData.inventory.filter(i => matchRecord(i, 'inventory'));
 
                     return (
                       <table className="w-full text-xs text-left">
@@ -1923,12 +2529,7 @@ const Migration = () => {
                   })()}
 
                   {activeStagingTab === 'sales' && (() => {
-                    const filtered = stagingData.sales.filter(s => {
-                      const query = stagingSearchQuery.toLowerCase();
-                      return (s.invoice_no || '').toLowerCase().includes(query) ||
-                             (s.patient_name || '').toLowerCase().includes(query) ||
-                             (s.doctor_name || '').toLowerCase().includes(query);
-                    });
+                    const filtered = stagingData.sales.filter(s => matchRecord(s, 'sales'));
 
                     return (
                       <table className="w-full text-xs text-left">
@@ -1985,11 +2586,7 @@ const Migration = () => {
                   })()}
 
                   {activeStagingTab === 'purchases' && (() => {
-                    const filtered = stagingData.purchases.filter(p => {
-                      const query = stagingSearchQuery.toLowerCase();
-                      return (p.invoice_no || '').toLowerCase().includes(query) ||
-                             (p.distributor_name || '').toLowerCase().includes(query);
-                    });
+                    const filtered = stagingData.purchases.filter(p => matchRecord(p, 'purchases'));
 
                     return (
                       <table className="w-full text-xs text-left">
@@ -2044,11 +2641,7 @@ const Migration = () => {
                   })()}
 
                   {activeStagingTab === 'returns' && (() => {
-                    const filtered = stagingData.returns?.filter(r => {
-                      const query = stagingSearchQuery.toLowerCase();
-                      return (r.return_no || '').toLowerCase().includes(query) ||
-                             (r.distributor_name || '').toLowerCase().includes(query);
-                    }) || [];
+                    const filtered = stagingData.returns?.filter(r => matchRecord(r, 'returns')) || [];
 
                     return (
                       <table className="w-full text-xs text-left">
@@ -2160,7 +2753,7 @@ const Migration = () => {
                 <button
                   onClick={handleRollback}
                   disabled={rollingBack}
-                  className="premium-btn bg-bg3 border border-red-500/20 text-red-400 hover:bg-red-500/10 text-xs"
+                  className="premium-btn bg-bg3 border border-red/20 text-red hover:bg-red-bg text-xs"
                 >
                   {rollingBack ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
                   Rollback & Start Over
@@ -2180,22 +2773,107 @@ const Migration = () => {
 
       {/* ─── STEP 4: SUCCESS ──────────────────────────────────────────────────── */}
       {step === 4 && (
-        <div className="glass-panel p-14 flex flex-col items-center justify-center border-2 border-green/30 text-center">
-          <div className="w-24 h-24 rounded-full bg-green/20 flex items-center justify-center mb-6">
-            <CheckCircle size={48} className="text-green" />
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="glass-panel p-8 border border-green/30 bg-bg flex flex-col items-center justify-center text-center">
+            <div className="w-16 h-16 rounded-full bg-green/25 border border-green/50 flex items-center justify-center mb-4 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+              <CheckCircle size={32} className="text-green animate-pulse" />
+            </div>
+            <h3 className="text-2xl font-black text-text mb-2">Migration Successful!</h3>
+            <p className="text-muted text-xs max-w-md leading-relaxed">
+              The data from the staging database has been successfully merged and committed to the live system.
+            </p>
           </div>
-          <h3 className="text-3xl font-black mb-3 text-white">Migration Complete!</h3>
-          <p className="text-muted max-w-lg mb-8">
-            All your old data is now live in the AI Pharmacy database. Inventory, Sales, Purchases, and Patients are ready to use.
-          </p>
-          <div className="flex gap-3">
-            <a href="/" className="premium-btn bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] text-base px-8 py-3">
-              Go to Dashboard
-            </a>
-            <button onClick={() => { setStep(1); setFiles([]); setMigrationStatus(null); }}
-              className="premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10">
-              Import More Files
-            </button>
+
+          <div className="glass-panel p-6 border border-glass-border bg-bg2 space-y-6">
+            {/* Title & File details */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-glass-border pb-4">
+              <div>
+                <h4 className="text-base font-black text-text uppercase tracking-wide">POST IMPORT MIGRATION REPORT</h4>
+                <p className="text-muted text-xs mt-1">Summary of migrated database entries</p>
+              </div>
+              <div className="bg-bg3 border border-glass-border rounded-lg px-3 py-2 text-right">
+                <span className="text-[10px] font-bold text-muted block uppercase">Source File Name(s)</span>
+                <span className="text-xs font-bold text-primary font-mono block max-w-xs truncate" title={importReport?.fileName || 'Unknown File'}>
+                  {importReport?.fileName || 'Unknown File'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Left Column: Metrics */}
+              <div className="space-y-4">
+                <h5 className="text-xs font-bold text-muted uppercase tracking-wider">Data Ingestion Metrics</h5>
+                <div className="space-y-2.5">
+                  {[
+                    { label: 'Total Records Read', value: importReport?.recordsRead ?? 0, color: 'text-text', desc: 'Total rows processed' },
+                    { label: 'Total Records Imported', value: importReport?.recordsImported ?? 0, color: 'text-green font-extrabold', desc: 'Successfully loaded to live database' },
+                    { label: 'Total Records Skipped', value: importReport?.recordsSkipped ?? 0, color: 'text-amber-500', desc: 'Rows skipped due to mapping or filters' },
+                    { label: 'Validation Errors', value: importReport?.validationErrors ?? 0, color: 'text-rose-400', desc: 'Rows failing validation rules' },
+                    { label: 'Duplicate Records Resolved', value: importReport?.duplicateRecords ?? 0, color: 'text-sky', desc: 'Conflicts resolved during review' },
+                  ].map((metric) => (
+                    <div key={metric.label} className="flex items-center justify-between p-3 bg-bg3/60 rounded-xl border border-glass-border/30 hover:border-glass-border/70 transition-all">
+                      <div>
+                        <span className="text-xs font-bold text-text block">{metric.label}</span>
+                        <span className="text-[10px] text-muted block mt-0.5">{metric.desc}</span>
+                      </div>
+                      <span className={`text-sm font-mono font-bold ${metric.color}`}>
+                        {metric.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Column: Modules Updated Checklist */}
+              <div className="space-y-4">
+                <h5 className="text-xs font-bold text-muted uppercase tracking-wider">System Modules Updated</h5>
+                <div className="space-y-2.5 bg-bg3/40 p-4 rounded-xl border border-glass-border/30 h-[calc(100%-2rem)] flex flex-col justify-between">
+                  <div className="space-y-3">
+                    {[
+                      { key: 'inventory', label: '📦 Inventory Updated', desc: 'Medicine stocks and locations synchronized' },
+                      { key: 'purchase', label: '🛒 Purchase History Updated', desc: 'Purchase invoices, items, and cost rates registered' },
+                      { key: 'sales', label: '💰 Sales History Updated', desc: 'Historical customer POS sale transactions imported' },
+                      { key: 'expiry', label: '🔄 Expiry & Returns Updated', desc: 'Returns logs and credit notes processed' },
+                    ].map((mod) => {
+                      const isUpdated = importReport?.modulesUpdated?.[mod.key as keyof typeof importReport.modulesUpdated] ?? false;
+                      return (
+                        <div key={mod.key} className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${
+                          isUpdated 
+                            ? 'bg-green/10 border-green/30 text-text' 
+                            : 'bg-white/5 border-glass-border/20 opacity-60 text-muted'
+                        }`}>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ${
+                            isUpdated ? 'bg-green/20 text-green border border-green/40' : 'bg-white/5 text-muted border border-glass-border'
+                          }`}>
+                            {isUpdated ? '✓' : '×'}
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold block">{mod.label}</span>
+                            <span className="text-[10px] text-muted block mt-0.5">{mod.desc}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted leading-relaxed border-t border-glass-border/20 pt-3 mt-3">
+                    Verified against staging constraints. Database transaction successfully committed.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Footer */}
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-3 pt-4 border-t border-glass-border">
+              <a href="/" className="w-full sm:w-auto premium-btn bg-primary text-text shadow-[0_0_20px_rgba(59,130,246,0.3)] text-xs font-bold px-8 py-3 text-center">
+                Go to Dashboard
+              </a>
+              <button 
+                onClick={() => { setStep(1); setFiles([]); setMigrationStatus(null); setImportReport(null); }}
+                className="w-full sm:w-auto premium-btn bg-white/5 border border-glass-border text-muted hover:bg-white/10 hover:text-text text-xs font-bold px-8 py-3 text-center"
+              >
+                Import More Files
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2491,7 +3169,7 @@ const Migration = () => {
                             {isCustomMapping && (
                               <button
                                 onClick={() => handleDeleteCustomColumn(currentMapping)}
-                                className="p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-colors shrink-0"
+                                className="p-2 bg-red-bg hover:bg-red-bg/80 border border-red/20 text-red rounded-lg transition-colors shrink-0"
                                 title="Delete Custom Column Mapping"
                               >
                                 <Trash2 size={14} />
@@ -2506,74 +3184,153 @@ const Migration = () => {
 
                 {/* Right Column: Sample Data Preview */}
                 <div className="w-full lg:w-[52%] xl:w-[50%] p-4 md:p-5 flex flex-col overflow-hidden">
-                  <div className="flex justify-between items-center mb-3">
-                    <h5 className="text-xs font-semibold text-muted uppercase tracking-wider">Sample Data Grid (First 10 Rows)</h5>
-                    <label className="flex items-center gap-2 text-xs text-muted cursor-pointer hover:text-text select-none">
-                      <input
-                        type="checkbox"
-                        checked={showOnlyMapped}
-                        onChange={(e) => setShowOnlyMapped(e.target.checked)}
-                        className="rounded border-glass-border bg-bg3 text-primary focus:ring-0 focus:ring-offset-0 focus:outline-none"
-                      />
-                      Show Mapped Columns Only
-                    </label>
+                  <div className="flex justify-between items-center mb-3 border-b border-glass-border/30 pb-2">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRightPreviewTab('preview')}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                          rightPreviewTab === 'preview'
+                            ? 'bg-primary/20 text-primary border border-primary/40'
+                            : 'text-muted hover:text-text bg-white/5 border border-glass-border'
+                        }`}
+                      >
+                        📋 Columns Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRightPreviewTab('grid')}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                          rightPreviewTab === 'grid'
+                            ? 'bg-primary/20 text-primary border border-primary/40'
+                            : 'text-muted hover:text-text bg-white/5 border border-glass-border'
+                        }`}
+                      >
+                        📊 Grid View
+                      </button>
+                    </div>
+                    {rightPreviewTab === 'grid' && (
+                      <label className="flex items-center gap-2 text-xs text-muted cursor-pointer hover:text-text select-none">
+                        <input
+                          type="checkbox"
+                          checked={showOnlyMapped}
+                          onChange={(e) => setShowOnlyMapped(e.target.checked)}
+                          className="rounded border-glass-border bg-bg3 text-primary focus:ring-0 focus:ring-offset-0 focus:outline-none"
+                        />
+                        Show Mapped Columns Only
+                      </label>
+                    )}
                   </div>
-                  
-                  <div ref={scrollContainerRef} className="flex-1 overflow-auto border border-glass-border rounded-xl bg-bg3/50">
-                    <table className="min-w-full divide-y divide-glass-border text-xs text-left">
-                      <thead className="bg-bg2 sticky top-0 z-10">
-                        <tr>
-                          <th className="px-3 py-2 text-muted font-bold w-[160px] text-center border-b border-glass-border">Row Actions</th>
-                          {visibleHeaders.map((header) => {
-                            const isMapped = tempMapping[header];
-                            const customFieldName = isMapped && isMapped.startsWith('custom_col_') ? isMapped.substring(11) : '';
-                            const fieldInfo = isMapped ? (customFieldName ? { section: 'Custom Column', label: customFieldName } : getFieldLabelAndSection(isMapped)) : null;
-                            const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
+
+                  {rightPreviewTab === 'preview' ? (
+                    <div className="flex-1 overflow-auto border border-glass-border rounded-xl bg-bg3/50 p-4 space-y-3">
+                      <table className="min-w-full divide-y divide-glass-border text-xs text-left">
+                        <thead>
+                          <tr className="border-b border-glass-border/40 text-muted uppercase tracking-wider text-[10px]">
+                            <th className="pb-2 font-bold">Source Column Name</th>
+                            <th className="pb-2 font-bold">Sample Value</th>
+                            <th className="pb-2 font-bold">Detected Data Type</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-glass-border/30">
+                          {file.headers.map((header) => {
+                            const sampleValue = file.samples[0]?.[header] || '—';
+                            const dataTypeStr = detectDataType(file.samples, header);
                             return (
-                              <th 
-                                key={header} 
-                                data-header={header}
-                                onMouseEnter={() => setHoveredHeader(header)}
-                                onMouseLeave={() => setHoveredHeader(null)}
-                                className={`px-4 py-3 font-bold border-b border-glass-border transition-all duration-150 truncate whitespace-nowrap cursor-pointer ${styles.header}`}
-                              >
-                                {header}
-                                {isMapped && fieldInfo && (
-                                  <span className="block text-[10px] font-bold mt-1 flex flex-wrap items-center gap-1">
-                                    <span className={`px-1.5 py-0.5 rounded border text-[8px] uppercase font-semibold ${
-                                      customFieldName 
-                                        ? 'bg-blue-400/10 text-blue-300 border-blue-400/20' 
-                                        : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/20'
-                                    }`}>
-                                      {fieldInfo.section}
-                                    </span>
-                                    <span className="truncate max-w-[120px] text-text font-normal">
-                                      {fieldInfo.label}
-                                    </span>
+                              <tr key={header} className="hover:bg-bg2/40 transition-colors">
+                                <td className="py-2.5 font-bold text-text">{header}</td>
+                                <td className="py-2.5 font-mono text-primary truncate max-w-[150px]">{String(sampleValue)}</td>
+                                <td className="py-2.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    dataTypeStr === 'Numeric'
+                                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                      : dataTypeStr === 'Date'
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                  }`}>
+                                    {dataTypeStr}
                                   </span>
-                                )}
-                              </th>
+                                </td>
+                              </tr>
                             );
                           })}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-glass-border text-text font-mono">
-                        {file.samples.slice(0, 10).map((row, rowIdx) => {
-                          const absoluteRowIndex = rowIdx + (file.skipLines || 0) + 1; // 1-based index in the file
-                          const relativeRowIdx = rowIdx + 1; // 1-based relative index after skipLines
-                          const currentFilters = moduleFilters[file.uploadedFileName] || {};
-                          const isRowIgnored = currentFilters.ignoredRows?.includes(relativeRowIdx);
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div ref={scrollContainerRef} className="flex-1 overflow-auto border border-glass-border rounded-xl bg-bg3/50">
+                      <table className="min-w-full divide-y divide-glass-border text-xs text-left">
+                        <thead className="bg-bg2 sticky top-0 z-10">
+                          <tr>
+                            <th className="px-3 py-2 text-muted font-bold w-[160px] text-center border-b border-glass-border">Row Actions</th>
+                            {visibleHeaders.map((header) => {
+                              const isMapped = tempMapping[header];
+                              const customFieldName = isMapped && isMapped.startsWith('custom_col_') ? isMapped.substring(11) : '';
+                              const fieldInfo = isMapped ? (customFieldName ? { section: 'Custom Column', label: customFieldName } : getFieldLabelAndSection(isMapped)) : null;
+                              const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
+                              return (
+                                <th 
+                                  key={header} 
+                                  data-header={header}
+                                  onMouseEnter={() => setHoveredHeader(header)}
+                                  onMouseLeave={() => setHoveredHeader(null)}
+                                  className={`px-4 py-3 font-bold border-b border-glass-border transition-all duration-150 truncate whitespace-nowrap cursor-pointer ${styles.header}`}
+                                >
+                                  {header}
+                                  {isMapped && fieldInfo && (
+                                    <span className="block text-[10px] font-bold mt-1 flex flex-wrap items-center gap-1">
+                                      <span className={`px-1.5 py-0.5 rounded border text-[8px] uppercase font-semibold ${
+                                        customFieldName 
+                                          ? 'bg-blue-400/10 text-blue-300 border-blue-400/20' 
+                                          : 'bg-emerald-400/10 text-emerald-300 border-emerald-400/20'
+                                      }`}>
+                                        {fieldInfo.section}
+                                      </span>
+                                      <span className="truncate max-w-[120px] text-text font-normal">
+                                        {fieldInfo.label}
+                                      </span>
+                                    </span>
+                                  )}
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-glass-border text-text font-mono">
+                          {file.samples.slice(0, 10).map((row, rowIdx) => {
+                            const absoluteRowIndex = rowIdx + (file.skipLines || 0) + 1; // 1-based index in the file
+                            const relativeRowIdx = rowIdx + 1; // 1-based relative index after skipLines
+                            const currentFilters = moduleFilters[file.uploadedFileName] || {};
+                            const isRowIgnored = currentFilters.ignoredRows?.includes(relativeRowIdx);
 
-                          return (
-                            <tr key={rowIdx} className={`hover:bg-bg2 transition-colors ${isRowIgnored ? 'bg-red-500/10 text-muted opacity-40 line-through' : ''}`}>
-                              <td className="px-2 py-1.5 border-r border-glass-border/20">
-                                <div className="flex items-center justify-center gap-2">
-                                  {/* Checkbox to Skip */}
-                                  <label className="inline-flex items-center gap-1 cursor-pointer select-none" title={isRowIgnored ? 'Include this row in migration' : 'Skip/Ignore this row'}>
-                                    <input
-                                      type="checkbox"
-                                      checked={isRowIgnored}
-                                      onChange={() => {
+                            return (
+                              <tr key={rowIdx} className={`hover:bg-bg2 transition-colors ${isRowIgnored ? 'bg-red-500/10 text-muted opacity-40 line-through' : ''}`}>
+                                <td className="px-2 py-1.5 border-r border-glass-border/20">
+                                  <div className="flex items-center justify-center gap-2">
+                                    {/* Checkbox to Skip */}
+                                    <label className="inline-flex items-center gap-1 cursor-pointer select-none" title={isRowIgnored ? 'Include this row in migration' : 'Skip/Ignore this row'}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isRowIgnored}
+                                        onChange={() => {
+                                          const currentIgnored = currentFilters.ignoredRows || [];
+                                          const newIgnored = currentIgnored.includes(relativeRowIdx)
+                                            ? currentIgnored.filter((r: number) => r !== relativeRowIdx)
+                                            : [...currentIgnored, relativeRowIdx];
+                                          setModuleFilters(prev => ({
+                                            ...prev,
+                                            [file.uploadedFileName]: { ...currentFilters, ignoredRows: newIgnored }
+                                          }));
+                                        }}
+                                        className="rounded border-glass-border bg-bg3 text-primary focus:ring-0 focus:ring-offset-0 focus:outline-none w-3.5 h-3.5 cursor-pointer"
+                                      />
+                                      <span className="text-[10px] text-muted hover:text-text font-sans font-medium">Skip</span>
+                                    </label>
+
+                                    {/* Trash Icon Button to Delete (Ignore) Row */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
                                         const currentIgnored = currentFilters.ignoredRows || [];
                                         const newIgnored = currentIgnored.includes(relativeRowIdx)
                                           ? currentIgnored.filter((r: number) => r !== relativeRowIdx)
@@ -2583,69 +3340,51 @@ const Migration = () => {
                                           [file.uploadedFileName]: { ...currentFilters, ignoredRows: newIgnored }
                                         }));
                                       }}
-                                      className="rounded border-glass-border bg-bg3 text-primary focus:ring-0 focus:ring-offset-0 focus:outline-none w-3.5 h-3.5 cursor-pointer"
-                                    />
-                                    <span className="text-[10px] text-muted hover:text-text font-sans font-medium">Skip</span>
-                                  </label>
+                                      className={`p-1 rounded border transition-all ${
+                                        isRowIgnored
+                                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                                          : 'bg-red-bg text-red border border-red/20 hover:bg-red-bg/80'
+                                      }`}                                      title={isRowIgnored ? 'Restore / Include row' : 'Delete / Ignore row'}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
 
-                                  {/* Trash Icon Button to Delete (Ignore) Row */}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentIgnored = currentFilters.ignoredRows || [];
-                                      const newIgnored = currentIgnored.includes(relativeRowIdx)
-                                        ? currentIgnored.filter((r: number) => r !== relativeRowIdx)
-                                        : [...currentIgnored, relativeRowIdx];
-                                      setModuleFilters(prev => ({
-                                        ...prev,
-                                        [file.uploadedFileName]: { ...currentFilters, ignoredRows: newIgnored }
-                                      }));
-                                    }}
-                                    className={`p-1 rounded border transition-all ${
-                                      isRowIgnored
-                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                                        : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
-                                    }`}
-                                    title={isRowIgnored ? 'Restore / Include row' : 'Delete / Ignore row'}
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
+                                    <div className="w-px h-3 bg-glass-border/30" />
 
-                                  <div className="w-px h-3 bg-glass-border/30" />
+                                    {/* Set Header Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSkipLinesChange(activeMappingFileIdx, absoluteRowIndex)}
+                                      className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all whitespace-nowrap"
+                                      title="Set this row as the header, skipping all rows above it"
+                                    >
+                                      Set Header
+                                    </button>
+                                  </div>
+                                </td>
 
-                                  {/* Set Header Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSkipLinesChange(activeMappingFileIdx, absoluteRowIndex)}
-                                    className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all whitespace-nowrap"
-                                    title="Set this row as the header, skipping all rows above it"
-                                  >
-                                    Set Header
-                                  </button>
-                                </div>
-                              </td>
-
-                              {visibleHeaders.map((header) => {
-                                const isMapped = tempMapping[header];
-                                const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
-                                return (
-                                  <td 
-                                    key={header} 
-                                    onMouseEnter={() => setHoveredHeader(header)}
-                                    onMouseLeave={() => setHoveredHeader(null)}
-                                    className={`px-4 py-2 truncate max-w-[200px] transition-all duration-150 ${styles.cell}`} 
-                                    title={row[header]}
-                                  >
-                                    {row[header] !== undefined ? String(row[header]) : ''}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                {visibleHeaders.map((header) => {
+                                  const isMapped = tempMapping[header];
+                                  const styles = getHighlightStyles(isMapped || '', hoveredHeader === header);
+                                  return (
+                                    <td 
+                                      key={header} 
+                                      onMouseEnter={() => setHoveredHeader(header)}
+                                      onMouseLeave={() => setHoveredHeader(null)}
+                                      className={`px-4 py-2 truncate max-w-[200px] transition-all duration-150 ${styles.cell}`} 
+                                      title={row[header]}
+                                    >
+                                      {row[header] !== undefined ? String(row[header]) : ''}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
 

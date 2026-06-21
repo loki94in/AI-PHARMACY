@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import { migrationStatus, runManualMigration } from '../worker/migrationWorker.js';
 import csvParser from 'csv-parser';
 import zlib from 'zlib';
-import { detectDataModules, autoMapColumn, matchesFilters, runSimulation } from '../utils/preMigrationIntelligence.js';
+import { detectDataModules, autoMapColumn, matchesFilters, runSimulation, runValidationCheck } from '../utils/preMigrationIntelligence.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +20,42 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 const MIGRATION_DIR = path.resolve(__dirname, '..', '..', 'MIGRATION SAMPEL');
 
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
+
+
+const openConnections = new Set<any>();
+let stagingDbLocked = false;
+
+export function lockStagingDb() {
+  stagingDbLocked = true;
+}
+
+export function unlockStagingDb() {
+  stagingDbLocked = false;
+}
+
+export async function closeAllStagingConnections() {
+  for (const db of openConnections) {
+    try {
+      await db.close();
+    } catch (_) {}
+  }
+  openConnections.clear();
+}
+
+async function openStagingDb() {
+  if (stagingDbLocked) {
+    throw new Error('Staging database is currently locked for maintenance/reset.');
+  }
+  const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+  openConnections.add(db);
+  const originalClose = db.close.bind(db);
+  db.close = async () => {
+    openConnections.delete(db);
+    return originalClose();
+  };
+  return db;
+}
+
 
 const ALLOWED_MIGRATION_EXTENSIONS = /\.(zip|sql|gz|tgz|csv|xlsx|xls)$/i;
 const MAX_MIGRATION_SIZE = 500 * 1024 * 1024; // 500MB
@@ -300,10 +336,12 @@ router.post('/pre-migration-simulate', async (req, res) => {
     const existingMedsList = rowsDb.map((r: any) => String(r.name));
 
     const simulation = runSimulation(filteredRows, activeMapping, dataType || 'inventory', existingMedsList);
+    const validation = runValidationCheck(filteredRows, activeMapping, dataType || 'inventory');
 
     res.json({
       success: true,
-      simulation
+      simulation,
+      validation
     });
   } catch (err: any) {
     console.error('Pre-migration simulation error:', err);
@@ -513,7 +551,7 @@ const STAGING_DB_PATH = path.resolve(__dirname, '..', '..', 'data', 'staging.db'
 router.get('/staging/errors', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT id, file_name, row_index, raw_data, error_message, created_at 
       FROM migration_errors 
@@ -527,7 +565,7 @@ router.get('/staging/errors', async (req, res) => {
 router.get('/staging/inventory', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT m.name as medicine_name, m.api_reference, m.hsn_code, m.manufacturer, m.marketed_by, m.cgst, m.sgst,
              i.id, i.batch_no, i.expiry_date, i.quantity, i.loose_quantity, i.mrp, i.cost_price, i.rack_location 
@@ -543,7 +581,7 @@ router.get('/staging/inventory', async (req, res) => {
 router.put('/staging/inventory/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const {
       rack_location, medicine_name, api_reference, batch_no, expiry_date,
       quantity, loose_quantity, mrp, cost_price, hsn_code, manufacturer, marketed_by, cgst, sgst
@@ -589,7 +627,7 @@ router.put('/staging/inventory/:id', async (req, res) => {
 router.delete('/staging/inventory/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     await db.run('DELETE FROM inventory_master WHERE id = ?', req.params.id);
     await db.close();
     res.json({ success: true });
@@ -599,7 +637,7 @@ router.delete('/staging/inventory/:id', async (req, res) => {
 router.get('/staging/sales', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT s.id, s.invoice_no, s.date, s.total_amount, c.name as patient_name, d.name as doctor_name,
              (SELECT COALESCE(SUM(si.quantity),0) FROM sale_items si WHERE si.invoice_id = s.id) as total_qty,
@@ -617,7 +655,7 @@ router.get('/staging/sales', async (req, res) => {
 router.put('/staging/sales/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { invoice_no, date, total_amount, patient_name, doctor_name } = req.body;
     const updates = [];
     const params = [];
@@ -646,7 +684,7 @@ router.put('/staging/sales/:id', async (req, res) => {
 router.delete('/staging/sales/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     await db.run('DELETE FROM sales_invoices WHERE id = ?', req.params.id);
     await db.close();
     res.json({ success: true });
@@ -656,7 +694,7 @@ router.delete('/staging/sales/:id', async (req, res) => {
 router.get('/staging/purchases', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT p.id, p.invoice_no, p.date, p.total_amount, d.name as distributor_name,
              (SELECT COALESCE(SUM(pi.quantity),0) FROM purchase_items pi WHERE pi.purchase_id = p.id) as total_qty,
@@ -673,7 +711,7 @@ router.get('/staging/purchases', async (req, res) => {
 router.put('/staging/purchases/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { invoice_no, date, total_amount, distributor_name } = req.body;
     const updates = [];
     const params = [];
@@ -699,7 +737,7 @@ router.put('/staging/purchases/:id', async (req, res) => {
 router.delete('/staging/purchases/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     await db.run('DELETE FROM purchases WHERE id = ?', req.params.id);
     await db.close();
     res.json({ success: true });
@@ -709,7 +747,7 @@ router.delete('/staging/purchases/:id', async (req, res) => {
 router.get('/staging/returns', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT r.id, r.return_no, r.date, r.total_amount, r.return_invoice_id, r.return_sub_type, r.return_date_time, d.name as distributor_name,
              (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri WHERE ri.return_id = r.id) as total_qty,
@@ -726,7 +764,7 @@ router.get('/staging/returns', async (req, res) => {
 router.put('/staging/returns/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { return_no, date, total_amount, distributor_name, return_invoice_id, return_sub_type, return_date_time } = req.body;
     const updates = [];
     const params = [];
@@ -755,7 +793,7 @@ router.put('/staging/returns/:id', async (req, res) => {
 router.delete('/staging/returns/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     await db.run('DELETE FROM returns WHERE id = ?', req.params.id);
     await db.close();
     res.json({ success: true });
@@ -765,7 +803,7 @@ router.delete('/staging/returns/:id', async (req, res) => {
 router.get('/staging/sales/:id/items', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT si.id, si.invoice_id, si.inventory_id, si.quantity, si.loose_qty, si.unit_price, si.mrp, im.batch_no, m.name as medicine_name
       FROM sale_items si
@@ -781,7 +819,7 @@ router.get('/staging/sales/:id/items', async (req, res) => {
 router.get('/staging/purchases/:id/items', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT pi.id, pi.purchase_id, pi.medicine_id, pi.batch_no, pi.expiry_date, pi.quantity, pi.cost_price, pi.mrp, m.name as medicine_name
       FROM purchase_items pi
@@ -796,7 +834,7 @@ router.get('/staging/purchases/:id/items', async (req, res) => {
 router.get('/staging/returns/:id/items', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const rows = await db.all(`
       SELECT ri.id, ri.return_id, ri.medicine_id, ri.batch_no, ri.quantity, ri.cost_price, ri.mrp, ri.total_price, m.name as medicine_name
       FROM return_items ri
@@ -832,7 +870,7 @@ async function resolveStagingInventoryId(db: any, medicineId: number): Promise<n
 router.put('/staging/sales/:invoiceId/items/:itemId', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { quantity, loose_qty, unit_price, mrp, batch_no, medicine_name } = req.body;
     const updates = [];
     const params = [];
@@ -859,7 +897,7 @@ router.put('/staging/sales/:invoiceId/items/:itemId', async (req, res) => {
 router.delete('/staging/sales/:invoiceId/items/:itemId', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     await db.run('DELETE FROM sale_items WHERE id = ?', [req.params.itemId]);
     await db.close();
     res.json({ success: true });
@@ -869,7 +907,7 @@ router.delete('/staging/sales/:invoiceId/items/:itemId', async (req, res) => {
 router.post('/staging/sales/:invoiceId/items', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { quantity, loose_qty, unit_price, mrp, batch_no, medicine_name } = req.body;
     const medicineId = await resolveMedicineId(db, medicine_name || 'Unknown Medicine');
     const inventoryId = await resolveStagingInventoryId(db, medicineId);
@@ -888,7 +926,7 @@ router.post('/staging/sales/:invoiceId/items', async (req, res) => {
 router.put('/staging/purchases/:purchaseId/items/:itemId', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
     const updates = [];
     const params = [];
@@ -914,7 +952,7 @@ router.put('/staging/purchases/:purchaseId/items/:itemId', async (req, res) => {
 router.delete('/staging/purchases/:purchaseId/items/:itemId', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     await db.run('DELETE FROM purchase_items WHERE id = ?', [req.params.itemId]);
     await db.close();
     res.json({ success: true });
@@ -924,7 +962,7 @@ router.delete('/staging/purchases/:purchaseId/items/:itemId', async (req, res) =
 router.post('/staging/purchases/:purchaseId/items', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
     const medicineId = await resolveMedicineId(db, medicine_name || 'Unknown Medicine');
 
@@ -942,7 +980,7 @@ router.post('/staging/purchases/:purchaseId/items', async (req, res) => {
 router.put('/staging/returns/:returnId/items/:itemId', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
     const updates = [];
     const params = [];
@@ -968,7 +1006,7 @@ router.put('/staging/returns/:returnId/items/:itemId', async (req, res) => {
 router.delete('/staging/returns/:returnId/items/:itemId', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     await db.run('DELETE FROM return_items WHERE id = ?', [req.params.itemId]);
     await db.close();
     res.json({ success: true });
@@ -978,7 +1016,7 @@ router.delete('/staging/returns/:returnId/items/:itemId', async (req, res) => {
 router.post('/staging/returns/:returnId/items', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const { quantity, cost_price, mrp, batch_no, expiry_date, medicine_name } = req.body;
     const medicineId = await resolveMedicineId(db, medicine_name || 'Unknown Medicine');
 
@@ -997,7 +1035,7 @@ router.post('/staging/finalize', async (req, res) => {
   const { regenerateInvoices } = req.body;
   try {
     if (regenerateInvoices) {
-      const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+      const db = await openStagingDb();
       const invoices = await db.all('SELECT id FROM sales_invoices ORDER BY id ASC');
       let counter = 1;
       const today = new Date();
@@ -1097,7 +1135,7 @@ router.post('/templates', async (req, res) => {
 router.get('/staging/conflicts', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.json([]);
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const conflicts = await db.all('SELECT * FROM migration_conflicts WHERE status = "pending"');
     await db.close();
     res.json(conflicts);
@@ -1111,7 +1149,7 @@ router.post('/staging/resolve', async (req, res) => {
     return res.status(400).json({ error: 'conflictId and resolution are required' });
   }
   try {
-    const db = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+    const db = await openStagingDb();
     const conflict = await db.get('SELECT * FROM migration_conflicts WHERE id = ?', [conflictId]);
     if (!conflict) {
       await db.close();
