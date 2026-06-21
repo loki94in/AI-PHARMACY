@@ -75,6 +75,34 @@ interface Distributor {
   items: CartLineItem[];
 }
 
+interface SchemeInfo {
+  buy: number;
+  free: number;
+}
+
+const parseScheme = (schemeStr: string | undefined): SchemeInfo | null => {
+  if (!schemeStr) return null;
+  const match = schemeStr.match(/^(\d+)\+(\d+)$/);
+  if (match) {
+    return {
+      buy: parseInt(match[1]),
+      free: parseInt(match[2])
+    };
+  }
+  return null;
+};
+
+const getEffectiveRate = (rate: number, schemeStr: string | undefined, qty: number): number => {
+  if (!rate) return 0;
+  const scheme = parseScheme(schemeStr);
+  if (!scheme || qty < scheme.buy) {
+    return rate;
+  }
+  const freeItems = Math.floor(qty / scheme.buy) * scheme.free;
+  const totalItems = qty + freeItems;
+  return (qty * rate) / totalItems;
+};
+
 export const LiveCartAddModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   
@@ -108,10 +136,59 @@ export const LiveCartAddModal: React.FC = () => {
   const [cartLoading, setCartLoading] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
 
+  // Cheaper option state
+  const [cheaperDistributor, setCheaperDistributor] = useState<any | null>(null);
+
   const autocompleteRef = useRef<HTMLDivElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const ignoreNextSearchRef = useRef(false);
+
+  const handleSwitchToCheaper = () => {
+    if (cheaperDistributor) {
+      setSelectedDistributor(cheaperDistributor.distributor || '');
+      setSelectedRate(cheaperDistributor.rate !== undefined && cheaperDistributor.rate !== null ? cheaperDistributor.rate : '');
+      setSelectedMrp(cheaperDistributor.mrp !== undefined && cheaperDistributor.mrp !== null ? cheaperDistributor.mrp : '');
+      setSelectedMapped(cheaperDistributor.mapped !== undefined ? cheaperDistributor.mapped : null);
+      setSelectedScheme(cheaperDistributor.scheme || '');
+      setSelectedProductId(cheaperDistributor.productId || '');
+      setSelectedStoreId(cheaperDistributor.storeId || '');
+      setSelectedProductCode(cheaperDistributor.productCode || '');
+      setSelectedCompany(cheaperDistributor.company || '');
+      setSelectedPackaging(cheaperDistributor.packaging || '');
+      toastEvent.trigger(`Switched to cheaper option from ${cheaperDistributor.distributor}!`, 'success');
+    }
+  };
+
+  useEffect(() => {
+    if (selectedStoreId && selectedProductId && selectedRate !== '') {
+      const currentEff = getEffectiveRate(Number(selectedRate), selectedScheme, qty);
+      
+      let bestOption: any = null;
+      let bestEff = currentEff;
+
+      suggestions.forEach(item => {
+        if (item.storeId !== selectedStoreId && item.rate) {
+          const nameClean1 = item.medicine_name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const nameClean2 = product.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (nameClean1 === nameClean2 && item.rate) {
+            const itemEff = getEffectiveRate(item.rate, item.scheme, qty);
+            if (itemEff < bestEff - 0.01) {
+              bestEff = itemEff;
+              bestOption = {
+                ...item,
+                effectiveRate: itemEff
+              };
+            }
+          }
+        }
+      });
+
+      setCheaperDistributor(bestOption);
+    } else {
+      setCheaperDistributor(null);
+    }
+  }, [selectedStoreId, selectedProductId, selectedRate, selectedScheme, qty, suggestions, product]);
 
   // fetchCart logic
   const fetchCart = async () => {
@@ -577,6 +654,29 @@ export const LiveCartAddModal: React.FC = () => {
                     </button>
                   </div>
                 </div>
+              )}
+
+              {/* Cheaper distributor suggestion banner */}
+              {cheaperDistributor && (
+                <button
+                  type="button"
+                  onClick={handleSwitchToCheaper}
+                  className="w-full text-left p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-xs text-text flex items-center justify-between shadow-sm hover:bg-amber-500/15 transition-all select-none animate-in fade-in slide-in-from-top-2 duration-200"
+                >
+                  <div className="pr-2 min-w-0 flex-1">
+                    <div className="font-bold text-amber-400 flex items-center gap-1 uppercase tracking-wider text-[10px] mb-1">
+                      <Sparkles size={13} />
+                      <span>Cheaper Distributor Offer Available!</span>
+                    </div>
+                    <div className="text-text/90">
+                      <span className="font-bold">{cheaperDistributor.distributor}</span> has this for an effective PTR of <span className="font-black text-emerald-400">₹{cheaperDistributor.effectiveRate.toFixed(2)}</span>
+                      {cheaperDistributor.scheme && ` (with ${cheaperDistributor.scheme} scheme)`}.
+                    </div>
+                  </div>
+                  <div className="text-[10px] font-bold text-amber-400 bg-amber-500/20 px-2 py-1 rounded-xl shrink-0 uppercase tracking-wider">
+                    Switch
+                  </div>
+                </button>
               )}
 
               {/* Quantity Selector */}

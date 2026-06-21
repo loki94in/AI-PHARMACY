@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Search, Plus, Minus, ClipboardList, Sparkles, Loader2, ShoppingCart } from 'lucide-react';
+import { X, Search, Plus, Minus, ClipboardList, Sparkles, Loader2, ShoppingCart, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 import { toastEvent, quickOrderEvent } from '../services/events';
 
@@ -53,6 +53,34 @@ const getStockStyle = (stockStr: string | undefined): string => {
   return 'bg-zinc-700/30 text-muted/80 border border-zinc-700/50';
 };
 
+interface SchemeInfo {
+  buy: number;
+  free: number;
+}
+
+const parseScheme = (schemeStr: string | undefined): SchemeInfo | null => {
+  if (!schemeStr) return null;
+  const match = schemeStr.match(/^(\d+)\+(\d+)$/);
+  if (match) {
+    return {
+      buy: parseInt(match[1]),
+      free: parseInt(match[2])
+    };
+  }
+  return null;
+};
+
+const getEffectiveRate = (rate: number, schemeStr: string | undefined, qty: number): number => {
+  if (!rate) return 0;
+  const scheme = parseScheme(schemeStr);
+  if (!scheme || qty < scheme.buy) {
+    return rate;
+  }
+  const freeItems = Math.floor(qty / scheme.buy) * scheme.free;
+  const totalItems = qty + freeItems;
+  return (qty * rate) / totalItems;
+};
+
 export const QuickOrderModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   
@@ -87,6 +115,14 @@ export const QuickOrderModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prMode, setPrMode] = useState<'Live' | 'Unknown'>('Unknown');
 
+  // Duplicate check states
+  const [duplicateMatch, setDuplicateMatch] = useState<any | null>(null);
+  const [duplicateMatchIndex, setDuplicateMatchIndex] = useState<number>(-1);
+  const [pendingItemToAdd, setPendingItemToAdd] = useState<any | null>(null);
+
+  // Cheaper option state
+  const [cheaperDistributor, setCheaperDistributor] = useState<any | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       const fetchSessionStatus = async () => {
@@ -102,31 +138,53 @@ export const QuickOrderModal: React.FC = () => {
     }
   }, [isOpen]);
 
-  const handleAddItemToCart = () => {
-    if (!product.trim()) {
-      toastEvent.trigger('Please enter or select a medicine name first.', 'error');
-      return;
+  const handleSwitchToCheaper = () => {
+    if (cheaperDistributor) {
+      setSelectedDistributor(cheaperDistributor.distributor || '');
+      setSelectedRate(cheaperDistributor.rate !== undefined && cheaperDistributor.rate !== null ? cheaperDistributor.rate : '');
+      setSelectedMrp(cheaperDistributor.mrp !== undefined && cheaperDistributor.mrp !== null ? cheaperDistributor.mrp : '');
+      setSelectedMapped(cheaperDistributor.mapped !== undefined ? cheaperDistributor.mapped : null);
+      setSelectedScheme(cheaperDistributor.scheme || '');
+      setSelectedProductId(cheaperDistributor.productId || '');
+      setSelectedStoreId(cheaperDistributor.storeId || '');
+      setSelectedProductCode(cheaperDistributor.productCode || '');
+      setSelectedCompany(cheaperDistributor.company || '');
+      setSelectedPackaging(cheaperDistributor.packaging || '');
+      toastEvent.trigger(`Switched to cheaper option from ${cheaperDistributor.distributor}!`, 'success');
     }
+  };
 
-    setCart(prev => [
-      ...prev,
-      {
-        product: product.trim(),
-        qty: qty,
-        distributor: selectedDistributor || undefined,
-        rate: selectedRate !== '' ? Number(selectedRate) : undefined,
-        mrp: selectedMrp !== '' ? Number(selectedMrp) : undefined,
-        mapped: selectedMapped !== null ? selectedMapped : undefined,
-        scheme: selectedScheme || undefined,
-        productId: selectedProductId || undefined,
-        storeId: selectedStoreId || undefined,
-        productCode: selectedProductCode || undefined,
-        company: selectedCompany || undefined,
-        packaging: selectedPackaging || undefined
-      }
-    ]);
+  useEffect(() => {
+    if (selectedStoreId && selectedProductId && selectedRate !== '') {
+      const currentEff = getEffectiveRate(Number(selectedRate), selectedScheme, qty);
+      
+      let bestOption: any = null;
+      let bestEff = currentEff;
 
-    // Reset current search/product state and focus
+      suggestions.forEach(item => {
+        if (item.storeId !== selectedStoreId && item.rate) {
+          const nameClean1 = item.medicine_name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const nameClean2 = product.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (nameClean1 === nameClean2 && item.rate) {
+            const itemEff = getEffectiveRate(item.rate, item.scheme, qty);
+            if (itemEff < bestEff - 0.01) {
+              bestEff = itemEff;
+              bestOption = {
+                ...item,
+                effectiveRate: itemEff
+              };
+            }
+          }
+        }
+      });
+
+      setCheaperDistributor(bestOption);
+    } else {
+      setCheaperDistributor(null);
+    }
+  }, [selectedStoreId, selectedProductId, selectedRate, selectedScheme, qty, suggestions, product]);
+
+  const resetInputsAndFocus = () => {
     setProduct('');
     setQty(1);
     setSelectedDistributor('');
@@ -142,13 +200,108 @@ export const QuickOrderModal: React.FC = () => {
     setSuggestions([]);
     setShowSuggestions(false);
     setActiveSuggestionIndex(-1);
+    setTimeout(() => productInputRef.current?.focus(), 50);
+  };
 
-    // Re-focus the product input field
-    productInputRef.current?.focus();
+  const insertItemToCart = (item: any) => {
+    setCart(prev => [...prev, item]);
+    resetInputsAndFocus();
+  };
+
+  const handleAddItemToCart = () => {
+    if (!product.trim()) {
+      toastEvent.trigger('Please enter or select a medicine name first.', 'error');
+      return;
+    }
+
+    const newItem = {
+      product: product.trim(),
+      qty: qty,
+      distributor: selectedDistributor || undefined,
+      rate: selectedRate !== '' ? Number(selectedRate) : undefined,
+      mrp: selectedMrp !== '' ? Number(selectedMrp) : undefined,
+      mapped: selectedMapped !== null ? selectedMapped : undefined,
+      scheme: selectedScheme || undefined,
+      productId: selectedProductId || undefined,
+      storeId: selectedStoreId || undefined,
+      productCode: selectedProductCode || undefined,
+      company: selectedCompany || undefined,
+      packaging: selectedPackaging || undefined
+    };
+
+    // Check for similar item in currently staged items (case-insensitive & whitespace independent)
+    const existingIndex = cart.findIndex(item => {
+      const itemClean = item.product.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const inputClean = newItem.product.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return itemClean.includes(inputClean) || inputClean.includes(itemClean);
+    });
+
+    if (existingIndex > -1) {
+      setDuplicateMatch(cart[existingIndex]);
+      setDuplicateMatchIndex(existingIndex);
+      setPendingItemToAdd(newItem);
+      return;
+    }
+
+    insertItemToCart(newItem);
   };
 
   const handleRemoveCartItem = (idxToRemove: number) => {
     setCart(prev => prev.filter((_, idx) => idx !== idxToRemove));
+  };
+
+  const handleResolveCombine = () => {
+    if (duplicateMatchIndex > -1 && pendingItemToAdd) {
+      setCart(prev => prev.map((item, idx) => {
+        if (idx === duplicateMatchIndex) {
+          return {
+            ...item,
+            qty: item.qty + pendingItemToAdd.qty
+          };
+        }
+        return item;
+      }));
+      toastEvent.trigger(`Combined quantities for "${pendingItemToAdd.product}"`, 'success');
+      resetInputsAndFocus();
+      setDuplicateMatch(null);
+      setDuplicateMatchIndex(-1);
+      setPendingItemToAdd(null);
+    }
+  };
+
+  const handleResolveSeparate = () => {
+    if (pendingItemToAdd) {
+      setCart(prev => [...prev, pendingItemToAdd]);
+      toastEvent.trigger(`Added "${pendingItemToAdd.product}" as separate request`, 'success');
+      resetInputsAndFocus();
+      setDuplicateMatch(null);
+      setDuplicateMatchIndex(-1);
+      setPendingItemToAdd(null);
+    }
+  };
+
+  const handleResolveReplace = () => {
+    if (duplicateMatchIndex > -1 && pendingItemToAdd) {
+      setCart(prev => prev.map((item, idx) => {
+        if (idx === duplicateMatchIndex) {
+          return pendingItemToAdd;
+        }
+        return item;
+      }));
+      toastEvent.trigger(`Replaced staged item with "${pendingItemToAdd.product}"`, 'success');
+      resetInputsAndFocus();
+      setDuplicateMatch(null);
+      setDuplicateMatchIndex(-1);
+      setPendingItemToAdd(null);
+    }
+  };
+
+  const handleResolveCancel = () => {
+    toastEvent.trigger('Cancelled.', 'info');
+    setDuplicateMatch(null);
+    setDuplicateMatchIndex(-1);
+    setPendingItemToAdd(null);
+    setTimeout(() => productInputRef.current?.focus(), 50);
   };
 
   const autocompleteRef = useRef<HTMLDivElement>(null);
@@ -710,6 +863,29 @@ export const QuickOrderModal: React.FC = () => {
                       </div>
                     </div>
                   )}
+
+                  {/* Cheaper distributor suggestion banner */}
+                  {cheaperDistributor && (
+                    <button
+                      type="button"
+                      onClick={handleSwitchToCheaper}
+                      className="mt-3 w-full text-left p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-xs text-text flex items-center justify-between shadow-sm hover:bg-amber-500/15 transition-all select-none animate-in fade-in slide-in-from-top-2 duration-200"
+                    >
+                      <div className="pr-2 min-w-0 flex-1">
+                        <div className="font-bold text-amber-400 flex items-center gap-1 uppercase tracking-wider text-[10px] mb-1">
+                          <Sparkles size={13} />
+                          <span>Cheaper Distributor Offer Available!</span>
+                        </div>
+                        <div className="text-text/90">
+                          <span className="font-bold">{cheaperDistributor.distributor}</span> has this for an effective PTR of <span className="font-black text-emerald-400">₹{cheaperDistributor.effectiveRate.toFixed(2)}</span>
+                          {cheaperDistributor.scheme && ` (with ${cheaperDistributor.scheme} scheme)`}.
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-amber-400 bg-amber-500/20 px-2 py-1 rounded-xl shrink-0 uppercase tracking-wider">
+                        Switch
+                      </div>
+                    </button>
+                  )}
                 </div>
 
                 {/* Quantity and Add Button Row */}
@@ -938,6 +1114,65 @@ export const QuickOrderModal: React.FC = () => {
           </div>
           
         </form>
+
+        {/* Duplicate Item Resolution Overlay */}
+        {duplicateMatch && pendingItemToAdd && (
+          <div className="absolute inset-0 z-[99999] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md rounded-3xl transition-all duration-300 animate-in fade-in">
+            <div className="bg-bg2 border border-glass-border p-6 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
+              <div className="flex items-center gap-2 text-amber-400">
+                <AlertTriangle size={20} />
+                <h4 className="text-sm font-extrabold uppercase tracking-wide">Similar Item Staged</h4>
+              </div>
+              
+              <div className="text-xs space-y-3 text-text/90">
+                <p>
+                  You are staging <span className="font-bold text-white">"{pendingItemToAdd.product}"</span> (Qty: {pendingItemToAdd.qty}), which is similar to an item already in your list:
+                </p>
+                <div className="bg-bg3/60 border border-glass-border/30 rounded-xl p-3 space-y-1">
+                  <div className="font-bold text-text truncate">"{duplicateMatch.product}"</div>
+                  <div className="text-[10px] text-muted flex items-center justify-between">
+                    <span>Distributor: {duplicateMatch.distributor || 'None'}</span>
+                    <span className="font-mono bg-primary/10 text-primary border border-primary/20 px-1.5 rounded">Qty: {duplicateMatch.qty}</span>
+                  </div>
+                </div>
+                <p className="text-muted leading-relaxed">
+                  Is this for the same customer (where you want to combine quantities) or a different customer?
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleResolveCombine}
+                  className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-xs font-bold rounded-xl transition-all"
+                >
+                  Combine Quantities (Total Qty: {duplicateMatch.qty + pendingItemToAdd.qty})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResolveSeparate}
+                  className="w-full py-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-xs font-bold rounded-xl transition-all"
+                >
+                  Add Separately (Different Customer)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResolveReplace}
+                  className="w-full py-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 text-xs font-bold rounded-xl transition-all"
+                >
+                  Replace Staged Item
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResolveCancel}
+                  className="w-full py-2 bg-white/5 hover:bg-white/10 border border-glass-border text-muted hover:text-white text-xs font-bold rounded-xl transition-all"
+                >
+                  Cancel / Ignore Addition
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer info hints */}
         <div className="mt-4 pt-3 border-t border-glass-border/30 flex justify-between text-[9px] text-muted/60 font-medium font-mono">
