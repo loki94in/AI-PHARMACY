@@ -479,6 +479,10 @@ export const api = {
   approveStagedPurchase: (id: number, data: any) => apiClient.post(`/purchases/staged/${id}/approve`, data).then(res => res.data),
   rejectStagedPurchase: (id: number) => apiClient.post(`/purchases/staged/${id}/reject`).then(res => res.data),
   getConnectionInfo: () => apiClient.get('/notifications/connection-info').then(res => res.data),
+  getActionLogs: () => apiClient.get('/notifications/action-logs').then(res => res.data),
+  clearActionLogs: () => apiClient.post('/notifications/action-logs/clear').then(res => res.data),
+  getAssistantChatLogs: () => apiClient.get('/notifications/chat-logs').then(res => res.data),
+  clearAssistantChatLogs: () => apiClient.post('/notifications/chat-logs/clear').then(res => res.data),
 
   // Refills
   getRefills: () => apiClient.get<Refill[]>('/refills').then(res => res.data),

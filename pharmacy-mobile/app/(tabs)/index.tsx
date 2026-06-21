@@ -17,7 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
-import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection, createSale, searchPharmarack, addPharmarackCart } from '../../lib/api';
+import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection, createSale, searchPharmarack, addPharmarackCart, logAssistantChat } from '../../lib/api';
+import * as SecureStore from '../../lib/secureStore';
 import { cartEvents } from '../../lib/cartEvents';
 import DrawerMenu from '../../components/DrawerMenu';
 
@@ -72,6 +73,25 @@ export default function AssistantScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+
+  // Device identity info for PC assistant chat logs
+  const [deviceUuid, setDeviceUuid] = useState('DEV-Unknown');
+  const [deviceName, setDeviceName] = useState('Mobile Client');
+
+  useEffect(() => {
+    const loadDeviceInfo = async () => {
+      try {
+        const uuid = await SecureStore.getItemAsync('admin_device_uuid');
+        if (uuid) setDeviceUuid(uuid);
+        const name = await SecureStore.getItemAsync('admin_authorized_device_name');
+        if (name) setDeviceName(name);
+      } catch (err) {
+        console.warn('Failed to load device info for chat logging:', err);
+      }
+    };
+    loadDeviceInfo();
+  }, []);
 
   // Quick Process Sale state
   const [quickSaleItem, setQuickSaleItem] = useState<SearchMedicineResult | null>(null);
@@ -80,12 +100,13 @@ export default function AssistantScreen() {
   const [quickSaleProcessing, setQuickSaleProcessing] = useState(false);
   const [quickSaleSuccess, setQuickSaleSuccess] = useState<{ invoice_no: string; total: number; isOffline: boolean } | null>(null);
   
-  // Selection and quantity adjustments for product cards in chat
-  const [checkedCards, setCheckedCards] = useState<Record<string, boolean>>({});
-  const [cardQuantities, setCardQuantities] = useState<Record<string, number>>({});
+
   
   // Collapse/Expand state for product lists in chat bubble
   const [collapsedStates, setCollapsedStates] = useState<Record<string, boolean>>({});
+
+  // Dynamic header visibility to maximize screen when list is scrolled
+  const [hideHeader, setHideHeader] = useState(false);
   
   // Dynamic Connection Status States
   type ConnStatus = 'checking' | 'online' | 'no_url' | 'offline';
@@ -186,6 +207,14 @@ export default function AssistantScreen() {
     setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
 
+    // Sync user message to server in background
+    logAssistantChat({
+      sessionId: deviceUuid,
+      deviceName: deviceName,
+      sender: 'user',
+      messageText: textToSend,
+    }).catch(console.warn);
+
     // Simulate AI thinking and responsive action logic
     setTimeout(async () => {
       let replyText = "I'm not sure how to handle that request. Try selecting one of the quick actions below!";
@@ -215,6 +244,7 @@ export default function AssistantScreen() {
         cleanText.includes('amoxicillin') ||
         cleanText.includes('clavam') ||
         cleanText.includes('crocin') ||
+        cleanText.includes('dolo') ||
         cleanText.includes('paracetamol') ||
         cleanText.includes('pan') ||
         (!cleanText.includes('bill') && !cleanText.includes('sale') && !cleanText.includes('camera') && !cleanText.includes('photo') && !cleanText.includes('scan') && !cleanText.includes('stock') && !cleanText.includes('inventory') && !cleanText.includes('notify') && !cleanText.includes('backup') && !cleanText.includes('hi') && !cleanText.includes('hello') && cleanText.trim().length >= 2)
@@ -279,6 +309,15 @@ export default function AssistantScreen() {
 
       setMessages((prev) => [...prev, assistantMessage]);
       setLoading(false);
+
+      // Sync assistant reply to server in background
+      logAssistantChat({
+        sessionId: deviceUuid,
+        deviceName: deviceName,
+        sender: 'assistant',
+        messageText: replyText,
+        metadata: products ? products : (pharmarackProducts ? pharmarackProducts : undefined)
+      }).catch(console.warn);
     }, 800);
   };
 
@@ -468,81 +507,87 @@ export default function AssistantScreen() {
       style={styles.container}
     >
       {/* Connectivity Status Bar — tap to retry */}
-      <TouchableOpacity
-        style={[
-          styles.connectStatusBar,
-          { backgroundColor: connStatus === 'online' ? '#0c0a09' : connStatus === 'checking' ? '#1a1a2e' : '#1a0a0a' }
-        ]}
-        onPress={() => { setConnStatus('checking'); checkStatus(); }}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.connectDot, {
-          backgroundColor:
-            connStatus === 'online'   ? colors.success :
-            connStatus === 'checking' ? colors.warning  :
-            colors.danger
-        }]} />
-        <Text style={styles.connectStatusText} numberOfLines={1}>
-          {connStatus === 'online'   ? `✓ Server: ${serverUrl.replace(/^https?:\/\//, '')}` :
-           connStatus === 'checking' ? 'Checking connection...' :
-           connStatus === 'no_url'   ? 'No server configured — tap Settings to add PC IP' :
-           `Server unreachable — tap to retry`}
-        </Text>
-        {connStatus !== 'online' && connStatus !== 'checking' && (
-          <Ionicons name="refresh-outline" size={12} color={colors.danger} style={{ marginLeft: 4 }} />
-        )}
-      </TouchableOpacity>
+      {!hideHeader && (
+        <TouchableOpacity
+          style={[
+            styles.connectStatusBar,
+            { backgroundColor: connStatus === 'online' ? '#0c0a09' : connStatus === 'checking' ? '#1a1a2e' : '#1a0a0a' }
+          ]}
+          onPress={() => { setConnStatus('checking'); checkStatus(); }}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.connectDot, {
+            backgroundColor:
+              connStatus === 'online'   ? colors.success :
+              connStatus === 'checking' ? colors.warning  :
+              colors.danger
+          }]} />
+          <Text style={styles.connectStatusText} numberOfLines={1}>
+            {connStatus === 'online'   ? `✓ Server: ${serverUrl.replace(/^https?:\/\//, '')}` :
+             connStatus === 'checking' ? 'Checking connection...' :
+             connStatus === 'no_url'   ? 'No server configured — tap Settings to add PC IP' :
+             `Server unreachable — tap to retry`}
+          </Text>
+          {connStatus !== 'online' && connStatus !== 'checking' && (
+            <Ionicons name="refresh-outline" size={12} color={colors.danger} style={{ marginLeft: 4 }} />
+          )}
+        </TouchableOpacity>
+      )}
 
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.leftHeader}>
-          <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.menuBtn}>
-            <Ionicons name="menu-outline" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <View style={styles.assistantStatus}>
-            <View style={[styles.onlineDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
-            <View>
-              <Text style={styles.assistantTitle}>Pharmacy Genius AI</Text>
-              <Text style={styles.assistantSubtitle}>Always active & ready</Text>
+      {!hideHeader && (
+        <View style={styles.header}>
+          <View style={styles.leftHeader}>
+            <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.menuBtn}>
+              <Ionicons name="menu-outline" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <View style={styles.assistantStatus}>
+              <View style={[styles.onlineDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
+              <View>
+                <Text style={styles.assistantTitle}>Pharmacy Genius AI</Text>
+                <Text style={styles.assistantSubtitle}>Always active & ready</Text>
+              </View>
             </View>
           </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <TouchableOpacity 
+              style={styles.clearBtn} 
+              onPress={() => router.push('/camera')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="camera-outline" size={20} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.clearBtn} 
+              onPress={() => setMessages([messages[0]])}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <TouchableOpacity 
-            style={styles.clearBtn} 
-            onPress={() => router.push('/camera')}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="camera-outline" size={20} color={colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.clearBtn} 
-            onPress={() => setMessages([messages[0]])}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      )}
 
       {/* Role Toggle Selector */}
-      <View style={styles.roleContainer}>
-        <Text style={styles.roleLabel}>Mode:</Text>
-        <View style={styles.roleTabsWrapper}>
-          <TouchableOpacity 
-            style={[styles.roleTab, userRole === 'staff' && styles.roleTabActive]} 
-            onPress={() => setUserRole('staff')}
-          >
-            <Text style={[styles.roleTabText, userRole === 'staff' && styles.roleTabActiveText]}>Staff Mode</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.roleTab, userRole === 'distributor' && styles.roleTabActive]} 
-            onPress={() => setUserRole('distributor')}
-          >
-            <Text style={[styles.roleTabText, userRole === 'distributor' && styles.roleTabActiveText]}>Distributor Mode</Text>
-          </TouchableOpacity>
+      {!hideHeader && (
+        <View style={styles.roleContainer}>
+          <Text style={styles.roleLabel}>Mode:</Text>
+          <View style={styles.roleTabsWrapper}>
+            <TouchableOpacity 
+              style={[styles.roleTab, userRole === 'staff' && styles.roleTabActive]} 
+              onPress={() => setUserRole('staff')}
+            >
+              <Text style={[styles.roleTabText, userRole === 'staff' && styles.roleTabActiveText]}>Staff Mode</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.roleTab, userRole === 'distributor' && styles.roleTabActive]} 
+              onPress={() => setUserRole('distributor')}
+            >
+              <Text style={[styles.roleTabText, userRole === 'distributor' && styles.roleTabActiveText]}>Distributor Mode</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Drawer navigation */}
       <DrawerMenu isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
@@ -554,7 +599,7 @@ export default function AssistantScreen() {
         contentContainerStyle={styles.messageContent}
       >
         {/* ABC Checklist - Only shown in Distributor Mode */}
-        {userRole === 'distributor' && (
+        {userRole === 'distributor' && !hideHeader && (
           <View style={styles.checklistCard}>
             <View className="flex-row items-center justify-between mb-3 border-b border-zinc-700/50 pb-2">
               <Text style={styles.checklistTitle}>📋 Distributor ABC Shortage Checklist</Text>
@@ -600,6 +645,8 @@ export default function AssistantScreen() {
                 msg.products || msg.pharmarackProducts ? { width: '90%', maxWidth: '90%' } : null,
               ]}
             >
+              <Text style={styles.messageText}>{msg.text}</Text>
+
               {/* Products search Carousel inside chat bubble */}
               {msg.products && (
                 <View style={styles.verticalListContainer}>
@@ -617,8 +664,7 @@ export default function AssistantScreen() {
                       }
                     });
 
-                    const checkedKeys = Object.keys(checkedCards).filter(key => key.startsWith(msg.id + '-') && checkedCards[key]);
-                    const isCollapsed = collapsedStates[msg.id] !== false;
+                    const isCollapsed = collapsedStates[msg.id] === true; // Default to false (expanded)
 
                     return (
                       <View style={{ gap: 8 }}>
@@ -626,6 +672,7 @@ export default function AssistantScreen() {
                           style={styles.dropdownHeader}
                           onPress={() => setCollapsedStates(prev => ({ ...prev, [msg.id]: !isCollapsed }))}
                           activeOpacity={0.7}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                         >
                           <View style={styles.dropdownHeaderContent}>
                             <Ionicons
@@ -643,24 +690,34 @@ export default function AssistantScreen() {
 
                         {!isCollapsed && (
                           <>
-                            <ScrollView
-                              style={styles.smallScrollBox}
-                              nestedScrollEnabled={true}
-                              contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
-                            >
-                              {displayProducts.map((item, index) => {
+                            <View style={styles.scrollBoxWrapper}>
+                              <ScrollView
+                                style={styles.smallScrollBox}
+                                nestedScrollEnabled={true}
+                                contentContainerStyle={{ gap: 8, paddingVertical: 12, paddingHorizontal: 4 }}
+                                onScroll={(event) => {
+                                  const offsetY = event.nativeEvent.contentOffset.y;
+                                  if (offsetY > 10) {
+                                    setHideHeader(true);
+                                  } else if (offsetY <= 5) {
+                                    setHideHeader(false);
+                                  }
+                                }}
+                                scrollEventThrottle={16}
+                              >
+                                {displayProducts.map((item, index) => {
                                   const isOutOfStock = item.quantity <= 0 || item.is_out_of_stock;
                                   const isSub = !!item.isAlternativeFor;
-                                  const cardKey = msg.id + '-' + (item.inventory_id || item.medicine_name);
-                                  const isChecked = !!checkedCards[cardKey];
-                                  const qty = cardQuantities[cardKey] || 1;
 
                                   return (
-                                    <View key={index} style={[
-                                      styles.productCardVertical,
-                                      isSub && { borderColor: '#06b6d4', borderWidth: 1.5 },
-                                      isOutOfStock && { opacity: 0.85 }
-                                    ]}>
+                                    <View
+                                      key={index}
+                                      style={[
+                                        styles.productCardVertical,
+                                        isSub && { borderColor: '#06b6d4', borderWidth: 1.5 },
+                                        isOutOfStock && { opacity: 0.85 }
+                                      ]}
+                                    >
                                       {isSub && (
                                         <View style={styles.subTag}>
                                           <Text style={styles.subTagText}>Sub for {item.isAlternativeFor}</Text>
@@ -668,155 +725,89 @@ export default function AssistantScreen() {
                                       )}
 
                                       <View style={styles.cardMainRow}>
-                                        {/* Checkbox on the left */}
-                                        {!isOutOfStock && (
-                                          <TouchableOpacity
-                                            style={styles.checkboxWrapper}
-                                            onPress={() => {
-                                              setCheckedCards(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
-                                              if (!cardQuantities[cardKey]) {
-                                                setCardQuantities(prev => ({ ...prev, [cardKey]: 1 }));
-                                              }
-                                            }}
-                                          >
-                                            <Ionicons
-                                              name={isChecked ? "checkbox" : "square-outline"}
-                                              size={22}
-                                              color={isChecked ? colors.success : colors.textSecondary}
-                                            />
-                                          </TouchableOpacity>
-                                        )}
-
                                         <View style={{ flex: 1, paddingLeft: 4 }}>
                                           <Text style={styles.productNameVertical} numberOfLines={1}>{item.medicine_name}</Text>
                                           {isOutOfStock && (
                                             <Text style={styles.outOfStockText}>OUT OF STOCK</Text>
                                           )}
                                           <Text style={styles.productDetail}>Batch: {item.batch_no} | Exp: {item.expiry_date} | Stock: {item.quantity}</Text>
-                                          <Text style={styles.productDetail}>Rate: ₹{(item.unit_price || item.mrp || 0).toFixed(2)} | MRP: ₹{Number(item.mrp || 0).toFixed(2)}</Text>
+                                          <Text style={styles.productDetail}>Rate: ₹{Number(item.unit_price || item.mrp || 0).toFixed(2)} | MRP: ₹{Number(item.mrp || 0).toFixed(2)}</Text>
                                           <Text style={styles.productDetail}>Scheme: None</Text>
-                                          <Text style={styles.productPrice}>Subtotal: ₹{(qty * (item.mrp || item.unit_price || 0)).toFixed(2)}</Text>
                                         </View>
-
-                                        {/* Manual Quantity Input & mini steppers */}
+                                        
                                         {!isOutOfStock && (
-                                          <View style={styles.qtyEditContainer}>
+                                          <View style={styles.qtyContainerRight}>
+                                            <View style={styles.qtyStepper}>
+                                              <TouchableOpacity
+                                                style={styles.qtyStepperBtn}
+                                                onPress={() => {
+                                                  const key = `local-${item.inventory_id}`;
+                                                  const currentVal = quantities[key] || 1;
+                                                  setQuantities(prev => ({ ...prev, [key]: Math.max(1, currentVal - 1) }));
+                                                }}
+                                              >
+                                                <Ionicons name="remove" size={14} color={colors.textPrimary} />
+                                              </TouchableOpacity>
+                                              <TextInput
+                                                style={styles.qtyStepperInput}
+                                                value={String(quantities[`local-${item.inventory_id}`] || 1)}
+                                                onChangeText={(text) => {
+                                                  const val = parseInt(text, 10);
+                                                  const key = `local-${item.inventory_id}`;
+                                                  setQuantities(prev => ({ ...prev, [key]: isNaN(val) ? 1 : Math.max(1, val) }));
+                                                }}
+                                                keyboardType="number-pad"
+                                                selectTextOnFocus={true}
+                                              />
+                                              <TouchableOpacity
+                                                style={styles.qtyStepperBtn}
+                                                onPress={() => {
+                                                  const key = `local-${item.inventory_id}`;
+                                                  const currentVal = quantities[key] || 1;
+                                                  setQuantities(prev => ({ ...prev, [key]: currentVal + 1 }));
+                                                }}
+                                              >
+                                                <Ionicons name="add" size={14} color={colors.textPrimary} />
+                                              </TouchableOpacity>
+                                            </View>
+                                            
                                             <TouchableOpacity
-                                              style={styles.stepperMiniBtn}
+                                              style={styles.cardAddButton}
                                               onPress={() => {
-                                                const newQty = Math.max(1, qty - 1);
-                                                setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
+                                                const key = `local-${item.inventory_id}`;
+                                                const qty = quantities[key] || 1;
+                                                cartEvents.emit(item, qty);
+                                                Alert.alert('Added to Cart', `${qty} × ${item.medicine_name} added to POS billing.`);
+                                                setQuantities(prev => ({ ...prev, [key]: 1 }));
                                               }}
+                                              activeOpacity={0.7}
                                             >
-                                              <Ionicons name="remove" size={12} color={colors.textPrimary} />
-                                            </TouchableOpacity>
-                                            <TextInput
-                                              style={styles.manualQtyInput}
-                                              value={String(qty)}
-                                              keyboardType="number-pad"
-                                              onChangeText={(text) => {
-                                                const parsed = parseInt(text.replace(/[^0-9]/g, ''), 10);
-                                                const finalQty = isNaN(parsed) ? 0 : parsed;
-                                                setCardQuantities(prev => ({ ...prev, [cardKey]: finalQty }));
-                                              }}
-                                              onBlur={() => {
-                                                if (qty <= 0) {
-                                                  setCardQuantities(prev => ({ ...prev, [cardKey]: 1 }));
-                                                }
-                                              }}
-                                            />
-                                            <TouchableOpacity
-                                              style={styles.stepperMiniBtn}
-                                              onPress={() => {
-                                                const newQty = Math.min(item.quantity, qty + 1);
-                                                setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
-                                              }}
-                                            >
-                                              <Ionicons name="add" size={12} color={colors.textPrimary} />
+                                              <Ionicons name="cart-outline" size={14} color="#fff" />
+                                              <Text style={styles.cardAddButtonText}>Add</Text>
                                             </TouchableOpacity>
                                           </View>
                                         )}
                                       </View>
-
-                                      {/* Card Action Buttons */}
-                                      <View style={styles.cardActionRowVertical}>
-                                        <TouchableOpacity
-                                          style={[styles.cardActionBtnVertical, styles.cardActionBtnSecondaryVertical]}
-                                          onPress={() => {
-                                            cartEvents.emit(item, qty);
-                                            router.push('/(tabs)/billing');
-                                          }}
-                                        >
-                                          <Ionicons name="cart-outline" size={14} color={colors.primary} />
-                                          <Text style={styles.cardActionBtnTextSecondaryVertical}>+ Bill</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                          style={[
-                                            styles.cardActionBtnVertical,
-                                            styles.cardActionBtnProcessVertical,
-                                            isOutOfStock && { backgroundColor: '#3f3f46' }
-                                          ]}
-                                          onPress={() => {
-                                            if (isOutOfStock) {
-                                              Alert.alert('Out of Stock', 'This product is out of stock.');
-                                              return;
-                                            }
-                                            setQuickSaleItem(item);
-                                            setQuickSaleQty(String(qty));
-                                            setQuickSalePatient('');
-                                            setQuickSaleSuccess(null);
-                                          }}
-                                        >
-                                          <Text style={styles.cardActionBtnText}>⚡ Process</Text>
-                                        </TouchableOpacity>
-                                      </View>
                                     </View>
                                   );
                                 })}
-                            </ScrollView>
+                              </ScrollView>
 
-                            {/* Bulk Action Buttons if any items are checked */}
-                            {checkedKeys.length > 0 && (
-                              <View style={styles.bulkActionRow}>
-                                <TouchableOpacity
-                                  style={[styles.bulkBtn, { backgroundColor: 'rgba(14, 165, 233, 0.15)', borderColor: colors.primary, borderWidth: 1 }]}
-                                  onPress={() => {
-                                    displayProducts.forEach(item => {
-                                      const cardKey = msg.id + '-' + (item.inventory_id || item.medicine_name);
-                                      if (checkedCards[cardKey]) {
-                                        const qty = cardQuantities[cardKey] || 1;
-                                        cartEvents.emit(item, qty);
-                                      }
-                                    });
-                                    // Clear selections
-                                    checkedKeys.forEach(key => setCheckedCards(prev => ({ ...prev, [key]: false })));
-                                    router.push('/(tabs)/billing');
-                                  }}
-                                >
-                                  <Ionicons name="cart" size={16} color={colors.primary} />
-                                  <Text style={[styles.bulkBtnText, { color: colors.primary }]}>Bill Checked ({checkedKeys.length})</Text>
-                                </TouchableOpacity>
+                              {/* Top Fade Gradient */}
+                              <LinearGradient
+                                colors={['#1A1A2E', 'rgba(26, 26, 46, 0)']}
+                                style={styles.topFade}
+                                pointerEvents="none"
+                              />
+                              {/* Bottom Fade Gradient */}
+                              <LinearGradient
+                                colors={['rgba(26, 26, 46, 0)', '#1A1A2E']}
+                                style={styles.bottomFade}
+                                pointerEvents="none"
+                              />
+                            </View>
 
-                                <TouchableOpacity
-                                  style={[styles.bulkBtn, { backgroundColor: colors.accent }]}
-                                  onPress={() => {
-                                    const firstKey = checkedKeys[0];
-                                    const firstItem = displayProducts.find(item => (msg.id + '-' + (item.inventory_id || item.medicine_name)) === firstKey);
-                                    if (firstItem) {
-                                      const qty = cardQuantities[firstKey] || 1;
-                                      setQuickSaleItem(firstItem);
-                                      setQuickSaleQty(String(qty));
-                                      setQuickSalePatient('');
-                                      setQuickSaleSuccess(null);
-                                      // Clear selection
-                                      setCheckedCards(prev => ({ ...prev, [firstKey]: false }));
-                                    }
-                                  }}
-                                >
-                                  <Text style={styles.bulkBtnText}>⚡ Process First</Text>
-                                </TouchableOpacity>
-                              </View>
-                            )}
+
                           </>
                         )}
                       </View>
@@ -829,8 +820,7 @@ export default function AssistantScreen() {
               {msg.pharmarackProducts && (
                 <View style={styles.verticalListContainer}>
                   {(() => {
-                    const checkedKeys = Object.keys(checkedCards).filter(key => key.startsWith(msg.id + '-') && checkedCards[key]);
-                    const isCollapsed = collapsedStates[msg.id] !== false;
+                    const isCollapsed = collapsedStates[msg.id] === true; // Default to false (expanded)
 
                     return (
                       <View style={{ gap: 8 }}>
@@ -838,6 +828,7 @@ export default function AssistantScreen() {
                           style={styles.dropdownHeader}
                           onPress={() => setCollapsedStates(prev => ({ ...prev, [msg.id]: !isCollapsed }))}
                           activeOpacity={0.7}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                         >
                           <View style={styles.dropdownHeaderContent}>
                             <Ionicons
@@ -855,130 +846,110 @@ export default function AssistantScreen() {
 
                         {!isCollapsed && (
                           <>
-                            <ScrollView
-                              style={styles.smallScrollBox}
-                              nestedScrollEnabled={true}
-                              contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
-                            >
-                              {msg.pharmarackProducts.map((item, index) => {
-                                const cardKey = msg.id + '-' + (item.inventory_id || item.name);
-                                const isChecked = !!checkedCards[cardKey];
-                                const qty = cardQuantities[cardKey] || 10; // defaults to 10 for Pharmarack
+                            <View style={styles.scrollBoxWrapper}>
+                              <ScrollView
+                                style={styles.smallScrollBox}
+                                nestedScrollEnabled={true}
+                                contentContainerStyle={{ gap: 8, paddingVertical: 12, paddingHorizontal: 4 }}
+                                onScroll={(event) => {
+                                  const offsetY = event.nativeEvent.contentOffset.y;
+                                  if (offsetY > 10) {
+                                    setHideHeader(true);
+                                  } else if (offsetY <= 5) {
+                                    setHideHeader(false);
+                                  }
+                                }}
+                                scrollEventThrottle={16}
+                              >
+                                {msg.pharmarackProducts.map((item, index) => {
+                                  return (
+                                     <View
+                                       key={index}
+                                       style={[styles.productCardVertical, { borderColor: '#a78bfa', borderWidth: 1.5 }]}
+                                     >
+                                       <View style={styles.prTag}>
+                                         <Text style={styles.prTagText}>Pharmarack</Text>
+                                       </View>
 
-                                return (
-                                  <View key={index} style={[styles.productCardVertical, { borderColor: '#a78bfa', borderWidth: 1.5 }]}>
-                                    <View style={styles.prTag}>
-                                      <Text style={styles.prTagText}>Pharmarack</Text>
-                                    </View>
+                                       <View style={styles.cardMainRow}>
+                                         <View style={{ flex: 1, paddingLeft: 4 }}>
+                                           <Text style={styles.productNameVertical} numberOfLines={1}>{item.name}</Text>
+                                           <Text style={styles.productDetail} numberOfLines={1}>Distributor: {item.distributor}</Text>
+                                           <Text style={styles.productDetail}>Rate (PTR): ₹{Number(item.rate || 0).toFixed(2)} | MRP: ₹{Number(item.mrp || 0).toFixed(2)}</Text>
+                                           <Text style={styles.productDetail}>Scheme: {item.scheme || 'None'}</Text>
+                                           <Text style={styles.productDetail}>Stock Status: {item.stock}</Text>
+                                         </View>
+                                         
+                                         <View style={styles.qtyContainerRight}>
+                                           <View style={styles.qtyStepper}>
+                                             <TouchableOpacity
+                                               style={styles.qtyStepperBtn}
+                                               onPress={() => {
+                                                 const key = `pr-${item.productId || index}`;
+                                                 const currentVal = quantities[key] || 1;
+                                                 setQuantities(prev => ({ ...prev, [key]: Math.max(1, currentVal - 1) }));
+                                               }}
+                                             >
+                                               <Ionicons name="remove" size={14} color={colors.textPrimary} />
+                                             </TouchableOpacity>
+                                             <TextInput
+                                               style={styles.qtyStepperInput}
+                                               value={String(quantities[`pr-${item.productId || index}`] || 1)}
+                                               onChangeText={(text) => {
+                                                 const val = parseInt(text, 10);
+                                                 const key = `pr-${item.productId || index}`;
+                                                 setQuantities(prev => ({ ...prev, [key]: isNaN(val) ? 1 : Math.max(1, val) }));
+                                               }}
+                                               keyboardType="number-pad"
+                                               selectTextOnFocus={true}
+                                             />
+                                             <TouchableOpacity
+                                               style={styles.qtyStepperBtn}
+                                               onPress={() => {
+                                                 const key = `pr-${item.productId || index}`;
+                                                 const currentVal = quantities[key] || 1;
+                                                 setQuantities(prev => ({ ...prev, [key]: currentVal + 1 }));
+                                               }}
+                                             >
+                                               <Ionicons name="add" size={14} color={colors.textPrimary} />
+                                             </TouchableOpacity>
+                                           </View>
+                                           
+                                           <TouchableOpacity
+                                             style={[styles.cardAddButton, { backgroundColor: '#7c3aed' }]}
+                                             onPress={() => {
+                                               const key = `pr-${item.productId || index}`;
+                                               const qty = quantities[key] || 1;
+                                               performAddPharmarack(item, qty);
+                                               setQuantities(prev => ({ ...prev, [key]: 1 }));
+                                             }}
+                                             activeOpacity={0.7}
+                                           >
+                                             <Ionicons name="cart-outline" size={14} color="#fff" />
+                                             <Text style={styles.cardAddButtonText}>Add</Text>
+                                           </TouchableOpacity>
+                                         </View>
+                                       </View>
+                                     </View>
+                                  );
+                                })}
+                              </ScrollView>
 
-                                    <View style={styles.cardMainRow}>
-                                      <TouchableOpacity
-                                        style={styles.checkboxWrapper}
-                                        onPress={() => {
-                                          setCheckedCards(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
-                                          if (!cardQuantities[cardKey]) {
-                                            setCardQuantities(prev => ({ ...prev, [cardKey]: 10 }));
-                                          }
-                                        }}
-                                      >
-                                        <Ionicons
-                                          name={isChecked ? "checkbox" : "square-outline"}
-                                          size={22}
-                                          color={isChecked ? '#a78bfa' : colors.textSecondary}
-                                        />
-                                      </TouchableOpacity>
+                              {/* Top Fade Gradient */}
+                              <LinearGradient
+                                colors={['#1A1A2E', 'rgba(26, 26, 46, 0)']}
+                                style={styles.topFade}
+                                pointerEvents="none"
+                              />
+                              {/* Bottom Fade Gradient */}
+                              <LinearGradient
+                                colors={['rgba(26, 26, 46, 0)', '#1A1A2E']}
+                                style={styles.bottomFade}
+                                pointerEvents="none"
+                              />
+                            </View>
 
-                                      <View style={{ flex: 1, paddingLeft: 4 }}>
-                                        <Text style={styles.productNameVertical} numberOfLines={1}>{item.name}</Text>
-                                        <Text style={styles.productDetail} numberOfLines={1}>Distributor: {item.distributor}</Text>
-                                        <Text style={styles.productDetail}>Rate (PTR): ₹{Number(item.rate || 0).toFixed(2)} | MRP: ₹{Number(item.mrp || 0).toFixed(2)}</Text>
-                                        <Text style={styles.productDetail}>Scheme: {item.scheme || 'None'}</Text>
-                                        <Text style={styles.productDetail}>Stock Status: {item.stock}</Text>
-                                        <Text style={styles.productPrice}>Subtotal: ₹{(qty * (item.rate || item.mrp || 0)).toFixed(2)}</Text>
-                                      </View>
 
-                                      {/* Manual Quantity Input & mini steppers */}
-                                      <View style={styles.qtyEditContainer}>
-                                        <TouchableOpacity
-                                          style={styles.stepperMiniBtn}
-                                          onPress={() => {
-                                            const newQty = Math.max(1, qty - 10);
-                                            setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
-                                          }}
-                                        >
-                                          <Ionicons name="remove" size={12} color={colors.textPrimary} />
-                                        </TouchableOpacity>
-                                        <TextInput
-                                          style={styles.manualQtyInput}
-                                          value={String(qty)}
-                                          keyboardType="number-pad"
-                                          onChangeText={(text) => {
-                                            const parsed = parseInt(text.replace(/[^0-9]/g, ''), 10);
-                                            const finalQty = isNaN(parsed) ? 0 : parsed;
-                                            setCardQuantities(prev => ({ ...prev, [cardKey]: finalQty }));
-                                          }}
-                                          onBlur={() => {
-                                            if (qty <= 0) {
-                                              setCardQuantities(prev => ({ ...prev, [cardKey]: 10 }));
-                                            }
-                                          }}
-                                        />
-                                        <TouchableOpacity
-                                          style={styles.stepperMiniBtn}
-                                          onPress={() => {
-                                            const newQty = qty + 10;
-                                            setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
-                                          }}
-                                        >
-                                          <Ionicons name="add" size={12} color={colors.textPrimary} />
-                                        </TouchableOpacity>
-                                      </View>
-                                    </View>
-
-                                    <View style={styles.cardActionRowVertical}>
-                                      <TouchableOpacity
-                                        style={[styles.cardActionBtnVertical, { backgroundColor: '#7c3aed', flex: 1 }]}
-                                        onPress={() => {
-                                          // Order via Pharmarack with the selected quantity
-                                          performAddPharmarack(item, qty);
-                                        }}
-                                      >
-                                        <Text style={styles.cardActionBtnText}>🛒 Order {qty} Units</Text>
-                                      </TouchableOpacity>
-                                    </View>
-                                  </View>
-                                );
-                              })}
-                            </ScrollView>
-
-                            {/* Bulk Action Button for checked Pharmarack items */}
-                            {checkedKeys.length > 0 && (
-                              <View style={styles.bulkActionRow}>
-                                <TouchableOpacity
-                                  style={[styles.bulkBtn, { backgroundColor: '#7c3aed', flex: 1 }]}
-                                  onPress={() => {
-                                    // Add all checked items to Pharmarack cart
-                                    const itemsToOrder = (msg.pharmarackProducts || [])
-                                      .filter(item => {
-                                        const key = msg.id + '-' + (item.inventory_id || item.name);
-                                        return checkedCards[key];
-                                      })
-                                      .map(item => {
-                                        const key = msg.id + '-' + (item.inventory_id || item.name);
-                                        const qty = cardQuantities[key] || 10;
-                                        return { ...item, selectedQty: qty };
-                                      });
-
-                                    itemsToOrder.forEach(item => performAddPharmarack(item, item.selectedQty));
-                                    // Clear selections
-                                    checkedKeys.forEach(key => setCheckedCards(prev => ({ ...prev, [key]: false })));
-                                  }}
-                                >
-                                  <Ionicons name="cart" size={16} color="#fff" />
-                                  <Text style={styles.bulkBtnText}>Order Checked ({checkedKeys.length})</Text>
-                                </TouchableOpacity>
-                              </View>
-                            )}
                           </>
                         )}
                       </View>
@@ -1907,5 +1878,73 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderColor: colors.divider,
     padding: 0,
+  },
+  scrollBoxWrapper: {
+    position: 'relative',
+    borderRadius: radius.md,
+    overflow: 'hidden',
+  },
+  topFade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 16,
+  },
+  bottomFade: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 16,
+  },
+  qtyContainerRight: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginLeft: spacing.sm,
+  },
+  qtyStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    padding: 2,
+  },
+  qtyStepperBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyStepperInput: {
+    width: 32,
+    height: 24,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.divider,
+    padding: 0,
+  },
+  cardAddButton: {
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    width: 80,
+  },
+  cardAddButtonText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });

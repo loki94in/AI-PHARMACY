@@ -593,6 +593,17 @@ export async function ensureSchema(dbPath: string) {
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Assistant Chat session logs
+    CREATE TABLE IF NOT EXISTS assistant_chat_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      device_name TEXT,
+      sender TEXT CHECK(sender IN ('user', 'assistant')),
+      message_text TEXT,
+      metadata TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Crash telemetry: written by processGuardian on uncaught exceptions
     CREATE TABLE IF NOT EXISTS crash_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

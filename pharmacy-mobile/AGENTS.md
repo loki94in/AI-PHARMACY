@@ -8,5 +8,5 @@ This directory contains the React Native Expo mobile application.
 
 ## Development Rules
 - Run `node scripts/quick-update.mjs` at the project root after adding or updating mobile components.
-- **Interactive Chat Feeds**: Search result carousels are rendered vertically inside chat bubbles, featuring checkboxes and quantity steppers. Bulk selections dynamically populate the `BillingScreen` cart tab via the `lib/cartEvents.ts` event bus.
+- **Interactive Chat Feeds**: Search result list items are rendered vertically inside chat bubbles, featuring manual quantity steppers (input and +/- buttons) and a dedicated "Add" button to populate the `BillingScreen` cart via the `lib/cartEvents.ts` event bus.
 

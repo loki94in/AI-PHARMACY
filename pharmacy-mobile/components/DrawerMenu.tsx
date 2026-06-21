@@ -126,21 +126,19 @@ export default function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
               );
             })}
 
-            {isAdmin && (
-              <TouchableOpacity
-                style={[styles.menuItem, styles.logoutMenuItem]}
-                onPress={handleAdminLogout}
-              >
-                <Ionicons
-                  name="log-out"
-                  size={22}
-                  color={colors.danger}
-                />
-                <Text style={[styles.menuLabel, styles.logoutMenuLabel]}>
-                  Logout Admin
-                </Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.menuItem, styles.logoutMenuItem]}
+              onPress={handleAdminLogout}
+            >
+              <Ionicons
+                name="log-out-outline"
+                size={22}
+                color={colors.danger}
+              />
+              <Text style={[styles.menuLabel, styles.logoutMenuLabel]}>
+                {isAdmin ? 'Logout Admin' : 'Logout / Disconnect'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Drawer Footer */}

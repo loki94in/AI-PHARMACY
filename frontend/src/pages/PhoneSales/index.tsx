@@ -57,6 +57,29 @@ export default function PhoneSales() {
   const [saving, setSaving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
+  // Device & Logs state for history and charts dashboard
+  interface Device {
+    token: string;
+    device_name: string;
+    os: string;
+    is_online: number;
+    last_seen: string;
+    offline_seconds: number;
+  }
+
+  interface ConnectionLog {
+    id: number;
+    token: string;
+    device_name: string;
+    os: string;
+    status: 'connected' | 'disconnected';
+    timestamp: string;
+  }
+
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [logs, setLogs] = useState<ConnectionLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
@@ -76,9 +99,32 @@ export default function PhoneSales() {
     }
   }, []);
 
+  const fetchDeviceData = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const [devRes, logRes] = await Promise.all([
+        apiClient.get('/notifications/devices'),
+        apiClient.get('/notifications/devices/logs')
+      ]);
+      if (devRes.data?.devices) setDevices(devRes.data.devices);
+      if (logRes.data?.logs) setLogs(logRes.data.logs);
+    } catch (err) {
+      console.error('Failed to fetch device data on phone sales page:', err);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchStagedSales();
-  }, [fetchStagedSales]);
+    fetchDeviceData();
+    // Poll data every 8 seconds
+    const interval = setInterval(() => {
+      fetchStagedSales();
+      fetchDeviceData();
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [fetchStagedSales, fetchDeviceData]);
 
   const handleSelectSale = (sale: StagedSale) => {
     setSelectedSale(sale);
@@ -168,7 +214,8 @@ export default function PhoneSales() {
 
   const formatDate = (dateStr: string) => {
     try {
-      const d = new Date(dateStr);
+      const cleanIso = dateStr && !dateStr.includes('T') ? dateStr.replace(' ', 'T') + 'Z' : dateStr;
+      const d = new Date(cleanIso);
       return d.toLocaleDateString('en-IN', { 
         day: '2-digit', 
         month: 'short', 
@@ -205,6 +252,35 @@ export default function PhoneSales() {
   const total = useMemo(() => {
     return Math.round(subtotal + tax - Number(discount || 0));
   }, [subtotal, tax, discount]);
+
+  // Compute 5-day connection activity stats for SVG chart
+  const chartData = useMemo(() => {
+    const days: { key: string; label: string; value: number }[] = [];
+    for (let i = 4; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      days.push({ key, label, value: 0 });
+    }
+
+    logs.forEach(log => {
+      try {
+        const cleanIso = log.timestamp && !log.timestamp.includes('T') 
+          ? log.timestamp.replace(' ', 'T') + 'Z' 
+          : log.timestamp;
+        const d = new Date(cleanIso);
+        const logKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        
+        const foundDay = days.find(day => day.key === logKey);
+        if (foundDay) {
+          foundDay.value++;
+        }
+      } catch (e) {}
+    });
+
+    return days;
+  }, [logs]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative text-text">
@@ -583,10 +659,179 @@ export default function PhoneSales() {
 
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted">
-              <Smartphone className="text-border mb-3" size={48} />
-              <h3 className="font-bold text-sm text-text">No Order Selected</h3>
-              <p className="text-xs text-muted max-w-[280px] mt-1">Select a transaction in the timeline on the left to review items, edit client details, and complete checking in.</p>
+            <div className="flex-1 flex flex-col p-6 min-h-0 overflow-y-auto custom-scrollbar space-y-6">
+              {/* Header Info */}
+              <div className="flex justify-between items-center pb-3 border-b border-border select-none">
+                <div>
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-muted">Mobile Connections Hub</h3>
+                  <p className="text-[10px] text-muted mt-0.5">Live monitoring of sync device tokens</p>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-mono bg-green/10 text-green border border-green/20 animate-pulse">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green" />
+                  <span>Monitoring</span>
+                </div>
+              </div>
+
+              {/* Chart */}
+              {logs.length > 0 ? (
+                (() => {
+                  const maxVal = Math.max(...chartData.map(d => d.value), 4);
+                  const height = 110;
+                  const width = 360;
+                  const padding = 15;
+                  const chartHeight = height - 2 * padding;
+                  const chartWidth = width - 2 * padding;
+                  const barWidth = 28;
+                  const gap = (chartWidth - barWidth * chartData.length) / (chartData.length - 1 || 1);
+
+                  return (
+                    <div className="bg-bg/50 border border-border p-4 rounded-xl">
+                      <h4 className="text-[9px] font-bold text-muted uppercase tracking-wider mb-2">5-Day Connection Events Activity</h4>
+                      <div className="flex justify-center items-center">
+                        <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} className="overflow-visible">
+                          {/* Grid Lines */}
+                          {[0, 0.5, 1].map((ratio, idx) => {
+                            const y = padding + chartHeight * (1 - ratio);
+                            return (
+                              <g key={idx}>
+                                <line 
+                                  x1={padding} 
+                                  y1={y} 
+                                  x2={width - padding} 
+                                  y2={y} 
+                                  stroke="var(--border)" 
+                                  strokeWidth="1" 
+                                  strokeDasharray="4 4" 
+                                  opacity="0.25"
+                                />
+                                <text 
+                                  x={padding - 5} 
+                                  y={y + 3} 
+                                  fill="var(--text-muted)" 
+                                  fontSize="7" 
+                                  textAnchor="end"
+                                  opacity="0.8"
+                                >
+                                  {Math.round(ratio * maxVal)}
+                                </text>
+                              </g>
+                            );
+                          })}
+
+                          {/* Bars and labels */}
+                          {chartData.map((d, idx) => {
+                            const barHeight = (d.value / maxVal) * chartHeight;
+                            const x = padding + idx * (barWidth + gap);
+                            const y = height - padding - barHeight;
+
+                            return (
+                              <g key={idx}>
+                                <title>{`${d.value} events`}</title>
+                                <rect
+                                  x={x}
+                                  y={y}
+                                  width={barWidth}
+                                  height={barHeight}
+                                  rx="3"
+                                  fill="url(#dashBarGradient)"
+                                  className="transition-all duration-300 hover:opacity-90"
+                                />
+                                {d.value > 0 && (
+                                  <text
+                                    x={x + barWidth / 2}
+                                    y={y - 4}
+                                    fill="var(--accent)"
+                                    fontSize="8"
+                                    fontWeight="bold"
+                                    textAnchor="middle"
+                                  >
+                                    {d.value}
+                                  </text>
+                                )}
+                                <text
+                                  x={x + barWidth / 2}
+                                  y={height - 4}
+                                  fill="var(--text-muted)"
+                                  fontSize="8"
+                                  textAnchor="middle"
+                                >
+                                  {d.label}
+                                </text>
+                              </g>
+                            );
+                          })}
+
+                          <defs>
+                            <linearGradient id="dashBarGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="var(--primary)" />
+                              <stop offset="100%" stopColor="rgba(99, 102, 241, 0.15)" />
+                            </linearGradient>
+                          </defs>
+                        </svg>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="p-4 bg-bg2/40 border border-border rounded-xl text-center text-xs text-muted">
+                  No connection activity logs found to build connection chart.
+                </div>
+              )}
+
+              {/* Registered Devices Status */}
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1">
+                  <Smartphone size={10} className="text-primary" /> Active Registered Devices ({devices.length})
+                </h4>
+                {devices.length === 0 ? (
+                  <div className="p-4 bg-bg2/40 border border-border rounded-xl text-center text-xs text-muted">
+                    No registered mobile devices yet.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {devices.slice(0, 4).map((dev) => {
+                      const isOnline = dev.is_online === 1;
+                      return (
+                        <div key={dev.token} className="p-3 bg-bg2/40 border border-border hover:border-glass-border/30 rounded-xl space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-white truncate block max-w-[100px]">{dev.device_name}</span>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green animate-pulse' : 'bg-muted'}`} />
+                          </div>
+                          <p className="text-[9px] text-muted font-mono truncate">{dev.os} &middot; {isOnline ? 'Online' : 'Offline'}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Recent Activity logs */}
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1">
+                  <Clock size={10} className="text-primary" /> Recent Device Connection Events
+                </h4>
+                {logs.length === 0 ? (
+                  <div className="p-4 bg-bg2/40 border border-border rounded-xl text-center text-xs text-muted">
+                    No connection history logs found.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {logs.slice(0, 3).map((log) => {
+                      const isConn = log.status === 'connected';
+                      return (
+                        <div key={log.id} className="p-2.5 bg-bg2/40 border border-border rounded-xl flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full ${isConn ? 'bg-green' : 'bg-red'}`} />
+                            <span className="font-semibold text-text truncate max-w-[120px]">{log.device_name}</span>
+                            <span className="text-[10px] text-muted">({log.os})</span>
+                          </div>
+                          <span className="text-[9px] text-muted font-mono">{new Date(log.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

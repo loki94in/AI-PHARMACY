@@ -1154,3 +1154,21 @@ export async function addPharmarackCart(items: any[]): Promise<any> {
     throw err;
   }
 }
+
+export async function logAssistantChat(payload: {
+  sessionId: string;
+  deviceName: string;
+  sender: 'user' | 'assistant';
+  messageText: string;
+  metadata?: any;
+}): Promise<any> {
+  try {
+    return await request('/notifications/chat-logs', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.warn('Failed to log assistant chat session:', err);
+    return { success: false, offline: true };
+  }
+}

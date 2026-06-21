@@ -31,6 +31,7 @@ import {
   QrCode,
   RefreshCw,
   Building2,
+  Clock,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { toastEvent, quickOrderEvent, liveCartAddEvent } from './services/events';
@@ -114,6 +115,7 @@ const Sidebar = ({
     { path: '/pos', label: 'Sales / POS', icon: <ShoppingCart size={18} /> },
     { path: '/sells', label: 'Sells / Bills', icon: <Receipt size={18} /> },
     { path: '/phone-sales', label: 'Phone Sales', icon: <Smartphone size={18} /> },
+    { path: '/device-logs', label: 'Activity & History Logs', icon: <Clock size={18} /> },
     { path: '/investigation', label: 'Investigation Center', icon: <PackageSearch size={18} /> },
     { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
     { path: '/purchases', label: 'Purchases', icon: <Receipt size={18} /> },
@@ -751,7 +753,7 @@ const Topbar = ({
       '/sells': 'Sells / Bills',
       '/investigation': 'Medicine & Bill Investigation Center',
       '/settings': 'Settings',
-      '/device-logs': 'Device Connection Logs',
+      '/device-logs': 'Activity & History Logs',
       '/returns': 'Supplier Returns',
     };
     // Extract base path (e.g. /pos/invoice -> /pos) for fallback matching if needed, though strictly exact match first

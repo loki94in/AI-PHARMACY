@@ -64,14 +64,18 @@ export default function BillingScreen() {
     setCart(cart.filter(c => c.inventory_id !== inventoryId));
   };
 
-  const cartTotal = cart.reduce((sum, c) => sum + c.cart_qty * (c.mrp || c.unit_price || 0), 0);
+  const cartTotal = cart.reduce((sum, c) => sum + Number(c.cart_qty || 0) * Number(c.mrp || c.unit_price || 0), 0);
 
   const handleCheckout = async () => {
     if (cart.length === 0) { Alert.alert('Empty Cart', 'Add medicines to cart first.'); return; }
     setSubmitting(true);
     try {
       const res = await createSale({
-        items: cart.map(c => ({ inventory_id: c.inventory_id, quantity: c.cart_qty, unit_price: c.mrp || c.unit_price || 0 })),
+        items: cart.map(c => ({
+          inventory_id: c.inventory_id,
+          quantity: Number(c.cart_qty || 0),
+          unit_price: Number(c.mrp || c.unit_price || 0)
+        })),
         patient_name: patientName || undefined,
         patient_phone: patientPhone || undefined,
       });
