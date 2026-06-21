@@ -44,7 +44,6 @@ export default function TabLayout() {
                 justifyContent: 'center',
               }}
               activeOpacity={0.7}
-              title="Launch AI Camera"
             >
               <Ionicons name="camera" size={16} color={colors.primary} />
             </TouchableOpacity>

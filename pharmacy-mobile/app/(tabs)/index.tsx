@@ -17,7 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
-import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection, createSale } from '../../lib/api';
+import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection, createSale, searchPharmarack, addPharmarackCart } from '../../lib/api';
+import { cartEvents } from '../../lib/cartEvents';
 import DrawerMenu from '../../components/DrawerMenu';
 
 import * as ImagePicker from 'expo-image-picker';
@@ -29,6 +30,7 @@ interface Message {
   timestamp: Date;
   actions?: { label: string; route?: string }[];
   products?: SearchMedicineResult[];
+  pharmarackProducts?: any[];
 }
 
 interface ChatInputProps {
@@ -77,6 +79,13 @@ export default function AssistantScreen() {
   const [quickSalePatient, setQuickSalePatient] = useState('');
   const [quickSaleProcessing, setQuickSaleProcessing] = useState(false);
   const [quickSaleSuccess, setQuickSaleSuccess] = useState<{ invoice_no: string; total: number; isOffline: boolean } | null>(null);
+  
+  // Selection and quantity adjustments for product cards in chat
+  const [checkedCards, setCheckedCards] = useState<Record<string, boolean>>({});
+  const [cardQuantities, setCardQuantities] = useState<Record<string, number>>({});
+  
+  // Collapse/Expand state for product lists in chat bubble
+  const [collapsedStates, setCollapsedStates] = useState<Record<string, boolean>>({});
   
   // Dynamic Connection Status States
   type ConnStatus = 'checking' | 'online' | 'no_url' | 'offline';
@@ -140,10 +149,10 @@ export default function AssistantScreen() {
 
   const suggestionChips = [
     { label: 'Find ONDEM 🔍', value: 'find ONDEM' },
+    { label: 'PR ONDEM 🌐', value: 'pr ONDEM' },
     { label: 'Create Bill 🧾', value: 'billing' },
     { label: 'AI Camera 📸', value: 'camera' },
     { label: 'Low Stock ⚠️', value: 'lowstock' },
-    { label: 'Send Alert 🔔', value: 'notify' },
   ];
 
   // Auto-scroll to bottom of chat
@@ -182,10 +191,34 @@ export default function AssistantScreen() {
       let replyText = "I'm not sure how to handle that request. Try selecting one of the quick actions below!";
       let actions: Message['actions'] = [];
       let products: SearchMedicineResult[] | undefined = undefined;
+      let pharmarackProducts: any[] | undefined = undefined;
       const cleanText = textToSend.toLowerCase().trim();
 
       // Check if it's a product search query (e.g., "find ...", "search ...", or user types medicine name)
-      if (cleanText.startsWith('find ') || cleanText.startsWith('search ') || cleanText.includes('ondem') || cleanText.includes('amoxicillin')) {
+      if (cleanText.startsWith('pharmarack ') || cleanText.startsWith('pr ')) {
+        const query = cleanText.replace(/^(pharmarack|pr)\s+/, '');
+        try {
+          const results = await searchPharmarack(query);
+          if (results && results.length > 0) {
+            replyText = `I found ${results.length} matches in Pharmarack for "${query}":`;
+            pharmarackProducts = results;
+          } else {
+            replyText = `I couldn't find any products matching "${query}" on Pharmarack.`;
+          }
+        } catch (err) {
+          replyText = `Error searching Pharmarack for "${query}". Make sure you are logged in on the PC backend.`;
+        }
+      } else if (
+        cleanText.startsWith('find ') ||
+        cleanText.startsWith('search ') ||
+        cleanText.includes('ondem') ||
+        cleanText.includes('amoxicillin') ||
+        cleanText.includes('clavam') ||
+        cleanText.includes('crocin') ||
+        cleanText.includes('paracetamol') ||
+        cleanText.includes('pan') ||
+        (!cleanText.includes('bill') && !cleanText.includes('sale') && !cleanText.includes('camera') && !cleanText.includes('photo') && !cleanText.includes('scan') && !cleanText.includes('stock') && !cleanText.includes('inventory') && !cleanText.includes('notify') && !cleanText.includes('backup') && !cleanText.includes('hi') && !cleanText.includes('hello') && cleanText.trim().length >= 2)
+      ) {
         const query = cleanText.replace(/^(find|search)\s+/, '');
         try {
           const results = await searchMedicine(query);
@@ -193,7 +226,18 @@ export default function AssistantScreen() {
             replyText = `I found ${results.length} matches in the inventory for "${query}":`;
             products = results;
           } else {
-            replyText = `I couldn't find any products matching "${query}" in stock.`;
+            // Fallback to Pharmarack search automatically if not found in local stock
+            try {
+              const prResults = await searchPharmarack(query);
+              if (prResults && prResults.length > 0) {
+                replyText = `I couldn't find "${query}" in local stock, but found ${prResults.length} matches on Pharmarack:`;
+                pharmarackProducts = prResults;
+              } else {
+                replyText = `I couldn't find any products matching "${query}" in stock or on Pharmarack.`;
+              }
+            } catch {
+              replyText = `I couldn't find "${query}" in local stock, and Pharmarack search failed.`;
+            }
           }
         } catch (err) {
           replyText = `Error searching for "${query}". Make sure the backend is active.`;
@@ -230,6 +274,7 @@ export default function AssistantScreen() {
         timestamp: new Date(),
         actions,
         products,
+        pharmarackProducts,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -293,6 +338,48 @@ export default function AssistantScreen() {
     } catch (e) {
       Alert.alert('Error', 'Failed to pick photo.');
     }
+  };
+
+  const performAddPharmarack = async (item: any, qty: number) => {
+    try {
+      setLoading(true);
+      await addPharmarackCart([{
+        productId: item.productId,
+        storeId: item.storeId,
+        qty: qty,
+        rate: item.rate,
+        scheme: item.scheme,
+        productCode: item.productCode,
+        company: item.company,
+        productName: item.name,
+        storeName: item.distributor,
+        packaging: item.packaging,
+        mapped: item.mapped
+      }]);
+      Alert.alert('Success', `Added ${qty} units of ${item.name} to Pharmarack cart!`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to add to Pharmarack cart');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddPharmarackCart = async (item: any) => {
+    Alert.alert(
+      'Add to Pharmarack Cart',
+      `Add ${item.name} from ${item.distributor}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Add 10 Qty',
+          onPress: () => performAddPharmarack(item, 10)
+        },
+        {
+          text: 'Add 50 Qty',
+          onPress: () => performAddPharmarack(item, 50)
+        }
+      ]
+    );
   };
 
   // ── Quick Process: instant sale from medicine card ──
@@ -510,48 +597,394 @@ export default function AssistantScreen() {
               style={[
                 styles.bubble,
                 msg.sender === 'user' ? styles.userBubble : styles.assistantBubble,
-                msg.products ? { width: '90%', maxWidth: '90%' } : null,
+                msg.products || msg.pharmarackProducts ? { width: '90%', maxWidth: '90%' } : null,
               ]}
             >
-              <Text style={styles.messageText}>{msg.text}</Text>
-
               {/* Products search Carousel inside chat bubble */}
               {msg.products && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.carousel}
-                  contentContainerStyle={styles.carouselContent}
-                >
-                  {msg.products.map((item, index) => (
-                    <View key={index} style={styles.productCard}>
-                      <Text style={styles.productName} numberOfLines={1}>{item.medicine_name}</Text>
-                      <Text style={styles.productDetail}>Batch: {item.batch_no}</Text>
-                      <Text style={styles.productDetail}>Exp: {item.expiry_date}</Text>
-                      <Text style={styles.productDetail}>Stock: {item.quantity}</Text>
-                      <Text style={styles.productPrice}>₹{Number(item.mrp).toFixed(2)}</Text>
-                      <View style={styles.cardActionRow}>
+                <View style={styles.verticalListContainer}>
+                  {(() => {
+                    const displayProducts: Array<SearchMedicineResult & { isAlternativeFor?: string }> = [];
+                    msg.products.forEach(prod => {
+                      displayProducts.push(prod);
+                      if (prod.alternatives && prod.alternatives.length > 0) {
+                        prod.alternatives.forEach(alt => {
+                          displayProducts.push({
+                            ...alt,
+                            isAlternativeFor: prod.medicine_name
+                          });
+                        });
+                      }
+                    });
+
+                    const checkedKeys = Object.keys(checkedCards).filter(key => key.startsWith(msg.id + '-') && checkedCards[key]);
+                    const isCollapsed = collapsedStates[msg.id] !== false;
+
+                    return (
+                      <View style={{ gap: 8 }}>
                         <TouchableOpacity
-                          style={[styles.cardActionBtn, styles.cardActionBtnSecondary]}
-                          onPress={() => router.push('/(tabs)/billing')}
+                          style={styles.dropdownHeader}
+                          onPress={() => setCollapsedStates(prev => ({ ...prev, [msg.id]: !isCollapsed }))}
+                          activeOpacity={0.7}
                         >
-                          <Text style={styles.cardActionBtnTextSecondary}>+ Bill</Text>
+                          <View style={styles.dropdownHeaderContent}>
+                            <Ionicons
+                              name={isCollapsed ? "chevron-down-circle" : "chevron-up-circle"}
+                              size={20}
+                              color={colors.primary}
+                            />
+                            <Text style={styles.dropdownHeaderText}>
+                              {isCollapsed
+                                ? `Show Inventory Results (${displayProducts.length})`
+                                : `Hide Inventory Results`}
+                            </Text>
+                          </View>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.cardActionBtn, styles.cardActionBtnProcess]}
-                          onPress={() => {
-                            setQuickSaleItem(item);
-                            setQuickSaleQty('1');
-                            setQuickSalePatient('');
-                            setQuickSaleSuccess(null);
-                          }}
-                        >
-                          <Text style={styles.cardActionBtnText}>⚡ Process</Text>
-                        </TouchableOpacity>
+
+                        {!isCollapsed && (
+                          <>
+                            <ScrollView
+                              style={styles.smallScrollBox}
+                              nestedScrollEnabled={true}
+                              contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
+                            >
+                              {displayProducts.map((item, index) => {
+                                  const isOutOfStock = item.quantity <= 0 || item.is_out_of_stock;
+                                  const isSub = !!item.isAlternativeFor;
+                                  const cardKey = msg.id + '-' + (item.inventory_id || item.medicine_name);
+                                  const isChecked = !!checkedCards[cardKey];
+                                  const qty = cardQuantities[cardKey] || 1;
+
+                                  return (
+                                    <View key={index} style={[
+                                      styles.productCardVertical,
+                                      isSub && { borderColor: '#06b6d4', borderWidth: 1.5 },
+                                      isOutOfStock && { opacity: 0.85 }
+                                    ]}>
+                                      {isSub && (
+                                        <View style={styles.subTag}>
+                                          <Text style={styles.subTagText}>Sub for {item.isAlternativeFor}</Text>
+                                        </View>
+                                      )}
+
+                                      <View style={styles.cardMainRow}>
+                                        {/* Checkbox on the left */}
+                                        {!isOutOfStock && (
+                                          <TouchableOpacity
+                                            style={styles.checkboxWrapper}
+                                            onPress={() => {
+                                              setCheckedCards(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
+                                              if (!cardQuantities[cardKey]) {
+                                                setCardQuantities(prev => ({ ...prev, [cardKey]: 1 }));
+                                              }
+                                            }}
+                                          >
+                                            <Ionicons
+                                              name={isChecked ? "checkbox" : "square-outline"}
+                                              size={22}
+                                              color={isChecked ? colors.success : colors.textSecondary}
+                                            />
+                                          </TouchableOpacity>
+                                        )}
+
+                                        <View style={{ flex: 1, paddingLeft: 4 }}>
+                                          <Text style={styles.productNameVertical} numberOfLines={1}>{item.medicine_name}</Text>
+                                          {isOutOfStock && (
+                                            <Text style={styles.outOfStockText}>OUT OF STOCK</Text>
+                                          )}
+                                          <Text style={styles.productDetail}>Batch: {item.batch_no} | Exp: {item.expiry_date} | Stock: {item.quantity}</Text>
+                                          <Text style={styles.productDetail}>Rate: ₹{(item.unit_price || item.mrp || 0).toFixed(2)} | MRP: ₹{Number(item.mrp || 0).toFixed(2)}</Text>
+                                          <Text style={styles.productDetail}>Scheme: None</Text>
+                                          <Text style={styles.productPrice}>Subtotal: ₹{(qty * (item.mrp || item.unit_price || 0)).toFixed(2)}</Text>
+                                        </View>
+
+                                        {/* Manual Quantity Input & mini steppers */}
+                                        {!isOutOfStock && (
+                                          <View style={styles.qtyEditContainer}>
+                                            <TouchableOpacity
+                                              style={styles.stepperMiniBtn}
+                                              onPress={() => {
+                                                const newQty = Math.max(1, qty - 1);
+                                                setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
+                                              }}
+                                            >
+                                              <Ionicons name="remove" size={12} color={colors.textPrimary} />
+                                            </TouchableOpacity>
+                                            <TextInput
+                                              style={styles.manualQtyInput}
+                                              value={String(qty)}
+                                              keyboardType="number-pad"
+                                              onChangeText={(text) => {
+                                                const parsed = parseInt(text.replace(/[^0-9]/g, ''), 10);
+                                                const finalQty = isNaN(parsed) ? 0 : parsed;
+                                                setCardQuantities(prev => ({ ...prev, [cardKey]: finalQty }));
+                                              }}
+                                              onBlur={() => {
+                                                if (qty <= 0) {
+                                                  setCardQuantities(prev => ({ ...prev, [cardKey]: 1 }));
+                                                }
+                                              }}
+                                            />
+                                            <TouchableOpacity
+                                              style={styles.stepperMiniBtn}
+                                              onPress={() => {
+                                                const newQty = Math.min(item.quantity, qty + 1);
+                                                setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
+                                              }}
+                                            >
+                                              <Ionicons name="add" size={12} color={colors.textPrimary} />
+                                            </TouchableOpacity>
+                                          </View>
+                                        )}
+                                      </View>
+
+                                      {/* Card Action Buttons */}
+                                      <View style={styles.cardActionRowVertical}>
+                                        <TouchableOpacity
+                                          style={[styles.cardActionBtnVertical, styles.cardActionBtnSecondaryVertical]}
+                                          onPress={() => {
+                                            cartEvents.emit(item, qty);
+                                            router.push('/(tabs)/billing');
+                                          }}
+                                        >
+                                          <Ionicons name="cart-outline" size={14} color={colors.primary} />
+                                          <Text style={styles.cardActionBtnTextSecondaryVertical}>+ Bill</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                          style={[
+                                            styles.cardActionBtnVertical,
+                                            styles.cardActionBtnProcessVertical,
+                                            isOutOfStock && { backgroundColor: '#3f3f46' }
+                                          ]}
+                                          onPress={() => {
+                                            if (isOutOfStock) {
+                                              Alert.alert('Out of Stock', 'This product is out of stock.');
+                                              return;
+                                            }
+                                            setQuickSaleItem(item);
+                                            setQuickSaleQty(String(qty));
+                                            setQuickSalePatient('');
+                                            setQuickSaleSuccess(null);
+                                          }}
+                                        >
+                                          <Text style={styles.cardActionBtnText}>⚡ Process</Text>
+                                        </TouchableOpacity>
+                                      </View>
+                                    </View>
+                                  );
+                                })}
+                            </ScrollView>
+
+                            {/* Bulk Action Buttons if any items are checked */}
+                            {checkedKeys.length > 0 && (
+                              <View style={styles.bulkActionRow}>
+                                <TouchableOpacity
+                                  style={[styles.bulkBtn, { backgroundColor: 'rgba(14, 165, 233, 0.15)', borderColor: colors.primary, borderWidth: 1 }]}
+                                  onPress={() => {
+                                    displayProducts.forEach(item => {
+                                      const cardKey = msg.id + '-' + (item.inventory_id || item.medicine_name);
+                                      if (checkedCards[cardKey]) {
+                                        const qty = cardQuantities[cardKey] || 1;
+                                        cartEvents.emit(item, qty);
+                                      }
+                                    });
+                                    // Clear selections
+                                    checkedKeys.forEach(key => setCheckedCards(prev => ({ ...prev, [key]: false })));
+                                    router.push('/(tabs)/billing');
+                                  }}
+                                >
+                                  <Ionicons name="cart" size={16} color={colors.primary} />
+                                  <Text style={[styles.bulkBtnText, { color: colors.primary }]}>Bill Checked ({checkedKeys.length})</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  style={[styles.bulkBtn, { backgroundColor: colors.accent }]}
+                                  onPress={() => {
+                                    const firstKey = checkedKeys[0];
+                                    const firstItem = displayProducts.find(item => (msg.id + '-' + (item.inventory_id || item.medicine_name)) === firstKey);
+                                    if (firstItem) {
+                                      const qty = cardQuantities[firstKey] || 1;
+                                      setQuickSaleItem(firstItem);
+                                      setQuickSaleQty(String(qty));
+                                      setQuickSalePatient('');
+                                      setQuickSaleSuccess(null);
+                                      // Clear selection
+                                      setCheckedCards(prev => ({ ...prev, [firstKey]: false }));
+                                    }
+                                  }}
+                                >
+                                  <Text style={styles.bulkBtnText}>⚡ Process First</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </>
+                        )}
                       </View>
-                    </View>
-                  ))}
-                </ScrollView>
+                    );
+                  })()}
+                </View>
+              )}
+
+              {/* Pharmarack products search Carousel inside chat bubble */}
+              {msg.pharmarackProducts && (
+                <View style={styles.verticalListContainer}>
+                  {(() => {
+                    const checkedKeys = Object.keys(checkedCards).filter(key => key.startsWith(msg.id + '-') && checkedCards[key]);
+                    const isCollapsed = collapsedStates[msg.id] !== false;
+
+                    return (
+                      <View style={{ gap: 8 }}>
+                        <TouchableOpacity
+                          style={styles.dropdownHeader}
+                          onPress={() => setCollapsedStates(prev => ({ ...prev, [msg.id]: !isCollapsed }))}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.dropdownHeaderContent}>
+                            <Ionicons
+                              name={isCollapsed ? "chevron-down-circle" : "chevron-up-circle"}
+                              size={20}
+                              color="#a78bfa"
+                            />
+                            <Text style={styles.dropdownHeaderText}>
+                              {isCollapsed
+                                ? `Show Distributor Results (${msg.pharmarackProducts.length})`
+                                : `Hide Distributor Results`}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        {!isCollapsed && (
+                          <>
+                            <ScrollView
+                              style={styles.smallScrollBox}
+                              nestedScrollEnabled={true}
+                              contentContainerStyle={{ gap: 8, paddingBottom: 8 }}
+                            >
+                              {msg.pharmarackProducts.map((item, index) => {
+                                const cardKey = msg.id + '-' + (item.inventory_id || item.name);
+                                const isChecked = !!checkedCards[cardKey];
+                                const qty = cardQuantities[cardKey] || 10; // defaults to 10 for Pharmarack
+
+                                return (
+                                  <View key={index} style={[styles.productCardVertical, { borderColor: '#a78bfa', borderWidth: 1.5 }]}>
+                                    <View style={styles.prTag}>
+                                      <Text style={styles.prTagText}>Pharmarack</Text>
+                                    </View>
+
+                                    <View style={styles.cardMainRow}>
+                                      <TouchableOpacity
+                                        style={styles.checkboxWrapper}
+                                        onPress={() => {
+                                          setCheckedCards(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
+                                          if (!cardQuantities[cardKey]) {
+                                            setCardQuantities(prev => ({ ...prev, [cardKey]: 10 }));
+                                          }
+                                        }}
+                                      >
+                                        <Ionicons
+                                          name={isChecked ? "checkbox" : "square-outline"}
+                                          size={22}
+                                          color={isChecked ? '#a78bfa' : colors.textSecondary}
+                                        />
+                                      </TouchableOpacity>
+
+                                      <View style={{ flex: 1, paddingLeft: 4 }}>
+                                        <Text style={styles.productNameVertical} numberOfLines={1}>{item.name}</Text>
+                                        <Text style={styles.productDetail} numberOfLines={1}>Distributor: {item.distributor}</Text>
+                                        <Text style={styles.productDetail}>Rate (PTR): ₹{Number(item.rate || 0).toFixed(2)} | MRP: ₹{Number(item.mrp || 0).toFixed(2)}</Text>
+                                        <Text style={styles.productDetail}>Scheme: {item.scheme || 'None'}</Text>
+                                        <Text style={styles.productDetail}>Stock Status: {item.stock}</Text>
+                                        <Text style={styles.productPrice}>Subtotal: ₹{(qty * (item.rate || item.mrp || 0)).toFixed(2)}</Text>
+                                      </View>
+
+                                      {/* Manual Quantity Input & mini steppers */}
+                                      <View style={styles.qtyEditContainer}>
+                                        <TouchableOpacity
+                                          style={styles.stepperMiniBtn}
+                                          onPress={() => {
+                                            const newQty = Math.max(1, qty - 10);
+                                            setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
+                                          }}
+                                        >
+                                          <Ionicons name="remove" size={12} color={colors.textPrimary} />
+                                        </TouchableOpacity>
+                                        <TextInput
+                                          style={styles.manualQtyInput}
+                                          value={String(qty)}
+                                          keyboardType="number-pad"
+                                          onChangeText={(text) => {
+                                            const parsed = parseInt(text.replace(/[^0-9]/g, ''), 10);
+                                            const finalQty = isNaN(parsed) ? 0 : parsed;
+                                            setCardQuantities(prev => ({ ...prev, [cardKey]: finalQty }));
+                                          }}
+                                          onBlur={() => {
+                                            if (qty <= 0) {
+                                              setCardQuantities(prev => ({ ...prev, [cardKey]: 10 }));
+                                            }
+                                          }}
+                                        />
+                                        <TouchableOpacity
+                                          style={styles.stepperMiniBtn}
+                                          onPress={() => {
+                                            const newQty = qty + 10;
+                                            setCardQuantities(prev => ({ ...prev, [cardKey]: newQty }));
+                                          }}
+                                        >
+                                          <Ionicons name="add" size={12} color={colors.textPrimary} />
+                                        </TouchableOpacity>
+                                      </View>
+                                    </View>
+
+                                    <View style={styles.cardActionRowVertical}>
+                                      <TouchableOpacity
+                                        style={[styles.cardActionBtnVertical, { backgroundColor: '#7c3aed', flex: 1 }]}
+                                        onPress={() => {
+                                          // Order via Pharmarack with the selected quantity
+                                          performAddPharmarack(item, qty);
+                                        }}
+                                      >
+                                        <Text style={styles.cardActionBtnText}>🛒 Order {qty} Units</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                            </ScrollView>
+
+                            {/* Bulk Action Button for checked Pharmarack items */}
+                            {checkedKeys.length > 0 && (
+                              <View style={styles.bulkActionRow}>
+                                <TouchableOpacity
+                                  style={[styles.bulkBtn, { backgroundColor: '#7c3aed', flex: 1 }]}
+                                  onPress={() => {
+                                    // Add all checked items to Pharmarack cart
+                                    const itemsToOrder = (msg.pharmarackProducts || [])
+                                      .filter(item => {
+                                        const key = msg.id + '-' + (item.inventory_id || item.name);
+                                        return checkedCards[key];
+                                      })
+                                      .map(item => {
+                                        const key = msg.id + '-' + (item.inventory_id || item.name);
+                                        const qty = cardQuantities[key] || 10;
+                                        return { ...item, selectedQty: qty };
+                                      });
+
+                                    itemsToOrder.forEach(item => performAddPharmarack(item, item.selectedQty));
+                                    // Clear selections
+                                    checkedKeys.forEach(key => setCheckedCards(prev => ({ ...prev, [key]: false })));
+                                  }}
+                                >
+                                  <Ionicons name="cart" size={16} color="#fff" />
+                                  <Text style={styles.bulkBtnText}>Order Checked ({checkedKeys.length})</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </>
+                        )}
+                      </View>
+                    );
+                  })()}
+                </View>
               )}
 
               {msg.actions && msg.actions.map((act, i) => (
@@ -1281,5 +1714,198 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#fff',
     fontWeight: 'bold',
+  },
+  outOfStockText: {
+    color: colors.danger,
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  subTag: {
+    backgroundColor: '#0891b2',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderRadius: radius.sm,
+    marginBottom: 4,
+  },
+  subTagText: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  prTag: {
+    backgroundColor: '#7c3aed',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderRadius: radius.sm,
+    marginBottom: 4,
+  },
+  prTagText: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  verticalListContainer: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    width: '100%',
+  },
+  productCardVertical: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    marginBottom: spacing.xs,
+    width: '100%',
+  },
+  cardMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  checkboxWrapper: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingRight: spacing.sm,
+  },
+  productNameVertical: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    padding: 2,
+    marginLeft: spacing.sm,
+  },
+  stepperBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    paddingHorizontal: 8,
+    textAlign: 'center',
+    minWidth: 20,
+  },
+  cardActionRowVertical: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  cardActionBtnVertical: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    flex: 1,
+    backgroundColor: colors.primary,
+  },
+  cardActionBtnSecondaryVertical: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  cardActionBtnProcessVertical: {
+    backgroundColor: colors.accent,
+  },
+  cardActionBtnTextSecondaryVertical: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  bulkActionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    justifyContent: 'space-between',
+  },
+  bulkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    flex: 1,
+  },
+  bulkBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  dropdownHeader: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  dropdownHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  dropdownHeaderText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  smallScrollBox: {
+    maxHeight: 250,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+    width: '100%',
+  },
+  qtyEditContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    padding: 2,
+    marginLeft: spacing.sm,
+    height: 32,
+  },
+  stepperMiniBtn: {
+    width: 24,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualQtyInput: {
+    width: 36,
+    height: 28,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.divider,
+    padding: 0,
   },
 });

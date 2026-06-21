@@ -353,8 +353,8 @@ class TelegramPrescriptionService {
     }
 
     const taxRate = 0.05; // 5% tax
-    const tax = subtotal * taxRate;
-    const total = subtotal + tax;
+    const total = Math.round(subtotal);
+    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
 
     return {
       subtotal,

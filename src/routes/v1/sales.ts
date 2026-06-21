@@ -582,18 +582,18 @@ router.put('/:id', asyncHandler(async (req: express.Request, res: express.Respon
     // Compute new totals
     let subtotal = 0;
     for (const item of items) {
-      const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0, discount_per = 0 } = item;
+      const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0, discount_per = 0, pack_size = 10, packSize = 10 } = item;
       const discounted_price = unit_price * (1 - discount_per / 100);
       await db.run('INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty, discount_per) VALUES (?, ?, ?, ?, ?, ?)', [id, inventory_id, quantity, unit_price, loose_qty, discount_per]);
       await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
       
-      const pSize = 10; // Assuming pack size 10
+      const pSize = Number(pack_size || packSize || 10);
       subtotal += (quantity * discounted_price) + (loose_qty * (discounted_price / pSize));
     }
 
     const taxRate = 0.05;
-    const tax = subtotal * taxRate;
-    const total = Math.round(subtotal + tax - discount);
+    const total = Math.round(subtotal - discount);
+    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
 
     await db.run(
       'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status), updated_at = CURRENT_TIMESTAMP WHERE id = ?',

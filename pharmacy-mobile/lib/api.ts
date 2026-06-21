@@ -414,6 +414,8 @@ export interface SearchMedicineResult {
   unit_price: number;
   cost_price: number;
   item_code?: string;
+  is_out_of_stock?: boolean;
+  alternatives?: SearchMedicineResult[];
 }
 
 export async function searchMedicine(q: string): Promise<SearchMedicineResult[]> {
@@ -1126,6 +1128,29 @@ export async function getAttachmentPreviewFromServer(filename: string): Promise<
     return await request<any>(`/email/attachments/preview?filename=${encodeURIComponent(filename)}`);
   } catch (err) {
     console.warn('Failed to get attachment preview from PC server:', err);
+    throw err;
+  }
+}
+
+// ─── Pharmarack Integration ──────────────────────────────────────────────────
+
+export async function searchPharmarack(q: string): Promise<any[]> {
+  try {
+    return await request<any[]>('/pharmarack/search?q=' + encodeURIComponent(q));
+  } catch (err) {
+    console.warn('Failed to search Pharmarack:', err);
+    throw err;
+  }
+}
+
+export async function addPharmarackCart(items: any[]): Promise<any> {
+  try {
+    return await request<any>('/pharmarack/cart/add', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+  } catch (err) {
+    console.warn('Failed to add to Pharmarack cart:', err);
     throw err;
   }
 }

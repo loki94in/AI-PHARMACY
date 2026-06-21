@@ -723,7 +723,7 @@ const Sells = () => {
                       const d = item.discount_per || 0;
                       const dPrice = item.unit_price * (1 - d / 100);
                       return sum + (q * dPrice) + (l * (dPrice / pSize));
-                    }, 0) * 1.05 - editDiscount)}
+                    }, 0) - editDiscount)}
                   </div>
                 </div>
                 <button

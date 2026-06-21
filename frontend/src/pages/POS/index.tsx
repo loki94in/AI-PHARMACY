@@ -944,7 +944,8 @@ const POS = () => {
           quantity: item.qty || 0,
           unit_price: item.unitPrice || item.mrp,
           loose_qty: item.looseQty || 0,
-          discount_per: itemDiscount
+          discount_per: itemDiscount,
+          pack_size: item.packSize || 10
         };
       });
 

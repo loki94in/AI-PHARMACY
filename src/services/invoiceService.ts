@@ -75,8 +75,9 @@ export class InvoiceService {
       const dPrice = uPrice * (1 - d / 100);
       return sum + (q * dPrice) + (l * (dPrice / pSize));
     }, 0);
-    const tax = subtotal * (config.taxRate || 0.05);
-    const total = Math.round(subtotal + tax - Number(discount || 0));
+    const taxRate = config.taxRate || 0.05;
+    const total = Math.round(subtotal - Number(discount || 0));
+    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
     return { subtotal, tax, total };
   }
 

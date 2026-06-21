@@ -92,13 +92,19 @@ router.post('/', async (req, res) => {
     // Compute subtotal, tax, and total strictly checking values to prevent null/NaN
     let subtotal = 0;
     for (const item of items) {
-      const { quantity, unit_price } = item;
-      subtotal += (Number(quantity) * Number(unit_price));
+      const { quantity = 0, unit_price = 0, loose_qty = 0, pack_size = 10, discount_per = 0 } = item;
+      const q = Number(quantity);
+      const l = Number(loose_qty);
+      const pSize = Number(pack_size || 10);
+      const d = Number(discount_per);
+      const uPrice = Number(unit_price);
+      const dPrice = uPrice * (1 - d / 100);
+      subtotal += (q * dPrice) + (l * (dPrice / pSize));
     }
 
     const taxRate = 0.05; // 5% tax
-    const tax = Number((subtotal * taxRate).toFixed(2));
-    const total = Math.round(subtotal + tax - Number(discount));
+    const total = Math.round(subtotal - Number(discount));
+    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
 
     if (isNaN(subtotal) || isNaN(tax) || isNaN(total)) {
       throw new Error('Calculated totals resulted in NaN value.');
@@ -162,8 +168,8 @@ router.post('/', async (req, res) => {
       }
 
       await db.run(
-        'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)',
-        [invoiceId, inventory_id, Number(quantity), Number(unit_price), Number(loose_qty)]
+        'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty, discount_per) VALUES (?, ?, ?, ?, ?, ?)',
+        [invoiceId, inventory_id, Number(quantity), Number(unit_price), Number(loose_qty), Number(item.discount_per || item.discountPer || 0)]
       );
       
       // Decrement stock in inventory_master.
@@ -666,7 +672,7 @@ router.put('/:id', async (req, res) => {
       // Compute new totals
       let subtotal = 0;
       for (const item of items) {
-        const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0 } = item;
+        const { inventory_id, quantity = 0, unit_price = 0, loose_qty = 0, pack_size = 10, discount_per = 0 } = item;
         
         // Stock Level & Expiry Verification
         const currentStock = await db.get('SELECT quantity, expiry_date FROM inventory_master WHERE id = ?', [inventory_id]);
@@ -690,14 +696,21 @@ router.put('/:id', async (req, res) => {
           }
         }
 
-        await db.run('INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)', [id, inventory_id, quantity, unit_price, loose_qty]);
+        await db.run('INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty, discount_per) VALUES (?, ?, ?, ?, ?, ?)', [id, inventory_id, quantity, unit_price, loose_qty, discount_per]);
         await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [quantity, inventory_id]);
-        subtotal += quantity * unit_price;
+        
+        const q = Number(quantity);
+        const l = Number(loose_qty);
+        const pSize = Number(pack_size || 10);
+        const d = Number(discount_per);
+        const uPrice = Number(unit_price);
+        const dPrice = uPrice * (1 - d / 100);
+        subtotal += (q * dPrice) + (l * (dPrice / pSize));
       }
 
       const taxRate = 0.05;
-      const tax = subtotal * taxRate;
-      const total = Math.round(subtotal + tax - discount);
+      const total = Math.round(subtotal - discount);
+      const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
 
       await db.run(
         'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status), discount = ?, subtotal = ?, doctor_id = ? WHERE id = ?',
@@ -819,11 +832,19 @@ router.post('/sync', async (req, res) => {
 
         let subtotal = 0;
         for (const item of items) {
-          subtotal += (Number(item.quantity || 0) * Number(item.unit_price || 0));
+          const { quantity = 0, unit_price = 0, loose_qty = 0, pack_size = 10, discount_per = 0 } = item;
+          const q = Number(quantity);
+          const l = Number(loose_qty);
+          const pSize = Number(pack_size || 10);
+          const d = Number(discount_per);
+          const uPrice = Number(unit_price);
+          const dPrice = uPrice * (1 - d / 100);
+          subtotal += (q * dPrice) + (l * (dPrice / pSize));
         }
 
-        const tax = Number((subtotal * 0.05).toFixed(2));
-        const total = Math.round(subtotal + tax - Number(discount));
+        const taxRate = 0.05;
+        const total = Math.round(subtotal - Number(discount));
+        const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
         const invoice_no = await generateInvoiceNo(db);
         const invoiceDateValue = sale_date ? new Date(sale_date).toISOString() : new Date().toISOString();
 
@@ -834,7 +855,7 @@ router.post('/sync', async (req, res) => {
         const invoiceId = result.lastID;
 
         for (const item of items) {
-          const { inventory_id, quantity, unit_price, loose_qty = 0 } = item;
+          const { inventory_id, quantity, unit_price, loose_qty = 0, discount_per = 0 } = item;
           const currentStock = await db.get('SELECT quantity FROM inventory_master WHERE id = ?', [inventory_id]);
           if (!currentStock || currentStock.quantity < Number(quantity)) {
             const needed = Number(quantity) - (currentStock ? currentStock.quantity : 0);
@@ -846,8 +867,8 @@ router.post('/sync', async (req, res) => {
           }
 
           await db.run(
-            'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)',
-            [invoiceId, inventory_id, Number(quantity), Number(unit_price), Number(loose_qty)]
+            'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty, discount_per) VALUES (?, ?, ?, ?, ?, ?)',
+            [invoiceId, inventory_id, Number(quantity), Number(unit_price), Number(loose_qty), Number(discount_per)]
           );
           await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [Number(quantity), inventory_id]);
         }
@@ -940,11 +961,18 @@ router.post('/staged/:id/approve', async (req, res) => {
     // Compute totals
     let subtotal = 0;
     for (const item of itemsToProcess) {
-      const { quantity, unit_price } = item;
-      subtotal += (Number(quantity) * Number(unit_price));
+      const { quantity = 0, unit_price = 0, loose_qty = 0, pack_size = 10, discount_per = 0 } = item;
+      const q = Number(quantity);
+      const l = Number(loose_qty);
+      const pSize = Number(pack_size || 10);
+      const d = Number(discount_per);
+      const uPrice = Number(unit_price);
+      const dPrice = uPrice * (1 - d / 100);
+      subtotal += (q * dPrice) + (l * (dPrice / pSize));
     }
-    const tax = Number((subtotal * 0.05).toFixed(2));
-    const total = Math.round(subtotal + tax - Number(finalDiscount));
+    const taxRate = 0.05;
+    const total = Math.round(subtotal - Number(finalDiscount));
+    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
 
     // Generate invoice number
     const invoice_no = await generateInvoiceNo(db);
@@ -958,11 +986,11 @@ router.post('/staged/:id/approve', async (req, res) => {
 
     // Save items & update stock
     for (const item of itemsToProcess) {
-      const { inventory_id, quantity, unit_price } = item;
+      const { inventory_id, quantity, unit_price, loose_qty = 0, discount_per = 0 } = item;
       await db.run('UPDATE inventory_master SET quantity = quantity - ? WHERE id = ?', [Number(quantity), inventory_id]);
       await db.run(
-        'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty) VALUES (?, ?, ?, ?, ?)',
-        [invoiceId, inventory_id, Number(quantity), Number(unit_price), 0]
+        'INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, loose_qty, discount_per) VALUES (?, ?, ?, ?, ?, ?)',
+        [invoiceId, inventory_id, Number(quantity), Number(unit_price), Number(loose_qty), Number(discount_per)]
       );
     }
 

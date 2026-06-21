@@ -164,8 +164,8 @@ router.post('/bill/generate', async (req, res) => {
     }
 
     const taxRate = 0.05; // 5% tax
-    const tax = subtotal * taxRate;
-    const total = subtotal + tax - discount;
+    const total = Math.round(subtotal - discount);
+    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
 
     const paymentMedium = payment_medium || 'CASH';
     const paymentStatus = paymentMedium === 'CREDIT' ? 'UNPAID' : 'PAID';

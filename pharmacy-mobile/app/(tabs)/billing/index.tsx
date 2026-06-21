@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../../lib/theme';
 import { searchMedicine, createSale, SearchMedicineResult } from '../../../lib/api';
+import { cartEvents } from '../../../lib/cartEvents';
 import SearchBar from '../../../components/SearchBar';
 import CartItem from '../../../components/CartItem';
 
@@ -20,6 +21,20 @@ export default function BillingScreen() {
   const [patientPhone, setPatientPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [invoiceResult, setInvoiceResult] = useState<{ invoice_no: string; total: number } | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = cartEvents.subscribe((item: any, quantity: number) => {
+      setCart(currentCart => {
+        const existing = currentCart.find(c => c.inventory_id === item.inventory_id);
+        if (existing) {
+          return currentCart.map(c => c.inventory_id === item.inventory_id ? { ...c, cart_qty: c.cart_qty + quantity } : c);
+        } else {
+          return [...currentCart, { ...item, cart_qty: quantity }];
+        }
+      });
+    });
+    return unsubscribe;
+  }, []);
 
   const handleSearch = useCallback(async (text: string) => {
     setQuery(text);
