@@ -67,4 +67,5 @@ MIGRATION SAMPEL/
 data/archived_migrations/
 catalogue/raw/
 
-
+# Puppeteer Pharmarack browser session profiles
+data/pharmarack_profile/

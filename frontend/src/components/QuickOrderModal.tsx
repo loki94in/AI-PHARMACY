@@ -21,6 +21,8 @@ interface SuggestionMedicine {
   scheme?: string;
   productId?: string | number;
   storeId?: string | number;
+  productCode?: string;
+  company?: string;
 }
 
 const getStockStyle = (stockStr: string | undefined): string => {
@@ -72,6 +74,9 @@ export const QuickOrderModal: React.FC = () => {
   const [selectedScheme, setSelectedScheme] = useState('');
   const [selectedProductId, setSelectedProductId] = useState<string | number>('');
   const [selectedStoreId, setSelectedStoreId] = useState<string | number>('');
+  const [selectedProductCode, setSelectedProductCode] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedPackaging, setSelectedPackaging] = useState('');
   
   // Search state
   const [suggestions, setSuggestions] = useState<SuggestionMedicine[]>([]);
@@ -115,6 +120,9 @@ export const QuickOrderModal: React.FC = () => {
         scheme: selectedScheme || undefined,
         productId: selectedProductId || undefined,
         storeId: selectedStoreId || undefined,
+        productCode: selectedProductCode || undefined,
+        company: selectedCompany || undefined,
+        packaging: selectedPackaging || undefined
       }
     ]);
 
@@ -128,6 +136,9 @@ export const QuickOrderModal: React.FC = () => {
     setSelectedScheme('');
     setSelectedProductId('');
     setSelectedStoreId('');
+    setSelectedProductCode('');
+    setSelectedCompany('');
+    setSelectedPackaging('');
     setSuggestions([]);
     setShowSuggestions(false);
     setActiveSuggestionIndex(-1);
@@ -269,7 +280,9 @@ export const QuickOrderModal: React.FC = () => {
               stock: item.stock,
               scheme: item.scheme,
               productId: item.productId,
-              storeId: item.storeId
+              storeId: item.storeId,
+              productCode: item.productCode,
+              company: item.company
             });
           });
         }
@@ -323,8 +336,10 @@ export const QuickOrderModal: React.FC = () => {
       setSelectedScheme(med.scheme || '');
       setSelectedProductId(med.productId || '');
       setSelectedStoreId(med.storeId || '');
+      setSelectedProductCode(med.productCode || '');
+      setSelectedCompany(med.company || '');
+      setSelectedPackaging(med.packaging || '');
     } else {
-      setProduct(med.medicine_name);
       setSelectedDistributor('');
       setSelectedRate('');
       setSelectedMrp('');
@@ -332,6 +347,9 @@ export const QuickOrderModal: React.FC = () => {
       setSelectedScheme('');
       setSelectedProductId('');
       setSelectedStoreId('');
+      setSelectedProductCode('');
+      setSelectedCompany('');
+      setSelectedPackaging('');
     }
     setShowSuggestions(false);
     setActiveSuggestionIndex(-1);
@@ -377,7 +395,12 @@ export const QuickOrderModal: React.FC = () => {
               storeId: item.storeId,
               qty: item.qty,
               rate: item.rate,
-              scheme: item.scheme
+              scheme: item.scheme,
+              productCode: item.productCode,
+              company: item.company,
+              productName: item.product,
+              storeName: item.distributor,
+              packaging: item.packaging
             }]);
             toastEvent.trigger(`Added "${item.product}" to actual Pharmarack cart!`, 'success');
           } catch (cartErr: any) {
@@ -425,6 +448,8 @@ export const QuickOrderModal: React.FC = () => {
         scheme: selectedScheme || undefined,
         productId: selectedProductId || undefined,
         storeId: selectedStoreId || undefined,
+        productCode: selectedProductCode || undefined,
+        company: selectedCompany || undefined
       });
     }
 

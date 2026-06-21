@@ -103,7 +103,9 @@ router.get('/search', async (req, res) => {
             mapped: p.IsMapped === 1,
             stock: p.Stock !== undefined ? String(p.Stock) : 'High',
             scheme: p.Scheme || p.SchemeDescription || p.ProductScheme || '',
-            productId: p.ProductId,
+            productId: p.PrProductId || p.ProductId || p.ProductCode,
+            productCode: p.ProductCode || '',
+            company: p.Company || '',
             storeId: p.StoreId
           }));
           
@@ -373,77 +375,361 @@ router.post('/cart/add', async (req, res) => {
     const settings = await getPharmarackSettings();
     const token = settings['pharmarack_session_token'] || '';
 
-    const payload = {
-      CartSource: 'MOVP',
-      CartItems: items.map((item: any) => ({
-        ProductId: Number(item.productId) || 0,
-        StoreId: Number(item.storeId) || 0,
-        Quantity: Number(item.qty) || 1,
-        Rate: item.rate !== undefined ? Number(item.rate) : 0,
-        Scheme: item.scheme || ''
-      }))
-    };
-
     if (!token) {
       return res.status(401).json({ error: 'Need to login to Pharmarack to add items to cart', code: 'NEED_LOGIN' });
+    }
+
+    // Try to enrich each item's properties from the searchCache or on-the-fly search
+    for (const item of items) {
+      if (!item.productCode || !item.productName) {
+        // Look in search cache
+        for (const [_, cacheEntry] of searchCache.entries()) {
+          const matched = cacheEntry.data.find((p: any) => p.productId === item.productId && p.storeId === item.storeId);
+          if (matched) {
+            item.productCode = matched.productCode;
+            item.productName = matched.name;
+            item.storeName = matched.distributor;
+            item.company = matched.company;
+            item.mrp = matched.mrp;
+            item.rate = matched.rate;
+            break;
+          }
+        }
+      }
+
+      // If still missing, query search API on-the-fly
+      if (!item.productCode && token) {
+        try {
+          let cleanKeyword = (item.product || item.name || '').trim();
+          cleanKeyword = cleanKeyword.replace(/\s*\([^)]*\)\s*$/, '').trim();
+          const searchPayload = {
+            SearchKeyword: cleanKeyword,
+            StoreId: [],
+            NonMappedStoreId: [],
+            Count: 10,
+            SkipCount: 0,
+            isMappedSearch: null,
+            IsStock: 2,
+            IsScheme: 2,
+            IsSort: 1,
+            CartSource: 'MOVP'
+          };
+          const searchRes = await fetch('https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/search', {
+            method: 'POST',
+            headers: {
+              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'devicetype': 'web',
+              'Accept': 'application/json, text/plain, */*',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Referer': 'https://retailers.pharmarack.com/',
+              'Origin': 'https://retailers.pharmarack.com'
+            },
+            body: JSON.stringify(searchPayload),
+            signal: AbortSignal.timeout(4000)
+          });
+          if (searchRes.ok) {
+            const searchData: any = await searchRes.json();
+            if (searchData && Array.isArray(searchData.data)) {
+              const matched = searchData.data.find((p: any) => p.PrProductId === item.productId && p.StoreId === item.storeId) || searchData.data[0];
+              if (matched) {
+                item.productCode = matched.ProductCode || '';
+                item.productName = matched.ProductName || matched.ProductFullName || '';
+                item.storeName = matched.StoreName || '';
+                item.company = matched.Company || '';
+                item.mrp = matched.MRP || 0;
+                item.rate = matched.PTR || 0;
+              }
+            }
+          }
+        } catch (err) {
+          console.error('On-the-fly search enrichment failed:', err);
+        }
+      }
     }
 
     let cartSuccess = false;
     let lastError = '';
 
-    // Try primary API endpoint
+    // Primary: Call the official AddUserProductCartDetail API
     try {
-      const response1 = await fetch('https://retailers.pharmarack.com/api/v2/cart', {
-        method: 'POST',
-        headers: {
-          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'devicetype': 'web',
-          'Accept': 'application/json, text/plain, */*',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://retailers.pharmarack.com/',
-          'Origin': 'https://retailers.pharmarack.com'
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(6000)
-      });
-      
-      if (response1.ok) {
-        cartSuccess = true;
-      } else {
-        const errText = await response1.text().catch(() => '');
-        lastError = `retailers.pharmarack.com/api/v2/cart status: ${response1.status}. Reason: ${errText || 'Unknown'}`;
-      }
-    } catch (err: any) {
-      lastError = err.message;
-    }
+      for (const item of items) {
+        const rateVal = Number(item.rate || item.ptr || item.PTR || 0);
+        const payload = {
+          StoreId: Number(item.storeId) || 0,
+          StoreName: item.storeName || '',
+          ProductCode: item.productCode || '',
+          Quantity: Number(item.qty || item.Quantity || 1),
+          PTR: rateVal,
+          Free: 0,
+          HiddenPTR: rateVal,
+          NetRate: rateVal,
+          Scheme: item.scheme || '',
+          SchemeType: '',
+          GSTPercentage: 0,
+          ItemGSTValue: 0,
+          CartSource: 'MOVP',
+          DeliveryOption: '',
+          RemarkForStore: '',
+          ProductAddedBy: 0,
+          Priority: '',
+          OrderPlaced: 0,
+          OrderPlacedBy: 0,
+          CreatedBy: 0,
+          ProductName: item.productName || item.product || '',
+          StoreProductName: item.productName || item.product || '',
+          StoreWiseAmount: 0,
+          StoreWiseGSTAmount: 0,
+          IsDeleted: 0,
+          AllowMinQty: 0,
+          AllowMaxQty: 0,
+          StepUpValue: 1,
+          AllowMOQ: true,
+          MinItemLimit: 0,
+          MaxItemLimit: 0,
+          MinAmountLimit: 0,
+          MaxAmountLimit: 0,
+          DODIsPrefenceSet: 0,
+          IsDODPreferenceSet: 0,
+          DisplayHalfSchemeOn: '',
+          DisplayHalfScheme: '0',
+          RetailerSchemePreference: 1,
+          HalfSchemeValueToRetailer: 0,
+          RoundOffDisplayHS: '',
+          MinOrderQuantity: 0,
+          MaxOrderQuantity: 0,
+          IsDODProduct: 0,
+          IsDODProductCheck: 0,
+          IsDODProductSelected: 0,
+          OrderDeliveryModeStatus: 1,
+          OrderRemarks: 1,
+          SpecialRate: 0,
+          Stock: 999,
+          RShowPtr: 1,
+          IsPartyLocked: 0,
+          RewardSchemeId: 0,
+          IsProductChecked: 1,
+          DeliveryPerson: '',
+          DeliveryPersonCode: '',
+          RShowPtrForAllCompanies: 1,
+          Company: item.company || '',
+          IsGroupWisePTR: 0,
+          IsGroupWisePTRRetailer: 0,
+          RateValidity: null,
+          IsShowNonMappedOrderStock: 1,
+          RStockVisibility: 0,
+          IsMapped: 1,
+          ProductId: Number(item.productId) || 0,
+          MRP: String(item.mrp || rateVal),
+          ProductWiseAmount: 0,
+          ProductWiseGSTAmount: 0,
+          ProductWiseSchemeAmount: 0,
+          ProductWiseSchemeGSTAmount: 0,
+          StoreWiseSchemeAmount: 0,
+          StoreWiseSchemeGSTAmount: 0,
+          ProductLock: 0,
+          BoxPacking: '0',
+          CasePacking: item.packaging || item.Packing || '1 strip',
+          Packing: item.packaging || item.Packing || '1 strip'
+        };
 
-    // Try secondary backup search-proxy cart endpoint if first failed
-    if (!cartSuccess) {
-      try {
-        const response2 = await fetch('https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/cart', {
+        const response = await fetch('https://pharmretail-api.pharmarack.com/cart/api/v1/AddUserProductCartDetail', {
           method: 'POST',
           headers: {
             'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
             'Content-Type': 'application/json',
             'devicetype': 'web',
             'Accept': 'application/json, text/plain, */*',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Referer': 'https://retailers.pharmarack.com/',
             'Origin': 'https://retailers.pharmarack.com'
           },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(6000)
         });
-        
-        if (response2.ok) {
-          cartSuccess = true;
+
+        if (response.ok) {
+          const resJson = await response.json();
+          if (resJson && resJson.StatusCode === 200) {
+            cartSuccess = true;
+          } else {
+            lastError = `AddUserProductCartDetail response: ${resJson.message || 'Unknown error'}`;
+            cartSuccess = false;
+            break;
+          }
         } else {
-          const errText = await response2.text().catch(() => '');
-          lastError = `pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/cart status: ${response2.status}. Reason: ${errText || 'Unknown'} (Previous: ${lastError})`;
+          const errText = await response.text().catch(() => '');
+          lastError = `AddUserProductCartDetail status: ${response.status}. Details: ${errText}`;
+          cartSuccess = false;
+          break;
         }
-      } catch (err: any) {
-        lastError = `Secondary error: ${err.message} (Previous: ${lastError})`;
+      }
+    } catch (err: any) {
+      lastError = err.message;
+      cartSuccess = false;
+    }
+
+    // Tier 2: Headless Browser context evaluate fallback
+    if (!cartSuccess) {
+      const chromePath = findChromePath();
+      if (chromePath) {
+        console.log('API cart requests failed. Initiating headless browser fallback...');
+        const pharmarackProfilePath = path.resolve(__dirname, '..', '..', 'data', 'pharmarack_profile');
+        let browser;
+        try {
+          browser = await puppeteer.launch({
+            executablePath: chromePath,
+            headless: true,
+            userDataDir: pharmarackProfilePath,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+          const [page] = await browser.pages();
+          
+          await page.goto('https://retailers.pharmarack.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          
+          for (const item of items) {
+            const rateVal = Number(item.rate || item.ptr || item.PTR || 0);
+            const payload = {
+              StoreId: Number(item.storeId) || 0,
+              StoreName: item.storeName || '',
+              ProductCode: item.productCode || '',
+              Quantity: Number(item.qty || item.Quantity || 1),
+              PTR: rateVal,
+              Free: 0,
+              HiddenPTR: rateVal,
+              NetRate: rateVal,
+              Scheme: item.scheme || '',
+              SchemeType: '',
+              GSTPercentage: 0,
+              ItemGSTValue: 0,
+              CartSource: 'MOVP',
+              DeliveryOption: '',
+              RemarkForStore: '',
+              ProductAddedBy: 0,
+              Priority: '',
+              OrderPlaced: 0,
+              OrderPlacedBy: 0,
+              CreatedBy: 0,
+              ProductName: item.productName || item.product || '',
+              StoreProductName: item.productName || item.product || '',
+              StoreWiseAmount: 0,
+              StoreWiseGSTAmount: 0,
+              IsDeleted: 0,
+              AllowMinQty: 0,
+              AllowMaxQty: 0,
+              StepUpValue: 1,
+              AllowMOQ: true,
+              MinItemLimit: 0,
+              MaxItemLimit: 0,
+              MinAmountLimit: 0,
+              MaxAmountLimit: 0,
+              DODIsPrefenceSet: 0,
+              IsDODPreferenceSet: 0,
+              DisplayHalfSchemeOn: '',
+              DisplayHalfScheme: '0',
+              RetailerSchemePreference: 1,
+              HalfSchemeValueToRetailer: 0,
+              RoundOffDisplayHS: '',
+              MinOrderQuantity: 0,
+              MaxOrderQuantity: 0,
+              IsDODProduct: 0,
+              IsDODProductCheck: 0,
+              IsDODProductSelected: 0,
+              OrderDeliveryModeStatus: 1,
+              OrderRemarks: 1,
+              SpecialRate: 0,
+              Stock: 999,
+              RShowPtr: 1,
+              IsPartyLocked: 0,
+              RewardSchemeId: 0,
+              IsProductChecked: 1,
+              DeliveryPerson: '',
+              DeliveryPersonCode: '',
+              RShowPtrForAllCompanies: 1,
+              Company: item.company || '',
+              IsGroupWisePTR: 0,
+              IsGroupWisePTRRetailer: 0,
+              RateValidity: null,
+              IsShowNonMappedOrderStock: 1,
+              RStockVisibility: 0,
+              IsMapped: 1,
+              ProductId: Number(item.productId) || 0,
+              MRP: String(item.mrp || rateVal),
+              ProductWiseAmount: 0,
+              ProductWiseGSTAmount: 0,
+              ProductWiseSchemeAmount: 0,
+              ProductWiseSchemeGSTAmount: 0,
+              StoreWiseSchemeAmount: 0,
+              StoreWiseSchemeGSTAmount: 0,
+              BoxPacking: '0',
+              CasePacking: item.packaging || item.Packing || '1 strip',
+              Packing: item.packaging || item.Packing || '1 strip'
+            };
+
+            const contextResult = await page.evaluate(`async (payload, token) => {
+              try {
+                let res = await fetch('https://pharmretail-api.pharmarack.com/cart/api/v1/AddUserProductCartDetail', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': token.startsWith('Bearer ') ? token : 'Bearer ' + token,
+                    'Content-Type': 'application/json',
+                    'devicetype': 'web'
+                  },
+                  body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                  let rJson = await res.json();
+                  if (rJson && rJson.StatusCode === 200) return { success: true };
+                  return { success: false, error: rJson.message || 'Verification failed' };
+                }
+                let errText = await res.text().catch(() => '');
+                return { success: false, error: 'Status: ' + res.status + ' | ' + errText };
+              } catch (e) {
+                return { success: false, error: e.message };
+              }
+            }`, payload, token) as { success: boolean; error?: string };
+
+            if (contextResult && contextResult.success) {
+              cartSuccess = true;
+            } else {
+              cartSuccess = false;
+              lastError += ` | Headless context error: ${contextResult?.error || 'Unknown'}`;
+              break;
+            }
+          }
+
+          // Tier 3: UI automation fallback
+          if (!cartSuccess) {
+            console.log('Page context evaluation failed. Trying UI automation...');
+            await page.goto('https://retailers.pharmarack.com/search', { waitUntil: 'networkidle2', timeout: 30000 });
+            
+            for (const item of items) {
+              const searchSelector = 'input[placeholder*="search" i], input[placeholder*="medicine" i], input[type="search"]';
+              await page.waitForSelector(searchSelector, { timeout: 10000 });
+              await page.focus(searchSelector);
+              await page.keyboard.down('Control');
+              await page.keyboard.press('KeyA');
+              await page.keyboard.up('Control');
+              await page.keyboard.press('Backspace');
+              await page.type(searchSelector, item.name || item.productName || item.product || '');
+              await page.keyboard.press('Enter');
+              
+              await new Promise(r => setTimeout(r, 3000));
+              
+              const addBtnSelector = 'button[class*="add" i], button[id*="add" i], button[title*="add" i], .add-to-cart, .btn-add';
+              await page.waitForSelector(addBtnSelector, { timeout: 10000 });
+              await page.click(addBtnSelector);
+              await new Promise(r => setTimeout(r, 2000));
+            }
+            cartSuccess = true;
+            console.log('Successfully added items to cart using UI automation fallback!');
+          }
+        } catch (pwErr: any) {
+          console.error('Headless browser fallback failed:', pwErr.message);
+          lastError += ` | Headless fallback error: ${pwErr.message}`;
+        } finally {
+          if (browser) await browser.close();
+        }
       }
     }
 

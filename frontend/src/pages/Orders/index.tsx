@@ -63,6 +63,11 @@ const Orders = () => {
   const [selectedMrp, setSelectedMrp] = useState<number | ''>('');
   const [selectedMapped, setSelectedMapped] = useState(true);
   const [selectedScheme, setSelectedScheme] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState<string | number>('');
+  const [selectedStoreId, setSelectedStoreId] = useState<string | number>('');
+  const [selectedProductCode, setSelectedProductCode] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedPackaging, setSelectedPackaging] = useState('');
 
   // Debounced search for Pharmarack products
   useEffect(() => {
@@ -95,6 +100,11 @@ const Orders = () => {
     setSelectedMrp(item.mrp !== null && item.mrp !== undefined ? item.mrp : '');
     setSelectedMapped(!!item.mapped);
     setSelectedScheme(item.scheme || '');
+    setSelectedProductId(item.productId || '');
+    setSelectedStoreId(item.storeId || '');
+    setSelectedProductCode(item.productCode || '');
+    setSelectedCompany(item.company || '');
+    setSelectedPackaging(item.packaging || '');
     setShowPrDropdown(false);
   };
 
@@ -179,6 +189,29 @@ const Orders = () => {
       });
 
       showNotification(`Order for "${product}" logged successfully!`, 'success');
+
+      // If it's a Pharmarack product, also add it to the actual Pharmarack cart!
+      if (selectedProductId && selectedStoreId) {
+        try {
+          await api.addPharmarackCart([{
+            productId: selectedProductId,
+            storeId: selectedStoreId,
+            qty: Number(qty),
+            rate: selectedRate !== '' ? Number(selectedRate) : undefined,
+            scheme: selectedScheme || undefined,
+            productCode: selectedProductCode,
+            company: selectedCompany,
+            productName: product.trim(),
+            storeName: selectedDistributor,
+            packaging: selectedPackaging
+          }]);
+          showNotification(`Added "${product}" to actual Pharmarack cart!`, 'success');
+        } catch (cartErr: any) {
+          console.error(`Failed to add ${product} to actual Pharmarack cart:`, cartErr);
+          const detailedError = cartErr?.response?.data?.details || cartErr?.response?.data?.error || cartErr?.message || 'Unknown error';
+          showNotification(`Could not add "${product}" to Pharmarack cart: ${detailedError}`, 'error');
+        }
+      }
       
       // Reset form
       setProduct('');
@@ -193,6 +226,11 @@ const Orders = () => {
       setSelectedMrp('');
       setSelectedMapped(true);
       setSelectedScheme('');
+      setSelectedProductId('');
+      setSelectedStoreId('');
+      setSelectedProductCode('');
+      setSelectedCompany('');
+      setSelectedPackaging('');
       
       // Refresh list
       fetchOrders();
@@ -455,6 +493,10 @@ const Orders = () => {
                         setSelectedMrp('');
                         setSelectedMapped(true);
                         setSelectedScheme('');
+                        setSelectedProductId('');
+                        setSelectedStoreId('');
+                        setSelectedProductCode('');
+                        setSelectedCompany('');
                       }}
                       className="text-[9px] text-muted hover:text-red-400 underline font-semibold"
                     >

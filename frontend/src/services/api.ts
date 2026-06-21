@@ -352,7 +352,18 @@ export const api = {
 
   getMedicinePriceHistory: (name: string) => apiClient.get('/purchases/price-history', { params: { name } }).then(res => res.data),
   searchPharmarack: (q: string) => apiClient.get('/pharmarack/search', { params: { q } }).then(res => res.data),
-  addPharmarackCart: (items: Array<{ productId: string | number; storeId: string | number; qty: number; rate?: number; scheme?: string }>) => 
+  addPharmarackCart: (items: Array<{ 
+    productId: string | number; 
+    storeId: string | number; 
+    qty: number; 
+    rate?: number; 
+    scheme?: string;
+    productCode?: string;
+    company?: string;
+    productName?: string;
+    storeName?: string;
+    packaging?: string;
+  }>) => 
     apiClient.post('/pharmarack/cart/add', { items }).then(res => res.data),
   getPharmarackCart: () => apiClient.get('/pharmarack/cart').then(res => res.data),
   checkPharmarackSession: () => apiClient.get('/pharmarack/session-status').then(res => res.data),
