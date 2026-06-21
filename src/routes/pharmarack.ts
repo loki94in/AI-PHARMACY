@@ -37,11 +37,21 @@ async function getPharmarackSettings() {
   return settings;
 }
 
+// In-memory cache for search queries to prevent upstream rate limits (429)
+const searchCache = new Map<string, { timestamp: number; data: any }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+
 // Search endpoint
 router.get('/search', async (req, res) => {
   const q = (req.query.q as string || '').toLowerCase().trim();
   if (!q) {
     return res.json([]);
+  }
+
+  // Check cache first
+  const cached = searchCache.get(q);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return res.json(cached.data);
   }
 
   try {
@@ -96,6 +106,10 @@ router.get('/search', async (req, res) => {
             productId: p.ProductId,
             storeId: p.StoreId
           }));
+          
+          // Cache successful response
+          searchCache.set(q, { timestamp: Date.now(), data: mappedProducts });
+          
           return res.json(mappedProducts);
         } else {
           console.error('Pharmarack search response structure unexpected:', data);
@@ -113,7 +127,6 @@ router.get('/search', async (req, res) => {
       console.error('Pharmarack live API search failed:', err.message);
       return res.status(503).json({ error: 'Connection error, please check internet or reconnect', code: 'CONNECTION_ERROR' });
     }
-
 
   } catch (err: any) {
     console.error('Pharmarack search simulator error:', err);
@@ -183,7 +196,7 @@ router.post('/login-window', async (req, res) => {
 
         // Dynamically scrape input fields for username & password
         try {
-          const creds = await page.evaluate(() => {
+          const creds = await page.evaluate(`(() => {
             const inputs = Array.from(document.querySelectorAll('input'));
             let u = '';
             let p = '';
@@ -212,14 +225,21 @@ router.post('/login-window', async (req, res) => {
               }
             }
             return { u, p };
-          });
+          })()`) as { u: string; p: string };
           if (creds.u) lastUsername = creds.u;
           if (creds.p) lastPassword = creds.p;
         } catch (e) {
           // Ignore navigation/detachment errors during evaluate
         }
 
-        if (extractedToken) {
+        const currentUrl = page.url();
+        const isOnMainApp = currentUrl.includes('pharmarack.com') && 
+                            !currentUrl.includes('/login') && 
+                            !currentUrl.includes('/otp') && 
+                            !currentUrl.includes('/verification') && 
+                            !currentUrl.includes('/forgot');
+
+        if (extractedToken && isOnMainApp) {
           console.log('Extracted Pharmarack Session Token from request headers!');
           const db = await dbManager.getConnection();
           await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_session_token', ?)", [extractedToken]);
@@ -233,8 +253,7 @@ router.post('/login-window', async (req, res) => {
           break;
         }
 
-        const currentUrl = page.url();
-        if (currentUrl.includes('pharmarack.com') && !currentUrl.includes('/login') && !currentUrl.includes('/forgot')) {
+        if (isOnMainApp) {
           console.log('Login redirect detected:', currentUrl);
           
           await new Promise(resolve => setTimeout(resolve, 2000));
@@ -253,8 +272,8 @@ router.post('/login-window', async (req, res) => {
           }
 
           const cookies = await page.cookies();
-          const token = await page.evaluate(() => {
-            const findTokenInString = (str: string): string => {
+          const token = await page.evaluate(`(() => {
+            const findTokenInString = (str) => {
               if (str.startsWith('{') || str.startsWith('[')) {
                 try {
                   const parsed = JSON.parse(str);
@@ -313,7 +332,7 @@ router.post('/login-window', async (req, res) => {
               }
             }
             return '';
-          });
+          })()`) as string;
 
           const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
           const sessionVal = token || cookieStr;
@@ -650,6 +669,28 @@ router.get('/session-status', async (req, res) => {
   } catch (err: any) {
     console.error('Session status check error:', err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Logout endpoint (clears credentials & Puppeteer Chrome profile folder to delete cookies)
+router.post('/logout', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_username', '')");
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_password', '')");
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_session_token', '')");
+    await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_mode', 'Live')");
+
+    const pharmarackProfilePath = path.resolve(__dirname, '..', '..', 'data', 'pharmarack_profile');
+    if (fs.existsSync(pharmarackProfilePath)) {
+      fs.rmSync(pharmarackProfilePath, { recursive: true, force: true });
+      console.log('Cleared Pharmarack Puppeteer profile directory.');
+    }
+
+    res.json({ success: true, message: 'Logged out and cleared Pharmarack session successfully' });
+  } catch (err: any) {
+    console.error('Error during Pharmarack logout:', err);
+    res.status(500).json({ error: 'Failed to clear session: ' + err.message });
   }
 });
 

@@ -259,6 +259,7 @@ const Learning: React.FC = () => {
     setSettingsData(updated);
     try {
       await apiClient.post('/settings/save', updated);
+      await apiClient.post('/pharmarack/logout');
       toastEvent.trigger('Logged out and cleared Pharmarack credentials successfully.', 'success');
       checkPrHealth();
     } catch (error) {

@@ -206,7 +206,7 @@ export const QuickOrderModal: React.FC = () => {
       return;
     }
 
-    if (product.trim().length < 2) {
+    if (product.trim().length < 3) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -282,7 +282,7 @@ export const QuickOrderModal: React.FC = () => {
       } finally {
         setSearchLoading(false);
       }
-    }, 250);
+    }, 500);
 
     return () => clearTimeout(delayDebounce);
   }, [product]);

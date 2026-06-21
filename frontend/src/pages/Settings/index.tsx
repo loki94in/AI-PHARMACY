@@ -458,6 +458,7 @@ const Settings = () => {
 
     try {
       await apiClient.post('/settings/save', payload);
+      await apiClient.post('/pharmarack/logout');
       toastEvent.trigger('Logged out and cleared Pharmarack credentials successfully.', 'success');
     } catch (error) {
       console.error('Failed to logout from Pharmarack', error);

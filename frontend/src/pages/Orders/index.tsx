@@ -20,6 +20,16 @@ import { api } from '../../services/api';
 import type { SpecialOrder } from '../../services/api';
 import { toastEvent } from '../../services/events';
 
+const parseSqliteDate = (dateStr: string) => {
+  if (!dateStr) return new Date();
+  if (dateStr.includes('T') || dateStr.endsWith('Z')) {
+    return new Date(dateStr);
+  }
+  const formatted = dateStr.replace(' ', 'T') + 'Z';
+  const d = new Date(formatted);
+  return isNaN(d.getTime()) ? new Date(dateStr) : d;
+};
+
 const Orders = () => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<SpecialOrder[]>([]);
@@ -278,10 +288,10 @@ const Orders = () => {
     
     let matchesDate = true;
     if (dateFrom || dateTo) {
-      if (!(o as any).created_at) {
+      if (!o.date) {
         matchesDate = false;
       } else {
-        const itemDate = (o as any).created_at.substring(0, 10);
+        const itemDate = o.date.substring(0, 10);
         const start = dateFrom || '0000-00-00';
         const end = dateTo || '9999-99-99';
         matchesDate = itemDate >= start && itemDate <= end;
@@ -765,9 +775,9 @@ const Orders = () => {
 
                       {/* Date */}
                       <td className="p-4 text-right text-muted font-mono select-none">
-                        {new Date(order.date).toLocaleDateString()}
+                        {parseSqliteDate(order.date).toLocaleDateString('en-IN')}
                         <div className="text-[10px] mt-0.5">
-                          {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {parseSqliteDate(order.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                         </div>
                       </td>
 
