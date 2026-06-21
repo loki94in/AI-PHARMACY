@@ -32,9 +32,10 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { toastEvent, quickOrderEvent } from './services/events';
+import { toastEvent, quickOrderEvent, liveCartAddEvent } from './services/events';
 import type { ToastEventDetail } from './services/events';
 import { QuickOrderModal } from './components/QuickOrderModal';
+import { LiveCartAddModal } from './components/LiveCartAddModal';
 import { StagedReviewModal } from './components/StagedReviewModal';
 import { MobileConnectionModal } from './components/MobileConnectionModal';
 import { api, apiClient } from './services/api';
@@ -813,6 +814,17 @@ const Topbar = ({
             <span className="hidden sm:inline text-[9px] bg-black/40 border border-white/10 text-muted px-1.5 py-0.5 rounded font-mono font-normal">Alt + O</span>
           </button>
 
+          {/* Live Cart Add (Direct inventory replenishment) */}
+          <button
+            onClick={() => liveCartAddEvent.triggerOpen()}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 hover:text-white transition-all text-xs font-bold active:scale-95 group shadow-[0_0_12px_rgba(16,185,129,0.05)]"
+            title="Live Cart Add / Inventory Refill (Alt + L)"
+          >
+            <ShoppingCart size={13} className="group-hover:scale-110 transition-transform duration-300" />
+            <span>Live Cart Add</span>
+            <span className="hidden sm:inline text-[9px] bg-black/40 border border-white/10 text-muted px-1.5 py-0.5 rounded font-mono font-normal">Alt + L</span>
+          </button>
+
           {/* Dev-only: TEST MODE banner when VITE_SKIP_AUTH=true */}
           {import.meta.env.VITE_SKIP_AUTH === 'true' && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[10px] font-black uppercase tracking-widest animate-pulse select-none"
@@ -1283,6 +1295,7 @@ const Layout = ({
         
         {/* Global Modals */}
         <QuickOrderModal />
+        <LiveCartAddModal />
 
         {showStagedReview && (
           <StagedReviewModal

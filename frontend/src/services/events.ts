@@ -32,3 +32,14 @@ export const quickOrderEvent = {
     return () => window.removeEventListener('app-open-quick-order', callback);
   },
 };
+
+export const liveCartAddEvent = {
+  triggerOpen: () => {
+    window.dispatchEvent(new CustomEvent('app-open-live-cart-add'));
+  },
+  subscribeOpen: (callback: () => void) => {
+    window.addEventListener('app-open-live-cart-add', callback);
+    return () => window.removeEventListener('app-open-live-cart-add', callback);
+  },
+};
+
