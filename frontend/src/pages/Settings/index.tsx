@@ -65,7 +65,7 @@ const Settings = () => {
   const [prUsername, setPrUsername] = useState('');
   const [prPassword, setPrPassword] = useState('');
   const [prToken, setPrToken] = useState('');
-  const [prMode, setPrMode] = useState('Simulation');
+  const [prMode, setPrMode] = useState('Live');
   const [isOpeningWindow, setIsOpeningWindow] = useState(false);
   const [isOpeningWaWindow, setIsOpeningWaWindow] = useState(false);
 
@@ -269,7 +269,7 @@ const Settings = () => {
           setPrUsername(data.pharmarack_username || '');
           setPrPassword(data.pharmarack_password || '');
           setPrToken(data.pharmarack_session_token || '');
-          setPrMode(data.pharmarack_mode || 'Simulation');
+          setPrMode(data.pharmarack_mode || 'Live');
         }
       } catch (error) {
         console.error('Failed to load settings', error);
@@ -402,7 +402,7 @@ const Settings = () => {
     setPrUsername('');
     setPrPassword('');
     setPrToken('');
-    setPrMode('Simulation');
+    setPrMode('Live');
     
     const payload = {
       shop_name: pharmacyName,
@@ -453,7 +453,7 @@ const Settings = () => {
       pharmarack_username: '',
       pharmarack_password: '',
       pharmarack_session_token: '',
-      pharmarack_mode: 'Simulation'
+      pharmarack_mode: 'Live'
     };
 
     try {

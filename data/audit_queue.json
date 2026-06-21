@@ -1,0 +1,38 @@
+[
+  {
+    "id": "audit_1782035385475",
+    "imagePath": "data\\audit_images\\audit_1782035385475.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-21T09:49:45.486Z"
+  },
+  {
+    "id": "audit_1782035485006",
+    "imagePath": "data\\audit_images\\audit_1782035485006.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-21T09:51:25.026Z"
+  },
+  {
+    "id": "audit_1782035657231",
+    "imagePath": "data\\audit_images\\audit_1782035657231.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-21T09:54:17.252Z"
+  },
+  {
+    "id": "audit_1782036493179",
+    "imagePath": "data\\audit_images\\audit_1782036493179.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-21T10:08:13.219Z"
+  }
+]

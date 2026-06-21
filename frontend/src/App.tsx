@@ -392,7 +392,7 @@ const NotificationPanel = ({
                 <div
                   key={notif.id}
                   className={`
-                    group flex gap-3 px-4 py-3 relative transition-all duration-200
+                    group flex items-start gap-3 px-4 py-3 relative transition-all duration-200
                     ${!notif.read ? 'bg-primary/[0.04]' : 'hover:bg-black/[0.03]'}
                     ${idx < notifications.length - 1 ? 'border-b border-glass-border' : ''}
                   `}

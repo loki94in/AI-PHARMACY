@@ -80,17 +80,17 @@ export const QuickOrderModal: React.FC = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [prMode, setPrMode] = useState<'Live' | 'Simulation' | 'Unknown'>('Unknown');
+  const [prMode, setPrMode] = useState<'Live' | 'Unknown'>('Unknown');
 
   useEffect(() => {
     if (isOpen) {
       const fetchSessionStatus = async () => {
         try {
           const data = await api.checkPharmarackSession();
-          setPrMode(data.mode || 'Simulation');
+          setPrMode(data.mode || 'Live');
         } catch (err) {
           console.error('Failed to fetch Pharmarack session status in modal:', err);
-          setPrMode('Simulation');
+          setPrMode('Live');
         }
       };
       fetchSessionStatus();
@@ -379,14 +379,11 @@ export const QuickOrderModal: React.FC = () => {
               rate: item.rate,
               scheme: item.scheme
             }]);
-            if (res && res.mode === 'Simulation') {
-              toastEvent.trigger(`[Simulation] Staged "${item.product}" in mock cart.`, 'info');
-            } else {
-              toastEvent.trigger(`Added "${item.product}" to actual Pharmarack cart!`, 'success');
-            }
-          } catch (cartErr) {
+            toastEvent.trigger(`Added "${item.product}" to actual Pharmarack cart!`, 'success');
+          } catch (cartErr: any) {
             console.error(`Failed to add ${item.product} to actual Pharmarack cart:`, cartErr);
-            toastEvent.trigger(`Could not add "${item.product}" to Pharmarack cart.`, 'error');
+            const detailedError = cartErr?.response?.data?.details || cartErr?.response?.data?.error || cartErr?.message || 'Unknown error';
+            toastEvent.trigger(`Could not add "${item.product}" to Pharmarack cart: ${detailedError}`, 'error');
           }
         }
       } catch (err) {
@@ -497,12 +494,8 @@ export const QuickOrderModal: React.FC = () => {
               Quick Special Request
               <span className="text-[10px] bg-white/5 border border-glass-border text-muted px-2 py-0.5 rounded font-mono">Alt + O</span>
               {prMode !== 'Unknown' && (
-                <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border leading-none ${
-                  prMode === 'Live'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                }`}>
-                  {prMode === 'Live' ? '● LIVE' : '◎ SIMULATION'}
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border leading-none bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                  ● LIVE
                 </span>
               )}
             </h3>

@@ -254,7 +254,7 @@ const Learning: React.FC = () => {
       pharmarack_username: '',
       pharmarack_password: '',
       pharmarack_session_token: '',
-      pharmarack_mode: 'Simulation'
+      pharmarack_mode: 'Live'
     };
     setSettingsData(updated);
     try {
@@ -1130,7 +1130,7 @@ const Learning: React.FC = () => {
                               : 'bg-red-500/10 text-red-400 border-red-500/20'
                           }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${prHealth.healthy ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                            {prHealth.mode === 'Simulation' ? 'SIMULATION' : prHealth.healthy ? 'ACTIVE' : 'EXPIRED / NOT LINKED'}
+                            {prHealth.healthy ? 'ACTIVE' : 'EXPIRED / NOT LINKED'}
                           </span>
                         )}
                       </h4>
@@ -1165,14 +1165,12 @@ const Learning: React.FC = () => {
                     <div className="flex flex-col gap-2.5 pt-3 border-t border-glass-border/40 text-left">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Connection Mode</label>
-                        <select
-                          className="premium-input w-full text-xs py-1.5"
-                          value={settingsData.pharmarack_mode || 'Simulation'}
-                          onChange={(e) => setSettingsData({ ...settingsData, pharmarack_mode: e.target.value })}
-                        >
-                          <option value="Simulation" className="bg-bg text-text">Simulation Mode</option>
-                          <option value="Live" className="bg-bg text-text">Live Scraper Mode</option>
-                        </select>
+                        <input
+                          type="text"
+                          className="premium-input w-full text-xs py-1.5 opacity-80 cursor-not-allowed"
+                          value="Live Scraper Mode"
+                          readOnly
+                        />
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Username</label>

@@ -72,10 +72,7 @@ router.get('/', async (_req, res) => {
 
 // Log a new request / order
 router.post('/', async (req, res) => {
-  // Check if Sunday (prevent ordering)
-  if (new Date().getDay() === 0) {
-    return res.status(400).json({ error: "Ordering and logging requests is not allowed on Sundays." });
-  }
+
 
   const { 
     product, requester, phone, qty, priority, status,
@@ -252,9 +249,7 @@ router.put('/:id', async (req, res) => {
     }
 
     const newStatus = status !== undefined ? status : existing.status;
-    if (newStatus === 'Ordered' && new Date().getDay() === 0) {
-      return res.status(400).json({ error: "Cannot mark orders as Ordered on Sundays." });
-    }
+
     const newPriority = priority !== undefined ? priority : existing.priority;
     const newQty = qty !== undefined ? qty : existing.qty;
     const newProduct = product !== undefined ? product : existing.product;

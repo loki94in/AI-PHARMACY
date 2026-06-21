@@ -20,7 +20,7 @@ export default function PharmarackCart() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'Live' | 'Simulation' | 'Unknown'>('Unknown');
+  const [mode, setMode] = useState<'Live' | 'Unknown'>('Unknown');
 
   const fetchCart = async () => {
     setLoading(true);
@@ -29,7 +29,7 @@ export default function PharmarackCart() {
       const data = await api.getPharmarackCart();
       if (data && data.success) {
         setItems(data.items || []);
-        setMode(data.mode || 'Simulation');
+        setMode(data.mode || 'Live');
       } else {
         setError('Failed to retrieve cart details.');
       }
@@ -67,23 +67,19 @@ export default function PharmarackCart() {
   }, 0);
 
   return (
-    <div className="flex flex-col h-full bg-glass-bg border border-glass-border backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-glass-border bg-bg2/40 shrink-0">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-bg text-text">
+      {/* ── Top Header ── */}
+      <div className="h-16 border-b border-glass-border/40 px-6 flex items-center justify-between shrink-0 bg-glass-bg/10 backdrop-blur-md">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+          <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
             <ShoppingCart size={16} />
           </div>
           <div>
             <h3 className="text-sm font-bold text-text tracking-wide uppercase leading-none flex items-center gap-2">
               Pharmarack Cart
               {mode !== 'Unknown' && (
-                <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
-                  mode === 'Live'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                }`}>
-                  {mode === 'Live' ? '● LIVE' : '◎ SIMULATION'}
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                  ● LIVE
                 </span>
               )}
             </h3>
@@ -126,11 +122,6 @@ export default function PharmarackCart() {
             Verify items, schemes, and finalize checkout on the official Pharmarack site.
           </span>
         </div>
-        {mode === 'Simulation' && (
-          <span className="text-[9px] font-bold text-amber bg-amber/10 px-1.5 py-0.5 rounded border border-amber/20">
-            Note: Simulator items are mock and will not impact real-world carts
-          </span>
-        )}
       </div>
 
       {/* ── Main Area ── */}
