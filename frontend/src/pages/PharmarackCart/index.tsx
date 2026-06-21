@@ -1,26 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, ExternalLink, ShoppingCart, HelpCircle, Package, AlertCircle, Trash2 } from 'lucide-react';
+import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock } from 'lucide-react';
 import { api } from '../../services/api';
 import { toastEvent } from '../../services/events';
 
-interface CartItem {
-  productId: number;
+interface CartLineItem {
+  productId: number | null;
   storeId: number;
+  productCode: string;
   productName: string;
+  company: string;
   packaging: string;
-  distributor: string;
   qty: number;
-  rate: number | null;
-  mrp: number | null;
+  ptr: number;
+  mrp: number;
   scheme: string;
-  amount: number | null;
+  stock: number | null;
+  amount: number;
+  cartSource: string;
+  isChecked: boolean;
+  createdDate: string;
+}
+
+interface Distributor {
+  storeId: number;
+  storeName: string;
+  lineTotal: number;
+  deliveryPersons: { name: string; code: string }[];
+  items: CartLineItem[];
 }
 
 export default function PharmarackCart() {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [distributors, setDistributors] = useState<Distributor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'Live' | 'Unknown'>('Unknown');
+  const [lastFetched, setLastFetched] = useState<Date | null>(null);
 
   const fetchCart = async () => {
     setLoading(true);
@@ -28,8 +41,8 @@ export default function PharmarackCart() {
     try {
       const data = await api.getPharmarackCart();
       if (data && data.success) {
-        setItems(data.items || []);
-        setMode(data.mode || 'Live');
+        setDistributors(data.distributors || []);
+        setLastFetched(new Date());
       } else {
         setError('Failed to retrieve cart details.');
       }
@@ -45,26 +58,9 @@ export default function PharmarackCart() {
     fetchCart();
   }, []);
 
-  const handleReload = () => {
-    fetchCart();
-  };
-
-  // Group items by distributor
-  const groupedItems = items.reduce((acc, item) => {
-    const dist = item.distributor || 'Unknown Distributor';
-    if (!acc[dist]) {
-      acc[dist] = [];
-    }
-    acc[dist].push(item);
-    return acc;
-  }, {} as Record<string, CartItem[]>);
-
-  // Calculate overall totals
-  const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
-  const totalAmount = items.reduce((sum, item) => {
-    const val = item.amount !== null ? item.amount : (item.rate || 0) * item.qty;
-    return sum + val;
-  }, 0);
+  const totalProducts = distributors.reduce((s, d) => s + d.items.length, 0);
+  const totalQty = distributors.reduce((s, d) => s + d.items.reduce((q, i) => q + i.qty, 0), 0);
+  const totalAmount = distributors.reduce((s, d) => s + d.items.reduce((a, i) => a + i.amount, 0), 0);
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-bg text-text">
@@ -77,22 +73,21 @@ export default function PharmarackCart() {
           <div>
             <h3 className="text-sm font-bold text-text tracking-wide uppercase leading-none flex items-center gap-2">
               Pharmarack Cart
-              {mode !== 'Unknown' && (
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-                  ● LIVE
-                </span>
-              )}
+              <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                ● LIVE
+              </span>
             </h3>
             <p className="text-[10px] text-muted tracking-wider mt-1">
-              Distributor Cart and Order Breakdown
+              {lastFetched
+                ? `Last synced ${lastFetched.toLocaleTimeString()}`
+                : 'Syncing with Pharmarack…'}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Refresh/Reload */}
           <button
-            onClick={handleReload}
+            onClick={fetchCart}
             disabled={loading}
             className="p-2 rounded-lg bg-bg2 border border-glass-border text-muted hover:text-text hover:bg-bg3 transition-all active:scale-95 flex items-center justify-center disabled:opacity-50"
             title="Refresh Cart Contents"
@@ -100,7 +95,6 @@ export default function PharmarackCart() {
             <RefreshCw size={14} className={loading ? 'animate-spin text-primary' : ''} />
           </button>
 
-          {/* Open External */}
           <a
             href="https://retailers.pharmarack.com/cart"
             target="_blank"
@@ -113,13 +107,14 @@ export default function PharmarackCart() {
           </a>
         </div>
       </div>
+
       {/* ── Main Area ── */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0">
+      <div className="flex-1 overflow-y-auto p-6 space-y-5 min-h-0">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
             <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-400 rounded-full animate-spin" />
             <p className="text-xs text-muted font-bold tracking-wider uppercase animate-pulse">
-              Loading Cart Contents…
+              Fetching Live Cart…
             </p>
           </div>
         ) : error ? (
@@ -136,85 +131,130 @@ export default function PharmarackCart() {
               Retry
             </button>
           </div>
-        ) : items.length === 0 ? (
+        ) : distributors.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">
             <ShoppingCart size={48} className="text-muted/30" />
             <div>
               <p className="text-sm font-bold text-text">Your cart is empty</p>
-              <p className="text-xs text-muted mt-1">Items added through Quick Special Request will appear here.</p>
+              <p className="text-xs text-muted mt-1">Add items using the Live Cart Add feature or from Pharmarack directly.</p>
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            {Object.entries(groupedItems).map(([distributor, distItems]) => (
-              <div key={distributor} className="bg-bg2/30 border border-glass-border rounded-xl overflow-hidden shadow-sm">
-                <div className="bg-bg3/60 px-4 py-2.5 border-b border-glass-border flex items-center justify-between">
-                  <h4 className="text-xs font-extrabold text-text tracking-wide uppercase flex items-center gap-2">
-                    <Package size={14} className="text-sky" />
-                    {distributor}
-                  </h4>
+          distributors.map((dist) => (
+            <div key={dist.storeId} className="bg-bg2/30 border border-glass-border rounded-xl overflow-hidden shadow-sm">
+              {/* Distributor header */}
+              <div className="bg-bg3/60 px-4 py-2.5 border-b border-glass-border flex items-center justify-between">
+                <h4 className="text-xs font-extrabold text-text tracking-wide uppercase flex items-center gap-2">
+                  <Package size={14} className="text-sky" />
+                  {dist.storeName}
+                </h4>
+                <div className="flex items-center gap-3">
+                  {dist.deliveryPersons.length > 0 && (
+                    <span className="text-[10px] text-muted flex items-center gap-1">
+                      <Truck size={11} />
+                      {dist.deliveryPersons[0].name}
+                    </span>
+                  )}
                   <span className="text-[10px] text-muted font-bold px-2 py-0.5 bg-bg/50 rounded-full border border-glass-border/30">
-                    {distItems.length} Product{distItems.length !== 1 ? 's' : ''}
+                    {dist.items.length} item{dist.items.length !== 1 ? 's' : ''}
                   </span>
                 </div>
+              </div>
 
-                <div className="divide-y divide-glass-border/20">
-                  {distItems.map((item, idx) => (
-                    <div key={`${item.productId}-${idx}`} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-bg3/10 transition-colors">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-text truncate">{item.productName}</span>
+              {/* Line items table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-glass-border/30 text-muted font-bold uppercase tracking-wider text-[10px]">
+                      <th className="text-left px-4 py-2">Product</th>
+                      <th className="text-left px-3 py-2">Company</th>
+                      <th className="text-center px-3 py-2">Pack</th>
+                      <th className="text-center px-3 py-2">Qty</th>
+                      <th className="text-right px-3 py-2">PTR</th>
+                      <th className="text-right px-3 py-2">MRP</th>
+                      <th className="text-center px-3 py-2">Scheme</th>
+                      <th className="text-center px-3 py-2">Stock</th>
+                      <th className="text-right px-4 py-2">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-glass-border/15">
+                    {dist.items.map((item, idx) => (
+                      <tr key={`${item.productCode}-${idx}`} className="hover:bg-bg3/10 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <span className="font-bold text-text text-[11px]">{item.productName}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-muted text-[10px] max-w-[120px] truncate">{item.company}</td>
+                        <td className="px-3 py-2.5 text-center">
                           {item.packaging && (
-                            <span className="text-[10px] text-muted bg-bg3/50 px-1.5 py-0.5 rounded border border-glass-border/40 font-semibold uppercase font-mono">
+                            <span className="text-[9px] text-muted bg-bg3/50 px-1.5 py-0.5 rounded border border-glass-border/40 font-mono">
                               {item.packaging}
                             </span>
                           )}
-                        </div>
-                        <div className="flex items-center gap-4 mt-1.5 text-xs text-muted">
-                          {item.rate !== null && (
-                            <span>PTR: <strong className="text-text font-bold">₹{item.rate.toFixed(2)}</strong></span>
-                          )}
-                          {item.mrp !== null && (
-                            <span>MRP: <strong className="text-text/70">₹{item.mrp.toFixed(2)}</strong></span>
-                          )}
-                          {item.scheme && (
-                            <span className="text-[10px] font-bold text-green bg-green/10 px-1.5 py-0.5 rounded border border-green/20">
-                              Scheme: {item.scheme}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-6 flex-shrink-0">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-muted uppercase tracking-wider font-bold">Qty:</span>
-                          <span className="text-sm font-black text-text font-mono bg-bg2 px-2.5 py-1 rounded border border-glass-border/60">
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="font-black text-text font-mono bg-bg2 px-2 py-0.5 rounded border border-glass-border/60 text-[11px]">
                             {item.qty}
                           </span>
-                        </div>
-
-                        <div className="text-right min-w-[80px]">
-                          <p className="text-[10px] text-muted font-bold uppercase tracking-wider leading-none">Total</p>
-                          <p className="text-sm font-black text-emerald-400 font-mono mt-1">
-                            ₹{((item.amount !== null ? item.amount : (item.rate || 0) * item.qty)).toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-text text-[11px]">
+                          {item.ptr > 0 ? `₹${item.ptr.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-muted text-[11px]">
+                          {item.mrp > 0 ? `₹${item.mrp.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {item.scheme ? (
+                            <span className="text-[9px] font-bold text-green bg-green/10 px-1.5 py-0.5 rounded border border-green/20">
+                              {item.scheme}
+                            </span>
+                          ) : (
+                            <span className="text-muted/40">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-center font-mono text-[10px]">
+                          {item.stock !== null ? (
+                            <span className={item.stock > 10 ? 'text-emerald-400' : item.stock > 0 ? 'text-amber-400' : 'text-red'}>
+                              {item.stock}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-400 text-[11px]">
+                          {item.amount > 0 ? `₹${item.amount.toFixed(2)}` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
+
+              {/* Distributor subtotal */}
+              {dist.lineTotal > 0 && (
+                <div className="border-t border-glass-border/30 px-4 py-2 bg-bg3/30 flex justify-end">
+                  <span className="text-[10px] text-muted font-bold uppercase tracking-wider mr-3">Subtotal</span>
+                  <span className="text-xs font-black text-emerald-400 font-mono">₹{dist.lineTotal.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+          ))
         )}
       </div>
 
       {/* ── Footer / Total Summary ── */}
-      {items.length > 0 && !loading && (
+      {distributors.length > 0 && !loading && (
         <div className="border-t border-glass-border bg-bg2/40 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 shadow-lg">
           <div className="flex items-center gap-6">
             <div>
-              <span className="text-[10px] text-muted font-bold uppercase tracking-wider block">Total Items</span>
+              <span className="text-[10px] text-muted font-bold uppercase tracking-wider block">Distributors</span>
+              <span className="text-base font-black text-text font-mono">{distributors.length}</span>
+            </div>
+            <div className="h-6 w-[1px] bg-glass-border/30" />
+            <div>
+              <span className="text-[10px] text-muted font-bold uppercase tracking-wider block">Products</span>
+              <span className="text-base font-black text-text font-mono">{totalProducts}</span>
+            </div>
+            <div className="h-6 w-[1px] bg-glass-border/30" />
+            <div>
+              <span className="text-[10px] text-muted font-bold uppercase tracking-wider block">Total Qty</span>
               <span className="text-base font-black text-text font-mono">{totalQty}</span>
             </div>
             <div className="h-6 w-[1px] bg-glass-border/30" />

@@ -754,75 +754,65 @@ router.get('/cart', async (req, res) => {
       return res.status(401).json({ error: 'Need to login', code: 'NEED_LOGIN' });
     }
 
-    // Try primary cart endpoint
-    let cartData: any = null;
-    let lastError = '';
+    const authHeader = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
 
-    const endpoints = [
-      'https://retailers.pharmarack.com/api/v2/cart',
-      'https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/cart'
-    ];
+    const response = await fetch('https://pharmretail-api.pharmarack.com/cart/api/v1/GetUserCartDetails', {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'devicetype': 'web',
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://retailers.pharmarack.com/',
+        'Origin': 'https://retailers.pharmarack.com'
+      },
+      signal: AbortSignal.timeout(15000)
+    });
 
-    for (const url of endpoints) {
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'devicetype': 'web',
-            'Accept': 'application/json, text/plain, */*',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://retailers.pharmarack.com/',
-            'Origin': 'https://retailers.pharmarack.com'
-          },
-          signal: AbortSignal.timeout(8000)
-        });
-
-        if (response.ok) {
-          cartData = await response.json();
-          break;
-        } else {
-          lastError = `${url} status: ${response.status}`;
-          if (response.status === 401 || response.status === 403) {
-            return res.status(401).json({ error: 'Session expired. Please re-login from the Learning page.', code: 'SESSION_EXPIRED' });
-          }
-        }
-      } catch (err: any) {
-        lastError = err.message;
-      }
+    if (response.status === 401 || response.status === 403) {
+      return res.status(401).json({ error: 'Session expired. Please re-login from the Learning page.', code: 'SESSION_EXPIRED' });
+    }
+    if (!response.ok) {
+      return res.status(503).json({ error: `Pharmarack API returned ${response.status}` });
     }
 
-    if (!cartData) {
-      return res.status(503).json({ error: 'Could not fetch cart from Pharmarack. ' + lastError });
+    const cartData: any = await response.json();
+
+    if (!cartData || cartData.StatusCode !== 200 || !Array.isArray(cartData.IList)) {
+      return res.status(503).json({ error: 'Unexpected cart response shape' });
     }
 
-    // Normalise different possible response shapes
-    let items: any[] = [];
-    if (Array.isArray(cartData)) {
-      items = cartData;
-    } else if (cartData.data && Array.isArray(cartData.data)) {
-      items = cartData.data;
-    } else if (cartData.CartItems && Array.isArray(cartData.CartItems)) {
-      items = cartData.CartItems;
-    } else if (cartData.cartItems && Array.isArray(cartData.cartItems)) {
-      items = cartData.cartItems;
-    }
-
-    const normalised = items.map((item: any) => ({
-      productId: item.ProductId || item.productId,
-      storeId: item.StoreId || item.storeId,
-      productName: item.ProductName || item.productName || item.Name || item.name || 'Unknown Product',
-      packaging: item.Packing || item.packaging || item.Pack || '',
-      distributor: item.StoreName || item.storeName || item.distributor || '',
-      qty: item.Quantity || item.quantity || item.qty || 1,
-      rate: item.Rate || item.rate || item.PTR || null,
-      mrp: item.MRP || item.mrp || null,
-      scheme: item.Scheme || item.scheme || '',
-      amount: item.Amount || item.amount || item.TotalAmount || null,
+    // Parse IList → lineItems structure (grouped by distributor)
+    const distributors = cartData.IList.map((store: any) => ({
+      storeId: store.StoreId,
+      storeName: store.StoreName,
+      lineTotal: store.lineTotal || 0,
+      deliveryPersons: (store.DeliveryPersonList || []).map((d: any) => ({
+        name: d.SalesmanName || '', code: d.SalesmanCode || ''
+      })),
+      items: (store.lineItems || []).map((item: any) => ({
+        productId: item.ProductId,
+        storeId: item.StoreId,
+        productCode: item.ProductCode || '',
+        productName: item.ProductName || 'Unknown Product',
+        company: item.Company || '',
+        packaging: item.Packing || '',
+        qty: item.Quantity || 1,
+        ptr: item.PTR || item.HiddenPTR || 0,
+        mrp: item.MRP ? parseFloat(item.MRP) : 0,
+        scheme: item.Scheme || '',
+        stock: item.Stock ?? null,
+        amount: item.ProductWiseAmount || 0,
+        cartSource: item.CartSource || '',
+        isChecked: item.IsProductChecked === 1,
+        createdDate: item.CreatedDate || '',
+      }))
     }));
 
-    return res.json({ success: true, mode: 'Live', items: normalised, total: normalised.length });
+    const totalItems = distributors.reduce((s: number, d: any) => s + d.items.length, 0);
+
+    return res.json({ success: true, mode: 'Live', distributors, totalItems });
   } catch (err: any) {
     console.error('Pharmarack cart fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });
