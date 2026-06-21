@@ -324,6 +324,22 @@ export const QuickOrderModal: React.FC = () => {
     }
   };
 
+  const handleProductChange = (val: string) => {
+    setProduct(val);
+    if (selectedProductId || selectedDistributor) {
+      setSelectedDistributor('');
+      setSelectedRate('');
+      setSelectedMrp('');
+      setSelectedMapped(null);
+      setSelectedScheme('');
+      setSelectedProductId('');
+      setSelectedStoreId('');
+      setSelectedProductCode('');
+      setSelectedCompany('');
+      setSelectedPackaging('');
+    }
+  };
+
   const selectSuggestion = (med: SuggestionMedicine) => {
     if (med.isErrorMessage) return;
     ignoreNextSearchRef.current = true;
@@ -553,7 +569,7 @@ export const QuickOrderModal: React.FC = () => {
                       ref={productInputRef}
                       type="text"
                       value={product}
-                      onChange={(e) => setProduct(e.target.value)}
+                      onChange={(e) => handleProductChange(e.target.value)}
                       onKeyDown={handleProductKeyDown}
                       className="w-full premium-input pl-11 pr-5 py-3 text-sm font-semibold"
                       placeholder="Search or enter medicine name..."
@@ -665,9 +681,32 @@ export const QuickOrderModal: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      <div className="font-mono font-extrabold whitespace-nowrap flex flex-col items-end gap-0.5 text-right shrink-0">
-                        {selectedRate !== '' && <span className="text-emerald-500 text-sm">PTR: ₹{selectedRate}</span>}
-                        {selectedMrp !== '' && <span className="text-muted text-[10px]">MRP: ₹{selectedMrp}</span>}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="font-mono font-extrabold whitespace-nowrap flex flex-col items-end gap-0.5 text-right shrink-0">
+                          {selectedRate !== '' && <span className="text-emerald-500 text-sm">PTR: ₹{selectedRate}</span>}
+                          {selectedMrp !== '' && <span className="text-muted text-[10px]">MRP: ₹{selectedMrp}</span>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDistributor('');
+                            setSelectedRate('');
+                            setSelectedMrp('');
+                            setSelectedMapped(null);
+                            setSelectedScheme('');
+                            setSelectedProductId('');
+                            setSelectedStoreId('');
+                            setSelectedProductCode('');
+                            setSelectedCompany('');
+                            setSelectedPackaging('');
+                            setProduct('');
+                            setTimeout(() => productInputRef.current?.focus(), 50);
+                          }}
+                          className="p-1.5 text-muted hover:text-red hover:bg-red-500/10 rounded-xl transition-all ml-1.5"
+                          title="Cancel distributor selection"
+                        >
+                          <X size={14} />
+                        </button>
                       </div>
                     </div>
                   )}
