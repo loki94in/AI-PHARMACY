@@ -48,8 +48,13 @@ router.get('/search', async (req, res) => {
     return res.json([]);
   }
 
+  const storeId = req.query.storeId ? Number(req.query.storeId) : null;
+  const isMapped = req.query.isMapped === 'true';
+  const hasStoreFilter = storeId !== null && !isNaN(storeId);
+  const cacheKey = storeId ? `${q}_store_${storeId}_mapped_${isMapped}` : q;
+
   // Check cache first
-  const cached = searchCache.get(q);
+  const cached = searchCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return res.json(cached.data);
   }
@@ -63,13 +68,13 @@ router.get('/search', async (req, res) => {
     }
 
     try {
-      const payload = {
+      const payload: any = {
         SearchKeyword: q,
-        StoreId: [],
-        NonMappedStoreId: [],
+        StoreId: hasStoreFilter && isMapped ? [storeId] : [],
+        NonMappedStoreId: hasStoreFilter && !isMapped ? [storeId] : [],
         Count: 50,
         SkipCount: 0,
-        isMappedSearch: null,
+        isMappedSearch: hasStoreFilter ? isMapped : null,
         IsStock: 2,
         IsScheme: 2,
         IsSort: 1,
@@ -110,7 +115,7 @@ router.get('/search', async (req, res) => {
           }));
           
           // Cache successful response
-          searchCache.set(q, { timestamp: Date.now(), data: mappedProducts });
+          searchCache.set(cacheKey, { timestamp: Date.now(), data: mappedProducts });
           
           return res.json(mappedProducts);
         } else {
@@ -133,6 +138,67 @@ router.get('/search', async (req, res) => {
   } catch (err: any) {
     console.error('Pharmarack search simulator error:', err);
     res.status(500).json({ error: 'Failed to search Pharmarack catalog' });
+  }
+});
+
+// Fetch store list grouped by mapped vs non-mapped
+router.get('/distributors', async (req, res) => {
+  try {
+    const settings = await getPharmarackSettings();
+    const token = settings['pharmarack_session_token'] || '';
+
+    if (!token) {
+      return res.status(401).json({ error: 'Need to login', code: 'NEED_LOGIN' });
+    }
+
+    const authHeader = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+
+    const response = await fetch('https://pharmretail-api.pharmarack.com/user/api/v2/store-list', {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'devicetype': 'web',
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://retailers.pharmarack.com/',
+        'Origin': 'https://retailers.pharmarack.com'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      return res.status(401).json({ error: 'Session expired. Please login again.', code: 'NEED_LOGIN' });
+    }
+    if (!response.ok) {
+      return res.status(503).json({ error: `Pharmarack API returned status ${response.status}` });
+    }
+
+    const data: any = await response.json();
+    if (!data || !data.success || !data.data || !Array.isArray(data.data.Stores)) {
+      return res.status(503).json({ error: 'Unexpected response structure from Pharmarack store list API' });
+    }
+
+    const stores = data.data.Stores.map((s: any) => ({
+      storeId: s.StoreId,
+      storeName: s.StoreName || 'Unknown Store',
+      isMapped: s.Ismapped === 1,
+      partyCode: s.PartyCode || '',
+      address: s.Address1 || '',
+      city: s.City || '',
+      mobileNumber: s.MobileNumber || '',
+      email: s.Email || '',
+      contactPerson: s.ContactPerson || '',
+      remarks: s.OrderRemarks || ''
+    }));
+
+    const mapped = stores.filter((s: any) => s.isMapped);
+    const nonMapped = stores.filter((s: any) => !s.isMapped);
+
+    return res.json({ success: true, mapped, nonMapped });
+  } catch (err: any) {
+    console.error('Pharmarack distributors fetch error:', err);
+    return res.status(500).json({ error: 'Internal server error: ' + err.message });
   }
 });
 
@@ -518,7 +584,7 @@ router.post('/cart/add', async (req, res) => {
           RateValidity: null,
           IsShowNonMappedOrderStock: 1,
           RStockVisibility: 0,
-          IsMapped: 1,
+          IsMapped: (item.mapped === false || item.isMapped === false) ? 0 : 1,
           ProductId: Number(item.productId) || 0,
           MRP: String(item.mrp || rateVal),
           ProductWiseAmount: 0,
@@ -652,7 +718,7 @@ router.post('/cart/add', async (req, res) => {
               RateValidity: null,
               IsShowNonMappedOrderStock: 1,
               RStockVisibility: 0,
-              IsMapped: 1,
+              IsMapped: (item.mapped === false || item.isMapped === false) ? 0 : 1,
               ProductId: Number(item.productId) || 0,
               MRP: String(item.mrp || rateVal),
               ProductWiseAmount: 0,

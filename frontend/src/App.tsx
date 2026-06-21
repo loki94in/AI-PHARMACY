@@ -30,6 +30,7 @@ import {
   Smartphone,
   QrCode,
   RefreshCw,
+  Building2,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { toastEvent, quickOrderEvent, liveCartAddEvent } from './services/events';
@@ -69,6 +70,7 @@ const CompositionQueue = lazy(() => import('./pages/CompositionQueue'));
 const CustomerReturn = lazy(() => import('./pages/CustomerReturn'));
 const CustomerReturnHistory = lazy(() => import('./pages/CustomerReturnHistory'));
 const PharmarackCart = lazy(() => import('./pages/PharmarackCart'));
+const NonMappedDistributors = lazy(() => import('./pages/NonMappedDistributors'));
 const AutomationCenter = lazy(() => import('./pages/AutomationCenter'));
 const InvestigationCenter = lazy(() => import('./pages/Investigation'));
 const PhoneSales = lazy(() => import('./pages/PhoneSales'));
@@ -123,6 +125,7 @@ const Sidebar = ({
     { path: '/orders', label: 'Orders & Requests', icon: <ClipboardList size={18} /> },
     { path: '/automation-center', label: 'Automation Center', icon: <Activity size={18} /> },
     { path: '/pharmarack-cart', label: 'Pharmarack Cart', icon: <ShoppingCart size={18} /> },
+    { path: '/non-mapped-distributors', label: 'Non-Mapped Distributors', icon: <Building2 size={18} /> },
     { path: '/database', label: 'Master Database', icon: <Database size={18} /> },
     { path: '/composition-queue', label: 'Composition Queue', icon: <Beaker size={18} /> },
     { path: '/reports', label: 'Reports', icon: <LayoutDashboard size={18} /> },
@@ -1089,7 +1092,7 @@ const Layout = ({
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 }) => {
   const location = useLocation();
-  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/pharmarack-cart', '/automation-center', '/investigation', '/phone-sales', '/device-logs'].includes(location.pathname);
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/pharmarack-cart', '/non-mapped-distributors', '/automation-center', '/investigation', '/phone-sales', '/device-logs'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     try {
@@ -1373,6 +1376,7 @@ function App() {
             <Route path="/orders" element={<Orders />} />
             <Route path="/automation-center" element={<AutomationCenter />} />
             <Route path="/pharmarack-cart" element={<PharmarackCart />} />
+            <Route path="/non-mapped-distributors" element={<NonMappedDistributors />} />
             <Route path="/migration" element={<Migration />} />
             <Route path="/doctors" element={<Doctors />} />
             <Route path="/dispatch" element={<Dispatch />} />

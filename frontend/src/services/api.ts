@@ -351,7 +351,14 @@ export const api = {
   createMedicine: (data: any) => apiClient.post('/medicines', data).then(res => res.data),
 
   getMedicinePriceHistory: (name: string) => apiClient.get('/purchases/price-history', { params: { name } }).then(res => res.data),
-  searchPharmarack: (q: string) => apiClient.get('/pharmarack/search', { params: { q } }).then(res => res.data),
+  searchPharmarack: (q: string, storeId?: string | number, isMapped?: boolean) => 
+    apiClient.get('/pharmarack/search', { 
+      params: { 
+        q, 
+        ...(storeId !== undefined && storeId !== null ? { storeId } : {}),
+        ...(isMapped !== undefined && isMapped !== null ? { isMapped } : {})
+      } 
+    }).then(res => res.data),
   addPharmarackCart: (items: Array<{ 
     productId: string | number; 
     storeId: string | number; 
@@ -363,9 +370,11 @@ export const api = {
     productName?: string;
     storeName?: string;
     packaging?: string;
+    mapped?: boolean;
   }>) => 
     apiClient.post('/pharmarack/cart/add', { items }).then(res => res.data),
   getPharmarackCart: () => apiClient.get('/pharmarack/cart').then(res => res.data),
+  getPharmarackDistributors: () => apiClient.get('/pharmarack/distributors').then(res => res.data),
   checkPharmarackSession: () => apiClient.get('/pharmarack/session-status').then(res => res.data),
   
   // Composition Enrichment

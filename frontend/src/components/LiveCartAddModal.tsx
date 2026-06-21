@@ -285,7 +285,8 @@ export const LiveCartAddModal: React.FC = () => {
         company: selectedCompany,
         productName: product.trim(),
         storeName: selectedDistributor,
-        packaging: selectedPackaging
+        packaging: selectedPackaging,
+        mapped: selectedMapped === false ? false : true
       }]);
 
       toastEvent.trigger(`Added "${product}" directly to live Pharmarack cart!`, 'success');
