@@ -1250,15 +1250,40 @@ router.get('/price-history', async (req, res) => {
     }
     db = await dbManager.getConnection();
 
-    const medicines = await db.all(
-      'SELECT id FROM medicines WHERE name LIKE ? LIMIT 5',
-      [`%${name}%`]
-    );
-    if (medicines.length === 0) {
-            return res.json({ data: [] });
+    let medicineIds: number[] = [];
+
+    // 1. Try fuzzy matching lookup
+    try {
+      if (productNameFilterService) {
+        await productNameFilterService.initialize();
+        const filterResult = await productNameFilterService.filterProductNames(name);
+        if (filterResult && filterResult.matches && filterResult.matches.length > 0) {
+          const queryPlaceholders = filterResult.matches.map(() => '?').join(',');
+          const meds = await db.all(
+            `SELECT id FROM medicines WHERE name IN (${queryPlaceholders})`,
+            filterResult.matches
+          );
+          medicineIds = meds.map((m: any) => m.id);
+        }
+      }
+    } catch (e) {
+      console.warn('Fuzzy lookup in price-history failed, falling back to LIKE:', e);
     }
 
-    const medicineIds = medicines.map((m: any) => m.id);
+    // 2. Fallback to LIKE if no fuzzy matches found
+    if (medicineIds.length === 0) {
+      const cleanName = name.split(' ')[0] || name;
+      const medicines = await db.all(
+        'SELECT id FROM medicines WHERE name LIKE ? OR name LIKE ? LIMIT 5',
+        [`%${name}%`, `%${cleanName}%`]
+      );
+      medicineIds = medicines.map((m: any) => m.id);
+    }
+
+    if (medicineIds.length === 0) {
+      return res.json({ data: [] });
+    }
+
     const placeholders = medicineIds.map(() => '?').join(',');
 
     const priceHistory = await db.all(`
@@ -1269,8 +1294,11 @@ router.get('/price-history', async (req, res) => {
         pi.expiry_date,
         pi.cost_price as rate,
         pi.mrp,
+        pi.quantity,
+        pi.free_qty,
         pi.cgst_per,
         pi.sgst_per,
+        pi.igst_per,
         pi.cd_value as cd_rs
       FROM purchase_items pi
       JOIN purchases p ON pi.purchase_id = p.id
@@ -1280,7 +1308,28 @@ router.get('/price-history', async (req, res) => {
       LIMIT 20
     `, medicineIds);
 
-        res.json({ data: priceHistory });
+    const priceHistoryWithNetRate = priceHistory.map((item: any) => {
+      const qty = Number(item.quantity) || 0;
+      const freeQty = Number(item.free_qty) || 0;
+      const rate = Number(item.rate) || 0;
+      const cd = Number(item.cd_rs) || 0;
+      const taxPer = (Number(item.cgst_per) || 0) + (Number(item.sgst_per) || 0) + (Number(item.igst_per) || 0);
+
+      const totalQty = qty + freeQty;
+      let netRate = rate;
+      if (totalQty > 0) {
+        const taxableVal = (rate * qty) - cd;
+        const totalValWithTax = taxableVal * (1 + taxPer / 100);
+        netRate = totalValWithTax / totalQty;
+      }
+
+      return {
+        ...item,
+        net_rate: parseFloat(netRate.toFixed(4))
+      };
+    });
+
+    res.json({ data: priceHistoryWithNetRate });
   } catch (error) {
     console.error('Price history error:', error);
     res.status(500).json({ error: 'Internal server error' });

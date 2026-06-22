@@ -295,6 +295,8 @@ export const api = {
   addPatient: (data: any) => apiClient.post('/crm/patients', data).then(res => res.data),
   getDoctors: () => apiClient.get('/crm/doctors').then(res => res.data),
   addDoctor: (data: any) => apiClient.post('/crm/doctors', data).then(res => res.data),
+  updateDoctor: (id: number | string, data: any) => apiClient.put(`/crm/doctors/${id}`, data).then(res => res.data),
+  sendDailyDoctorReports: (date?: string) => apiClient.post('/crm/doctors/send-daily-reports', { date }).then(res => res.data),
   
   // Email / Mail Parser
   getEmailInbox: (limit: number = 50) => apiClient.get('/email/inbox', { params: { limit } }).then(res => res.data),

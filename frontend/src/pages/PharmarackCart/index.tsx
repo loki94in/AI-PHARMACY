@@ -34,14 +34,67 @@ export default function PharmarackCart() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
+  const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
+  const [priceHistoryCache, setPriceHistoryCache] = useState<Record<string, any[]>>({});
+
+  const fetchPriceHistories = async (currDistributors: Distributor[]) => {
+    const uniqueNames = Array.from(
+      new Set(currDistributors.flatMap(d => d.items.map(it => it.productName)))
+    ).filter(Boolean);
+
+    setPriceHistoryCache(prevCache => {
+      const namesToFetch = uniqueNames.filter(name => !prevCache[name]);
+      if (namesToFetch.length > 0) {
+        Promise.all(
+          namesToFetch.map(async (name) => {
+            try {
+              const res = await api.getMedicinePriceHistory(name);
+              return { name, data: res?.data || [] };
+            } catch (e) {
+              return { name, data: [] };
+            }
+          })
+        ).then(results => {
+          setPriceHistoryCache(current => {
+            const next = { ...current };
+            results.forEach(r => {
+              next[r.name] = r.data;
+            });
+            return next;
+          });
+        });
+      }
+      return prevCache;
+    });
+  };
+
+  const getDuplicateItemInCart = (currentItem: CartLineItem) => {
+    const normName = currentItem.productName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const dist of distributors) {
+      if (dist.storeId === currentItem.storeId) continue;
+      for (const it of dist.items) {
+        const itNormName = it.productName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normName === itNormName && Math.abs(currentItem.mrp - it.mrp) < 0.01) {
+          return {
+            storeName: dist.storeName,
+            qty: it.qty
+          };
+        }
+      }
+    }
+    return null;
+  };
+
   const fetchCart = async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await api.getPharmarackCart();
       if (data && data.success) {
-        setDistributors(data.distributors || []);
+        const list = data.distributors || [];
+        setDistributors(list);
         setLastFetched(new Date());
+        fetchPriceHistories(list);
       } else {
         setError('Failed to retrieve cart details.');
       }
@@ -50,6 +103,84 @@ export default function PharmarackCart() {
       setError(err?.response?.data?.error || 'Failed to fetch cart. Please check server logs or verify your session.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCartSilent = async () => {
+    try {
+      const data = await api.getPharmarackCart();
+      if (data && data.success) {
+        const list = data.distributors || [];
+        setDistributors(list);
+        setLastFetched(new Date());
+        fetchPriceHistories(list);
+      }
+    } catch (err) {
+      console.error('Failed silent cart refresh:', err);
+    }
+  };
+
+  const handleUpdateQty = async (item: CartLineItem, newQty: number) => {
+    if (newQty < 1) return;
+
+    // 1. Optimistic Update (Immediate UI state update)
+    setDistributors(prev => prev.map(dist => {
+      if (dist.storeId !== item.storeId) return dist;
+      
+      const updatedItems = dist.items.map(i => {
+        if (i.productCode !== item.productCode) return i;
+        const oldQty = i.qty;
+        // Recalculate amount using PTR rate
+        const rateVal = i.ptr || 0;
+        const newAmount = rateVal * newQty;
+        return {
+          ...i,
+          qty: newQty,
+          amount: newAmount
+        };
+      });
+
+      const newlineTotal = updatedItems.reduce((sum, it) => sum + it.amount, 0);
+
+      return {
+        ...dist,
+        items: updatedItems,
+        lineTotal: newlineTotal
+      };
+    }));
+
+    setUpdatingItemId(item.productCode);
+    try {
+      const storeName = distributors.find(d => d.storeId === item.storeId)?.storeName || '';
+      const payload = [{
+        productId: item.productId || 0,
+        storeId: item.storeId,
+        qty: newQty,
+        productCode: item.productCode,
+        productName: item.productName,
+        company: item.company,
+        packaging: item.packaging,
+        rate: item.ptr,
+        mrp: item.mrp,
+        storeName: storeName,
+        mapped: true
+      }];
+      
+      const res = await api.addPharmarackCart(payload);
+      if (res && res.success) {
+        toastEvent.trigger('Quantity updated successfully', 'success');
+        // Silent background refresh to verify final state without showing a full screen loading spinner
+        await fetchCartSilent();
+      } else {
+        toastEvent.trigger(res?.error || 'Failed to update quantity', 'error');
+        await fetchCart(); // Revert to server state on error
+      }
+    } catch (err: any) {
+      console.error('Failed to update quantity:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to update quantity', 'error');
+      await fetchCart(); // Revert to server state on error
+    } finally {
+      setUpdatingItemId(null);
     }
   };
 
@@ -205,7 +336,41 @@ export default function PharmarackCart() {
                     {dist.items.map((item, idx) => (
                       <tr key={`${item.productCode}-${idx}`} className="hover:bg-bg3/10 transition-colors">
                         <td className="px-4 py-2.5">
-                          <span className="font-bold text-text text-[11px]">{item.productName}</span>
+                          <div className="flex flex-col gap-1">
+                            <span className="font-bold text-text text-[11px]">{item.productName}</span>
+                            
+                            {/* Duplicate Distributor Warning */}
+                            {(() => {
+                              const dup = getDuplicateItemInCart(item);
+                              if (dup) {
+                                return (
+                                  <div className="flex items-center gap-1 text-[9px] font-extrabold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20 w-fit">
+                                    <AlertCircle size={10} className="shrink-0" />
+                                    <span>Also in cart under {dup.storeName} ({dup.qty} qty)</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            {/* Alternative Distributor Suggestion */}
+                            {(() => {
+                              const history = priceHistoryCache[item.productName] || [];
+                              const matchingMrpHistory = history.filter(h => Math.abs(h.mrp - item.mrp) < 0.1);
+                              if (matchingMrpHistory.length > 0) {
+                                const best = matchingMrpHistory.reduce((prev, curr) => (curr.net_rate < prev.net_rate) ? curr : prev, matchingMrpHistory[0]);
+                                if (best.net_rate < item.ptr) {
+                                  return (
+                                    <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 w-fit mt-0.5" title={`Rate: ₹${best.rate.toFixed(2)}, Free: ${best.free_qty}, Disc: ₹${best.cd_rs.toFixed(2)}`}>
+                                      <Clock size={10} className="shrink-0" />
+                                      <span>Cheapest historic: ₹{best.net_rate.toFixed(2)} from {best.distributor_name}</span>
+                                    </div>
+                                  );
+                                }
+                              }
+                              return null;
+                            })()}
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-muted text-[10px] max-w-[120px] truncate">{item.company}</td>
                         <td className="px-3 py-2.5 text-center">
@@ -216,9 +381,37 @@ export default function PharmarackCart() {
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-center">
-                          <span className="font-black text-text font-mono bg-bg2 px-2 py-0.5 rounded border border-glass-border/60 text-[11px]">
-                            {item.qty}
-                          </span>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQty(item, item.qty - 1)}
+                              disabled={updatingItemId === item.productCode || item.qty <= 1}
+                              className="w-5 h-5 rounded bg-bg3 border border-glass-border hover:bg-bg2 hover:text-text text-muted flex items-center justify-center font-bold text-xs disabled:opacity-40 transition-all"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="text"
+                              pattern="[0-9]*"
+                              value={item.qty}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value.replace(/\D/g, ''), 10);
+                                if (!isNaN(val) && val >= 1) {
+                                  handleUpdateQty(item, val);
+                                }
+                              }}
+                              disabled={updatingItemId === item.productCode}
+                              className="w-10 text-center font-black text-text font-mono bg-bg border border-glass-border rounded py-0.5 text-xs focus:outline-none focus:border-primary disabled:opacity-50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQty(item, item.qty + 1)}
+                              disabled={updatingItemId === item.productCode}
+                              className="w-5 h-5 rounded bg-bg3 border border-glass-border hover:bg-bg2 hover:text-text text-muted flex items-center justify-center font-bold text-xs disabled:opacity-40 transition-all"
+                            >
+                              +
+                            </button>
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono text-text text-[11px]">
                           {item.ptr > 0 ? `₹${item.ptr.toFixed(2)}` : '—'}

@@ -2,6 +2,7 @@ import express from 'express';
 import { dbManager } from '../database/connection.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { sendDailyDoctorReports } from '../services/doctorReportingService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -112,19 +113,52 @@ router.get('/doctors', async (req, res) => {
 
 // Create a doctor
 router.post('/doctors', async (req, res) => {
-  const { name, speciality, phone, hospital, degree, reg_no } = req.body;
+  const { name, speciality, phone, hospital, degree, reg_no, send_daily_summary } = req.body;
   if (!name) return res.status(400).json({ error: 'Doctor name is required' });
   try {
     const db = await dbManager.getConnection();
     await db.run(
-      `INSERT INTO doctors (name, speciality, phone, hospital, degree, reg_no)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [name, speciality || '', phone || '', hospital || '', degree || '', reg_no || '']
+      `INSERT INTO doctors (name, speciality, phone, hospital, degree, reg_no, send_daily_summary)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [name, speciality || '', phone || '', hospital || '', degree || '', reg_no || '', send_daily_summary ? 1 : 0]
     );
-        res.json({ success: true, message: 'Doctor added successfully' });
+    res.json({ success: true, message: 'Doctor added successfully' });
   } catch (error) {
     console.error('Failed to add doctor:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update a doctor
+router.put('/doctors/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, speciality, phone, hospital, degree, reg_no, send_daily_summary } = req.body;
+  if (!name) return res.status(400).json({ error: 'Doctor name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    await db.run(
+      `UPDATE doctors 
+       SET name = ?, speciality = ?, phone = ?, hospital = ?, degree = ?, reg_no = ?, send_daily_summary = ?
+       WHERE id = ?`,
+      [name, speciality || '', phone || '', hospital || '', degree || '', reg_no || '', send_daily_summary ? 1 : 0, id]
+    );
+    const updated = await db.get('SELECT * FROM doctors WHERE id = ?', id);
+    res.json({ success: true, doctor: updated });
+  } catch (error) {
+    console.error('Failed to update doctor:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Trigger daily doctor WhatsApp reports manually for testing
+router.post('/doctors/send-daily-reports', async (req, res) => {
+  const { date } = req.body; // e.g. "2026-06-22", optional
+  try {
+    const result = await sendDailyDoctorReports(date);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Failed to manually trigger doctor reports:', error);
+    res.status(500).json({ error: 'Internal server error: ' + error.message });
   }
 });
 

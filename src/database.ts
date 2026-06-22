@@ -256,6 +256,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE distributors ADD COLUMN dl_no TEXT`,
     `ALTER TABLE distributors ADD COLUMN phone TEXT`,
     `ALTER TABLE distributors ADD COLUMN state_code TEXT`,
+    `ALTER TABLE doctors ADD COLUMN send_daily_summary INTEGER DEFAULT 0`,
     // Customers extra columns
     `ALTER TABLE customers ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE customers ADD COLUMN age TEXT`,
@@ -396,7 +397,8 @@ export async function ensureSchema(dbPath: string) {
       address TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       legacy_id TEXT,
-      speciality TEXT
+      speciality TEXT,
+      send_daily_summary INTEGER DEFAULT 0
     );
 
 

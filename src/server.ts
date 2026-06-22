@@ -289,6 +289,11 @@ ensureSchema(DB_PATH).then(async () => {
         // 2. WhatsApp Queue Worker (started always; checks automation_enabled inside processQueue)
         whatsappQueue.startWorker();
 
+        // 8. Doctor WhatsApp Reporting Scheduler (started always; checks internally)
+        import('./services/doctorReportingService.js')
+          .then(m => m.startDoctorReportingScheduler())
+          .catch(err => console.error('Failed to start doctor reporting scheduler:', err));
+
         // 5. Daily check at 9:00 AM for patient refills & overdue credit notes (registered always; checks dynamically)
         cron.schedule('0 9 * * *', async () => {
           try {
