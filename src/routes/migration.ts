@@ -9,7 +9,7 @@ import fs from 'fs';
 import multer from 'multer';
 import AdmZip from 'adm-zip';
 import * as XLSX from 'xlsx';
-import { migrationStatus, runManualMigration } from '../worker/migrationWorker.js';
+import { migrationStatus, runManualMigration, runManualMigrationQueue, MigrationTask } from '../worker/migrationWorker.js';
 import csvParser from 'csv-parser';
 import zlib from 'zlib';
 import { detectDataModules, autoMapColumn, matchesFilters, runSimulation, runValidationCheck } from '../utils/preMigrationIntelligence.js';
@@ -169,25 +169,31 @@ router.get('/files', (req, res) => {
 
 // Trigger a manual migration script
 router.post('/run', async (req, res) => {
-  const { fileName, dataType, mapping, skipLines, sheetIndex, filters, medicineActions } = req.body;
-  if (!fileName) {
-    return res.status(400).json({ error: 'fileName required' });
+  const { tasks, fileName, dataType, mapping, skipLines, sheetIndex, filters, medicineActions } = req.body;
+  if (!tasks && !fileName) {
+    return res.status(400).json({ error: 'fileName or tasks required' });
   }
   try {
     const db = await dbManager.getConnection();
     await db.run(
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-      ['MIGRATION', `Requested manual migration for: ${fileName} (${dataType || 'default'})`]
+      ['MIGRATION', `Requested manual migration for: ${tasks ? 'Queue (' + tasks.length + ' files)' : fileName}`]
     );
     
     // Call the worker in the background
-    const skipCount = parseInt(skipLines) || 0;
-    const sheetIdx = parseInt(sheetIndex) || 0;
-    runManualMigration(fileName, dataType || 'inventory', mapping, skipCount, sheetIdx, filters, medicineActions).catch(error => {
-      console.error('Background migration error:', error);
-    });
+    if (tasks && Array.isArray(tasks)) {
+      runManualMigrationQueue(tasks).catch(error => {
+        console.error('Background migration queue error:', error);
+      });
+    } else {
+      const skipCount = parseInt(skipLines) || 0;
+      const sheetIdx = parseInt(sheetIndex) || 0;
+      runManualMigration(fileName, dataType || 'inventory', mapping, skipCount, sheetIdx, filters, medicineActions).catch(error => {
+        console.error('Background migration error:', error);
+      });
+    }
 
-    res.json({ success: true, message: `Migration for ${fileName} started in the background` });
+    res.json({ success: true, message: `Migration started in the background` });
   } catch (error: any) {
     console.error('Migration error:', error);
     res.status(500).json({ error: error.message || 'Failed to start migration' });
@@ -749,7 +755,7 @@ router.get('/staging/returns', async (req, res) => {
   try {
     const db = await openStagingDb();
     const rows = await db.all(`
-      SELECT r.id, r.return_no, r.date, r.total_amount, r.return_invoice_id, r.return_sub_type, r.return_date_time, d.name as distributor_name,
+      SELECT r.id, r.return_no, r.date, r.total_amount, r.return_invoice_id, r.return_sub_type, r.raw_return_type, r.return_date_time, d.name as distributor_name,
              (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri WHERE ri.return_id = r.id) as total_qty,
              (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id = r.id) as item_count
       FROM returns r
@@ -765,7 +771,7 @@ router.put('/staging/returns/:id', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB' });
   try {
     const db = await openStagingDb();
-    const { return_no, date, total_amount, distributor_name, return_invoice_id, return_sub_type, return_date_time } = req.body;
+    const { return_no, date, total_amount, distributor_name, return_invoice_id, return_sub_type, raw_return_type, return_date_time } = req.body;
     const updates = [];
     const params = [];
     if (return_no !== undefined) { updates.push('return_no = ?'); params.push(return_no); }
@@ -773,6 +779,7 @@ router.put('/staging/returns/:id', async (req, res) => {
     if (total_amount !== undefined) { updates.push('total_amount = ?'); params.push(total_amount); }
     if (return_invoice_id !== undefined) { updates.push('return_invoice_id = ?'); params.push(return_invoice_id); }
     if (return_sub_type !== undefined) { updates.push('return_sub_type = ?'); params.push(return_sub_type); }
+    if (raw_return_type !== undefined) { updates.push('raw_return_type = ?'); params.push(raw_return_type); }
     if (return_date_time !== undefined) { updates.push('return_date_time = ?'); params.push(return_date_time); }
     
     if (updates.length > 0) {

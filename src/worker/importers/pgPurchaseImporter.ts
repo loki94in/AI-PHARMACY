@@ -32,16 +32,21 @@ export async function importBatch(row: Record<string, string | null>, db: Databa
   const medicineId = medicineMap.get(legacyMedicineId);
   if (!medicineId) return; // Medicine was deleted or not imported
 
+  // ponytail: batch_expiry is a full timestamp — normalise to date string
+  const rawExpiry = row['batch_expiry'] || null;
+  const expiryNorm = rawExpiry ? rawExpiry.split(' ')[0] : null;
+
   batchBatch.push({
     medicine_id: medicineId,
     batch_no: row['batch_number'] || legacyBatchId,
-    expiry_date: row['batch_expiry'] || null,
-    rack_location: row['batch_rack'] || null,
+    expiry_date: expiryNorm,
+    // backup uses 'rack' not 'batch_rack'
+    rack_location: row['rack'] || null,
     cost_price: parseFloat(row['cost_price'] || '0') || 0,
     unit_price: parseFloat(row['mrp'] || '0') || 0,
     mrp: parseFloat(row['mrp'] || '0') || 0,
     legacy_batch_id: legacyBatchId,
-    quantity: 0, // Will be updated from stock_effects
+    quantity: 0, // Will be rebuilt from stock_effects
   });
 
   if (batchBatch.length >= BATCH_SIZE) {
@@ -52,16 +57,21 @@ export async function importBatch(row: Record<string, string | null>, db: Databa
 export async function flushBatches(db: Database) {
   if (batchBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const b of batchBatch) {
-    const result = await db.run(
-      `INSERT INTO inventory_master (medicine_id, batch_no, expiry_date, rack_location, cost_price, unit_price, mrp, legacy_batch_id, quantity)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [b.medicine_id, b.batch_no, b.expiry_date, b.rack_location, b.cost_price, b.unit_price, b.mrp, b.legacy_batch_id, b.quantity]
-    );
-    batchMap.set(b.legacy_batch_id, result.lastID!);
+  try {
+    for (const b of batchBatch) {
+      const result = await db.run(
+        `INSERT INTO inventory_master (medicine_id, batch_no, expiry_date, rack_location, cost_price, unit_price, mrp, legacy_batch_id, quantity)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [b.medicine_id, b.batch_no, b.expiry_date, b.rack_location, b.cost_price, b.unit_price, b.mrp, b.legacy_batch_id, b.quantity]
+      );
+      batchMap.set(b.legacy_batch_id, result.lastID!);
+    }
+    await db.run('COMMIT');
+    batchBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  batchBatch = [];
 }
 
 // ─── Inventory → purchases (purchase bill headers) ──────────
@@ -72,9 +82,10 @@ export async function importInventory(row: Record<string, string | null>, db: Da
   const deleted = row['deleted'];
   if (!legacyId || deleted === 't') return;
 
-  // Only import PUBLISHED purchases (not drafts/transfers)
+  // Skip explicitly cancelled/deleted/transferred records; allow NULL status (older records)
   const status = row['status'];
-  if (status && status !== 'PUBLISHED') return;
+  const SKIP_STATUSES = ['DRAFT', 'CANCELLED', 'DELETED', 'HOLD'];
+  if (status && SKIP_STATUSES.includes(status)) return;
 
   // Skip transfer entries
   if (row['is_transfer'] === 't' || row['is_transfer'] === 'true') return;
@@ -108,16 +119,21 @@ export async function importInventory(row: Record<string, string | null>, db: Da
 export async function flushPurchases(db: Database) {
   if (purchaseBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const p of purchaseBatch) {
-    const result = await db.run(
-      `INSERT INTO purchases (distributor_id, invoice_no, date, total_amount, cgst_value, sgst_value, igst_value, roff, status, legacy_id, business_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.distributor_id, p.invoice_no, p.date, p.total_amount, p.cgst_value, p.sgst_value, p.igst_value, p.roff, p.status, p.legacy_id, p.business_date]
-    );
-    purchaseMap.set(p.legacy_id, result.lastID!);
+  try {
+    for (const p of purchaseBatch) {
+      const result = await db.run(
+        `INSERT INTO purchases (distributor_id, invoice_no, date, total_amount, cgst_value, sgst_value, igst_value, roff, status, legacy_id, business_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.distributor_id, p.invoice_no, p.date, p.total_amount, p.cgst_value, p.sgst_value, p.igst_value, p.roff, p.status, p.legacy_id, p.business_date]
+      );
+      purchaseMap.set(p.legacy_id, result.lastID!);
+    }
+    await db.run('COMMIT');
+    purchaseBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  purchaseBatch = [];
 }
 
 // ─── Inventory Medicine → purchase_items ────────────────────
@@ -169,15 +185,20 @@ export async function importInventoryMedicine(row: Record<string, string | null>
 export async function flushPurchaseItems(db: Database) {
   if (purchaseItemBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const pi of purchaseItemBatch) {
-    await db.run(
-      `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, quantity, free_qty, cost_price, mrp, hsn_code,
-        cgst_per, cgst_value, sgst_per, sgst_value, igst_per, igst_value, scheme_per, scheme_value, cd_value, legacy_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [pi.purchase_id, pi.medicine_id, pi.batch_no, pi.quantity, pi.free_qty, pi.cost_price, pi.mrp, pi.hsn_code,
-       pi.cgst_per, pi.cgst_value, pi.sgst_per, pi.sgst_value, pi.igst_per, pi.igst_value, pi.scheme_per, pi.scheme_value, pi.cd_value, pi.legacy_id]
-    );
+  try {
+    for (const pi of purchaseItemBatch) {
+      await db.run(
+        `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, quantity, free_qty, cost_price, mrp, hsn_code,
+          cgst_per, cgst_value, sgst_per, sgst_value, igst_per, igst_value, scheme_per, scheme_value, cd_value, legacy_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [pi.purchase_id, pi.medicine_id, pi.batch_no, pi.quantity, pi.free_qty, pi.cost_price, pi.mrp, pi.hsn_code,
+         pi.cgst_per, pi.cgst_value, pi.sgst_per, pi.sgst_value, pi.igst_per, pi.igst_value, pi.scheme_per, pi.scheme_value, pi.cd_value, pi.legacy_id]
+      );
+    }
+    await db.run('COMMIT');
+    purchaseItemBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  purchaseItemBatch = [];
 }

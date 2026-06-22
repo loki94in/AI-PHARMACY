@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PackageSearch, Filter, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Search, Edit, Save } from 'lucide-react';
 import { api, type InventoryItem } from '../../services/api';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
@@ -59,23 +59,30 @@ const Inventory = () => {
 
   const [specialOrders, setSpecialOrders] = useState<any[]>([]);
 
-  const loadInventory = () => {
+  const loadInventory = useCallback((searchQuery = '') => {
     setLoading(true);
-    api.getInventory()
+    api.getInventory({ search: searchQuery })
       .then(data => {
         const fetchedItems = data && (data as any).data ? (data as any).data : data;
-        // STRICT RULE: Only show last 200
-        setItems(Array.isArray(fetchedItems) ? fetchedItems.slice(0, 200) : []);
+        const hasFilters = !!searchQuery;
+        setItems(Array.isArray(fetchedItems) ? (hasFilters ? fetchedItems : fetchedItems.slice(0, 50)) : []);
         setLoading(false);
       })
       .catch(err => {
         console.error(err);
         setLoading(false);
       });
-  };
+  }, []);
 
   useEffect(() => {
-    loadInventory();
+    const delayDebounceFn = setTimeout(() => {
+      loadInventory(searchTerm);
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm, loadInventory]);
+
+  useEffect(() => {
     api.getOrders()
       .then(data => {
         if (Array.isArray(data)) {
@@ -123,7 +130,7 @@ const Inventory = () => {
         setIsSaving(false);
         setIsEditing(false);
         setSelectedItem({ ...selectedItem, ...editForm } as InventoryItem);
-        loadInventory();
+        loadInventory(searchTerm);
       })
       .catch(err => {
         console.error('Failed to update item:', err);
@@ -184,7 +191,7 @@ const Inventory = () => {
               <Filter size={16} /> Filters
             </button>
             <div className="flex-1"></div>
-            <button className="px-4 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 text-sky-400 text-sm font-bold flex items-center gap-2 transition-colors" onClick={loadInventory} aria-label="Refresh inventory" title="Refresh inventory">
+            <button className="px-4 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 text-sky-400 text-sm font-bold flex items-center gap-2 transition-colors" onClick={() => loadInventory(searchTerm)} aria-label="Refresh inventory" title="Refresh inventory">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> 
               <span className="hidden sm:inline">Refresh</span>
             </button>

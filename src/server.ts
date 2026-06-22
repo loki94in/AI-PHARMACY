@@ -140,6 +140,7 @@ app.use(rateLimit({
   max: 300, // limit each IP to 300 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/api/migration') || req.path.startsWith('/api/notifications'),
   message: { error: 'Too many requests, please try again later' }
 }));
 app.use(express.json({ limit: '15mb' }));
@@ -223,7 +224,7 @@ ensureSchema(DB_PATH).then(async () => {
     console.error('[Boot] Could not write last_clean_shutdown flag:', bootErr);
   }
 
-  app.listen(PORT, () => {
+  app.listen(PORT, async () => {
     console.log(`Server is running on http://localhost:${PORT}/test`);
     // Pre-initialize background services if automation is enabled in settings
     dbManager.getConnection()
@@ -361,6 +362,14 @@ ensureSchema(DB_PATH).then(async () => {
       workerSupervisor.start();
     } catch (err) {
       console.error('Failed to start worker supervisor:', err);
+    }
+
+    // Initialize Telegram Bot Service from DB settings
+    try {
+      const { telegramBotService } = await import('./telegramBot.js');
+      await telegramBotService.initializeOrReloadBot();
+    } catch (err) {
+      console.error('Failed to initialize Telegram Bot Service on startup:', err);
     }
 
   // Daily licensing tasks disabled permanently

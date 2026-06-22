@@ -40,15 +40,14 @@ const PurchaseHistory = () => {
   const [resolvingUid, setResolvingUid] = useState<number | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
 
-  useEffect(() => {
-    fetchHistory();
-    fetchReconciliation();
-  }, []);
-
-  const fetchHistory = async () => {
+  const fetchHistory = async (search = searchQuery, start = dateRange.start, end = dateRange.end) => {
     try {
       setLoading(true);
-      const data = await api.getPurchases();
+      const data = await api.getPurchases({
+        search: search || undefined,
+        start: start || undefined,
+        end: end || undefined
+      });
       setTransactions(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error fetching purchase history', err);
@@ -56,6 +55,18 @@ const PurchaseHistory = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchHistory(searchQuery, dateRange.start, dateRange.end);
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, dateRange.start, dateRange.end]);
+
+  useEffect(() => {
+    fetchReconciliation();
+  }, []);
 
   const fetchReconciliation = async () => {
     try {

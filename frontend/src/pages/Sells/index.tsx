@@ -103,8 +103,8 @@ const Sells = () => {
         date_to: dateTo || undefined,
         batch: batchFilter || undefined,
       });
-      // STRICT RULE: Only show last 120
-      setInvoices(Array.isArray(data) ? data.slice(0, 120) : []);
+      const hasFilters = !!(search || dateFrom || dateTo || batchFilter);
+      setInvoices(Array.isArray(data) ? (hasFilters ? data : data.slice(0, 50)) : []);
     } catch (err) {
       console.error('Failed to load sales:', err);
       toastEvent.trigger('Failed to load sales', 'error');

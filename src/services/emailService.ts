@@ -2564,10 +2564,6 @@ export class EmailService {
   public async syncAndCleanAttachments(): Promise<void> {
     let connection: any = null;
     try {
-      let user = this.imapConfig.user;
-      let password = this.imapConfig.password;
-      let xoauth2: string | undefined = undefined;
-
       const db = await dbManager.getConnection();
       
       // Check if auto-delete/cleanup is enabled
@@ -2577,47 +2573,9 @@ export class EmailService {
       const limitRow = await db.get("SELECT value FROM app_settings WHERE key = 'email_autodelete_limit'");
       const autodeleteLimit = limitRow ? parseInt(limitRow.value, 10) || 10 : 10;
 
-      // Read Gmail configurations
-      const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
-      const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-      if (userRow && userRow.value) user = userRow.value;
-      if (passRow && passRow.value) password = passRow.value;
-
-      const accessToken = await this.getGmailAccessToken();
-      if (accessToken && user) {
-        const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
-        xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
-      }
-
-      let host = this.imapConfig.host;
-      let port = this.imapConfig.port;
-      let tls = this.imapConfig.tls;
-
-      if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
-        host = 'imap.gmail.com';
-        port = 993;
-        tls = true;
-      }
-
-      if ((!user || !password || !host) && !xoauth2) {
-                return;
-      }
-
-      const imapConfig: any = {
-        ...this.imapConfig,
-        user,
-        host,
-        port,
-        tls,
-        authTimeout: 5000,
-        tlsOptions: { rejectUnauthorized: false }
-      };
-
-      if (xoauth2) {
-        imapConfig.xoauth2 = xoauth2;
-        delete imapConfig.password;
-      } else {
-        imapConfig.password = password;
+      const { imapConfig, isConfigured } = await this.buildImapConfig();
+      if (!isConfigured) {
+        return;
       }
 
       const config = { imap: imapConfig };
@@ -2821,7 +2779,7 @@ export class EmailService {
       const db = await dbManager.getConnection();
       const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
       const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-            if (userRow && userRow.value) user = userRow.value;
+      if (userRow && userRow.value) user = userRow.value;
       if (passRow && passRow.value) password = passRow.value;
     } catch (_) {}
 
@@ -2835,10 +2793,30 @@ export class EmailService {
     let port = this.imapConfig.port;
     let tls = this.imapConfig.tls;
 
-    if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
-      host = 'imap.gmail.com';
-      port = 993;
-      tls = true;
+    try {
+      const db = await dbManager.getConnection();
+      const hostRow = await db.get("SELECT value FROM app_settings WHERE key = 'imap_host'");
+      const portRow = await db.get("SELECT value FROM app_settings WHERE key = 'imap_port'");
+      const tlsRow = await db.get("SELECT value FROM app_settings WHERE key = 'imap_tls'");
+      if (hostRow && hostRow.value) host = hostRow.value;
+      if (portRow && portRow.value) port = Number(portRow.value) || 993;
+      if (tlsRow && tlsRow.value) tls = tlsRow.value === 'true';
+    } catch (_) {}
+
+    if (!host && user) {
+      if (user.includes('@gmail.com') || xoauth2) {
+        host = 'imap.gmail.com';
+        port = 993;
+        tls = true;
+      } else if (user.includes('@outlook.com') || user.includes('@hotmail.com') || user.includes('@live.com')) {
+        host = 'outlook.office365.com';
+        port = 993;
+        tls = true;
+      } else if (user.includes('@yahoo.com')) {
+        host = 'imap.mail.yahoo.com';
+        port = 993;
+        tls = true;
+      }
     }
 
     if ((!user || !password || !host) && !xoauth2) {
@@ -3080,59 +3058,13 @@ export class EmailService {
       return cached;
     }
 
-    let user = this.imapConfig.user;
-    let password = this.imapConfig.password;
-    let xoauth2: string | undefined = undefined;
-
-    try {
-      const db = await dbManager.getConnection();
-      const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
-      const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-            if (userRow && userRow.value) user = userRow.value;
-      if (passRow && passRow.value) password = passRow.value;
-    } catch (_) {}
-
-    const accessToken = await this.getGmailAccessToken();
-    if (accessToken && user) {
-      const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
-      xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
-    }
-
-    let host = this.imapConfig.host;
-    let port = this.imapConfig.port;
-    let tls = this.imapConfig.tls;
-
-    if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
-      host = 'imap.gmail.com';
-      port = 993;
-      tls = true;
-    }
-
-    if ((!user || !password || !host) && !xoauth2) {
+    const { imapConfig, isConfigured } = await this.buildImapConfig();
+    if (!isConfigured) {
       return this.getLocalAttachmentsForUid(uid);
     }
 
     let connection = null;
     try {
-      const imapConfig: any = {
-        ...this.imapConfig,
-        user,
-        host,
-        port,
-        tls,
-        authTimeout: 5000,
-        tlsOptions: {
-          rejectUnauthorized: false
-        }
-      };
-
-      if (xoauth2) {
-        imapConfig.xoauth2 = xoauth2;
-        delete imapConfig.password;
-      } else {
-        imapConfig.password = password;
-      }
-
       const config = { imap: imapConfig };
       connection = await imap.connect(config);
       await connection.openBox('INBOX');
@@ -3251,59 +3183,13 @@ export class EmailService {
    */
   public async markAsSeen(uid: number): Promise<boolean> {
 
-    let user = this.imapConfig.user;
-    let password = this.imapConfig.password;
-    let xoauth2: string | undefined = undefined;
-
-    try {
-      const db = await dbManager.getConnection();
-      const userRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_user'");
-      const passRow = await db.get("SELECT value FROM app_settings WHERE key = 'gmail_pass'");
-            if (userRow && userRow.value) user = userRow.value;
-      if (passRow && passRow.value) password = passRow.value;
-    } catch (_) {}
-
-    const accessToken = await this.getGmailAccessToken();
-    if (accessToken && user) {
-      const authData = [`user=${user}`, `auth=Bearer ${accessToken}`, '', ''].join('\x01');
-      xoauth2 = Buffer.from(authData, 'utf-8').toString('base64');
-    }
-
-    let host = this.imapConfig.host;
-    let port = this.imapConfig.port;
-    let tls = this.imapConfig.tls;
-
-    if (!host && user && (user.includes('@gmail.com') || xoauth2)) {
-      host = 'imap.gmail.com';
-      port = 993;
-      tls = true;
-    }
-
-    if ((!user || !password || !host) && !xoauth2) {
+    const { imapConfig, isConfigured } = await this.buildImapConfig();
+    if (!isConfigured) {
       return true;
     }
 
     let connection: any = null;
     try {
-      const imapConfig: any = {
-        ...this.imapConfig,
-        user,
-        host,
-        port,
-        tls,
-        authTimeout: 5000,
-        tlsOptions: {
-          rejectUnauthorized: false
-        }
-      };
-
-      if (xoauth2) {
-        imapConfig.xoauth2 = xoauth2;
-        delete imapConfig.password;
-      } else {
-        imapConfig.password = password;
-      }
-
       const config = { imap: imapConfig };
       connection = await imap.connect(config);
       await connection.openBox('INBOX');

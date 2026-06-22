@@ -20,6 +20,8 @@ import {
   clearAllMaps, categoryMap, manufacturerMap, distributorMap, doctorMap, patientMap, medicineMap,
   importCategory, importManufacturer, importDistributor, flushDistributors,
   importDoctor, flushDoctors, importPatient, flushPatients,
+  importCustomer, flushCustomers,
+  importGeneric,
   importMedicine, flushMedicines,
 } from './importers/pgMasterImporter.js';
 
@@ -56,6 +58,8 @@ const TEMP_DIR = path.join(PROJECT_ROOT, 'data', 'temp_migration');
 const DB_PATH = process.env.DB_PATH || path.join(PROJECT_ROOT, 'data', 'app.db');
 const STAGING_DB_PATH = path.join(PROJECT_ROOT, 'data', 'staging.db');
 
+let currentMsgPrefix = '';
+
 export const migrationStatus = new Proxy({
   active: false,
   progress: 0,
@@ -63,8 +67,14 @@ export const migrationStatus = new Proxy({
   file: null as string | null,
   isStagingReady: false,
   errorCount: 0,
+  startTime: null as number | null,
 }, {
   set(target: any, prop: string, value: any) {
+    if (prop === 'message' && typeof value === 'string' && currentMsgPrefix) {
+      if (!value.startsWith(currentMsgPrefix)) {
+        value = `${currentMsgPrefix}${value}`;
+      }
+    }
     target[prop] = value;
     eventService.broadcast('migration_update', { ...target });
     return true;
@@ -132,6 +142,101 @@ function validateAndCleanCSVRow(row: any, mapping?: Record<string, string>): { i
 if (!fs.existsSync(MIGRATION_DIR)) fs.mkdirSync(MIGRATION_DIR, { recursive: true });
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
+export interface MigrationTask {
+  fileName: string;
+  dataType: string;
+  mapping?: Record<string, string>;
+  skipLines?: number;
+  sheetIndex?: number;
+  filters?: any;
+  medicineActions?: any;
+}
+
+let isQueueRunning = false;
+let migrationQueue: MigrationTask[] = [];
+
+export async function runManualMigrationQueue(tasks: MigrationTask[]): Promise<void> {
+  if (migrationStatus.active || isQueueRunning) {
+    throw new Error('A migration is already in progress.');
+  }
+
+  isQueueRunning = true;
+  migrationQueue = [...tasks];
+
+  // Start background processing
+  (async () => {
+    try {
+      Object.assign(migrationStatus, {
+        active: true,
+        progress: 0,
+        message: 'Starting migration queue...',
+        file: null,
+        isStagingReady: false,
+        errorCount: 0,
+        startTime: Date.now()
+      });
+
+      const totalTasks = migrationQueue.length;
+      let completedTasks = 0;
+
+      while (migrationQueue.length > 0) {
+        const task = migrationQueue.shift()!;
+        const taskIndex = completedTasks;
+        
+        currentMsgPrefix = `[File ${taskIndex + 1}/${totalTasks}] `;
+        
+        const filePath = path.join(MIGRATION_DIR, task.fileName);
+        if (!fs.existsSync(filePath)) {
+          throw new Error(`File ${task.fileName} does not exist in MIGRATION SAMPEL folder.`);
+        }
+
+        const lowerFileName = task.fileName.toLowerCase();
+        const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz', '.csv', '.xlsx', '.xls'];
+        const isValid = allowedExtensions.some(ext => lowerFileName.endsWith(ext));
+
+        if (!isValid) {
+          throw new Error(`Unsupported file format for ${task.fileName}.`);
+        }
+
+        await processMigrationFile(
+          filePath,
+          task.dataType,
+          task.mapping,
+          task.skipLines || 0,
+          task.sheetIndex || 0,
+          task.filters,
+          task.medicineActions,
+          migrationQueue.length > 0
+        );
+
+        completedTasks++;
+      }
+
+      currentMsgPrefix = '';
+      Object.assign(migrationStatus, {
+        active: false,
+        progress: 100,
+        message: 'Staging Complete! Awaiting user verification.',
+        file: null,
+        isStagingReady: true
+      });
+    } catch (err: any) {
+      console.error('Migration queue processing failed:', err);
+      migrationQueue = [];
+      currentMsgPrefix = '';
+      Object.assign(migrationStatus, {
+        active: false,
+        progress: 0,
+        message: `Failed: ${err.message}`,
+        file: null,
+        isStagingReady: false
+      });
+    } finally {
+      isQueueRunning = false;
+    }
+  })();
+}
+
 export async function runManualMigration(
   fileName: string,
   dataType: string,
@@ -141,56 +246,57 @@ export async function runManualMigration(
   filters?: any,
   medicineActions?: any
 ): Promise<void> {
-  if (migrationStatus.active) {
-    throw new Error('A migration is already in progress.');
-  }
-  const filePath = path.join(MIGRATION_DIR, fileName);
-  if (!fs.existsSync(filePath)) {
-    throw new Error('File does not exist in MIGRATION SAMPEL folder.');
-  }
-
-  const lowerFileName = fileName.toLowerCase();
-  const allowedExtensions = ['.zip', '.sql', '.gz', '.tgz', '.tar.gz', '.csv', '.xlsx', '.xls'];
-  const isValid = allowedExtensions.some(ext => lowerFileName.endsWith(ext));
-
-  if (!isValid) {
-    throw new Error('Unsupported file format for migration. Supported formats: .zip, .sql, .sql.gz/gz, .tar.gz/tgz, .csv, .xlsx, .xls');
-  }
-
-  await processMigrationFile(filePath, dataType, mapping, skipLines, sheetIndex, filters, medicineActions);
+  await runManualMigrationQueue([{
+    fileName,
+    dataType,
+    mapping,
+    skipLines,
+    sheetIndex,
+    filters,
+    medicineActions
+  }]);
 }
 
 async function processMigrationFile(
-  filePath: string,
+  originalFilePath: string,
   dataType: string,
   mapping?: Record<string, string>,
   skipLines: number = 0,
   sheetIndex: number = 0,
   filters?: any,
-  medicineActions?: any
+  medicineActions?: any,
+  isIntermediate: boolean = false
 ) {
   let extractPath: string | undefined = undefined;
   let tempCsvPath: string | null = null;
+  let tempProcessingPath: string | null = null;
   try {
-    const ext = path.extname(filePath).toLowerCase();
-    const basename = path.basename(filePath);
+    const ext = path.extname(originalFilePath).toLowerCase();
+    const basename = path.basename(originalFilePath);
+    
+    // Copy the original file to a temp copy inside TEMP_DIR and work on that copy
+    tempProcessingPath = path.join(TEMP_DIR, `proc_${Date.now()}_${basename}`);
+    fs.copyFileSync(originalFilePath, tempProcessingPath);
+
     Object.assign(migrationStatus, { active: true, progress: 0, message: 'Processing migration file...', file: basename, errorCount: 0 });
 
     const archiveDir = path.join(PROJECT_ROOT, 'data', 'archived_migrations');
     if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
 
-    // Step 0: Clone the database to staging.db
-    migrationStatus.message = 'Creating staging database...';
-    if (fs.existsSync(DB_PATH)) {
-      await fs.promises.copyFile(DB_PATH, STAGING_DB_PATH);
+    // Step 0: Clone the database to staging.db if it doesn't already exist
+    if (!fs.existsSync(STAGING_DB_PATH)) {
+      migrationStatus.message = 'Creating staging database...';
+      if (fs.existsSync(DB_PATH)) {
+        await fs.promises.copyFile(DB_PATH, STAGING_DB_PATH);
+      }
     }
 
-    let actualFilePath = filePath;
-    let sqlFilePath = filePath;
+    let actualFilePath = tempProcessingPath;
+    let sqlFilePath = tempProcessingPath;
 
     if (ext === '.xlsx' || ext === '.xls') {
       migrationStatus.message = 'Excel file detected — converting to CSV...';
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.readFile(tempProcessingPath);
       const sheetName = workbook.SheetNames[sheetIndex] || workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const csvContent = XLSX.utils.sheet_to_csv(worksheet);
@@ -203,9 +309,15 @@ async function processMigrationFile(
     if (ext === '.csv' || ext === '.xlsx' || ext === '.xls') {
       migrationStatus.message = `CSV/Excel file detected — starting dynamic ${dataType} import into staging...`;
       await parseAndImportCSV(actualFilePath, STAGING_DB_PATH, dataType, mapping, skipLines, filters, medicineActions);
-      Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
-      if (!filePath.includes('archived_migrations')) {
-        fs.renameSync(filePath, path.join(archiveDir, basename));
+      if (!isIntermediate) {
+        Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
+      }
+      if (!originalFilePath.includes('archived_migrations')) {
+        try {
+          fs.copyFileSync(tempProcessingPath, path.join(archiveDir, basename));
+        } catch (archiveErr) {
+          console.warn('Failed to archive migration file:', archiveErr);
+        }
       }
       if (tempCsvPath && fs.existsSync(tempCsvPath)) {
         fs.unlinkSync(tempCsvPath);
@@ -214,9 +326,9 @@ async function processMigrationFile(
     }
     else if (ext === '.sql') {
       // Direct SQL file — use as-is
-      sqlFilePath = filePath;
+      sqlFilePath = tempProcessingPath;
     }
-    else if (ext === '.gz' || filePath.toLowerCase().endsWith('.sql.gz')) {
+    else if (ext === '.gz' || tempProcessingPath.toLowerCase().endsWith('.sql.gz')) {
       migrationStatus.message = 'Decompressing GZIP file...';
       extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
       fs.mkdirSync(extractPath, { recursive: true });
@@ -229,7 +341,7 @@ async function processMigrationFile(
         writeStream.on('close', resolve);
         writeStream.on('finish', resolve);
         writeStream.on('error', reject);
-        fs.createReadStream(filePath)
+        fs.createReadStream(tempProcessingPath)
           .pipe(gzStream)
           .pipe(writeStream);
       });
@@ -237,31 +349,39 @@ async function processMigrationFile(
     else if (ext === '.zip') {
       extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
       fs.mkdirSync(extractPath, { recursive: true });
-      try {
-        await fs.createReadStream(filePath)
-          .pipe(unzipper.Extract({ path: extractPath }))
-          .promise();
-      } catch (unzipError: any) {
-        if (unzipError.message?.includes('invalid signature')) {
-          sqlFilePath = path.join(extractPath, 'extracted_backup.sql');
-          await new Promise<void>((resolve, reject) => {
-            const gzStream = zlib.createGunzip();
-            gzStream.on('error', reject);
-            const writeStream = fs.createWriteStream(sqlFilePath);
-            writeStream.on('close', resolve);
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
-            fs.createReadStream(filePath)
-              .pipe(gzStream)
-              .pipe(writeStream);
-          });
-        } else {
+
+      // ponytail: check magic bytes to detect GZIP-named-as-.zip before trying unzipper
+      const headerBuf = Buffer.alloc(2);
+      const fdCheck = fs.openSync(tempProcessingPath, 'r');
+      fs.readSync(fdCheck, headerBuf, 0, 2, 0);
+      fs.closeSync(fdCheck);
+      const isActuallyGzip = headerBuf[0] === 0x1f && headerBuf[1] === 0x8b;
+
+      if (isActuallyGzip) {
+        // GZIP file with .zip extension — decompress directly, skip unzipper
+        migrationStatus.message = 'Decompressing GZIP backup (detected inside .zip container)...';
+        sqlFilePath = path.join(extractPath, 'decompressed_backup.sql');
+        await new Promise<void>((resolve, reject) => {
+          const gzStream = zlib.createGunzip();
+          gzStream.on('error', reject);
+          const writeStream = fs.createWriteStream(sqlFilePath);
+          writeStream.on('close', resolve);
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+          fs.createReadStream(tempProcessingPath)
+            .pipe(gzStream)
+            .pipe(writeStream);
+        });
+      } else {
+        // True ZIP archive — extract with unzipper then find the SQL file
+        try {
+          await fs.createReadStream(tempProcessingPath)
+            .pipe(unzipper.Extract({ path: extractPath }))
+            .promise();
+        } catch (unzipError: any) {
           throw new Error(`Failed to extract ZIP file: ${unzipError.message}`);
         }
-      }
 
-      if (sqlFilePath === filePath) {
-        // Need to find SQL file in extracted dir
         migrationStatus.message = 'Scanning extracted files...';
         const files = fs.readdirSync(extractPath);
         const sqlFile = files.find(f => f.toLowerCase().endsWith('.sql'));
@@ -271,14 +391,14 @@ async function processMigrationFile(
         sqlFilePath = path.join(extractPath, sqlFile);
       }
     }
-    else if (ext === '.tar' || ext === '.tgz' || filePath.toLowerCase().endsWith('.tar.gz')) {
+    else if (ext === '.tar' || ext === '.tgz' || tempProcessingPath.toLowerCase().endsWith('.tar.gz')) {
       migrationStatus.message = 'Extracting TAR archive...';
       extractPath = path.join(TEMP_DIR, `extract_${Date.now()}`);
       fs.mkdirSync(extractPath, { recursive: true });
 
       const { execSync } = await import('child_process');
       try {
-        execSync(`tar -xf "${filePath}" -C "${extractPath}"`);
+        execSync(`tar -xf "${tempProcessingPath}" -C "${extractPath}"`);
       } catch (tarError: any) {
         throw new Error(`Failed to extract TAR archive: ${tarError.message}`);
       }
@@ -320,11 +440,17 @@ async function processMigrationFile(
       await parseAndImportLegacySQL(sqlFilePath, STAGING_DB_PATH);
     }
 
-    Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
+    if (!isIntermediate) {
+      Object.assign(migrationStatus, { active: false, progress: 100, message: 'Staging Complete! Awaiting user verification.', file: null, isStagingReady: true });
+    }
 
-    // Archive the original file (don't archive if we read from archived_migrations)
-    if (!filePath.includes('archived_migrations')) {
-      fs.renameSync(filePath, path.join(archiveDir, basename));
+    // Archive the copy under the original name
+    if (!originalFilePath.includes('archived_migrations')) {
+      try {
+        fs.copyFileSync(tempProcessingPath, path.join(archiveDir, basename));
+      } catch (archiveErr) {
+        console.warn('Failed to archive migration file:', archiveErr);
+      }
     }
 
   } catch (err: any) {
@@ -332,6 +458,13 @@ async function processMigrationFile(
     Object.assign(migrationStatus, { active: false, progress: 0, message: `Failed: ${err.message}`, file: null });
     throw err; // Re-throw so caller knows it failed
   } finally {
+    if (tempProcessingPath && fs.existsSync(tempProcessingPath)) {
+      try {
+        fs.unlinkSync(tempProcessingPath);
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup temp copy:', cleanupError);
+      }
+    }
     if (extractPath && fs.existsSync(extractPath)) {
       try {
         fs.rmSync(extractPath, { recursive: true, force: true });
@@ -420,23 +553,43 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   };
 
   // ─── PASS 1: Reference Tables ─────────────────────────────
-  migrationStatus.message = 'Pass 1/4: Importing reference tables (distributors, doctors, patients)...';
+  migrationStatus.message = 'Pass 1/4: Importing reference tables (distributors, doctors, patients, customers, generics)...';
   migrationStatus.progress = 5;
 
+  let errorCount = 0;
+  const logError = async (table: string, row: Record<string, string|null>, err: any) => {
+    errorCount++;
+    migrationStatus.errorCount = errorCount;
+    try {
+      await db.run(
+        'INSERT INTO migration_errors (file_name, row_index, raw_data, error_message) VALUES (?, ?, ?, ?)',
+        [table, errorCount, JSON.stringify(row).slice(0, 1000), String(err?.message || err).slice(0, 500)]
+      );
+    } catch (_) { /* don't crash on logging failure */ }
+  };
+
+  const wrap = (table: string, fn: (row: Record<string, string|null>) => Promise<void> | void) =>
+    async (row: Record<string, string|null>) => {
+      try { await fn(row); } catch (e: any) { await logError(table, row, e); }
+    };
+
   await streamPgDump(sqlPath, {
-    'category': (row) => { importCategory(row); stats.categories++; },
-    'manufacturer': (row) => { importManufacturer(row); stats.manufacturers++; },
-    'distributor': async (row) => { await importDistributor(row, db); stats.distributors++; },
-    'doctor': async (row) => { await importDoctor(row, db); stats.doctors++; },
-    'patient': async (row) => { await importPatient(row, db); stats.patients++; },
+    'category': wrap('category', (row) => { importCategory(row); stats.categories++; }),
+    'manufacturer': wrap('manufacturer', (row) => { importManufacturer(row); stats.manufacturers++; }),
+    'generic': wrap('generic', (row) => { importGeneric(row); }),
+    'distributor': wrap('distributor', async (row) => { await importDistributor(row, db); stats.distributors++; }),
+    'doctor': wrap('doctor', async (row) => { await importDoctor(row, db); stats.doctors++; }),
+    'patient': wrap('patient', async (row) => { await importPatient(row, db); stats.patients++; }),
+    'customer': wrap('customer', async (row) => { await importCustomer(row, db); stats.patients++; }),
   });
 
   // Flush remaining batches
   await flushDistributors(db);
   await flushDoctors(db);
   await flushPatients(db);
+  await flushCustomers(db);
 
-  migrationStatus.message = `Pass 1 done: ${stats.categories} categories, ${stats.manufacturers} mfg, ${stats.distributors} distributors, ${stats.doctors} doctors, ${stats.patients} patients`;
+  migrationStatus.message = `Pass 1 done: ${stats.categories} categories, ${stats.manufacturers} mfg, ${stats.distributors} distributors, ${stats.doctors} doctors, ${stats.patients} patients/customers`;
   migrationStatus.progress = 20;
   console.log(migrationStatus.message);
 
@@ -445,14 +598,14 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   migrationStatus.progress = 25;
 
   await streamPgDump(sqlPath, {
-    'medicine': async (row) => {
+    'medicine': wrap('medicine', async (row) => {
       await importMedicine(row, db);
       stats.medicines++;
       if (stats.medicines % 10000 === 0) {
         migrationStatus.message = `Pass 2/4: Imported ${stats.medicines} medicines...`;
         migrationStatus.progress = 25 + Math.min(20, Math.floor(stats.medicines / 15000));
       }
-    },
+    }),
   });
 
   await flushMedicines(db);
@@ -466,9 +619,9 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   migrationStatus.progress = 50;
 
   await streamPgDump(sqlPath, {
-    'batch': async (row) => { await importBatch(row, db); stats.batches++; },
-    'inventory': async (row) => { await importInventory(row, db); stats.purchases++; },
-    'inventory_medicine': async (row) => { await importInventoryMedicine(row, db); stats.purchaseItems++; },
+    'batch': wrap('batch', async (row) => { await importBatch(row, db); stats.batches++; }),
+    'inventory': wrap('inventory', async (row) => { await importInventory(row, db); stats.purchases++; }),
+    'inventory_medicine': wrap('inventory_medicine', async (row) => { await importInventoryMedicine(row, db); stats.purchaseItems++; }),
   });
 
   await flushBatches(db);
@@ -484,11 +637,11 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   migrationStatus.progress = 75;
 
   await streamPgDump(sqlPath, {
-    'orders': async (row) => { await importOrder(row, db); stats.salesInvoices++; },
-    'order_item': async (row) => { await importOrderItem(row, db); stats.saleItems++; },
-    'return_orders': async (row) => { await importReturnOrder(row, db); stats.returns++; },
-    'return_order_item': async (row) => { await importReturnOrderItem(row, db); stats.returnItems++; },
-    'stock_effects': async (row) => { await importStockEffect(row, db); stats.stockLedger++; },
+    'orders': wrap('orders', async (row) => { await importOrder(row, db); stats.salesInvoices++; }),
+    'order_item': wrap('order_item', async (row) => { await importOrderItem(row, db); stats.saleItems++; }),
+    'return_orders': wrap('return_orders', async (row) => { await importReturnOrder(row, db); stats.returns++; }),
+    'return_order_item': wrap('return_order_item', async (row) => { await importReturnOrderItem(row, db); stats.returnItems++; }),
+    'stock_effects': wrap('stock_effects', async (row) => { await importStockEffect(row, db); stats.stockLedger++; }),
   });
 
   await flushSalesInvoices(db);
@@ -496,6 +649,24 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   await flushReturns(db);
   await flushReturnItems(db);
   await flushStockLedger(db);
+
+  // Rebuild inventory quantities from stock_ledger (batches were imported with qty=0)
+  migrationStatus.message = 'Rebuilding inventory quantities from stock ledger...';
+  try {
+    await db.run(`
+      UPDATE inventory_master
+      SET quantity = COALESCE((
+        SELECT SUM(sl.quantity)
+        FROM stock_ledger sl
+        WHERE sl.medicine_id = inventory_master.medicine_id
+          AND sl.batch_no = inventory_master.batch_no
+      ), 0)
+      WHERE legacy_batch_id IS NOT NULL
+    `);
+    console.log('[Migration] Inventory quantities rebuilt from stock_ledger');
+  } catch (qtyErr: any) {
+    console.warn('[Migration] Stock quantity rebuild skipped:', qtyErr.message);
+  }
 
   migrationStatus.message = `Pass 4 done: ${stats.salesInvoices} invoices, ${stats.saleItems} sale items, ${stats.returns} returns, ${stats.stockLedger} stock movements`;
   migrationStatus.progress = 95;
@@ -1167,7 +1338,11 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
               const distributorName = distributorKey ? String(cleanRow[distributorKey] || '').trim() : 'Unknown Supplier';
               const totalAmount = totalAmountKey ? parseFloat(cleanRow[totalAmountKey]) || 0 : 0;
               const returnInvoiceId = returnInvoiceIdKey ? String(cleanRow[returnInvoiceIdKey] || '').trim() : null;
-              const returnSubType = returnSubTypeKey ? String(cleanRow[returnSubTypeKey] || '').trim() : 'good';
+              const rawReturnSubType = returnSubTypeKey ? String(cleanRow[returnSubTypeKey] || '').trim() : '';
+              let resolvedReturnSubType = 'good';
+              if (rawReturnSubType.toLowerCase().includes('expiry') || rawReturnSubType.toLowerCase().includes('expire')) {
+                resolvedReturnSubType = 'expiry';
+              }
               const returnDateTime = returnDateTimeKey ? cleanRow[returnDateTimeKey] : null;
 
               let distributor = await db.get('SELECT id FROM distributors WHERE LOWER(name) = LOWER(?)', [distributorName]);
@@ -1188,8 +1363,8 @@ async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType
                      retVals.push(val);
                   }
                 }
-                const baseCols = ['return_no', 'distributor_id', 'type', 'date', 'total_amount', 'return_invoice_id', 'return_sub_type', 'return_date_time'];
-                const baseVals = [returnNo, distributor.id, 'purchase', dateStr, totalAmount, returnInvoiceId, returnSubType, returnDateTime];
+                const baseCols = ['return_no', 'distributor_id', 'type', 'date', 'total_amount', 'return_invoice_id', 'return_sub_type', 'raw_return_type', 'return_date_time'];
+                const baseVals = [returnNo, distributor.id, 'purchase', dateStr, totalAmount, returnInvoiceId, resolvedReturnSubType, rawReturnSubType || null, returnDateTime];
                 const colsStr = [...baseCols, ...retCols].join(', ');
                 const placeholdersStr = [...baseCols, ...retCols].map(() => '?').join(', ');
                 const result = await db.run(

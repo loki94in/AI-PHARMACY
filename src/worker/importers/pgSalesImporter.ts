@@ -91,16 +91,21 @@ export async function importOrder(row: Record<string, string | null>, db: Databa
 export async function flushSalesInvoices(db: Database) {
   if (salesBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const s of salesBatch) {
-    const result = await db.run(
-      `INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount, doctor_id, payment_medium, roff, cgst_value, sgst_value, igst_value, legacy_id, business_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [s.invoice_no, s.customer_id, s.date, s.total_amount, s.tax_amount, s.doctor_id, s.payment_medium, s.roff, s.cgst_value, s.sgst_value, s.igst_value, s.legacy_id, s.business_date]
-    );
-    salesInvoiceMap.set(s.legacy_id, result.lastID!);
+  try {
+    for (const s of salesBatch) {
+      const result = await db.run(
+        `INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount, doctor_id, payment_medium, roff, cgst_value, sgst_value, igst_value, legacy_id, business_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [s.invoice_no, s.customer_id, s.date, s.total_amount, s.tax_amount, s.doctor_id, s.payment_medium, s.roff, s.cgst_value, s.sgst_value, s.igst_value, s.legacy_id, s.business_date]
+      );
+      salesInvoiceMap.set(s.legacy_id, result.lastID!);
+    }
+    await db.run('COMMIT');
+    salesBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  salesBatch = [];
 }
 
 // ─── Order Item → sale_items ────────────────────────────────
@@ -128,12 +133,14 @@ export async function importOrderItem(row: Record<string, string | null>, db: Da
     invoice_id: invoiceId,
     inventory_id: inventoryId || null,
     quantity: parseInt(row['quantity'] || '0') || 0,
-    unit_price: parseFloat(row['total_price'] || '0') || 0,
+    // total_price is the line total (qty × rate) — use mrp as per-unit price
+    unit_price: parseFloat(row['mrp'] || '0') || 0,
     mrp: parseFloat(row['mrp'] || '0') || 0,
     batch_no: legacyBatchId || null,
     cgst_value: parseFloat(row['cgst_value'] || '0') || 0,
     sgst_value: parseFloat(row['sgst_value'] || '0') || 0,
     discount_per: parseFloat(row['disc_per'] || '0') || 0,
+    loose_qty: parseInt(row['loose'] || '0') || 0,
     legacy_id: legacyId,
   });
 
@@ -145,13 +152,18 @@ export async function importOrderItem(row: Record<string, string | null>, db: Da
 export async function flushSaleItems(db: Database) {
   if (saleItemBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const si of saleItemBatch) {
-    await db.run(
-      `INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, mrp, batch_no, cgst_value, sgst_value, discount_per, legacy_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [si.invoice_id, si.inventory_id, si.quantity, si.unit_price, si.mrp, si.batch_no, si.cgst_value, si.sgst_value, si.discount_per, si.legacy_id]
-    );
+  try {
+    for (const si of saleItemBatch) {
+      await db.run(
+        `INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, mrp, batch_no, cgst_value, sgst_value, discount_per, loose_qty, legacy_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [si.invoice_id, si.inventory_id, si.quantity, si.unit_price, si.mrp, si.batch_no, si.cgst_value, si.sgst_value, si.discount_per, si.loose_qty || 0, si.legacy_id]
+      );
+    }
+    await db.run('COMMIT');
+    saleItemBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  saleItemBatch = [];
 }

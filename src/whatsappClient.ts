@@ -83,7 +83,12 @@ export async function initClient(): Promise<WAClient> {
 
     const client = new Client({ 
       authStrategy: new LocalAuth(),
-      puppeteer: execPath ? { executablePath: execPath } : {}
+      puppeteer: execPath ? { 
+        executablePath: execPath,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      } : {
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      }
     });
     activeClient = client;
 
@@ -159,7 +164,14 @@ export async function initClient(): Promise<WAClient> {
       reject(new Error(msg));
     });
     
-    client.initialize();
+    client.initialize().catch(err => {
+      console.error('[WhatsApp] Failed during initialize():', err);
+      initializing = false;
+      isReady = false;
+      clientInstance = null;
+      activeClient = null;
+      reject(err);
+    });
   });
 }
 

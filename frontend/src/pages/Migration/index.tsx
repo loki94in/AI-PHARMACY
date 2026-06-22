@@ -286,6 +286,16 @@ const Migration = () => {
   const [isPolling, setIsPolling] = useState(false);
   const [stagingData, setStagingData] = useState<{ inventory: any[]; sales: any[]; purchases: any[]; returns: any[]; errors: any[] }>({ inventory: [], sales: [], purchases: [], returns: [], errors: [] });
   const [previewOpen, setPreviewOpen] = useState<number | null>(null);
+  const [preset, setPreset] = useState<'auto' | 'redbook'>('auto');
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    if (!isPolling) return;
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isPolling]);
 
 
 
@@ -343,7 +353,6 @@ const Migration = () => {
   const [newItemData, setNewItemData] = useState<any>({});
   const [addingNewItem, setAddingNewItem] = useState<boolean>(false);
   const [rollingBack, setRollingBack] = useState(false);
-  const [activeImportIdx, setActiveImportIdx] = useState(0); // which file is currently being imported
   
   // Mapping Modal State
   const [showMappingModal, setShowMappingModal] = useState(false);
@@ -601,6 +610,7 @@ const Migration = () => {
           distributor_name: editingRecordData.distributor_name,
           return_invoice_id: editingRecordData.return_invoice_id,
           return_sub_type: editingRecordData.return_sub_type,
+          raw_return_type: editingRecordData.raw_return_type,
           return_date_time: editingRecordData.return_date_time,
         });
       }
@@ -742,6 +752,23 @@ const Migration = () => {
     fetchStagingData();
   }, [fetchStagingData]);
 
+  // Check active migration status on initial mount to resume progress view if needed
+  useEffect(() => {
+    const checkActiveMigration = async () => {
+      try {
+        const status = await api.getMigrationStatus();
+        if (status && status.active) {
+          setMigrationStatus(status);
+          setIsPolling(true);
+          setStep(3);
+        }
+      } catch (err) {
+        console.warn('Failed to check active migration status on mount:', err);
+      }
+    };
+    checkActiveMigration();
+  }, []);
+
   // Auto-advance to step 3 if staging data already exists (e.g. after page refresh)
   useEffect(() => {
     const hasData =
@@ -775,17 +802,8 @@ const Migration = () => {
           setMigrationStatus(payload);
           if (payload.isStagingReady) {
             setIsPolling(false);
-            
-            // Move to next file or go to step 3
-            const nextIdx = activeImportIdx + 1;
-            const readyFiles = files.filter(f => f.status === 'ready');
-            if (nextIdx < readyFiles.length) {
-              setActiveImportIdx(nextIdx);
-              await importFile(readyFiles[nextIdx]);
-            } else {
-              await fetchStagingData();
-              setStep(3);
-            }
+            await fetchStagingData();
+            setStep(3);
           }
         }
       } catch (err) {
@@ -803,7 +821,7 @@ const Migration = () => {
         eventSource.close();
       }
     };
-  }, [isPolling, activeImportIdx, files, fetchStagingData]);
+  }, [isPolling, fetchStagingData]);
 
   useEffect(() => {
     if (hoveredHeader && scrollContainerRef.current) {
@@ -848,7 +866,7 @@ const Migration = () => {
         headers: [],
         samples: [],
         detected: { type: 'unknown', confidence: 0 },
-        userSelectedType: targetType || 'unknown',
+        userSelectedType: preset === 'redbook' ? 'combined' : (targetType || 'unknown'),
         mapping: {},
         status: 'analyzing',
         skipLines: 0,
@@ -868,19 +886,22 @@ const Migration = () => {
           // ZIP returns multiple files — add each as separate entry
           setFiles(prev => {
             const withoutPlaceholder = prev.filter(f => f.originalName !== file.name || f.status !== 'analyzing');
-            const zipEntries: FileEntry[] = (analyzed.files || []).map((zf: any) => ({
-              uploadedFileName: zf.extractedFileName,
-              originalName: zf.originalName,
-              ext: zf.ext,
-              headers: zf.headers || [],
-              samples: zf.samples || [],
-              sheetNames: zf.sheetNames,
-              detected: zf.detected || { type: 'unknown', confidence: 0 },
-              userSelectedType: targetType || (zf.detected?.type as DataType) || 'unknown',
-              mapping: Object.fromEntries((zf.headers || []).map((h: string) => [h, autoMapColumn(h)])),
-              status: 'ready' as const,
-              skipLines: 0,
-            }));
+            const zipEntries: FileEntry[] = (analyzed.files || []).map((zf: any) => {
+              const rawType = zf.detected?.type === 'full_database' ? 'combined' : zf.detected?.type;
+              return {
+                uploadedFileName: zf.extractedFileName,
+                originalName: zf.originalName,
+                ext: zf.ext,
+                headers: zf.headers || [],
+                samples: zf.samples || [],
+                sheetNames: zf.sheetNames,
+                detected: { ...zf.detected, type: rawType },
+                userSelectedType: preset === 'redbook' ? 'combined' : (targetType || (rawType as DataType) || 'unknown'),
+                mapping: Object.fromEntries((zf.headers || []).map((h: string) => [h, autoMapColumn(h)])),
+                status: 'ready' as const,
+                skipLines: 0,
+              };
+            });
             return [...withoutPlaceholder, ...zipEntries];
           });
           continue;
@@ -889,11 +910,12 @@ const Migration = () => {
         } else if (ext === 'csv') {
           analyzed = await api.analyzeMigrationFile(serverName, 0);
         } else if (ext === 'sql') {
-          analyzed = { headers: ['[SQL — auto-import]'], samples: [], detected: { type: 'inventory', confidence: 50 } };
+          analyzed = { headers: ['[SQL — auto-import]'], samples: [], detected: { type: 'combined', confidence: 100 } };
         }
 
         const headers: string[] = analyzed.headers || [];
-        const detectedType = targetType || (analyzed.detected?.type as DataType) || 'unknown';
+        const rawDetectedType = analyzed.detected?.type === 'full_database' ? 'combined' : (analyzed.detected?.type as DataType || 'unknown');
+        const detectedType = preset === 'redbook' ? 'combined' : (targetType || rawDetectedType || 'unknown');
         const autoMapping = Object.fromEntries(headers.map((h: string) => [h, autoMapColumn(h)]));
 
         setFiles(prev => prev.map(f =>
@@ -921,29 +943,8 @@ const Migration = () => {
       }
     }
     setUploading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files.length]);
+  }, [files.length, preset]);
 
-  // ─── Import a single file into staging ─────────────────────────────────────
-  const importFile = useCallback(async (file: FileEntry) => {
-    try {
-      setMigrationStatus({ message: `Importing ${file.originalName}...`, isStagingReady: false });
-      setIsPolling(true);
-      const filtersForFile = moduleFilters[file.uploadedFileName] || {};
-      await api.runMigration(
-        file.uploadedFileName,
-        file.userSelectedType,
-        file.mapping,
-        file.skipLines || 0, // skipLines
-        0, // sheetIndex
-        filtersForFile,
-        medicineActions
-      );
-    } catch (err: any) {
-      setError(`Failed to import ${file.originalName}: ${err.message}`);
-      setIsPolling(false);
-    }
-  }, [moduleFilters, medicineActions]);
 
   // ─── Start all migrations in correct order ──────────────────────────────────
   const startMigration = async () => {
@@ -953,9 +954,30 @@ const Migration = () => {
 
     if (readyFiles.length === 0) { setError('No files selected for import.'); return; }
     setError(null);
-    setActiveImportIdx(0);
+
+    const tasks = readyFiles.map(f => {
+      const filtersForFile = moduleFilters[f.uploadedFileName] || {};
+      return {
+        fileName: f.uploadedFileName,
+        dataType: f.userSelectedType,
+        mapping: f.mapping,
+        skipLines: f.skipLines || 0,
+        sheetIndex: 0,
+        filters: filtersForFile,
+        medicineActions
+      };
+    });
+
     setStep(3);
-    await importFile(readyFiles[0]);
+    setMigrationStatus({ message: 'Initializing migration queue...', isStagingReady: false });
+    setIsPolling(true);
+
+    try {
+      await api.runMigrationQueue(tasks);
+    } catch (err: any) {
+      setError(`Failed to start migration queue: ${err.message}`);
+      setIsPolling(false);
+    }
   };
 
   const runPreMigrationAnalysis = async () => {
@@ -1208,24 +1230,38 @@ const Migration = () => {
         <div className="space-y-5">
           {/* Project Management Bar */}
           <div className="glass-panel p-4 bg-bg2 border border-glass-border flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-muted uppercase">Active Migration Project:</span>
-              {projects.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-5">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-muted uppercase">Active Migration Project:</span>
+                {projects.length > 0 ? (
+                  <select
+                    value={activeProject?.id || ''}
+                    onChange={(e) => {
+                      const p = projects.find(proj => proj.id === parseInt(e.target.value));
+                      setActiveProject(p);
+                    }}
+                    className="bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 font-bold outline-none cursor-pointer"
+                  >
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-xs text-muted">No projects found. Create one to get started.</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-muted uppercase">Source App Preset:</span>
                 <select
-                  value={activeProject?.id || ''}
-                  onChange={(e) => {
-                    const p = projects.find(proj => proj.id === parseInt(e.target.value));
-                    setActiveProject(p);
-                  }}
+                  value={preset}
+                  onChange={(e) => setPreset(e.target.value as 'auto' | 'redbook')}
                   className="bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 font-bold outline-none cursor-pointer"
                 >
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  <option value="auto">Auto-Detect Format</option>
+                  <option value="redbook">Redbook (PostgreSQL Dump)</option>
                 </select>
-              ) : (
-                <span className="text-xs text-muted">No projects found. Create one to get started.</span>
-              )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2 w-full md:w-auto">
@@ -1429,6 +1465,14 @@ const Migration = () => {
       {/* ─── STEP 2: MAP & VERIFY ─────────────────────────────────────────────── */}
       {step === 2 && (
         <div className="space-y-4">
+          {preset === 'redbook' && (
+            <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl text-xs text-text flex items-center gap-3">
+              <Zap size={16} className="text-primary shrink-0 animate-pulse" />
+              <div>
+                <strong className="text-primary font-bold">Redbook Preset Enabled:</strong> All tables and schemas from your Redbook PostgreSQL backup will be auto-imported. No manual column adjustments are required. You can review mappings or click "Continue to Cart Preview" to simulate or start the ingestion.
+              </div>
+            </div>
+          )}
           {/* Guided Configurator Sub-steps progress indicator */}
           <div className="flex items-center gap-2 pb-2 border-b border-glass-border/30 overflow-x-auto">
             {[
@@ -2121,8 +2165,34 @@ const Migration = () => {
                 {!isPolling && migrationStatus?.isStagingReady && <CheckCircle className="text-green" size={28} />}
               </div>
               {isPolling && (
-                <div className="w-full bg-white/5 rounded-full h-2 mt-3">
-                  <div className="bg-primary h-2 rounded-full animate-pulse" style={{ width: `${migrationStatus?.progress || 30}%` }} />
+                <div className="space-y-2 mt-3">
+                  <div className="w-full bg-white/5 rounded-full h-2">
+                    <div className="bg-primary h-2 rounded-full animate-pulse" style={{ width: `${migrationStatus?.progress || 30}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-muted font-semibold">
+                    <span>Progress: {migrationStatus?.progress || 0}%</span>
+                    {migrationStatus?.startTime && migrationStatus?.progress > 2 ? (() => {
+                      const elapsed = currentTime - migrationStatus.startTime;
+                      const progress = migrationStatus.progress;
+                      const estimatedTotal = elapsed / (progress / 100);
+                      const remaining = Math.max(0, estimatedTotal - elapsed);
+                      const min = Math.floor(remaining / 60000);
+                      const sec = Math.floor((remaining % 60000) / 1000);
+                      
+                      const elapsedMin = Math.floor(elapsed / 60000);
+                      const elapsedSec = Math.floor((elapsed % 60000) / 1000);
+                      const elapsedStr = elapsedMin > 0 ? `${elapsedMin}m ${elapsedSec}s elapsed` : `${elapsedSec}s elapsed`;
+
+                      if (progress >= 100) return <span>Complete!</span>;
+                      
+                      const remainingStr = min > 0 ? `${min}m ${sec}s remaining` : `${sec}s remaining`;
+                      return <span>{elapsedStr} · Approx. {remainingStr}</span>;
+                    })() : (
+                      migrationStatus?.startTime ? (
+                        <span>Analyzing database structure...</span>
+                      ) : null
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2650,6 +2720,7 @@ const Migration = () => {
                             <th className="p-3 text-muted font-bold">Return No</th>
                             <th className="p-3 text-muted font-bold">Return Invoice ID</th>
                             <th className="p-3 text-muted font-bold">Type</th>
+                            <th className="p-3 text-muted font-bold">Raw Return Type</th>
                             <th className="p-3 text-muted font-bold">Date / Time</th>
                             <th className="p-3 text-muted font-bold">Total Amount</th>
                             <th className="p-3 text-muted font-bold text-center">Total Qty</th>
@@ -2674,6 +2745,7 @@ const Migration = () => {
                                   </span>
                                 )}
                               </td>
+                              <td className="p-3 text-text font-semibold">{r.raw_return_type || '—'}</td>
                               <td className="p-3 font-mono text-muted whitespace-nowrap">
                                 {r.return_date_time || r.date || '—'}
                               </td>
@@ -2704,7 +2776,7 @@ const Migration = () => {
                             </tr>
                           ))}
                           {filtered.length === 0 && (
-                            <tr><td colSpan={7} className="p-6 text-center text-muted">No matching staging returns records found.</td></tr>
+                            <tr><td colSpan={10} className="p-6 text-center text-muted">No matching staging returns records found.</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -3654,6 +3726,17 @@ const Migration = () => {
                         </select>
                       </div>
                       <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Raw Return Type</label>
+                        <input
+                          type="text"
+                          value={editingRecordData.raw_return_type || ''}
+                          onChange={(e) => setEditingRecordData({ ...editingRecordData, raw_return_type: e.target.value })}
+                          className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-bold text-muted uppercase">Return Date / Time</label>
                         <input
                           type="text"
@@ -3662,16 +3745,16 @@ const Migration = () => {
                           className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary"
                         />
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-muted uppercase">Total Amount (₹)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editingRecordData.total_amount || 0}
-                        onChange={(e) => setEditingRecordData({ ...editingRecordData, total_amount: parseFloat(e.target.value) || 0 })}
-                        className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary"
-                      />
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-muted uppercase">Total Amount (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingRecordData.total_amount || 0}
+                          onChange={(e) => setEditingRecordData({ ...editingRecordData, total_amount: parseFloat(e.target.value) || 0 })}
+                          className="w-full bg-bg3 border border-glass-border text-text text-xs rounded-lg p-2 outline-none focus:border-primary"
+                        />
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] font-bold text-muted uppercase">Distributor / Supplier Name</label>

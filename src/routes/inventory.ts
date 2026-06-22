@@ -14,10 +14,27 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 router.get('/', async (req, res) => {
   let db;
   const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 100;
+  const search = (req.query.search as string || '').trim();
+  const hasFilters = !!search;
+  const limit = req.query.limit !== undefined 
+    ? parseInt(req.query.limit as string) 
+    : (hasFilters ? 5000 : 50);
   
   try {
     db = await dbManager.getConnection();
+    
+    let baseQuery = `
+      FROM inventory_master im
+      LEFT JOIN medicines m ON im.medicine_id = m.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    
+    if (search) {
+      baseQuery += ` AND (m.name LIKE ? OR im.batch_no LIKE ? OR m.item_code LIKE ? OR im.rack_location LIKE ? OR m.api_reference LIKE ? OR m.generic_name LIKE ?)`;
+      const s = `%${search}%`;
+      params.push(s, s, s, s, s, s);
+    }
     
     // If limit is 0, fetch all (warning: can cause frontend lag)
     if (limit === 0) {
@@ -28,17 +45,16 @@ router.get('/', async (req, res) => {
                im.batch_no as batch_number, 
                im.quantity as stock_quantity, 
                m.item_code as item_code
-        FROM inventory_master im
-        LEFT JOIN medicines m ON im.medicine_id = m.id
+        ${baseQuery}
         ORDER BY m.name ASC, im.id DESC
-      `);
-            return res.json({ data: rows, totalPages: 1, currentPage: 1, totalItems: rows.length });
+      `, params);
+      return res.json({ data: rows, totalPages: 1, currentPage: 1, totalItems: rows.length });
     }
 
     // Pagination logic
     const offset = (page - 1) * limit;
     
-    const countRow = await db.get('SELECT COUNT(*) as total FROM inventory_master');
+    const countRow = await db.get(`SELECT COUNT(*) as total ${baseQuery}`, params);
     const totalItems = countRow.total;
     const totalPages = Math.ceil(totalItems / limit);
 
@@ -49,13 +65,12 @@ router.get('/', async (req, res) => {
              im.batch_no as batch_number, 
              im.quantity as stock_quantity, 
              m.item_code as item_code
-      FROM inventory_master im
-      LEFT JOIN medicines m ON im.medicine_id = m.id
+      ${baseQuery}
       ORDER BY m.name ASC, im.id DESC
       LIMIT ? OFFSET ?
-    `, [limit, offset]);
+    `, [...params, limit, offset]);
     
-        res.json({
+    res.json({
       data: rows,
       totalPages,
       currentPage: page,

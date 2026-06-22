@@ -13,17 +13,48 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
-// List returns
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   let db;
   try {
+    const { search, date_from, date_to, min_amount, max_amount } = req.query;
     db = await dbManager.getConnection();
-    const rows = await db.all(`
+    
+    let query = `
       SELECT r.*, d.name as distributor_name 
       FROM returns r 
       LEFT JOIN distributors d ON r.distributor_id = d.id 
-      ORDER BY r.date DESC
-    `);
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    
+    if (search) {
+      query += ` AND (r.return_no LIKE ? OR d.name LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`);
+    }
+    if (date_from) {
+      query += ` AND DATE(r.date) >= DATE(?)`;
+      params.push(date_from);
+    }
+    if (date_to) {
+      query += ` AND DATE(r.date) <= DATE(?)`;
+      params.push(date_to);
+    }
+    if (min_amount) {
+      query += ` AND r.total_amount >= ?`;
+      params.push(parseFloat(min_amount as string));
+    }
+    if (max_amount) {
+      query += ` AND r.total_amount <= ?`;
+      params.push(parseFloat(max_amount as string));
+    }
+    
+    const hasFilters = !!(search || date_from || date_to || min_amount || max_amount);
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : (hasFilters ? 5000 : 50);
+    
+    query += ` ORDER BY r.date DESC LIMIT ?`;
+    params.push(limit);
+    
+    const rows = await db.all(query, params);
     res.json(rows);
   } catch (err: any) {
     if (db)     console.error(JSON.stringify({

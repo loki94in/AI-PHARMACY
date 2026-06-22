@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dbManager } from '../database/connection.js';
+import { telegramBotService } from '../telegramBot.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,6 +69,16 @@ router.post('/save', async (req, res) => {
     for (const [k, v] of entries) {
       await db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [k, v ?? '']);
     }
+
+    // If telegram settings changed, trigger hot-reload of Telegram bot service
+    const keys = Object.keys(payload);
+    const hasTelegramKey = keys.some(k => k === 'telegram_enabled' || k === 'telegram_token' || k === 'telegram_chat_id');
+    if (hasTelegramKey) {
+      telegramBotService.initializeOrReloadBot().catch(err => {
+        console.error('[Telegram] Failed to reload bot after settings update:', err);
+      });
+    }
+
     res.json({ success: true, message: 'Settings saved' });
   } catch (error) {
     console.error('Bulk settings save error:', error);

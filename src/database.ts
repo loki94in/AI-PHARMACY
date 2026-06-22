@@ -110,7 +110,8 @@ export async function ensureSchema(dbPath: string) {
       original_invoice_id INTEGER,
       type TEXT CHECK(type IN ('sale', 'purchase')),
       date DATETIME DEFAULT CURRENT_TIMESTAMP,
-      total_amount REAL
+      total_amount REAL,
+      raw_return_type TEXT
     );
 
     -- Agent B: CRM, Communication, & Utilities Schemas
@@ -245,6 +246,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE returns ADD COLUMN return_invoice_id TEXT DEFAULT NULL`,
     `ALTER TABLE returns ADD COLUMN return_sub_type TEXT CHECK(return_sub_type IN ('expiry', 'good')) DEFAULT 'good'`,
     `ALTER TABLE returns ADD COLUMN return_date_time DATETIME DEFAULT NULL`,
+    `ALTER TABLE returns ADD COLUMN raw_return_type TEXT`,
     // Distributors extra columns
     `ALTER TABLE distributors ADD COLUMN legacy_id TEXT`,
     `ALTER TABLE distributors ADD COLUMN gstin TEXT`,
@@ -652,12 +654,20 @@ export async function ensureSchema(dbPath: string) {
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('medical_name', 'XYZ MEDICAL')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('gmail_user', '')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('gmail_pass', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('imap_host', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('imap_port', '993')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('imap_tls', 'true')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('login_password', 'admin123')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('master_password', 'master999')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('connection_mode', 'hybrid')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('bluetooth_com_port', 'COM1')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('email_autodelete_enabled', 'true')");
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('email_autodelete_limit', '10')");
+  
+  // Telegram Bot settings defaults
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('telegram_enabled', 'false')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('telegram_token', '')");
+  await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('telegram_chat_id', '')");
   
   // Remote Admin Operations Defaults
   await db.run("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('admin_remote_mode', 'true')");

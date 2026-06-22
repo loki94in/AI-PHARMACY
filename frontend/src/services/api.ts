@@ -169,7 +169,7 @@ export const api = {
   dismissDashboardAlert: (id: number) => apiClient.delete(`/dashboard/alerts/${id}`).then(res => res.data),
   
   // Inventory
-  getInventory: () => apiClient.get<InventoryItem[]>('/inventory').then(res => res.data),
+  getInventory: (params?: { search?: string; limit?: number; page?: number }) => apiClient.get<InventoryItem[]>('/inventory', { params }).then(res => res.data),
   addMedicine: (data: Partial<InventoryItem>) => apiClient.post('/inventory', data).then(res => res.data),
   updateMedicine: (id: number, data: Partial<InventoryItem>) => apiClient.put(`/inventory/${id}`, data).then(res => res.data),
   getEnrichedMedicine: (id: number) => apiClient.get(`/inventory/medicines/${id}/enriched`).then(res => res.data),
@@ -192,7 +192,7 @@ export const api = {
   deleteSale: (id: number) => apiClient.delete(`/sales/${id}`).then(res => res.data),
   
   // Purchases
-  getPurchases: () => apiClient.get('/purchases').then(res => res.data),
+  getPurchases: (params?: { limit?: number; start?: string; end?: string; months?: number; search?: string }) => apiClient.get('/purchases', { params }).then(res => res.data),
   getPurchaseItems: () => apiClient.get('/purchases/items/all').then(res => res.data),
   getPurchase: (id: number) => apiClient.get(`/purchases/${id}`).then(res => res.data),
   updatePurchase: (id: number, data: any) => apiClient.put(`/purchases/${id}/full`, data).then(res => res.data),
@@ -245,6 +245,8 @@ export const api = {
     apiClient.post('/migration/pre-migration-simulate', { fileName, dataType, mapping, skipLines, sheetIndex, filters }).then(r => r.data),
   runMigration: (fileName: string, dataType: string, mapping: any, skipLines: number = 0, sheetIndex: number = 0, filters?: any, medicineActions?: any) => 
     apiClient.post('/migration/run', { fileName, dataType, mapping, skipLines, sheetIndex, filters, medicineActions }).then(r => r.data),
+  runMigrationQueue: (tasks: any[]) =>
+    apiClient.post('/migration/run', { tasks }).then(r => r.data),
   getMigrationStatus: () => apiClient.get('/migration/status').then(r => r.data),
   getStagingInventory: () => apiClient.get('/migration/staging/inventory').then(r => r.data),
   updateStagingInventory: (id: number, data: any) => apiClient.put(`/migration/staging/inventory/${id}`, data).then(r => r.data),
@@ -376,6 +378,7 @@ export const api = {
   getPharmarackCart: () => apiClient.get('/pharmarack/cart').then(res => res.data),
   getPharmarackDistributors: () => apiClient.get('/pharmarack/distributors').then(res => res.data),
   checkPharmarackSession: () => apiClient.get('/pharmarack/session-status').then(res => res.data),
+  launchPharmarackLoginWindow: () => apiClient.post('/pharmarack/login-window').then(res => res.data),
   
   // Composition Enrichment
   getEnrichmentStatus: () => apiClient.get('/enrichment/status').then(res => res.data),
@@ -403,7 +406,7 @@ export const api = {
   getWhatsappMessageMedia: (chatId: string, messageId: string) => apiClient.get(`/messaging/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/media`).then(res => res.data),
   
   // Returns
-  getReturns: () => apiClient.get('/returns').then(res => res.data),
+  getReturns: (params?: { search?: string; date_from?: string; date_to?: string; min_amount?: number; max_amount?: number; limit?: number }) => apiClient.get('/returns', { params }).then(res => res.data),
   createReturn: (data: any) => apiClient.post('/returns', data).then(res => res.data),
   getNearExpiry: (months: number = 6) => apiClient.get('/returns/near-expiry', { params: { months } }).then(res => res.data),
   lookupPurchases: (name: string, batch?: string) => {

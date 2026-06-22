@@ -423,7 +423,10 @@ router.get('/list', async (req, res) => {
       params.push(date_to);
     }
 
-    query += ` ORDER BY si.date DESC LIMIT 30`;
+    const hasFilters = !!(search || date_from || date_to || batch);
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : (hasFilters ? 5000 : 50);
+    query += ` ORDER BY si.date DESC LIMIT ?`;
+    params.push(limit);
 
     const invoices = await db.all(query, params);
 

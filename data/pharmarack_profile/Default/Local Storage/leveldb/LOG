@@ -1,3 +1,2 @@
-2026/06/21-17:24:12.482 2884 Reusing MANIFEST E:\CURRENT PROJECT ON WORKING\AI PHARMACY\data\pharmarack_profile\Default\Local Storage\leveldb/MANIFEST-000001
-2026/06/21-17:24:12.492 2884 Recovering log #3
-2026/06/21-17:24:12.500 2884 Reusing old log E:\CURRENT PROJECT ON WORKING\AI PHARMACY\data\pharmarack_profile\Default\Local Storage\leveldb/000003.log 
+2026/06/22-14:46:46.100 1c54 Creating DB E:\CURRENT PROJECT ON WORKING\AI PHARMACY\data\pharmarack_profile\Default\Local Storage\leveldb since it was missing.
+2026/06/22-14:46:46.148 1c54 Reusing MANIFEST E:\CURRENT PROJECT ON WORKING\AI PHARMACY\data\pharmarack_profile\Default\Local Storage\leveldb/MANIFEST-000001

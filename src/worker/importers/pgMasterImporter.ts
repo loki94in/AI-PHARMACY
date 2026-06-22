@@ -18,6 +18,8 @@ export const distributorMap = new Map<string, number>();    // legacy_id → new
 export const doctorMap = new Map<string, number>();         // legacy_id → new id
 export const patientMap = new Map<string, number>();        // legacy_id → new id (→ customers)
 export const medicineMap = new Map<string, number>();       // legacy_id → new id
+export const customerMap = new Map<string, number>();       // legacy customer_id → new id (B2B)
+export const genericMap = new Map<string, string>();        // legacy generic_id → generic/composition name
 
 export function clearAllMaps() {
   categoryMap.clear();
@@ -27,6 +29,8 @@ export function clearAllMaps() {
   doctorMap.clear();
   patientMap.clear();
   medicineMap.clear();
+  customerMap.clear();
+  genericMap.clear();
 }
 
 // ─── Category ───────────────────────────────────────────────
@@ -83,43 +87,48 @@ export async function importDistributor(row: Record<string, string | null>, db: 
 export async function flushDistributors(db: Database) {
   if (distributorBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const d of distributorBatch) {
-    try {
-      const result = await db.run(
-        `INSERT INTO distributors (name, contact, legacy_id, gstin, address, city, email, dl_no)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [d.name, d.contact, d.legacy_id, d.gstin, d.address, d.city, d.email, d.dl_no]
-      );
-      distributorMap.set(d.legacy_id, result.lastID!);
-      normalizedDistributorMap.set(d.normName, result.lastID!);
-    } catch (err: any) {
-      if (err.message && err.message.includes('UNIQUE constraint failed: distributors.name')) {
-        // Retrieve existing distributor's ID to preserve mappings
-        const row = await db.get('SELECT id FROM distributors WHERE name = ?', [d.name]);
-        if (row) {
-          distributorMap.set(d.legacy_id, row.id);
-          normalizedDistributorMap.set(d.normName, row.id);
-          // Link legacy_id on existing record if it is not already set
-          await db.run('UPDATE distributors SET legacy_id = COALESCE(legacy_id, ?) WHERE id = ?', [d.legacy_id, row.id]);
-        } else {
-          // Check by case-insensitive name matching if name isn't exactly equal due to unicode/whitespace differences
-          const rows = await db.all('SELECT id, name FROM distributors');
-          const matched = rows.find(r => normalizeDistributorName(r.name) === d.normName);
-          if (matched) {
-            distributorMap.set(d.legacy_id, matched.id);
-            normalizedDistributorMap.set(d.normName, matched.id);
-            await db.run('UPDATE distributors SET legacy_id = COALESCE(legacy_id, ?) WHERE id = ?', [d.legacy_id, matched.id]);
+  try {
+    for (const d of distributorBatch) {
+      try {
+        const result = await db.run(
+          `INSERT INTO distributors (name, contact, legacy_id, gstin, address, city, email, dl_no)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [d.name, d.contact, d.legacy_id, d.gstin, d.address, d.city, d.email, d.dl_no]
+        );
+        distributorMap.set(d.legacy_id, result.lastID!);
+        normalizedDistributorMap.set(d.normName, result.lastID!);
+      } catch (err: any) {
+        if (err.message && err.message.includes('UNIQUE constraint failed: distributors.name')) {
+          // Retrieve existing distributor's ID to preserve mappings
+          const row = await db.get('SELECT id FROM distributors WHERE name = ?', [d.name]);
+          if (row) {
+            distributorMap.set(d.legacy_id, row.id);
+            normalizedDistributorMap.set(d.normName, row.id);
+            // Link legacy_id on existing record if it is not already set
+            await db.run('UPDATE distributors SET legacy_id = COALESCE(legacy_id, ?) WHERE id = ?', [d.legacy_id, row.id]);
           } else {
-            throw err;
+            // Check by case-insensitive name matching if name isn't exactly equal due to unicode/whitespace differences
+            const rows = await db.all('SELECT id, name FROM distributors');
+            const matched = rows.find(r => normalizeDistributorName(r.name) === d.normName);
+            if (matched) {
+              distributorMap.set(d.legacy_id, matched.id);
+              normalizedDistributorMap.set(d.normName, matched.id);
+              await db.run('UPDATE distributors SET legacy_id = COALESCE(legacy_id, ?) WHERE id = ?', [d.legacy_id, matched.id]);
+            } else {
+              throw err;
+            }
           }
+        } else {
+          throw err;
         }
-      } else {
-        throw err;
       }
     }
+    await db.run('COMMIT');
+    distributorBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  distributorBatch = [];
 }
 
 // ─── Doctor ─────────────────────────────────────────────────
@@ -150,16 +159,21 @@ export async function importDoctor(row: Record<string, string | null>, db: Datab
 export async function flushDoctors(db: Database) {
   if (doctorBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const d of doctorBatch) {
-    const result = await db.run(
-      `INSERT INTO doctors (name, degree, reg_no, hospital, phone, address, legacy_id, speciality)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [d.name, d.degree, d.reg_no, d.hospital, d.phone, d.address, d.legacy_id, d.speciality]
-    );
-    doctorMap.set(d.legacy_id, result.lastID!);
+  try {
+    for (const d of doctorBatch) {
+      const result = await db.run(
+        `INSERT INTO doctors (name, degree, reg_no, hospital, phone, address, legacy_id, speciality)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [d.name, d.degree, d.reg_no, d.hospital, d.phone, d.address, d.legacy_id, d.speciality]
+      );
+      doctorMap.set(d.legacy_id, result.lastID!);
+    }
+    await db.run('COMMIT');
+    doctorBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  doctorBatch = [];
 }
 
 // ─── Patient → Customers ───────────────────────────────────
@@ -189,16 +203,83 @@ export async function importPatient(row: Record<string, string | null>, db: Data
 export async function flushPatients(db: Database) {
   if (patientBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const p of patientBatch) {
-    const result = await db.run(
-      `INSERT INTO customers (name, phone, address, notes, legacy_id, age, gender)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [p.name, p.phone, p.address, p.notes, p.legacy_id, p.age, p.gender]
-    );
-    patientMap.set(p.legacy_id, result.lastID!);
+  try {
+    for (const p of patientBatch) {
+      const result = await db.run(
+        `INSERT INTO customers (name, phone, address, notes, legacy_id, age, gender)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [p.name, p.phone, p.address, p.notes, p.legacy_id, p.age, p.gender]
+      );
+      patientMap.set(p.legacy_id, result.lastID!);
+    }
+    await db.run('COMMIT');
+    patientBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  patientBatch = [];
+}
+
+// ─── Generic → medicine composition/API reference ───────────
+export function importGeneric(row: Record<string, string | null>) {
+  const id = row['generic_id'];
+  const name = row['generic_name'];
+  if (!id || !name) return;
+  genericMap.set(id, name);
+}
+
+// ─── Customer (B2B) → customers table ───────────────────────
+let customerBatch: any[] = [];
+
+export async function importCustomer(row: Record<string, string | null>, db: Database) {
+  const legacyId = row['customer_id'];
+  const name = row['customer_name'];
+  const deleted = row['deleted'];
+  if (!legacyId || !name || deleted === 't') return;
+
+  customerBatch.push({
+    name,
+    phone: row['contact'] || null,
+    address: row['address'] || null,
+    notes: row['remarks'] || null,
+    legacy_id: `cust_${legacyId}`, // prefix to avoid clash with patient legacy_ids
+    age: null,
+    gender: null,
+    credit_enabled: 1,
+    credit_balance: parseFloat(row['opening_balance'] || '0') || 0,
+  });
+
+  if (customerBatch.length >= 500) {
+    await flushCustomers(db);
+  }
+}
+
+export async function flushCustomers(db: Database) {
+  if (customerBatch.length === 0) return;
+  await db.run('BEGIN TRANSACTION');
+  try {
+    for (const c of customerBatch) {
+      try {
+        const result = await db.run(
+          `INSERT INTO customers (name, phone, address, notes, legacy_id, age, gender, credit_enabled, credit_balance)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [c.name, c.phone, c.address, c.notes, c.legacy_id, c.age, c.gender, c.credit_enabled, c.credit_balance]
+        );
+        // Store with prefixed key so resolveCustomer can find it
+        customerMap.set(c.legacy_id.replace('cust_', ''), result.lastID!);
+      } catch (err: any) {
+        if (err.message && err.message.includes('UNIQUE constraint')) {
+          const existing = await db.get('SELECT id FROM customers WHERE legacy_id = ?', [c.legacy_id]);
+          if (existing) customerMap.set(c.legacy_id.replace('cust_', ''), existing.id);
+        }
+      }
+    }
+    await db.run('COMMIT');
+    customerBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
+  }
 }
 
 // ─── Medicine ───────────────────────────────────────────────
@@ -219,6 +300,10 @@ export async function importMedicine(row: Record<string, string | null>, db: Dat
   const catId = row['category_id'];
   const catName = catId ? categoryMap.get(catId) : null;
 
+  // Resolve generic/composition name from genericMap
+  const genericId = row['generic_id'];
+  const apiReference = genericId ? (genericMap.get(genericId) || null) : null;
+
   medicineBatch.push({
     name,
     legacy_id: legacyId,
@@ -233,6 +318,7 @@ export async function importMedicine(row: Record<string, string | null>, db: Dat
     rack: row['rack'] || null,
     marketed_by: row['marketer_name'] || null,
     schedule_type: row['therapeutic'] || 'None',
+    api_reference: apiReference,
   });
 
   if (medicineBatch.length >= MEDICINE_BATCH_SIZE) {
@@ -243,14 +329,19 @@ export async function importMedicine(row: Record<string, string | null>, db: Dat
 export async function flushMedicines(db: Database) {
   if (medicineBatch.length === 0) return;
   await db.run('BEGIN TRANSACTION');
-  for (const m of medicineBatch) {
-    const result = await db.run(
-      `INSERT INTO medicines (name, legacy_id, hsn_code, manufacturer, category, packaging, item_type, cgst, sgst, igst, rack, marketed_by, schedule_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [m.name, m.legacy_id, m.hsn_code, m.manufacturer, m.category, m.packaging, m.item_type, m.cgst, m.sgst, m.igst, m.rack, m.marketed_by, m.schedule_type]
-    );
-    medicineMap.set(m.legacy_id, result.lastID!);
+  try {
+    for (const m of medicineBatch) {
+      const result = await db.run(
+        `INSERT INTO medicines (name, legacy_id, hsn_code, manufacturer, category, packaging, item_type, cgst, sgst, igst, rack, marketed_by, schedule_type, api_reference)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [m.name, m.legacy_id, m.hsn_code, m.manufacturer, m.category, m.packaging, m.item_type, m.cgst, m.sgst, m.igst, m.rack, m.marketed_by, m.schedule_type, m.api_reference || null]
+      );
+      medicineMap.set(m.legacy_id, result.lastID!);
+    }
+    await db.run('COMMIT');
+    medicineBatch = [];
+  } catch (err) {
+    await db.run('ROLLBACK');
+    throw err;
   }
-  await db.run('COMMIT');
-  medicineBatch = [];
 }

@@ -891,17 +891,45 @@ const Learning: React.FC = () => {
                       {settingsData.gmail_auth_method === 'password' ? (
                         <div className="grid grid-cols-1 gap-2">
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Gmail Login ID</label>
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Email Address</label>
                             <input
                               type="email"
                               className="premium-input w-full text-xs"
                               placeholder="pharmacy@gmail.com"
                               value={settingsData.gmail_user || ''}
-                              onChange={(e) => setSettingsData({ ...settingsData, gmail_user: e.target.value })}
+                              onChange={(e) => {
+                                const email = e.target.value;
+                                let host = settingsData.imap_host || '';
+                                let port = settingsData.imap_port || '993';
+                                let tls = settingsData.imap_tls !== 'false';
+                                
+                                const lowerEmail = email.toLowerCase();
+                                if (lowerEmail.includes('@gmail.com')) {
+                                  host = 'imap.gmail.com';
+                                  port = '993';
+                                  tls = true;
+                                } else if (lowerEmail.includes('@outlook.com') || lowerEmail.includes('@hotmail.com') || lowerEmail.includes('@live.com')) {
+                                  host = 'outlook.office365.com';
+                                  port = '993';
+                                  tls = true;
+                                } else if (lowerEmail.includes('@yahoo.com')) {
+                                  host = 'imap.mail.yahoo.com';
+                                  port = '993';
+                                  tls = true;
+                                }
+                                
+                                setSettingsData({
+                                  ...settingsData,
+                                  gmail_user: email,
+                                  imap_host: host,
+                                  imap_port: port,
+                                  imap_tls: tls.toString()
+                                });
+                              }}
                             />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Gmail App Password</label>
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">App Password</label>
                             <input
                               type="password"
                               className="premium-input w-full text-xs"
@@ -910,11 +938,44 @@ const Learning: React.FC = () => {
                               onChange={(e) => setSettingsData({ ...settingsData, gmail_pass: e.target.value })}
                             />
                           </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted uppercase tracking-wider">IMAP Host</label>
+                              <input
+                                type="text"
+                                className="premium-input w-full text-xs"
+                                placeholder="e.g. imap.gmail.com"
+                                value={settingsData.imap_host || ''}
+                                onChange={(e) => setSettingsData({ ...settingsData, imap_host: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted uppercase tracking-wider">IMAP Port</label>
+                              <input
+                                type="text"
+                                className="premium-input w-full text-xs"
+                                placeholder="993"
+                                value={settingsData.imap_port || '993'}
+                                onChange={(e) => setSettingsData({ ...settingsData, imap_port: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block">Use SSL/TLS</label>
+                              <select
+                                className="premium-input w-full text-xs py-1.5"
+                                value={settingsData.imap_tls !== 'false' ? 'true' : 'false'}
+                                onChange={(e) => setSettingsData({ ...settingsData, imap_tls: e.target.value })}
+                              >
+                                <option value="true" className="bg-bg text-text">Yes (SSL/TLS)</option>
+                                <option value="false" className="bg-bg text-text">No (Plain / STARTTLS)</option>
+                              </select>
+                            </div>
+                          </div>
                         </div>
                       ) : (
                         <div className="space-y-2">
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Gmail Login ID</label>
+                            <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Gmail Address (OAuth2)</label>
                             <input
                               type="email"
                               className="premium-input w-full text-xs"

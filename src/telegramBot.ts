@@ -18,29 +18,73 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', 'data', 'ap
 
 class TelegramBotService {
   private bot: TelegramBot | null = null;
-  private readonly token: string | undefined;
+  private token: string | undefined;
+  private chatId: string | undefined;
+  private enabled: boolean = false;
   private lang: string;
 
   constructor() {
-    this.token = process.env.TELEGRAM_BOT_TOKEN;
     this.lang = process.env.TELEGRAM_LANG || 'en';
-    // Telegram disabled for testing
-    // if (this.token) {
-    //   this.initializeBot();
-    // }
   }
 
-  private initializeBot(): void {
-    if (!this.token) {
-      console.error('Telegram bot token not provided');
-      return;
+  public async initializeOrReloadBot(): Promise<void> {
+    try {
+      const db = await dbManager.getConnection();
+      
+      // Load current settings from database
+      const settings = await db.all(
+        "SELECT key, value FROM app_settings WHERE key IN ('telegram_enabled', 'telegram_token', 'telegram_chat_id')"
+      );
+      const settingsMap = settings.reduce((acc, row) => {
+        acc[row.key] = row.value;
+        return acc;
+      }, {} as Record<string, string>);
+
+      const nextEnabled = settingsMap['telegram_enabled'] === 'true';
+      const nextToken = settingsMap['telegram_token'] || '';
+      const nextChatId = settingsMap['telegram_chat_id'] || '';
+
+      const tokenChanged = this.token !== nextToken;
+      const enabledChanged = this.enabled !== nextEnabled;
+      const chatIdChanged = this.chatId !== nextChatId;
+
+      if (!tokenChanged && !enabledChanged && !chatIdChanged && this.bot) {
+        // No changes, and bot is already running
+        return;
+      }
+
+      console.log(`[Telegram] Configuration updated. enabled: ${nextEnabled}, token: ${nextToken ? '***' : 'empty'}, chat_id: ${nextChatId}`);
+
+      // Shutdown active polling bot if running
+      if (this.bot) {
+        console.log('[Telegram] Stopping active bot polling...');
+        try {
+          if (this.bot.isPolling()) {
+            await this.bot.stopPolling();
+          }
+        } catch (e) {
+          console.error('[Telegram] Error stopping polling:', e);
+        }
+        this.bot = null;
+      }
+
+      this.token = nextToken;
+      this.chatId = nextChatId;
+      this.enabled = nextEnabled;
+
+      if (!this.enabled || !this.token) {
+        console.log('[Telegram] Bot is disabled or missing token. Polling inactive.');
+        return;
+      }
+
+      console.log('[Telegram] Starting new bot polling client...');
+      this.bot = new TelegramBot(this.token, { polling: true });
+      this.setupCommandHandlers();
+      this.setupErrorHandling();
+      console.log('[Telegram] Bot initialized successfully.');
+    } catch (error) {
+      console.error('[Telegram] Failed to initialize or reload bot:', error);
     }
-
-    this.bot = new TelegramBot(this.token, { polling: true });
-    this.setupCommandHandlers();
-    this.setupErrorHandling();
-
-    console.log('Telegram bot initialized with polling');
   }
 
 
@@ -530,11 +574,11 @@ class TelegramBotService {
 
   // Method to send notification to default chat (if configured)
   public async sendDefaultNotification(message: string): Promise<boolean> {
-    const defaultChatId = process.env.TELEGRAM_CHAT_ID;
+    const defaultChatId = this.chatId || process.env.TELEGRAM_CHAT_ID;
     if (defaultChatId) {
       return this.sendNotification(defaultChatId, message);
     }
-    console.warn('TELEGRAM_CHAT_ID not configured for default notifications');
+    console.warn('Telegram Chat ID not configured for default notifications');
     return false;
   }
 
@@ -546,7 +590,7 @@ class TelegramBotService {
 
   // Method to send a photo to the default chat
   public async sendPhotoToDefaultChat(photoBuffer: Buffer, caption: string): Promise<boolean> {
-    const defaultChatId = process.env.TELEGRAM_CHAT_ID;
+    const defaultChatId = this.chatId || process.env.TELEGRAM_CHAT_ID;
     if (defaultChatId && this.bot) {
       try {
         await this.bot.sendPhoto(defaultChatId, photoBuffer, { caption });
@@ -555,7 +599,7 @@ class TelegramBotService {
         console.error('Failed to send Telegram photo:', error);
       }
     } else {
-      console.warn('TELEGRAM_CHAT_ID not configured or bot not initialized for photo notifications');
+      console.warn('Telegram Chat ID not configured or bot not initialized for photo notifications');
     }
     return false;
   }
@@ -641,9 +685,14 @@ class TelegramBotService {
   // Graceful shutdown
   public async shutdown(): Promise<void> {
     if (this.bot) {
-      // Note: node-telegram-bot-api doesn't have a direct shutdown method for polling
-      // The polling will stop when the process exits
       console.log('Telegram bot shutting down...');
+      try {
+        if (this.bot.isPolling()) {
+          await this.bot.stopPolling();
+        }
+      } catch (e) {
+        console.error('[Telegram] Error stopping polling during shutdown:', e);
+      }
       this.bot = null;
     }
   }

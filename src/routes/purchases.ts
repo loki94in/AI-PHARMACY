@@ -559,37 +559,51 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const db = await dbManager.getConnection();
-    const limit = parseInt(req.query.limit as string) || 100;
     const months = parseInt(req.query.months as string) || 0;
     const start = req.query.start as string;
     const end = req.query.end as string;
+    const search = req.query.search as string || '';
     
-    let dateFilter = '';
+    let filterQuery = '';
     const params: any[] = [];
+    const conditions: string[] = [];
     
     if (start && end) {
-      dateFilter = 'WHERE date(p.date) BETWEEN date(?) AND date(?)';
+      conditions.push('date(p.date) BETWEEN date(?) AND date(?)');
       params.push(start, end);
     } else if (start) {
-      dateFilter = 'WHERE date(p.date) >= date(?)';
+      conditions.push('date(p.date) >= date(?)');
       params.push(start);
     } else if (end) {
-      dateFilter = 'WHERE date(p.date) <= date(?)';
+      conditions.push('date(p.date) <= date(?)');
       params.push(end);
     } else if (months > 0) {
-      dateFilter = `WHERE p.date >= datetime('now', '-${months} months')`;
+      conditions.push(`p.date >= datetime('now', '-${months} months')`);
     }
+    
+    if (search) {
+      conditions.push('(p.invoice_no LIKE ? OR d.name LIKE ?)');
+      const s = `%${search}%`;
+      params.push(s, s);
+    }
+    
+    if (conditions.length > 0) {
+      filterQuery = 'WHERE ' + conditions.join(' AND ');
+    }
+    
+    const hasFilters = !!(start || end || months > 0 || search);
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : (hasFilters ? 5000 : 50);
     
     const purchases = await db.all(`
       SELECT p.id, p.invoice_no, p.date, p.total_amount, p.cn_amount, p.cn_number, p.original_amount, d.name as distributor_name,
              COALESCE((SELECT SUM(quantity) FROM purchase_items WHERE purchase_id = p.id), 0) as total_qty
       FROM purchases p 
       LEFT JOIN distributors d ON p.distributor_id = d.id 
-      ${dateFilter}
+      ${filterQuery}
       ORDER BY p.date DESC 
       LIMIT ?
     `, [...params, limit]);
-        res.json(purchases);
+    res.json(purchases);
   } catch (err) {
     console.error('Purchases fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });

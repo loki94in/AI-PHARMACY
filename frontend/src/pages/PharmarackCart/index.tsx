@@ -34,6 +34,7 @@ export default function PharmarackCart() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
+  const [cartMode, setCartMode] = useState<'Live' | 'Simulation' | null>(null);
 
   const fetchCart = async () => {
     setLoading(true);
@@ -42,6 +43,7 @@ export default function PharmarackCart() {
       const data = await api.getPharmarackCart();
       if (data && data.success) {
         setDistributors(data.distributors || []);
+        setCartMode(data.mode || 'Live');
         setLastFetched(new Date());
       } else {
         setError('Failed to retrieve cart details.');
@@ -63,7 +65,7 @@ export default function PharmarackCart() {
   const totalAmount = distributors.reduce((s, d) => s + d.items.reduce((a, i) => a + i.amount, 0), 0);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-bg text-text">
+    <div className="flex-1 flex flex-col overflow-hidden bg-bg text-text">
       {/* ── Top Header ── */}
       <div className="h-16 border-b border-glass-border/40 px-6 flex items-center justify-between shrink-0 bg-glass-bg/10 backdrop-blur-md">
         <div className="flex items-center gap-3">
@@ -73,9 +75,15 @@ export default function PharmarackCart() {
           <div>
             <h3 className="text-sm font-bold text-text tracking-wide uppercase leading-none flex items-center gap-2">
               Pharmarack Cart
-              <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-                ● LIVE
-              </span>
+              {cartMode === 'Simulation' ? (
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/30">
+                  ● SIMULATED
+                </span>
+              ) : (
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                  ● LIVE
+                </span>
+              )}
             </h3>
             <p className="text-[10px] text-muted tracking-wider mt-1">
               {lastFetched
@@ -124,12 +132,37 @@ export default function PharmarackCart() {
               <p className="text-sm font-bold text-text">Failed to fetch cart</p>
               <p className="text-xs text-muted mt-1">{error}</p>
             </div>
-            <button
-              onClick={fetchCart}
-              className="premium-btn bg-primary text-text px-4 py-2 hover:bg-primary/80 text-xs font-bold"
-            >
-              Retry
-            </button>
+            {(error.toLowerCase().includes('login') || error.toLowerCase().includes('session') || error.toLowerCase().includes('unauthorized') || error.toLowerCase().includes('token')) ? (
+              <div className="flex flex-col gap-2 w-full max-w-xs">
+                <button
+                  onClick={async () => {
+                    try {
+                      toastEvent.trigger('Opening Pharmarack Login window...', 'info');
+                      await api.launchPharmarackLoginWindow();
+                    } catch (err: any) {
+                      toastEvent.trigger(err?.response?.data?.error || 'Failed to launch login window', 'error');
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-[0_4px_12px_rgba(16,185,129,0.2)]"
+                >
+                  <ExternalLink size={13} />
+                  <span>Link Pharmarack Account</span>
+                </button>
+                <button
+                  onClick={fetchCart}
+                  className="w-full px-4 py-2 rounded-xl bg-bg2 border border-glass-border text-muted hover:text-text hover:bg-bg3 text-xs font-bold transition-all"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={fetchCart}
+                className="premium-btn bg-primary text-text px-4 py-2 hover:bg-primary/80 text-xs font-bold"
+              >
+                Retry
+              </button>
+            )}
           </div>
         ) : distributors.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">

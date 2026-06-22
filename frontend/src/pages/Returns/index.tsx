@@ -338,7 +338,6 @@ const Returns: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchReturnHistory();
     // Auto-prefill from Expiry page navigation
     const prefilledItems = location.state?.prefilledReturnItems;
     if (prefilledItems && prefilledItems.length > 0) {
@@ -356,34 +355,28 @@ const Returns: React.FC = () => {
     }
   }, []);
 
-  const fetchReturnHistory = async () => {
+  const fetchReturnHistory = async (start = dateFrom, end = dateTo, min = minAmount, max = maxAmount) => {
     setLoading(true);
     try {
-      const response = await api.getReturns();
+      const params = {
+        date_from: start || undefined,
+        date_to: end || undefined,
+        min_amount: min ? parseFloat(min) : undefined,
+        max_amount: max ? parseFloat(max) : undefined,
+      };
+      const response = await api.getReturns(params);
       const returns = Array.isArray(response) ? response : (response.data || []);
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      
-      // Filter for current month/year
-      let filtered = returns.filter((r: any) => {
-        const dateStr = r.date || r.return_date || r.created_at;
-        if (!dateStr) return true;
-        const d = new Date(dateStr);
-        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      });
-
-      // If no returns in the current month, show all returns in history as a fallback instead of an empty page
-      if (filtered.length === 0) {
-        filtered = returns;
-      }
-      
-      setReturnHistory(filtered);
+      setReturnHistory(returns);
     } catch (error) {
       console.error('Error fetching returns:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchReturnHistory(dateFrom, dateTo, minAmount, maxAmount);
+  }, [dateFrom, dateTo, minAmount, maxAmount]);
 
   const searchTimeoutRef = React.useRef<any>(null);
 
