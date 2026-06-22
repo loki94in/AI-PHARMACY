@@ -17,10 +17,6 @@ import {
   History,
   Shield,
   AlertTriangle,
-  Truck,
-  Phone,
-  Plus,
-  Pencil,
   X,
   QrCode,
 } from 'lucide-react';
@@ -140,77 +136,7 @@ const Settings = () => {
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  // Delivery Boy Management
-  const [deliveryBoys, setDeliveryBoys] = useState<DeliveryBoy[]>([]);
-  const [dbLoading, setDbLoading] = useState(false);
-  const [dbForm, setDbForm] = useState({ name: '', whatsapp_number: '' });
-  const [dbAdding, setDbAdding] = useState(false);
-  const [dbEditId, setDbEditId] = useState<number | null>(null);
-  const [dbEditForm, setDbEditForm] = useState({ name: '', whatsapp_number: '' });
 
-  const fetchDeliveryBoys = async () => {
-    setDbLoading(true);
-    try {
-      const data = await api.getDeliveryBoys();
-      setDeliveryBoys(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Failed to fetch delivery boys:', err);
-    } finally {
-      setDbLoading(false);
-    }
-  };
-
-  const handleAddDeliveryBoy = async () => {
-    if (!dbForm.name.trim()) {
-      toastEvent.trigger('Name is required', 'error');
-      return;
-    }
-    setDbAdding(true);
-    try {
-      await api.addDeliveryBoy({ name: dbForm.name.trim(), whatsapp_number: dbForm.whatsapp_number.trim() });
-      setDbForm({ name: '', whatsapp_number: '' });
-      toastEvent.trigger('Delivery boy added', 'success');
-      fetchDeliveryBoys();
-    } catch {
-      toastEvent.trigger('Failed to add delivery boy', 'error');
-    } finally {
-      setDbAdding(false);
-    }
-  };
-
-  const handleUpdateDeliveryBoy = async (id: number) => {
-    if (!dbEditForm.name.trim()) {
-      toastEvent.trigger('Name is required', 'error');
-      return;
-    }
-    try {
-      await api.updateDeliveryBoy(id, { name: dbEditForm.name.trim(), whatsapp_number: dbEditForm.whatsapp_number.trim() });
-      setDbEditId(null);
-      toastEvent.trigger('Delivery boy updated', 'success');
-      fetchDeliveryBoys();
-    } catch {
-      toastEvent.trigger('Failed to update delivery boy', 'error');
-    }
-  };
-
-  const handleDeleteDeliveryBoy = async (id: number) => {
-    try {
-      await api.deleteDeliveryBoy(id);
-      toastEvent.trigger('Delivery boy removed', 'success');
-      fetchDeliveryBoys();
-    } catch {
-      toastEvent.trigger('Failed to delete delivery boy', 'error');
-    }
-  };
-
-  const handleToggleDeliveryBoyActive = async (boy: DeliveryBoy) => {
-    try {
-      await api.updateDeliveryBoy(boy.id, { is_active: boy.is_active ? 0 : 1 });
-      fetchDeliveryBoys();
-    } catch {
-      toastEvent.trigger('Failed to toggle status', 'error');
-    }
-  };
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -276,7 +202,6 @@ const Settings = () => {
       }
     };
     fetchSettings();
-    fetchDeliveryBoys();
   }, []);
 
   useEffect(() => {
@@ -592,6 +517,12 @@ const Settings = () => {
     setResetLoading(true);
     try {
       await apiClient.post('/utilities/reset-data', { wipeAll: true });
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (storageErr) {
+        console.warn('Failed to clear browser storage:', storageErr);
+      }
       toastEvent.trigger('App reset to factory state. Reloading...', 'success');
       setResetConfirm(false);
       setResetConfirmText('');
@@ -1009,162 +940,7 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* ─── Delivery Boy / Staff Numbers ─── */}
-      <div className="glass-panel p-6">
 
-        {/* ─── Delivery Boy / Staff Numbers ─── */}
-        <div className="border border-glass-border/40 p-5 rounded-xl bg-glass-bg/30 mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold flex items-center gap-2 text-amber">
-              <Truck size={16} /> Delivery Boy / Staff Numbers
-            </h4>
-            <span className="text-[10px] text-muted font-semibold">
-              {deliveryBoys.length} staff member{deliveryBoys.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-
-          <p className="text-[11px] text-muted mb-4 leading-relaxed">
-            Manage delivery boy WhatsApp numbers for automation messages like pickup lists, special requests, and delivery confirmations.
-          </p>
-
-          {/* Add new delivery boy */}
-          <div className="flex gap-2 mb-4">
-            <input
-              id="db-add-name"
-              type="text"
-              className="premium-input flex-1 text-xs"
-              placeholder="Name (e.g. Raju)"
-              value={dbForm.name}
-              onChange={(e) => setDbForm(f => ({ ...f, name: e.target.value }))}
-            />
-            <input
-              id="db-add-phone"
-              type="text"
-              className="premium-input flex-1 text-xs font-mono"
-              placeholder="WhatsApp Number (e.g. 9876543210)"
-              value={dbForm.whatsapp_number}
-              onChange={(e) => setDbForm(f => ({ ...f, whatsapp_number: e.target.value }))}
-            />
-            <button
-              id="db-add-btn"
-              onClick={handleAddDeliveryBoy}
-              disabled={dbAdding || !dbForm.name.trim()}
-              className="premium-btn bg-green text-white text-xs px-4 hover:bg-emerald-600 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              <Plus size={14} />
-              {dbAdding ? 'Adding...' : 'Add'}
-            </button>
-          </div>
-
-          {/* Delivery boys list */}
-          {dbLoading ? (
-            <div className="text-center text-muted text-xs py-6">
-              <RefreshCw size={16} className="animate-spin mx-auto mb-2 opacity-50" />
-              Loading staff...
-            </div>
-          ) : deliveryBoys.length === 0 ? (
-            <div className="text-center text-muted text-xs py-6">
-              <Truck size={24} className="mx-auto mb-2 opacity-20" />
-              No delivery boys added yet. Add one above.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {deliveryBoys.map(boy => (
-                <div
-                  key={boy.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
-                    boy.is_active
-                      ? 'border-glass-border/40 bg-glass-bg/20'
-                      : 'border-glass-border/20 bg-glass-bg/10 opacity-50'
-                  }`}
-                >
-                  {dbEditId === boy.id ? (
-                    /* Edit mode */
-                    <>
-                      <input
-                        type="text"
-                        className="premium-input flex-1 text-xs"
-                        value={dbEditForm.name}
-                        onChange={(e) => setDbEditForm(f => ({ ...f, name: e.target.value }))}
-                        placeholder="Name"
-                      />
-                      <input
-                        type="text"
-                        className="premium-input flex-1 text-xs font-mono"
-                        value={dbEditForm.whatsapp_number}
-                        onChange={(e) => setDbEditForm(f => ({ ...f, whatsapp_number: e.target.value }))}
-                        placeholder="WhatsApp Number"
-                      />
-                      <button
-                        onClick={() => handleUpdateDeliveryBoy(boy.id)}
-                        className="text-xs font-bold bg-green/20 text-green px-3 py-1.5 rounded-full hover:bg-green/30 transition-all"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setDbEditId(null)}
-                        className="p-1.5 rounded hover:bg-glass-bg/40 text-muted transition-colors"
-                      >
-                        <X size={14} />
-                      </button>
-                    </>
-                  ) : (
-                    /* View mode */
-                    <>
-                      <div className="w-8 h-8 rounded-full bg-amber/10 flex items-center justify-center flex-shrink-0">
-                        <Truck size={14} className="text-amber" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-text truncate">{boy.name}</p>
-                        <p className="text-xs text-muted font-mono flex items-center gap-1">
-                          <Phone size={10} />
-                          {boy.whatsapp_number || 'No number set'}
-                        </p>
-                      </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        boy.is_active
-                          ? 'bg-green/15 text-green border border-green/20'
-                          : 'bg-red/15 text-red border border-red/20'
-                      }`}>
-                        {boy.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                      <button
-                        onClick={() => handleToggleDeliveryBoyActive(boy)}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all ${
-                          boy.is_active
-                            ? 'bg-red/10 text-red/70 hover:bg-red/20 hover:text-red'
-                            : 'bg-green/10 text-green/70 hover:bg-green/20 hover:text-green'
-                        }`}
-                        title={boy.is_active ? 'Deactivate' : 'Activate'}
-                      >
-                        {boy.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setDbEditId(boy.id);
-                          setDbEditForm({ name: boy.name, whatsapp_number: boy.whatsapp_number || '' });
-                        }}
-                        className="p-1.5 rounded hover:bg-sky/20 text-sky transition-colors"
-                        title="Edit"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteDeliveryBoy(boy.id)}
-                        className="p-1.5 rounded hover:bg-red/20 text-red/60 hover:text-red transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
 
 
 

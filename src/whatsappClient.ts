@@ -14,7 +14,7 @@ type WAClient = InstanceType<typeof Client>;
 let clientInstance: WAClient | null = null;
 
 /** Helper to check whether we should route messages to WhatsApp Business Cloud API */
-async function shouldRouteToBusiness(): Promise<boolean> {
+export async function shouldRouteToBusiness(): Promise<boolean> {
   try {
     const db = await dbManager.getConnection();
     const rows = await db.all(
@@ -130,6 +130,11 @@ export async function initClient(): Promise<WAClient> {
       isReady = true;
       currentQr = null;
       resolve(client);
+
+      // Start background synchronization of chats and messages
+      syncWhatsappData(client).catch(err => {
+        console.error('[WhatsApp] Background sync failed:', err);
+      });
     });
 
     client.on('disconnected', (reason) => {
@@ -164,6 +169,78 @@ export async function initClient(): Promise<WAClient> {
       reject(new Error(msg));
     });
     
+    // Register message creation event listener for offline caching
+    client.on('message_create', async (msg) => {
+      try {
+        const chatId = msg.to && msg.fromMe ? msg.to : msg.from;
+        const db = await dbManager.getConnection();
+        
+        await db.run(
+          `INSERT INTO whatsapp_messages (id, chat_id, body, from_me, timestamp, type, has_media)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO NOTHING`,
+          [
+            msg.id._serialized,
+            chatId,
+            msg.body || '',
+            msg.fromMe ? 1 : 0,
+            msg.timestamp,
+            msg.type,
+            msg.hasMedia ? 1 : 0
+          ]
+        );
+
+        let chatName = chatId.split('@')[0];
+        try {
+          const chat = await msg.getChat();
+          if (chat) chatName = chat.name || chatName;
+        } catch (e) {}
+
+        await db.run(
+          `INSERT INTO whatsapp_chats (id, name, unread_count, timestamp, last_message, is_group)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             timestamp=excluded.timestamp,
+             last_message=excluded.last_message,
+             unread_count = CASE WHEN ? = 0 THEN unread_count + 1 ELSE unread_count END`,
+          [
+            chatId,
+            chatName,
+            msg.fromMe ? 0 : 1,
+            msg.timestamp,
+            msg.body || '',
+            chatId.includes('g.us') ? 1 : 0,
+            msg.fromMe ? 1 : 0
+          ]
+        );
+
+        eventService.broadcast('wa_new_message', {
+          chat_id: chatId,
+          message: {
+            id: msg.id._serialized,
+            body: msg.body,
+            fromMe: msg.fromMe,
+            timestamp: msg.timestamp,
+            type: msg.type,
+            hasMedia: msg.hasMedia
+          }
+        });
+      } catch (err) {
+        console.error('[WhatsApp] Error in message_create event handler:', err);
+      }
+    });
+
+    client.on('message_ack', async (msg, ack) => {
+      try {
+        eventService.broadcast('wa_message_ack', {
+          msg_id: msg.id._serialized,
+          ack
+        });
+      } catch (err) {
+        console.error('[WhatsApp] Error in message_ack event handler:', err);
+      }
+    });
+
     client.initialize().catch(err => {
       console.error('[WhatsApp] Failed during initialize():', err);
       initializing = false;
@@ -258,21 +335,27 @@ export async function sendMessage(
   }
 }
 
-/** Get all chats from the initialized client */
+/** Get all chats from the local SQLite cache */
 export async function getChats(): Promise<any[]> {
-  if (!clientInstance) {
-    throw new Error('Client not initialized. Call initClient() first.');
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT id, name, unread_count as unreadCount, timestamp, is_group as isGroup, last_message as lastMessage 
+       FROM whatsapp_chats 
+       ORDER BY timestamp DESC`
+    );
+    return rows;
+  } catch (err) {
+    console.error('Error fetching chats from SQLite:', err);
+    if (clientInstance) {
+      return await clientInstance.getChats();
+    }
+    return [];
   }
-  return await clientInstance.getChats();
 }
 
-/** Get messages for a specific chat */
+/** Get messages for a specific chat from local SQLite cache */
 export async function getChatMessages(chatId: string, limit: number = 50): Promise<any[]> {
-  if (!clientInstance) {
-    throw new Error('Client not initialized. Call initClient() first.');
-  }
-  
-  // Format the phone number properly
   let cleanId = String(chatId);
   if (!cleanId.includes('@')) {
     let cleanPhone = cleanId.replace(/\D/g, '');
@@ -280,10 +363,137 @@ export async function getChatMessages(chatId: string, limit: number = 50): Promi
     cleanId = `${cleanPhone}@c.us`;
   }
 
-  const chat = await clientInstance.getChatById(cleanId);
-  if (!chat) return [];
-  
-  return await chat.fetchMessages({ limit });
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT id, body, from_me as fromMe, timestamp, type, has_media as hasMedia 
+       FROM whatsapp_messages 
+       WHERE chat_id = ? 
+       ORDER BY timestamp ASC 
+       LIMIT ?`,
+      [cleanId, limit]
+    );
+
+    if (rows.length > 0) {
+      return rows;
+    }
+
+    if (clientInstance) {
+      const chat = await clientInstance.getChatById(cleanId).catch(() => null);
+      if (chat) {
+        const liveMsgs = await chat.fetchMessages({ limit }).catch(() => []);
+        (async () => {
+          try {
+            const dbConn = await dbManager.getConnection();
+            for (const msg of liveMsgs) {
+              await dbConn.run(
+                `INSERT INTO whatsapp_messages (id, chat_id, body, from_me, timestamp, type, has_media)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(id) DO NOTHING`,
+                [
+                  msg.id._serialized,
+                  cleanId,
+                  msg.body || '',
+                  msg.fromMe ? 1 : 0,
+                  msg.timestamp,
+                  msg.type,
+                  msg.hasMedia ? 1 : 0
+                ]
+              );
+            }
+          } catch (err) {
+            console.error('Error saving fallback live messages:', err);
+          }
+        })();
+        return liveMsgs.map(m => ({
+          id: m.id._serialized,
+          body: m.body,
+          fromMe: m.fromMe,
+          timestamp: m.timestamp,
+          type: m.type,
+          hasMedia: m.hasMedia
+        }));
+      }
+    }
+    return [];
+  } catch (err) {
+    console.error('Error fetching messages from SQLite:', err);
+    if (clientInstance) {
+      const chat = await clientInstance.getChatById(cleanId).catch(() => null);
+      if (chat) {
+        const liveMsgs = await chat.fetchMessages({ limit }).catch(() => []);
+        return liveMsgs.map(m => ({
+          id: m.id._serialized,
+          body: m.body,
+          fromMe: m.fromMe,
+          timestamp: m.timestamp,
+          type: m.type,
+          hasMedia: m.hasMedia
+        }));
+      }
+    }
+    return [];
+  }
+}
+
+/** Asynchronously sync chats and recent messages from WhatsApp to SQLite */
+async function syncWhatsappData(client: WAClient) {
+  try {
+    console.log('[WhatsApp] Starting background synchronization of chats and messages...');
+    const chats = await client.getChats();
+    const db = await dbManager.getConnection();
+    
+    for (const chat of chats) {
+      const chatId = chat.id._serialized;
+      const lastMsg = chat.lastMessage ? chat.lastMessage.body : null;
+      
+      await db.run(
+        `INSERT INTO whatsapp_chats (id, name, unread_count, timestamp, last_message, is_group)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name=excluded.name,
+           unread_count=excluded.unread_count,
+           timestamp=excluded.timestamp,
+           last_message=excluded.last_message,
+           is_group=excluded.is_group`,
+        [
+          chatId,
+          chat.name || chat.id.user,
+          chat.unreadCount || 0,
+          chat.timestamp || Math.floor(Date.now() / 1000),
+          lastMsg,
+          chat.isGroup ? 1 : 0
+        ]
+      );
+
+      // Fetch and sync messages for this chat in the background
+      try {
+        const messages = await chat.fetchMessages({ limit: 50 });
+        for (const msg of messages) {
+          await db.run(
+            `INSERT INTO whatsapp_messages (id, chat_id, body, from_me, timestamp, type, has_media)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO NOTHING`,
+            [
+              msg.id._serialized,
+              chatId,
+              msg.body || '',
+              msg.fromMe ? 1 : 0,
+              msg.timestamp,
+              msg.type,
+              msg.hasMedia ? 1 : 0
+            ]
+          );
+        }
+      } catch (err) {
+        console.error(`[WhatsApp] Failed to sync messages for chat ${chatId}:`, err);
+      }
+    }
+    console.log('[WhatsApp] Background synchronization completed successfully.');
+    eventService.broadcast('wa_chats_updated', { success: true });
+  } catch (err) {
+    console.error('[WhatsApp] Error during synchronization:', err);
+  }
 }
 
 /** Destroy the WhatsApp client to release file locks on the session folder */

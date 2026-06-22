@@ -653,7 +653,7 @@ router.post('/reset-data', async (req, res) => {
       }
     };
 
-    clearDir(uploadsDir, ['custom_stamp.png', 'custom_signature.png']);
+    clearDir(uploadsDir, wipeAll ? [] : ['custom_stamp.png', 'custom_signature.png']);
     clearDir(rawDir);
     clearDir(migrationReportsDir);
     clearDir(auditImagesDir);

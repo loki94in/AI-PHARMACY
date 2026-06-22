@@ -641,6 +641,9 @@ const Topbar = ({
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data.type === 'wa_new_message' || data.type === 'wa_message_ack' || data.type === 'wa_chats_updated') {
+            window.dispatchEvent(new CustomEvent('whatsapp_event', { detail: data }));
+          }
           if (data.type === 'auth_failure' || data.type === 'auth_required' || data.type === 'notification') {
             toastEvent.trigger(
               data.payload?.message || data.message || 'Action required',

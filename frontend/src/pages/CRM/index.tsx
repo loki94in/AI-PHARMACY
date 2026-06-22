@@ -207,20 +207,38 @@ const CRM = () => {
     return () => clearInterval(interval);
   }, [fetchPatients, fetchWaStatus]);
 
-  // Poll messages for active chat
+  // Listen for real-time WhatsApp events pushed via SSE
   useEffect(() => {
-    if (!activeWaChat) return;
-    const pollMessages = async () => {
-      try {
-        const data = await api.getWhatsappMessages(activeWaChat.id);
-        setWaMessages(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error('Failed to poll WA messages', err);
+    const handleWaEvent = (e: Event) => {
+      const eventData = (e as CustomEvent).detail;
+      if (!eventData) return;
+
+      const { type, payload } = eventData;
+      
+      if (type === 'wa_new_message' && payload) {
+        const { chat_id, message } = payload;
+        
+        // If this message belongs to the active chat thread, append it
+        if (activeWaChat && activeWaChat.id === chat_id) {
+          setWaMessages(prev => {
+            // Avoid duplicates
+            if (prev.some(m => m.id === message.id)) return prev;
+            const updated = [...prev, message];
+            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+            return updated;
+          });
+        }
+        
+        // Refresh chat list to show updated lastMessage, timestamp, unread counts
+        fetchWaChats();
+      } else if (type === 'wa_chats_updated') {
+        fetchWaChats();
       }
     };
-    const interval = setInterval(pollMessages, 4000);
-    return () => clearInterval(interval);
-  }, [activeWaChat]);
+
+    window.addEventListener('whatsapp_event', handleWaEvent);
+    return () => window.removeEventListener('whatsapp_event', handleWaEvent);
+  }, [activeWaChat, fetchWaChats]);
 
   const loadWaMessages = async (chat: any) => {
     setActiveWaChat(chat);

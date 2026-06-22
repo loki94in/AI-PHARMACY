@@ -1,6 +1,6 @@
 // Messaging Hub API (Agent 2)
 import express from 'express';
-import { initClient, sendMessage, currentQr, isReady, forceReconnect, destroyClient } from '../whatsappClient.js';
+import { initClient, sendMessage, currentQr, isReady, forceReconnect, destroyClient, shouldRouteToBusiness } from '../whatsappClient.js';
 import QRCode from 'qrcode';
 import { eventService } from '../services/eventService.js';
 import fs from 'fs';
@@ -31,6 +31,12 @@ router.get('/qr', async (req, res) => {
     if (isLoginWindowActive) {
       return res.json({ isReady: false, qrUrl: null, message: 'Chrome login window is open. Scan the QR code in Chrome.' });
     }
+
+    const useBusiness = await shouldRouteToBusiness();
+    if (useBusiness) {
+      return res.json({ isReady: true, qrUrl: null, message: 'WhatsApp Business API is active.' });
+    }
+
     if (isReady) {
       return res.json({ isReady: true, qrUrl: null });
     }
@@ -175,14 +181,28 @@ router.get('/chats', async (req, res) => {
     const { getChats } = await import('../whatsappClient.js');
     const chats = await getChats();
     // Sanitize the objects to prevent circular JSON stringify issues
-    const sanitizedChats = chats.map(c => ({
-      id: c.id._serialized,
-      name: c.name || c.id.user,
-      unreadCount: c.unreadCount,
-      timestamp: c.timestamp,
-      isGroup: c.isGroup,
-      lastMessage: c.lastMessage ? c.lastMessage.body : null
-    }));
+    const sanitizedChats = chats.map(c => {
+      if (c.id && typeof c.id === 'string') {
+        // Flat format from local database
+        return {
+          id: c.id,
+          name: c.name || c.id.split('@')[0],
+          unreadCount: c.unreadCount || 0,
+          timestamp: c.timestamp,
+          isGroup: !!c.isGroup,
+          lastMessage: c.lastMessage
+        };
+      }
+      // Raw nested format from whatsapp-web.js client
+      return {
+        id: c.id._serialized,
+        name: c.name || c.id.user,
+        unreadCount: c.unreadCount,
+        timestamp: c.timestamp,
+        isGroup: c.isGroup,
+        lastMessage: c.lastMessage ? c.lastMessage.body : null
+      };
+    });
     res.json(sanitizedChats);
   } catch (err: any) {
     console.error('Error fetching chats:', err);
@@ -195,14 +215,28 @@ router.get('/chats/:id/messages', async (req, res) => {
   try {
     const { getChatMessages } = await import('../whatsappClient.js');
     const messages = await getChatMessages(req.params.id);
-    const sanitizedMessages = messages.map(m => ({
-      id: m.id._serialized,
-      body: m.body,
-      fromMe: m.fromMe,
-      timestamp: m.timestamp,
-      type: m.type,
-      hasMedia: m.hasMedia
-    }));
+    const sanitizedMessages = messages.map(m => {
+      if (m.id && typeof m.id === 'string') {
+        // Flat format from local database
+        return {
+          id: m.id,
+          body: m.body,
+          fromMe: !!m.fromMe,
+          timestamp: m.timestamp,
+          type: m.type,
+          hasMedia: !!m.hasMedia
+        };
+      }
+      // Raw nested format from whatsapp-web.js client
+      return {
+        id: m.id._serialized,
+        body: m.body,
+        fromMe: m.fromMe,
+        timestamp: m.timestamp,
+        type: m.type,
+        hasMedia: m.hasMedia
+      };
+    });
     res.json(sanitizedMessages);
   } catch (err: any) {
     console.error('Error fetching messages:', err);

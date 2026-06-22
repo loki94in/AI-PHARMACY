@@ -606,6 +606,29 @@ export async function ensureSchema(dbPath: string) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- WhatsApp local chat cache
+    CREATE TABLE IF NOT EXISTS whatsapp_chats (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      unread_count INTEGER DEFAULT 0,
+      timestamp INTEGER,
+      last_message TEXT,
+      is_group INTEGER DEFAULT 0
+    );
+
+    -- WhatsApp local messages cache
+    CREATE TABLE IF NOT EXISTS whatsapp_messages (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT,
+      body TEXT,
+      from_me INTEGER,
+      timestamp INTEGER,
+      type TEXT,
+      has_media INTEGER DEFAULT 0,
+      FOREIGN KEY(chat_id) REFERENCES whatsapp_chats(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_chat_id ON whatsapp_messages (chat_id);
+
     -- Crash telemetry: written by processGuardian on uncaught exceptions
     CREATE TABLE IF NOT EXISTS crash_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

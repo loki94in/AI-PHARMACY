@@ -239,9 +239,15 @@ ensureSchema(DB_PATH).then(async () => {
           // 1. WhatsApp Pre-initialization
           const waRow = await db.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
           if (waRow && waRow.value === 'true') {
-            console.log('WhatsApp is enabled, pre-initializing client in the background...');
-            const { initClient } = await import('./whatsappClient.js');
-            await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
+            const { shouldRouteToBusiness } = await import('./whatsappClient.js');
+            const useBusiness = await shouldRouteToBusiness();
+            if (!useBusiness) {
+              console.log('WhatsApp Web (automated) is enabled, pre-initializing client in the background...');
+              const { initClient } = await import('./whatsappClient.js');
+              await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
+            } else {
+              console.log('WhatsApp Business API is active. Skipping automated client pre-initialization.');
+            }
           }
 
           // 3. Startup catch-up expiry scan (checks for downtime near-expiry alerts)
