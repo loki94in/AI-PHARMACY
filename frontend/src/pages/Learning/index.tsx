@@ -89,7 +89,7 @@ const Learning: React.FC = () => {
 
   // Pharmarack link login
   const [isOpeningWindow, setIsOpeningWindow] = useState(false);
-  const [prHealth, setPrHealth] = useState<{ healthy: boolean; mode: 'Live' | 'Simulation'; reason?: string; message?: string } | null>(null);
+  const [prHealth, setPrHealth] = useState<{ healthy: boolean; mode: 'Live'; reason?: string; message?: string } | null>(null);
   const [checkingPrHealth, setCheckingPrHealth] = useState(false);
 
   const checkPrHealth = async () => {

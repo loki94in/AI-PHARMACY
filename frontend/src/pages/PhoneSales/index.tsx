@@ -329,15 +329,6 @@ export default function PhoneSales() {
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
-
-          <Link
-            to="/device-logs"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:text-white hover:bg-primary transition-all text-xs font-bold whitespace-nowrap shrink-0"
-            title="View Device Connection Logs"
-          >
-            <Clock size={14} />
-            <span>Device Logs</span>
-          </Link>
         </div>
       </div>
 

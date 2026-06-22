@@ -470,6 +470,7 @@ export async function ensureSchema(dbPath: string) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(medicine_id) REFERENCES medicines(id)
     );
+    CREATE INDEX IF NOT EXISTS idx_stock_ledger_med_batch ON stock_ledger (medicine_id, batch_no);
     -- App Settings table
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,

@@ -14,7 +14,6 @@ import {
   Clock,
   Download,
   RotateCcw,
-  History,
   Shield,
   AlertTriangle,
   X,
@@ -880,12 +879,6 @@ const Settings = () => {
               <label className="text-xs font-bold text-muted uppercase tracking-wider block">
                 Registered Mobile Device
               </label>
-              <Link
-                to="/device-logs"
-                className="text-[10px] font-bold text-sky hover:text-sky/80 transition-colors flex items-center gap-1"
-              >
-                <History size={11} /> View Connection Logs
-              </Link>
             </div>
             {adminAuthorizedDeviceId ? (
               <div className="flex items-center justify-between">

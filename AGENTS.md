@@ -232,3 +232,12 @@ This breaks the light mode/theme toggle.
 - Backgrounds: `bg-bg`, `bg-bg2`, `bg-bg3`, `bg-glass-bg`
 - Text: `text-text`, `text-muted`
 - Borders: `border-border`, `border-glass-border`
+
+---
+
+## No Simulated/Mock Features Rule
+
+**CRITICAL RULE:**
+- **Never show a simulated or simulation Pharmarack cart ("pharmacart") in the app.**
+- **Never show any simulation or mock interface mode.** Remove all badges, labels, toggles, or options referencing "Simulation" or "Simulated" modes for the Pharmarack cart or other app components.
+- **Only display live features and live data at all times.** Do not present placeholder or mockup screens for development features in the user-facing UI; if a feature is in development, do not expose a simulated front-end for it.

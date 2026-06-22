@@ -1058,6 +1058,19 @@ router.post('/staging/finalize', async (req, res) => {
       await db.close();
     }
 
+    // Close all open staging connections to ensure files are fully written and closed cleanly
+    await closeAllStagingConnections();
+
+    // Cleanly checkpoint and merge WAL file for staging database before renaming/copying
+    try {
+      const tempStagingDb = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
+      await tempStagingDb.run('PRAGMA wal_checkpoint(TRUNCATE);');
+      await tempStagingDb.run('PRAGMA journal_mode = DELETE;');
+      await tempStagingDb.close();
+    } catch (checkpointErr) {
+      console.warn('[Migration Finalize] Staging DB checkpoint warning:', checkpointErr);
+    }
+
     // Backup the old app.db just in case
     const timestamp = Date.now();
     const backupPath = DB_PATH + '.bak_' + timestamp;
@@ -1074,6 +1087,37 @@ router.post('/staging/finalize', async (req, res) => {
       }
     }
 
+    // Stop all supervisor background workers to prevent database corruption during file swap
+    try {
+      const { workerSupervisor } = await import('../worker/workerSupervisor.js');
+      workerSupervisor.stop();
+    } catch (err) {
+      console.warn('Failed to stop workers:', err);
+    }
+
+    // Close the live connection pool to app.db before we replace the file
+    await dbManager.close(true);
+
+    // Delete WAL and SHM files of app.db to prevent SQLite recovery mismatch / corruption
+    const appWal = DB_PATH + '-wal';
+    const appShm = DB_PATH + '-shm';
+    if (fs.existsSync(appWal)) {
+      try { fs.unlinkSync(appWal); } catch (_) {}
+    }
+    if (fs.existsSync(appShm)) {
+      try { fs.unlinkSync(appShm); } catch (_) {}
+    }
+
+    // Delete staging database WAL and SHM files
+    const stagingWal = STAGING_DB_PATH + '-wal';
+    const stagingShm = STAGING_DB_PATH + '-shm';
+    if (fs.existsSync(stagingWal)) {
+      try { fs.unlinkSync(stagingWal); } catch (_) {}
+    }
+    if (fs.existsSync(stagingShm)) {
+      try { fs.unlinkSync(stagingShm); } catch (_) {}
+    }
+
     // Replace app.db with staging.db
     fs.copyFileSync(STAGING_DB_PATH, DB_PATH);
     fs.unlinkSync(STAGING_DB_PATH);
@@ -1081,6 +1125,14 @@ router.post('/staging/finalize', async (req, res) => {
     // Reset migration status
     migrationStatus.isStagingReady = false;
     migrationStatus.message = 'Idle';
+
+    // Restart supervisor background workers
+    try {
+      const { workerSupervisor } = await import('../worker/workerSupervisor.js');
+      workerSupervisor.start();
+    } catch (err) {
+      console.warn('Failed to restart workers:', err);
+    }
     
     res.json({ success: true, message: 'Migration finalized and live!' });
   } catch (e: any) {
@@ -1218,8 +1270,36 @@ router.post('/snapshots/restore', async (req, res) => {
       return res.status(404).json({ error: 'Snapshot not found' });
     }
     if (fs.existsSync(snapshot.backup_path)) {
+      // Stop supervisor background workers to prevent database corruption during file swap
+      try {
+        const { workerSupervisor } = await import('../worker/workerSupervisor.js');
+        workerSupervisor.stop();
+      } catch (err) {
+        console.warn('Failed to stop workers:', err);
+      }
+
       await dbManager.close(true);
+
+      // Delete existing app.db wal and shm files to prevent database corruption during copy
+      const appWal = DB_PATH + '-wal';
+      const appShm = DB_PATH + '-shm';
+      if (fs.existsSync(appWal)) {
+        try { fs.unlinkSync(appWal); } catch (_) {}
+      }
+      if (fs.existsSync(appShm)) {
+        try { fs.unlinkSync(appShm); } catch (_) {}
+      }
+
       fs.copyFileSync(snapshot.backup_path, DB_PATH);
+
+      // Restart supervisor background workers
+      try {
+        const { workerSupervisor } = await import('../worker/workerSupervisor.js');
+        workerSupervisor.start();
+      } catch (err) {
+        console.warn('Failed to restart workers:', err);
+      }
+
       res.json({ success: true, message: 'Database successfully restored from recovery snapshot!' });
     } else {
       res.status(400).json({ error: 'Backup snapshot file does not exist on disk' });

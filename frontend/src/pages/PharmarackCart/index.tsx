@@ -34,8 +34,6 @@ export default function PharmarackCart() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
-  const [cartMode, setCartMode] = useState<'Live' | 'Simulation' | null>(null);
-
   const fetchCart = async () => {
     setLoading(true);
     setError(null);
@@ -43,7 +41,6 @@ export default function PharmarackCart() {
       const data = await api.getPharmarackCart();
       if (data && data.success) {
         setDistributors(data.distributors || []);
-        setCartMode(data.mode || 'Live');
         setLastFetched(new Date());
       } else {
         setError('Failed to retrieve cart details.');
@@ -75,15 +72,9 @@ export default function PharmarackCart() {
           <div>
             <h3 className="text-sm font-bold text-text tracking-wide uppercase leading-none flex items-center gap-2">
               Pharmarack Cart
-              {cartMode === 'Simulation' ? (
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/30">
-                  ● SIMULATED
-                </span>
-              ) : (
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-                  ● LIVE
-                </span>
-              )}
+              <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                ● LIVE
+              </span>
             </h3>
             <p className="text-[10px] text-muted tracking-wider mt-1">
               {lastFetched

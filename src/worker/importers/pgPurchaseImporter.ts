@@ -41,7 +41,7 @@ export async function importBatch(row: Record<string, string | null>, db: Databa
     batch_no: row['batch_number'] || legacyBatchId,
     expiry_date: expiryNorm,
     // backup uses 'rack' not 'batch_rack'
-    rack_location: row['rack'] || null,
+    rack_location: row['rack'] || row['batch_rack'] || null,
     cost_price: parseFloat(row['cost_price'] || '0') || 0,
     unit_price: parseFloat(row['mrp'] || '0') || 0,
     mrp: parseFloat(row['mrp'] || '0') || 0,
@@ -59,12 +59,16 @@ export async function flushBatches(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const b of batchBatch) {
-      const result = await db.run(
-        `INSERT INTO inventory_master (medicine_id, batch_no, expiry_date, rack_location, cost_price, unit_price, mrp, legacy_batch_id, quantity)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [b.medicine_id, b.batch_no, b.expiry_date, b.rack_location, b.cost_price, b.unit_price, b.mrp, b.legacy_batch_id, b.quantity]
-      );
-      batchMap.set(b.legacy_batch_id, result.lastID!);
+      try {
+        const result = await db.run(
+          `INSERT INTO inventory_master (medicine_id, batch_no, expiry_date, rack_location, cost_price, unit_price, mrp, legacy_batch_id, quantity)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [b.medicine_id, b.batch_no, b.expiry_date, b.rack_location, b.cost_price, b.unit_price, b.mrp, b.legacy_batch_id, b.quantity]
+        );
+        batchMap.set(b.legacy_batch_id, result.lastID!);
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped batch ${b.batch_no}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     batchBatch = [];
@@ -121,12 +125,16 @@ export async function flushPurchases(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const p of purchaseBatch) {
-      const result = await db.run(
-        `INSERT INTO purchases (distributor_id, invoice_no, date, total_amount, cgst_value, sgst_value, igst_value, roff, status, legacy_id, business_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [p.distributor_id, p.invoice_no, p.date, p.total_amount, p.cgst_value, p.sgst_value, p.igst_value, p.roff, p.status, p.legacy_id, p.business_date]
-      );
-      purchaseMap.set(p.legacy_id, result.lastID!);
+      try {
+        const result = await db.run(
+          `INSERT INTO purchases (distributor_id, invoice_no, date, total_amount, cgst_value, sgst_value, igst_value, roff, status, legacy_id, business_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [p.distributor_id, p.invoice_no, p.date, p.total_amount, p.cgst_value, p.sgst_value, p.igst_value, p.roff, p.status, p.legacy_id, p.business_date]
+        );
+        purchaseMap.set(p.legacy_id, result.lastID!);
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped purchase ${p.invoice_no}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     purchaseBatch = [];
@@ -187,13 +195,17 @@ export async function flushPurchaseItems(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const pi of purchaseItemBatch) {
-      await db.run(
-        `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, quantity, free_qty, cost_price, mrp, hsn_code,
-          cgst_per, cgst_value, sgst_per, sgst_value, igst_per, igst_value, scheme_per, scheme_value, cd_value, legacy_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [pi.purchase_id, pi.medicine_id, pi.batch_no, pi.quantity, pi.free_qty, pi.cost_price, pi.mrp, pi.hsn_code,
-         pi.cgst_per, pi.cgst_value, pi.sgst_per, pi.sgst_value, pi.igst_per, pi.igst_value, pi.scheme_per, pi.scheme_value, pi.cd_value, pi.legacy_id]
-      );
+      try {
+        await db.run(
+          `INSERT INTO purchase_items (purchase_id, medicine_id, batch_no, quantity, free_qty, cost_price, mrp, hsn_code,
+            cgst_per, cgst_value, sgst_per, sgst_value, igst_per, igst_value, scheme_per, scheme_value, cd_value, legacy_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [pi.purchase_id, pi.medicine_id, pi.batch_no, pi.quantity, pi.free_qty, pi.cost_price, pi.mrp, pi.hsn_code,
+           pi.cgst_per, pi.cgst_value, pi.sgst_per, pi.sgst_value, pi.igst_per, pi.igst_value, pi.scheme_per, pi.scheme_value, pi.cd_value, pi.legacy_id]
+        );
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped purchase item ${pi.legacy_id}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     purchaseItemBatch = [];

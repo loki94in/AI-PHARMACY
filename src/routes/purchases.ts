@@ -1850,6 +1850,34 @@ router.post('/reconciliation/reissue', async (req, res) => {
   }
 });
 
+// Retrieve pending staged purchases
+router.get('/staged', async (req, res) => {
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const rows = await db.all(`SELECT * FROM staged_purchases WHERE status = 'pending' ORDER BY date DESC`);
+    const parsed = rows.map(r => ({
+      ...r,
+      items: JSON.parse(r.items_json)
+    }));
+    res.json(parsed);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to retrieve staged purchases' });
+  }
+});
+
+// GET /reconciliation/bounced - Manually check and send bounced products alert
+router.get('/reconciliation/bounced', async (req, res) => {
+  try {
+    const { bouncedAlertService } = await import('../services/bouncedAlertService.js');
+    const sent = await bouncedAlertService.checkAndSendBouncedProductsAlert();
+    res.json({ success: true, notificationSent: sent });
+  } catch (error: any) {
+    console.error('Manual bounced alerts error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -1925,21 +1953,7 @@ router.post('/sync', async (req, res) => {
   }
 });
 
-// Retrieve pending staged purchases
-router.get('/staged', async (req, res) => {
-  let db;
-  try {
-    db = await dbManager.getConnection();
-    const rows = await db.all(`SELECT * FROM staged_purchases WHERE status = 'pending' ORDER BY date DESC`);
-    const parsed = rows.map(r => ({
-      ...r,
-      items: JSON.parse(r.items_json)
-    }));
-    res.json(parsed);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to retrieve staged purchases' });
-  }
-});
+
 
 // Approve a staged purchase
 router.post('/staged/:id/approve', async (req, res) => {
@@ -2076,16 +2090,6 @@ router.post('/staged/:id/reject', async (req, res) => {
   }
 });
 
-// GET /reconciliation/bounced - Manually check and send bounced products alert
-router.get('/reconciliation/bounced', async (req, res) => {
-  try {
-    const { bouncedAlertService } = await import('../services/bouncedAlertService.js');
-    const sent = await bouncedAlertService.checkAndSendBouncedProductsAlert();
-    res.json({ success: true, notificationSent: sent });
-  } catch (error: any) {
-    console.error('Manual bounced alerts error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
-  }
-});
+
 
 export default router;

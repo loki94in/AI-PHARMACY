@@ -93,12 +93,16 @@ export async function flushSalesInvoices(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const s of salesBatch) {
-      const result = await db.run(
-        `INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount, doctor_id, payment_medium, roff, cgst_value, sgst_value, igst_value, legacy_id, business_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [s.invoice_no, s.customer_id, s.date, s.total_amount, s.tax_amount, s.doctor_id, s.payment_medium, s.roff, s.cgst_value, s.sgst_value, s.igst_value, s.legacy_id, s.business_date]
-      );
-      salesInvoiceMap.set(s.legacy_id, result.lastID!);
+      try {
+        const result = await db.run(
+          `INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount, doctor_id, payment_medium, roff, cgst_value, sgst_value, igst_value, legacy_id, business_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [s.invoice_no, s.customer_id, s.date, s.total_amount, s.tax_amount, s.doctor_id, s.payment_medium, s.roff, s.cgst_value, s.sgst_value, s.igst_value, s.legacy_id, s.business_date]
+        );
+        salesInvoiceMap.set(s.legacy_id, result.lastID!);
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped sales invoice ${s.invoice_no}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     salesBatch = [];
@@ -154,11 +158,15 @@ export async function flushSaleItems(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const si of saleItemBatch) {
-      await db.run(
-        `INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, mrp, batch_no, cgst_value, sgst_value, discount_per, loose_qty, legacy_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [si.invoice_id, si.inventory_id, si.quantity, si.unit_price, si.mrp, si.batch_no, si.cgst_value, si.sgst_value, si.discount_per, si.loose_qty || 0, si.legacy_id]
-      );
+      try {
+        await db.run(
+          `INSERT INTO sale_items (invoice_id, inventory_id, quantity, unit_price, mrp, batch_no, cgst_value, sgst_value, discount_per, loose_qty, legacy_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [si.invoice_id, si.inventory_id, si.quantity, si.unit_price, si.mrp, si.batch_no, si.cgst_value, si.sgst_value, si.discount_per, si.loose_qty || 0, si.legacy_id]
+        );
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped sale item ${si.legacy_id}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     saleItemBatch = [];

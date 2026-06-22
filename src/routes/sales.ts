@@ -594,6 +594,26 @@ router.get('/hold', async (req, res) => {
   }
 });
 
+// Retrieve pending or all staged sales
+router.get('/staged', async (req, res) => {
+  const { all } = req.query;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const query = all === 'true'
+      ? `SELECT * FROM staged_sales ORDER BY sale_date DESC`
+      : `SELECT * FROM staged_sales WHERE status = 'pending' ORDER BY sale_date DESC`;
+    const rows = await db.all(query);
+    const parsed = rows.map(r => ({
+      ...r,
+      items: JSON.parse(r.items_json)
+    }));
+    res.json(parsed);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to retrieve staged sales' });
+  }
+});
+
 // Get single sale invoice with items
 router.get('/:id', async (req, res) => {
   let db;
@@ -905,25 +925,7 @@ router.post('/sync', async (req, res) => {
   }
 });
 
-// Retrieve pending or all staged sales
-router.get('/staged', async (req, res) => {
-  const { all } = req.query;
-  let db;
-  try {
-    db = await dbManager.getConnection();
-    const query = all === 'true'
-      ? `SELECT * FROM staged_sales ORDER BY sale_date DESC`
-      : `SELECT * FROM staged_sales WHERE status = 'pending' ORDER BY sale_date DESC`;
-    const rows = await db.all(query);
-    const parsed = rows.map(r => ({
-      ...r,
-      items: JSON.parse(r.items_json)
-    }));
-    res.json(parsed);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to retrieve staged sales' });
-  }
-});
+
 
 // Approve a staged sale
 router.post('/staged/:id/approve', async (req, res) => {

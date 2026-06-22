@@ -109,7 +109,7 @@ router.post('/notifications/register-token', async (req, res) => {
         payload: {
           type: 'success',
           message: `Mobile device "${devName}" connected successfully!`,
-          link: '/device-logs'
+          link: '/settings'
         }
       });
       eventService.emit('server_event', {
@@ -376,7 +376,7 @@ async function checkDeviceConnections() {
             payload: {
               type: 'success',
               message: `Mobile device "${device_name}" connected successfully!`,
-              link: '/device-logs'
+              link: '/settings'
             }
           });
           eventService.emit('server_event', {
@@ -399,7 +399,7 @@ async function checkDeviceConnections() {
             payload: {
               type: 'error',
               message: `Mobile device "${device_name}" disconnected.`,
-              link: '/device-logs'
+              link: '/settings'
             }
           });
           eventService.emit('server_event', {

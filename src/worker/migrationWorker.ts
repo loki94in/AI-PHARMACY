@@ -268,8 +268,8 @@ async function processMigrationFile(
   isIntermediate: boolean = false
 ) {
   let extractPath: string | undefined = undefined;
-  let tempCsvPath: string | null = null;
-  let tempProcessingPath: string | null = null;
+  let tempCsvPath = '';
+  let tempProcessingPath = '';
   try {
     const ext = path.extname(originalFilePath).toLowerCase();
     const basename = path.basename(originalFilePath);
@@ -283,12 +283,21 @@ async function processMigrationFile(
     const archiveDir = path.join(PROJECT_ROOT, 'data', 'archived_migrations');
     if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
 
-    // Step 0: Clone the database to staging.db if it doesn't already exist
-    if (!fs.existsSync(STAGING_DB_PATH)) {
-      migrationStatus.message = 'Creating staging database...';
-      if (fs.existsSync(DB_PATH)) {
-        await fs.promises.copyFile(DB_PATH, STAGING_DB_PATH);
+    // Step 0: Always recreate staging.db from scratch to avoid corrupt leftovers from failed retries
+    if (fs.existsSync(STAGING_DB_PATH)) {
+      try { fs.unlinkSync(STAGING_DB_PATH); } catch (_) {}
+      try { fs.unlinkSync(STAGING_DB_PATH + '-wal'); } catch (_) {}
+      try { fs.unlinkSync(STAGING_DB_PATH + '-shm'); } catch (_) {}
+    }
+    migrationStatus.message = 'Creating staging database...';
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        const { dbManager } = await import('../database/connection.js');
+        await dbManager.close(true);
+      } catch (dbCloseErr) {
+        console.warn('Failed to close dbManager connection:', dbCloseErr);
       }
+      await fs.promises.copyFile(DB_PATH, STAGING_DB_PATH);
     }
 
     let actualFilePath = tempProcessingPath;
@@ -508,6 +517,7 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
     await db.run('PRAGMA journal_mode = WAL');
   await db.run('PRAGMA synchronous = NORMAL');
   await db.run('PRAGMA cache_size = -64000'); // 64MB cache
+  await db.run('PRAGMA busy_timeout = 30000'); // 30s wait on lock
 
   await ensureMigrationErrorsTable(db);
 
@@ -581,7 +591,7 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
     'doctor': wrap('doctor', async (row) => { await importDoctor(row, db); stats.doctors++; }),
     'patient': wrap('patient', async (row) => { await importPatient(row, db); stats.patients++; }),
     'customer': wrap('customer', async (row) => { await importCustomer(row, db); stats.patients++; }),
-  });
+  }, db);
 
   // Flush remaining batches
   await flushDistributors(db);
@@ -606,7 +616,7 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
         migrationStatus.progress = 25 + Math.min(20, Math.floor(stats.medicines / 15000));
       }
     }),
-  });
+  }, db);
 
   await flushMedicines(db);
 
@@ -622,7 +632,7 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
     'batch': wrap('batch', async (row) => { await importBatch(row, db); stats.batches++; }),
     'inventory': wrap('inventory', async (row) => { await importInventory(row, db); stats.purchases++; }),
     'inventory_medicine': wrap('inventory_medicine', async (row) => { await importInventoryMedicine(row, db); stats.purchaseItems++; }),
-  });
+  }, db);
 
   await flushBatches(db);
   await flushPurchases(db);
@@ -642,7 +652,7 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
     'return_orders': wrap('return_orders', async (row) => { await importReturnOrder(row, db); stats.returns++; }),
     'return_order_item': wrap('return_order_item', async (row) => { await importReturnOrderItem(row, db); stats.returnItems++; }),
     'stock_effects': wrap('stock_effects', async (row) => { await importStockEffect(row, db); stats.stockLedger++; }),
-  });
+  }, db);
 
   await flushSalesInvoices(db);
   await flushSaleItems(db);
@@ -690,7 +700,8 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
  */
 async function streamPgDump(
   sqlPath: string,
-  handlers: Record<string, (row: Record<string, string | null>) => Promise<void> | void>
+  handlers: Record<string, (row: Record<string, string | null>) => Promise<void> | void>,
+  db: any
 ) {
   const fileStream = fs.createReadStream(sqlPath, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
@@ -716,6 +727,29 @@ async function streamPgDump(
 
     // Check for end of COPY data
     if (isCopyEndMarker(line)) {
+      // Flush database buffers when the COPY block finishes
+      if (currentTable === 'orders') {
+        await flushSalesInvoices(db);
+      } else if (currentTable === 'return_orders') {
+        await flushReturns(db);
+      } else if (currentTable === 'distributor') {
+        await flushDistributors(db);
+      } else if (currentTable === 'doctor') {
+        await flushDoctors(db);
+      } else if (currentTable === 'patient') {
+        await flushPatients(db);
+      } else if (currentTable === 'customer') {
+        await flushCustomers(db);
+      } else if (currentTable === 'medicine') {
+        await flushMedicines(db);
+      } else if (currentTable === 'batch') {
+        await flushBatches(db);
+      } else if (currentTable === 'inventory') {
+        await flushPurchases(db);
+      } else if (currentTable === 'inventory_medicine') {
+        await flushPurchaseItems(db);
+      }
+
       currentTable = null;
       currentColumns = [];
       activeHandler = null;
@@ -790,6 +824,7 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
 
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
   try {
+    await db.run('PRAGMA busy_timeout = 30000');
     await ensureMigrationErrorsTable(db);
 
     const fileStream = fs.createReadStream(sqlPath);
@@ -866,6 +901,7 @@ async function parseAndImportLegacySQL(sqlPath: string, targetDbPath: string) {
 async function parseAndImportCSV(csvPath: string, targetDbPath: string, dataType: string, mapping?: Record<string, string>, skipLines: number = 0, filters?: any, medicineActions?: any) {
   const db = await open({ filename: targetDbPath, driver: sqlite3.Database });
   try {
+    await db.run('PRAGMA busy_timeout = 30000');
     await ensureMigrationErrorsTable(db);
 
   if (skipLines > 0) {

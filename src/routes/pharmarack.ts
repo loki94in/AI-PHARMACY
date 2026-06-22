@@ -64,40 +64,6 @@ router.get('/search', async (req, res) => {
     const token = settings['pharmarack_session_token'] || '';
 
     if (!token) {
-      const mode = settings['pharmarack_mode'] || 'Simulation';
-      if (mode === 'Simulation') {
-        const mockProducts = [
-          {
-            name: `${q.charAt(0).toUpperCase() + q.slice(1)} 650mg Tablet (Simulated)`,
-            packaging: "15 tabs",
-            distributor: "Diamond Drug Stores (Simulated)",
-            rate: 28.50,
-            mrp: 32.00,
-            mapped: true,
-            stock: "High",
-            scheme: "10+1",
-            productId: 2001,
-            productCode: "MOCK-PROD-1",
-            company: "Generic Pharma",
-            storeId: 101
-          },
-          {
-            name: `${q.charAt(0).toUpperCase() + q.slice(1)} 100ml Syrup (Simulated)`,
-            packaging: "1 bottle",
-            distributor: "Aaru Pharma (Simulated)",
-            rate: 45.00,
-            mrp: 50.00,
-            mapped: false,
-            stock: "15",
-            scheme: "5+1",
-            productId: 2002,
-            productCode: "MOCK-PROD-2",
-            company: "Generic Health",
-            storeId: 102
-          }
-        ];
-        return res.json(mockProducts);
-      }
       return res.status(401).json({ error: 'Need to login', code: 'NEED_LOGIN' });
     }
 
@@ -476,10 +442,6 @@ router.post('/cart/add', async (req, res) => {
     const token = settings['pharmarack_session_token'] || '';
 
     if (!token) {
-      const mode = settings['pharmarack_mode'] || 'Simulation';
-      if (mode === 'Simulation') {
-        return res.json({ success: true, message: 'Successfully added to Pharmarack cart (Simulated)!', mode: 'Simulation' });
-      }
       return res.status(401).json({ error: 'Need to login to Pharmarack to add items to cart', code: 'NEED_LOGIN' });
     }
 
@@ -853,81 +815,8 @@ router.get('/cart', async (req, res) => {
   try {
     const settings = await getPharmarackSettings();
     const token = settings['pharmarack_session_token'] || '';
-    const mode = settings['pharmarack_mode'] || 'Simulation';
 
     if (!token) {
-      if (mode === 'Simulation') {
-        const mockDistributors = [
-          {
-            storeId: 101,
-            storeName: "Diamond Drug Stores (Simulated)",
-            lineTotal: 450.00,
-            deliveryPersons: [{ name: "Rajesh Kumar", code: "D01" }],
-            items: [
-              {
-                productId: 2001,
-                storeId: 101,
-                productCode: "DOLO650",
-                productName: "Dolo 650mg Tablet",
-                company: "Micro Labs Ltd",
-                packaging: "15 tabs",
-                qty: 10,
-                ptr: 27.50,
-                mrp: 30.90,
-                scheme: "10+1",
-                stock: 150,
-                amount: 275.00,
-                cartSource: "MOVP",
-                isChecked: true,
-                createdDate: new Date().toISOString()
-              },
-              {
-                productId: 2002,
-                storeId: 101,
-                productCode: "IND10",
-                productName: "Inderal 10mg Tablet",
-                company: "Abbott Healthcare",
-                packaging: "15 tabs",
-                qty: 5,
-                ptr: 35.00,
-                mrp: 39.50,
-                scheme: "",
-                stock: 45,
-                amount: 175.00,
-                cartSource: "MOVP",
-                isChecked: true,
-                createdDate: new Date().toISOString()
-              }
-            ]
-          },
-          {
-            storeId: 102,
-            storeName: "Aaru Pharma (Simulated)",
-            lineTotal: 180.00,
-            deliveryPersons: [],
-            items: [
-              {
-                productId: 2003,
-                storeId: 102,
-                productCode: "CIP500",
-                productName: "Ciplox 500mg Tablet",
-                company: "Cipla Ltd",
-                packaging: "10 tabs",
-                qty: 6,
-                ptr: 30.00,
-                mrp: 34.00,
-                scheme: "5+1",
-                stock: 12,
-                amount: 180.00,
-                cartSource: "MOVP",
-                isChecked: true,
-                createdDate: new Date().toISOString()
-              }
-            ]
-          }
-        ];
-        return res.json({ success: true, mode: 'Simulation', distributors: mockDistributors, totalItems: 3 });
-      }
       return res.status(401).json({ error: 'Need to login', code: 'NEED_LOGIN' });
     }
 
@@ -1004,8 +893,8 @@ router.get('/auto-verify', async (req, res) => {
 
     if (!token) {
       const db = await dbManager.getConnection();
-      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_mode', 'Simulation')");
-      return res.json({ healthy: false, mode: 'Simulation', reason: 'NO_TOKEN', needs_login: true, message: 'No session token found' });
+      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_mode', 'Live')");
+      return res.json({ healthy: false, mode: 'Live', reason: 'NO_TOKEN', needs_login: true, message: 'No session token found' });
     }
 
     let healthy = false;

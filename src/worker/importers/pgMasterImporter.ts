@@ -161,12 +161,16 @@ export async function flushDoctors(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const d of doctorBatch) {
-      const result = await db.run(
-        `INSERT INTO doctors (name, degree, reg_no, hospital, phone, address, legacy_id, speciality)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [d.name, d.degree, d.reg_no, d.hospital, d.phone, d.address, d.legacy_id, d.speciality]
-      );
-      doctorMap.set(d.legacy_id, result.lastID!);
+      try {
+        const result = await db.run(
+          `INSERT INTO doctors (name, degree, reg_no, hospital, phone, address, legacy_id, speciality)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [d.name, d.degree, d.reg_no, d.hospital, d.phone, d.address, d.legacy_id, d.speciality]
+        );
+        doctorMap.set(d.legacy_id, result.lastID!);
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped doctor ${d.name}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     doctorBatch = [];
@@ -205,12 +209,16 @@ export async function flushPatients(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const p of patientBatch) {
-      const result = await db.run(
-        `INSERT INTO customers (name, phone, address, notes, legacy_id, age, gender)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [p.name, p.phone, p.address, p.notes, p.legacy_id, p.age, p.gender]
-      );
-      patientMap.set(p.legacy_id, result.lastID!);
+      try {
+        const result = await db.run(
+          `INSERT INTO customers (name, phone, address, notes, legacy_id, age, gender)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [p.name, p.phone, p.address, p.notes, p.legacy_id, p.age, p.gender]
+        );
+        patientMap.set(p.legacy_id, result.lastID!);
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped patient ${p.name}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     patientBatch = [];
@@ -331,12 +339,16 @@ export async function flushMedicines(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const m of medicineBatch) {
-      const result = await db.run(
-        `INSERT INTO medicines (name, legacy_id, hsn_code, manufacturer, category, packaging, item_type, cgst, sgst, igst, rack, marketed_by, schedule_type, api_reference)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [m.name, m.legacy_id, m.hsn_code, m.manufacturer, m.category, m.packaging, m.item_type, m.cgst, m.sgst, m.igst, m.rack, m.marketed_by, m.schedule_type, m.api_reference || null]
-      );
-      medicineMap.set(m.legacy_id, result.lastID!);
+      try {
+        const result = await db.run(
+          `INSERT INTO medicines (name, legacy_id, hsn_code, manufacturer, category, packaging, item_type, cgst, sgst, igst, rack, marketed_by, schedule_type, api_reference)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [m.name, m.legacy_id, m.hsn_code, m.manufacturer, m.category, m.packaging, m.item_type, m.cgst, m.sgst, m.igst, m.rack, m.marketed_by, m.schedule_type, m.api_reference || null]
+        );
+        medicineMap.set(m.legacy_id, result.lastID!);
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped medicine ${m.name}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     medicineBatch = [];

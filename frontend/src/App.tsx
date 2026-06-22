@@ -58,7 +58,6 @@ const Dispatch = lazy(() => import('./pages/Dispatch'));
 const Reports = lazy(() => import('./pages/Reports'));
 const License = lazy(() => import('./pages/License'));
 const Settings = lazy(() => import('./pages/Settings'));
-const DeviceLogs = lazy(() => import('./pages/DeviceLogs'));
 const Mail = lazy(() => import('./pages/Mail'));
 const Returns = lazy(() => import('./pages/Returns'));
 const CatalogUpload = lazy(() => import('./pages/CatalogUpload'));
@@ -115,7 +114,6 @@ const Sidebar = ({
     { path: '/pos', label: 'Sales / POS', icon: <ShoppingCart size={18} /> },
     { path: '/sells', label: 'Sells / Bills', icon: <Receipt size={18} /> },
     { path: '/phone-sales', label: 'Phone Sales', icon: <Smartphone size={18} /> },
-    { path: '/device-logs', label: 'Activity & History Logs', icon: <Clock size={18} /> },
     { path: '/investigation', label: 'Investigation Center', icon: <PackageSearch size={18} /> },
     { path: '/inventory', label: 'Inventory', icon: <PackageSearch size={18} /> },
     { path: '/purchases', label: 'Purchases', icon: <Receipt size={18} /> },
@@ -756,7 +754,6 @@ const Topbar = ({
       '/sells': 'Sells / Bills',
       '/investigation': 'Medicine & Bill Investigation Center',
       '/settings': 'Settings',
-      '/device-logs': 'Activity & History Logs',
       '/returns': 'Supplier Returns',
     };
     // Extract base path (e.g. /pos/invoice -> /pos) for fallback matching if needed, though strictly exact match first
@@ -1097,7 +1094,7 @@ const Layout = ({
   setTheme: React.Dispatch<React.SetStateAction<string>>;
 }) => {
   const location = useLocation();
-  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/pharmarack-cart', '/non-mapped-distributors', '/automation-center', '/investigation', '/phone-sales', '/device-logs'].includes(location.pathname);
+  const isFitPage = ['/pos', '/orders', '/expiry', '/database', '/returns', '/purchases', '/manual-purchase', '/sells', '/purchase-history', '/crm', '/reports', '/learning', '/pharmarack-cart', '/non-mapped-distributors', '/automation-center', '/investigation', '/phone-sales'].includes(location.pathname);
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     try {
@@ -1388,7 +1385,6 @@ function App() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/license" element={<License />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/device-logs" element={<DeviceLogs />} />
             <Route path="/mail" element={<Mail />} />
             <Route path="/catalog" element={<CatalogUpload />} />
             <Route path="/learning" element={<Learning />} />

@@ -81,12 +81,16 @@ export async function flushReturns(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const r of returnBatch) {
-      const result = await db.run(
-        `INSERT INTO returns (return_no, original_invoice_id, type, date, total_amount, cgst_value, sgst_value, igst_value, distributor_id, legacy_id, return_sub_type, raw_return_type, return_date_time)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [r.return_no, r.original_invoice_id, r.type, r.date, r.total_amount, r.cgst_value, r.sgst_value, r.igst_value, r.distributor_id, r.legacy_id, r.return_sub_type || null, r.raw_return_type || null, r.return_date_time || null]
-      );
-      returnMap.set(r.legacy_id, result.lastID!);
+      try {
+        const result = await db.run(
+          `INSERT INTO returns (return_no, original_invoice_id, type, date, total_amount, cgst_value, sgst_value, igst_value, distributor_id, legacy_id, return_sub_type, raw_return_type, return_date_time)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [r.return_no, r.original_invoice_id, r.type, r.date, r.total_amount, r.cgst_value, r.sgst_value, r.igst_value, r.distributor_id, r.legacy_id, r.return_sub_type || null, r.raw_return_type || null, r.return_date_time || null]
+        );
+        returnMap.set(r.legacy_id, result.lastID!);
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped return ${r.return_no}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     returnBatch = [];
@@ -137,11 +141,15 @@ export async function flushReturnItems(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const ri of returnItemBatch) {
-      await db.run(
-        `INSERT INTO return_items (return_id, medicine_id, batch_no, quantity, cost_price, mrp, total_price, cgst_value, sgst_value, igst_value, legacy_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [ri.return_id, ri.medicine_id, ri.batch_no, ri.quantity, ri.cost_price, ri.mrp, ri.total_price, ri.cgst_value, ri.sgst_value, ri.igst_value, ri.legacy_id]
-      );
+      try {
+        await db.run(
+          `INSERT INTO return_items (return_id, medicine_id, batch_no, quantity, cost_price, mrp, total_price, cgst_value, sgst_value, igst_value, legacy_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [ri.return_id, ri.medicine_id, ri.batch_no, ri.quantity, ri.cost_price, ri.mrp, ri.total_price, ri.cgst_value, ri.sgst_value, ri.igst_value, ri.legacy_id]
+        );
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped return item ${ri.legacy_id}: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     returnItemBatch = [];
@@ -182,11 +190,15 @@ export async function flushStockLedger(db: Database) {
   await db.run('BEGIN TRANSACTION');
   try {
     for (const s of stockBatch) {
-      await db.run(
-        `INSERT INTO stock_ledger (medicine_id, batch_no, quantity, transaction_type, transaction_id, business_date)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [s.medicine_id, s.batch_no, s.quantity, s.transaction_type, s.transaction_id, s.business_date]
-      );
+      try {
+        await db.run(
+          `INSERT INTO stock_ledger (medicine_id, batch_no, quantity, transaction_type, transaction_id, business_date)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [s.medicine_id, s.batch_no, s.quantity, s.transaction_type, s.transaction_id, s.business_date]
+        );
+      } catch (err: any) {
+        console.warn(`[Migration] Skipped stock ledger entry: ${err.message}`);
+      }
     }
     await db.run('COMMIT');
     stockBatch = [];

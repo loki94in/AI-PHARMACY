@@ -1,0 +1,30 @@
+{
+  "migration_date": "2026-06-22T14:27:59.567Z",
+  "source_format": "PostgreSQL pg_dump",
+  "stats": {
+    "categories": 8,
+    "manufacturers": 10031,
+    "distributors": 363,
+    "doctors": 248,
+    "patients": 8874,
+    "medicines": 286286,
+    "batches": 35654,
+    "purchases": 15202,
+    "purchaseItems": 60079,
+    "salesInvoices": 26864,
+    "saleItems": 77862,
+    "returns": 1421,
+    "returnItems": 4965,
+    "stockLedger": 152053
+  },
+  "id_maps": {
+    "distributors": 164,
+    "doctors": 248,
+    "patients_as_customers": 8874,
+    "medicines": 286280,
+    "batches": 35653,
+    "purchases": 15148,
+    "sales_invoices": 23307,
+    "returns": 1323
+  }
+}
