@@ -59,6 +59,15 @@ const Expiry = () => {
   const [minQty, setMinQty] = useState('');
   const [maxQty, setMaxQty] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [colFilterId, setColFilterId] = useState('');
+  const [colFilterMedName, setColFilterMedName] = useState('');
+  const [colFilterBatchNo, setColFilterBatchNo] = useState('');
+  const [colFilterDate, setColFilterDate] = useState('');
+  const [colFilterMinQty, setColFilterMinQty] = useState('');
+  const [colFilterMaxQty, setColFilterMaxQty] = useState('');
+  const [colFilterMinMrp, setColFilterMinMrp] = useState('');
+  const [colFilterMaxMrp, setColFilterMaxMrp] = useState('');
+  const [colFilterLocation, setColFilterLocation] = useState('');
 
   useEffect(() => {
     if (!manualToDate) {
@@ -218,7 +227,39 @@ const Expiry = () => {
     const matchesMinQty = !minQty || item.quantity >= Number(minQty);
     const matchesMaxQty = !maxQty || item.quantity <= Number(maxQty);
 
-    return matchesSearch && matchesDate && matchesMinQty && matchesMaxQty;
+    if (!(matchesSearch && matchesDate && matchesMinQty && matchesMaxQty)) {
+      return false;
+    }
+
+    // Column-specific header filters
+    if (colFilterId && !item.id.toString().includes(colFilterId)) {
+      return false;
+    }
+    if (colFilterMedName && !item.medicine_name.toLowerCase().includes(colFilterMedName.toLowerCase())) {
+      return false;
+    }
+    if (colFilterBatchNo && !item.batch_no.toLowerCase().includes(colFilterBatchNo.toLowerCase())) {
+      return false;
+    }
+    if (colFilterDate) {
+      const itemDate = item.expiry_date ? item.expiry_date.substring(0, 10) : '';
+      if (itemDate !== colFilterDate) return false;
+    }
+    const qtyVal = item.quantity || 0;
+    const minQ = colFilterMinQty ? Number(colFilterMinQty) : 0;
+    const maxQ = colFilterMaxQty ? Number(colFilterMaxQty) : 100000000;
+    if (qtyVal < minQ || qtyVal > maxQ) return false;
+
+    const mrpVal = item.mrp || 0;
+    const minM = colFilterMinMrp ? Number(colFilterMinMrp) : 0;
+    const maxM = colFilterMaxMrp ? Number(colFilterMaxMrp) : 100000000;
+    if (mrpVal < minM || mrpVal > maxM) return false;
+
+    if (colFilterLocation && !(item.rack_location || '').toLowerCase().includes(colFilterLocation.toLowerCase())) {
+      return false;
+    }
+
+    return true;
   });
 
   return (
@@ -484,6 +525,108 @@ const Expiry = () => {
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 text-center">Stock Qty</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 text-right">MRP Price</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">Rack Location</th>
+                </tr>
+                <tr className="bg-bg2 border-b border-glass-border/30">
+                  <td className="p-2"></td>
+                  <td className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Search ID..."
+                      value={colFilterId}
+                      onChange={e => setColFilterId(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Search name..."
+                      value={colFilterMedName}
+                      onChange={e => setColFilterMedName(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Search batch..."
+                      value={colFilterBatchNo}
+                      onChange={e => setColFilterBatchNo(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      type="date"
+                      value={colFilterDate}
+                      onChange={e => setColFilterDate(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
+                    />
+                  </td>
+                  <td className="p-2"></td>
+                  <td className="p-2 flex gap-1">
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={colFilterMinQty}
+                      onChange={e => setColFilterMinQty(e.target.value)}
+                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={colFilterMaxQty}
+                      onChange={e => setColFilterMaxQty(e.target.value)}
+                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        placeholder="Min"
+                        value={colFilterMinMrp}
+                        onChange={e => setColFilterMinMrp(e.target.value)}
+                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Max"
+                        value={colFilterMaxMrp}
+                        onChange={e => setColFilterMaxMrp(e.target.value)}
+                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                    </div>
+                  </td>
+                  <td className="p-2">
+                    <div className="flex items-center justify-between gap-1">
+                      <input
+                        type="text"
+                        placeholder="Search location..."
+                        value={colFilterLocation}
+                        onChange={e => setColFilterLocation(e.target.value)}
+                        className="flex-1 px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
+                      />
+                      {(colFilterId || colFilterMedName || colFilterBatchNo || colFilterDate || colFilterMinQty || colFilterMaxQty || colFilterMinMrp || colFilterMaxMrp || colFilterLocation) && (
+                        <button
+                          onClick={() => {
+                            setColFilterId('');
+                            setColFilterMedName('');
+                            setColFilterBatchNo('');
+                            setColFilterDate('');
+                            setColFilterMinQty('');
+                            setColFilterMaxQty('');
+                            setColFilterMinMrp('');
+                            setColFilterMaxMrp('');
+                            setColFilterLocation('');
+                          }}
+                          className="text-[10px] text-red hover:underline font-bold px-1"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               </thead>
               <tbody>

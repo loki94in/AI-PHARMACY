@@ -49,6 +49,12 @@ const PurchaseHistory = () => {
   const [supplierFilter, setSupplierFilter] = useState('All');
   const [productFilter, setProductFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [colFilterId, setColFilterId] = useState('');
+  const [colFilterDistributor, setColFilterDistributor] = useState('');
+  const [colFilterInvoiceNo, setColFilterInvoiceNo] = useState('');
+  const [colFilterDate, setColFilterDate] = useState('');
+  const [colFilterMinAmount, setColFilterMinAmount] = useState('');
+  const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
 
   // Fetch the date of the earliest transaction on mount
   useEffect(() => {
@@ -305,7 +311,32 @@ const PurchaseHistory = () => {
     // Product/Plan Filter
     const matchesProduct = !productFilter || t.plan?.toLowerCase().includes(productFilter.toLowerCase());
 
-    return matchesSearch && matchesStatus && matchesSupplier && matchesDate && matchesProduct;
+    if (!(matchesSearch && matchesStatus && matchesSupplier && matchesDate && matchesProduct)) {
+      return false;
+    }
+
+    // Column header filters
+    if (colFilterId && !t.id.toString().includes(colFilterId)) {
+      return false;
+    }
+    if (colFilterDistributor && !(t.distributor_name || '').toLowerCase().includes(colFilterDistributor.toLowerCase())) {
+      return false;
+    }
+    if (colFilterInvoiceNo && !(t.invoice_no || '').toLowerCase().includes(colFilterInvoiceNo.toLowerCase())) {
+      return false;
+    }
+    if (colFilterDate) {
+      const pDate = t.date ? t.date.substring(0, 10) : '';
+      if (pDate !== colFilterDate) return false;
+    }
+    const amountVal = t.total_amount || 0;
+    const minVal = colFilterMinAmount ? Number(colFilterMinAmount) : 0;
+    const maxVal = colFilterMaxAmount ? Number(colFilterMaxAmount) : 100000000;
+    if (amountVal < minVal || amountVal > maxVal) {
+      return false;
+    }
+
+    return true;
   });
 
   // Extract unique suppliers for the filter dropdown
@@ -431,6 +462,77 @@ const PurchaseHistory = () => {
                     <th className="px-6 py-4 whitespace-nowrap text-right">Qty</th>
                     <th className="px-6 py-4 whitespace-nowrap text-right">Amount</th>
                     <th className="px-6 py-4 whitespace-nowrap text-center">Action</th>
+                  </tr>
+                  <tr className="bg-bg2 border-b border-glass-border/30">
+                    <td className="p-2">
+                      <input
+                        type="text"
+                        placeholder="Search ID..."
+                        value={colFilterId}
+                        onChange={e => setColFilterId(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="text"
+                        placeholder="Search distributor..."
+                        value={colFilterDistributor}
+                        onChange={e => setColFilterDistributor(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="text"
+                        placeholder="Search Invoice..."
+                        value={colFilterInvoiceNo}
+                        onChange={e => setColFilterInvoiceNo(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="date"
+                        value={colFilterDate}
+                        onChange={e => setColFilterDate(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2"></td>
+                    <td className="p-2 flex gap-1">
+                      <input
+                        type="number"
+                        placeholder="Min"
+                        value={colFilterMinAmount}
+                        onChange={e => setColFilterMinAmount(e.target.value)}
+                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Max"
+                        value={colFilterMaxAmount}
+                        onChange={e => setColFilterMaxAmount(e.target.value)}
+                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                    </td>
+                    <td className="p-2 text-center">
+                      {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) && (
+                        <button
+                          onClick={() => {
+                            setColFilterId('');
+                            setColFilterDistributor('');
+                            setColFilterInvoiceNo('');
+                            setColFilterDate('');
+                            setColFilterMinAmount('');
+                            setColFilterMaxAmount('');
+                          }}
+                          className="text-xs text-red hover:underline font-bold"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-glass-border/30 text-sm">

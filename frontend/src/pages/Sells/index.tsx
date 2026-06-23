@@ -69,6 +69,13 @@ const Sells = () => {
   const [minAmount, setMinAmount] = useState<string>('');
   const [maxAmount, setMaxAmount] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
+  const [colFilterNo, setColFilterNo] = useState('');
+  const [colFilterName, setColFilterName] = useState('');
+  const [colFilterDate, setColFilterDate] = useState('');
+  const [colFilterDrName, setColFilterDrName] = useState('');
+  const [colFilterMinAmount, setColFilterMinAmount] = useState('');
+  const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
+  const [colFilterPayVia, setColFilterPayVia] = useState('');
 
   useEffect(() => {
     if (!manualToDate) {
@@ -448,13 +455,129 @@ const Sells = () => {
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Pay Via</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Actions</th>
                 </tr>
+                <tr className="bg-bg2 border-b border-glass-border/30">
+                  <td className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Search No..."
+                      value={colFilterNo}
+                      onChange={e => setColFilterNo(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Search patient/phone..."
+                      value={colFilterName}
+                      onChange={e => setColFilterName(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      type="date"
+                      value={colFilterDate}
+                      onChange={e => setColFilterDate(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Search doctor..."
+                      value={colFilterDrName}
+                      onChange={e => setColFilterDrName(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                    />
+                  </td>
+                  <td className="p-2 flex gap-1">
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={colFilterMinAmount}
+                      onChange={e => setColFilterMinAmount(e.target.value)}
+                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={colFilterMaxAmount}
+                      onChange={e => setColFilterMaxAmount(e.target.value)}
+                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                    />
+                  </td>
+                  <td className="p-2"></td>
+                  <td className="p-2"></td>
+                  <td className="p-2">
+                    <select
+                      value={colFilterPayVia}
+                      onChange={e => setColFilterPayVia(e.target.value)}
+                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50"
+                    >
+                      <option value="">All</option>
+                      <option value="CASH">CASH</option>
+                      <option value="UPI">UPI</option>
+                      <option value="CARD">CARD</option>
+                      <option value="CREDIT">CREDIT</option>
+                    </select>
+                  </td>
+                  <td className="p-2 text-center">
+                    {(colFilterNo || colFilterName || colFilterDate || colFilterDrName || colFilterMinAmount || colFilterMaxAmount || colFilterPayVia) && (
+                      <button
+                        onClick={() => {
+                          setColFilterNo('');
+                          setColFilterName('');
+                          setColFilterDate('');
+                          setColFilterDrName('');
+                          setColFilterMinAmount('');
+                          setColFilterMaxAmount('');
+                          setColFilterPayVia('');
+                        }}
+                        className="text-xs text-red hover:underline font-bold"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </td>
+                </tr>
               </thead>
               <tbody>
                 {invoices.filter(inv => {
                   const total = Number(inv.total_amount) || 0;
+                  
+                  // Top filters panel (minAmount / maxAmount)
                   const min = minAmount ? Number(minAmount) : 0;
                   const max = maxAmount ? Number(maxAmount) : 100000000;
-                  return total >= min && total <= max;
+                  if (total < min || total > max) return false;
+
+                  // Column header filters
+                  if (colFilterNo && !inv.invoice_no.toLowerCase().includes(colFilterNo.toLowerCase())) {
+                    return false;
+                  }
+                  if (colFilterName) {
+                    const nameMatch = (inv.customer_name || 'Walk-in').toLowerCase().includes(colFilterName.toLowerCase());
+                    const phoneMatch = (inv.customer_phone || '').includes(colFilterName);
+                    if (!nameMatch && !phoneMatch) return false;
+                  }
+                  if (colFilterDate) {
+                    const invDate = inv.date ? inv.date.split('T')[0] : '';
+                    if (invDate !== colFilterDate) return false;
+                  }
+                  if (colFilterDrName && !((inv.doctor_name || '').toLowerCase().includes(colFilterDrName.toLowerCase()))) {
+                    return false;
+                  }
+                  
+                  // Column header min/max amount filter
+                  const colMin = colFilterMinAmount ? Number(colFilterMinAmount) : 0;
+                  const colMax = colFilterMaxAmount ? Number(colFilterMaxAmount) : 100000000;
+                  if (total < colMin || total > colMax) return false;
+
+                  if (colFilterPayVia && inv.payment_medium !== colFilterPayVia) {
+                    return false;
+                  }
+
+                  return true;
                 }).map((inv, idx) => (
                   <tr key={inv.id} className="hover:bg-white/10 transition-all duration-300 group relative z-10 hover:shadow-lg hover:-translate-y-0.5">
                     <td className="p-4 border-b border-glass-border/50 relative cursor-pointer">
