@@ -42,12 +42,50 @@ const PurchaseHistory = () => {
   const [loading, setLoading] = useState(true);
   
   const [searchQuery, setSearchQuery] = useState('');
+  const [earliestDate, setEarliestDate] = useState<string>(getTodayString());
   const [dateRange, setDateRange] = useState({ start: getNDaysAgoString(15), end: getTodayString() });
   const [manualToDate, setManualToDate] = useState(false);
   const [statusFilter, setStatusFilter] = useState('All');
   const [supplierFilter, setSupplierFilter] = useState('All');
   const [productFilter, setProductFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Fetch the date of the earliest transaction on mount
+  useEffect(() => {
+    api.getEarliestPurchaseDate()
+      .then((res) => {
+        const defaultBoundary = getTodayString();
+        if (res && res.earliest) {
+          const formatted = res.earliest.substring(0, 10);
+          setEarliestDate(formatted);
+          setDateRange(prev => {
+            if (prev.start < formatted) {
+              return { ...prev, start: formatted };
+            }
+            return prev;
+          });
+        } else {
+          setEarliestDate(defaultBoundary);
+          setDateRange(prev => {
+            if (prev.start < defaultBoundary) {
+              return { ...prev, start: defaultBoundary };
+            }
+            return prev;
+          });
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch earliest transaction date:', err);
+        const defaultBoundary = getTodayString();
+        setEarliestDate(defaultBoundary);
+        setDateRange(prev => {
+          if (prev.start < defaultBoundary) {
+            return { ...prev, start: defaultBoundary };
+          }
+          return prev;
+        });
+      });
+  }, []);
 
   useEffect(() => {
     if (!manualToDate) {
@@ -56,16 +94,20 @@ const PurchaseHistory = () => {
   }, [manualToDate]);
 
   const handleDateFromChange = (val: string) => {
-    if (val && val < '2020-01-01') {
-      setDateRange(prev => ({ ...prev, start: '2020-01-01' }));
+    if (!val) {
+      setDateRange(prev => ({ ...prev, start: earliestDate }));
+    } else if (val < earliestDate) {
+      setDateRange(prev => ({ ...prev, start: earliestDate }));
     } else {
       setDateRange(prev => ({ ...prev, start: val }));
     }
   };
 
   const handleDateToChange = (val: string) => {
-    if (val && val < '2020-01-01') {
-      setDateRange(prev => ({ ...prev, end: '2020-01-01' }));
+    if (!val) {
+      setDateRange(prev => ({ ...prev, end: getTodayString() }));
+    } else if (val < earliestDate) {
+      setDateRange(prev => ({ ...prev, end: earliestDate }));
     } else {
       setDateRange(prev => ({ ...prev, end: val }));
     }
@@ -919,7 +961,7 @@ const PurchaseHistory = () => {
                   <input
                     type="date"
                     value={dateRange.start}
-                    min="2020-01-01"
+                    min={earliestDate}
                     max={getTodayString()}
                     onChange={(e) => handleDateFromChange(e.target.value)}
                     className="w-full bg-transparent text-white text-sm focus:outline-none"
@@ -928,7 +970,7 @@ const PurchaseHistory = () => {
                   <input
                     type="date"
                     value={dateRange.end}
-                    min="2020-01-01"
+                    min={earliestDate}
                     max={getTodayString()}
                     disabled={!manualToDate}
                     onChange={(e) => handleDateToChange(e.target.value)}
@@ -938,7 +980,15 @@ const PurchaseHistory = () => {
               </div>
 
               <button 
-                onClick={() => { setSupplierFilter('All'); setDateRange({start: getNDaysAgoString(15), end: getTodayString()}); setManualToDate(false); }}
+                onClick={() => { 
+                  setSupplierFilter('All'); 
+                  const defaultStart = getNDaysAgoString(15);
+                  setDateRange({
+                    start: defaultStart < earliestDate ? earliestDate : defaultStart, 
+                    end: getTodayString()
+                  }); 
+                  setManualToDate(false); 
+                }}
                 className="w-full mt-2 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-semibold transition-colors border border-white/10"
               >
                 Clear Filters
@@ -953,7 +1003,9 @@ const PurchaseHistory = () => {
             >
               <Filter size={18} />
               Filter
-              {(supplierFilter !== 'All' || dateRange.start !== getNDaysAgoString(15) || dateRange.end !== getTodayString()) && (
+              {(supplierFilter !== 'All' || 
+                dateRange.start !== (getNDaysAgoString(15) < earliestDate ? earliestDate : getNDaysAgoString(15)) || 
+                dateRange.end !== getTodayString()) && (
                 <span className="w-2 h-2 rounded-full bg-primary absolute top-0 right-0 animate-pulse"></span>
               )}
             </button>

@@ -193,6 +193,7 @@ export const api = {
   
   // Purchases
   getPurchases: (params?: { limit?: number; start?: string; end?: string; months?: number; search?: string }) => apiClient.get('/purchases', { params }).then(res => res.data),
+  getEarliestPurchaseDate: () => apiClient.get<{ earliest: string | null }>('/purchases/earliest-date').then(res => res.data),
   getPurchaseItems: () => apiClient.get('/purchases/items/all').then(res => res.data),
   getPurchase: (id: number) => apiClient.get(`/purchases/${id}`).then(res => res.data),
   updatePurchase: (id: number, data: any) => apiClient.put(`/purchases/${id}/full`, data).then(res => res.data),

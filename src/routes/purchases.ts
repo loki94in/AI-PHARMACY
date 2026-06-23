@@ -610,6 +610,24 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get date of the earliest transaction (purchase or sales invoice) in the system
+router.get('/earliest-date', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get(`
+      SELECT MIN(earliest) as earliest FROM (
+        SELECT MIN(date) as earliest FROM purchases
+        UNION
+        SELECT MIN(date) as earliest FROM sales_invoices
+      ) WHERE earliest IS NOT NULL
+    `);
+    res.json({ earliest: row?.earliest || null });
+  } catch (err) {
+    console.error('Failed to fetch earliest transaction date:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/manual', async (req, res) => {
   const { distributor, distributor_id, invoice_no, date, cd_per, extra_credit, cn_amount, cn_number, reconcile_expiry_return_id, items, source_filename, source_file_headers, mapping_config, email_uid } = req.body;
   try {
