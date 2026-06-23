@@ -43,5 +43,68 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-06-22T10:01:38.756Z"
+  },
+  {
+    "id": "audit_1782149593348",
+    "imagePath": "data\\audit_images\\audit_1782149593348.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-22T17:33:13.377Z"
+  },
+  {
+    "id": "audit_1782150040354",
+    "imagePath": "data\\audit_images\\audit_1782150040354.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-22T17:40:40.372Z"
+  },
+  {
+    "id": "audit_1782150107750",
+    "imagePath": "data\\audit_images\\audit_1782150107750.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-22T17:41:47.801Z"
+  },
+  {
+    "id": "audit_1782150159635",
+    "imagePath": "data\\audit_images\\audit_1782150159635.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-22T17:42:39.659Z"
+  },
+  {
+    "id": "audit_1782185916280",
+    "imagePath": "data\\audit_images\\audit_1782185916280.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-23T03:38:36.323Z"
+  },
+  {
+    "id": "audit_1782187105230",
+    "imagePath": "data\\audit_images\\audit_1782187105230.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-23T03:58:25.253Z"
+  },
+  {
+    "id": "audit_1782187210110",
+    "imagePath": "data\\audit_images\\audit_1782187210110.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-23T04:00:10.244Z"
   }
 ]

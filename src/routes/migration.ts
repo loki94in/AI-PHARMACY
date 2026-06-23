@@ -1037,10 +1037,24 @@ router.post('/staging/returns/:returnId/items', async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+
 router.post('/staging/finalize', async (req, res) => {
   if (!fs.existsSync(STAGING_DB_PATH)) return res.status(400).json({ error: 'No staging DB found' });
   const { regenerateInvoices } = req.body;
   try {
+    // 1. Validate staging.db integrity before swap
+    try {
+      const Database = (await import('better-sqlite3')).default;
+      const checkDb = new Database(STAGING_DB_PATH, { readonly: true });
+      const checkResult = checkDb.pragma('integrity_check') as any;
+      checkDb.close();
+      if (!checkResult || !checkResult[0] || checkResult[0].integrity_check !== 'ok') {
+        return res.status(400).json({ error: `Staging database integrity validation failed: ${JSON.stringify(checkResult)}` });
+      }
+    } catch (integrityErr: any) {
+      return res.status(400).json({ error: `Failed to validate staging database: ${integrityErr.message}` });
+    }
+
     if (regenerateInvoices) {
       const db = await openStagingDb();
       const invoices = await db.all('SELECT id FROM sales_invoices ORDER BY id ASC');
@@ -1061,14 +1075,37 @@ router.post('/staging/finalize', async (req, res) => {
     // Close all open staging connections to ensure files are fully written and closed cleanly
     await closeAllStagingConnections();
 
-    // Cleanly checkpoint and merge WAL file for staging database before renaming/copying
+    // Checkpoint staging DB to commit all WAL frames before moving
     try {
-      const tempStagingDb = await open({ filename: STAGING_DB_PATH, driver: sqlite3.Database });
-      await tempStagingDb.run('PRAGMA wal_checkpoint(TRUNCATE);');
-      await tempStagingDb.run('PRAGMA journal_mode = DELETE;');
-      await tempStagingDb.close();
+      const Database = (await import('better-sqlite3')).default;
+      const tempStagingDb = new Database(STAGING_DB_PATH);
+      tempStagingDb.pragma('wal_checkpoint(TRUNCATE)');
+      tempStagingDb.close();
     } catch (checkpointErr) {
       console.warn('[Migration Finalize] Staging DB checkpoint warning:', checkpointErr);
+    }
+
+    // Checkpoint active DB to merge any pending transactions
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        const Database = (await import('better-sqlite3')).default;
+        const tempAppDb = new Database(DB_PATH);
+        tempAppDb.pragma('wal_checkpoint(TRUNCATE)');
+        tempAppDb.close();
+      } catch (checkpointErr) {
+        console.warn('[Migration Finalize] Active DB checkpoint warning:', checkpointErr);
+      }
+    }
+
+    // Close the live connection pool to app.db before we replace the file
+    await dbManager.close(true);
+
+    // Stop all supervisor background workers to prevent database corruption during file swap
+    try {
+      const { workerSupervisor } = await import('../worker/workerSupervisor.js');
+      workerSupervisor.stop();
+    } catch (err) {
+      console.warn('Failed to stop workers:', err);
     }
 
     // Backup the old app.db just in case
@@ -1086,17 +1123,6 @@ router.post('/staging/finalize', async (req, res) => {
         console.error('Failed to log snapshot:', dbErr);
       }
     }
-
-    // Stop all supervisor background workers to prevent database corruption during file swap
-    try {
-      const { workerSupervisor } = await import('../worker/workerSupervisor.js');
-      workerSupervisor.stop();
-    } catch (err) {
-      console.warn('Failed to stop workers:', err);
-    }
-
-    // Close the live connection pool to app.db before we replace the file
-    await dbManager.close(true);
 
     // Delete WAL and SHM files of app.db to prevent SQLite recovery mismatch / corruption
     const appWal = DB_PATH + '-wal';
@@ -1120,7 +1146,25 @@ router.post('/staging/finalize', async (req, res) => {
 
     // Replace app.db with staging.db
     fs.copyFileSync(STAGING_DB_PATH, DB_PATH);
-    fs.unlinkSync(STAGING_DB_PATH);
+
+    // Validate the newly copied app.db before deleting staging database
+    try {
+      const Database = (await import('better-sqlite3')).default;
+      const checkDb = new Database(DB_PATH, { readonly: true });
+      const checkResult = checkDb.pragma('integrity_check') as any;
+      checkDb.close();
+      if (!checkResult || !checkResult[0] || checkResult[0].integrity_check !== 'ok') {
+        throw new Error(`Integrity check failed: ${JSON.stringify(checkResult)}`);
+      }
+      fs.unlinkSync(STAGING_DB_PATH);
+    } catch (integrityErr: any) {
+      console.error('[Migration Finalize] Swapped app.db integrity check failed:', integrityErr);
+      // Restore from backup immediately if swap is corrupted
+      if (fs.existsSync(backupPath)) {
+        fs.copyFileSync(backupPath, DB_PATH);
+      }
+      throw new Error(`Swapped database integrity check failed. Restored from backup. Details: ${integrityErr.message}`);
+    }
     
     // Reset migration status
     migrationStatus.isStagingReady = false;

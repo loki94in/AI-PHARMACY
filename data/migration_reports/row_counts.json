@@ -1,14 +1,21 @@
 {
   "medicines": 286280,
   "distributors": 164,
-  "customers": 8874,
+  "customers": 8877,
   "doctors": 248,
   "inventory_master": 35653,
   "purchases": 15148,
-  "purchase_items": 59143,
-  "sales_invoices": 23307,
-  "sale_items": 0,
+  "purchase_items": 59678,
+  "sales_invoices": 23311,
+  "sale_items": 68809,
   "returns": 1323,
-  "return_items": 0,
-  "stock_ledger": 133557
+  "return_items": 4329,
+  "stock_ledger": 133566,
+  "distributor_payments": 40,
+  "distributor_payment_details": 187,
+  "order_credits": 0,
+  "b2b_invoices": 0,
+  "b2b_invoice_items": 0,
+  "purchase_orders": 0,
+  "purchase_order_items": 0
 }

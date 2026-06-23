@@ -674,6 +674,104 @@ export async function ensureSchema(dbPath: string) {
       conflict_reason TEXT,
       status TEXT DEFAULT 'pending'
     );
+
+    -- Distributor payments (cash, cheque, UPI paid to distributors)
+    CREATE TABLE IF NOT EXISTS distributor_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      distributor_id INTEGER,
+      amount REAL DEFAULT 0,
+      payment_type TEXT,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      cheque_no TEXT,
+      cheque_bank TEXT,
+      cheque_date DATETIME,
+      upi_id TEXT,
+      legacy_id TEXT,
+      business_date DATETIME,
+      FOREIGN KEY(distributor_id) REFERENCES distributors(id)
+    );
+
+    -- Payment ↔ Purchase invoice line items
+    CREATE TABLE IF NOT EXISTS distributor_payment_details (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      payment_id INTEGER,
+      purchase_id INTEGER,
+      amount REAL DEFAULT 0,
+      discount REAL DEFAULT 0,
+      legacy_id TEXT,
+      business_date DATETIME,
+      FOREIGN KEY(payment_id) REFERENCES distributor_payments(id),
+      FOREIGN KEY(purchase_id) REFERENCES purchases(id)
+    );
+
+    -- Credit tracking on sales invoices
+    CREATE TABLE IF NOT EXISTS order_credits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sales_invoice_id INTEGER,
+      amount_paid REAL DEFAULT 0,
+      legacy_id TEXT,
+      FOREIGN KEY(sales_invoice_id) REFERENCES sales_invoices(id)
+    );
+
+    -- Purchase orders sent to distributors
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      distributor_id INTEGER,
+      status TEXT DEFAULT 'DRAFT',
+      date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      legacy_id TEXT,
+      business_date DATETIME,
+      FOREIGN KEY(distributor_id) REFERENCES distributors(id)
+    );
+
+    -- Purchase order line items
+    CREATE TABLE IF NOT EXISTS purchase_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_order_id INTEGER,
+      medicine_id INTEGER,
+      quantity INTEGER DEFAULT 0,
+      free_qty INTEGER DEFAULT 0,
+      cost_price REAL DEFAULT 0,
+      mrp REAL DEFAULT 0,
+      legacy_id TEXT,
+      FOREIGN KEY(purchase_order_id) REFERENCES purchase_orders(id),
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+
+    -- B2B sales invoices (wholesale/institutional)
+    CREATE TABLE IF NOT EXISTS b2b_invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_no TEXT,
+      customer_id INTEGER,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      total_amount REAL DEFAULT 0,
+      cgst_value REAL DEFAULT 0,
+      sgst_value REAL DEFAULT 0,
+      igst_value REAL DEFAULT 0,
+      roff REAL DEFAULT 0,
+      discount REAL DEFAULT 0,
+      payment_medium TEXT,
+      legacy_id TEXT,
+      business_date DATETIME,
+      FOREIGN KEY(customer_id) REFERENCES customers(id)
+    );
+
+    -- B2B sale line items
+    CREATE TABLE IF NOT EXISTS b2b_invoice_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER,
+      medicine_id INTEGER,
+      batch_no TEXT,
+      quantity INTEGER DEFAULT 0,
+      mrp REAL DEFAULT 0,
+      cost_price REAL DEFAULT 0,
+      cgst_value REAL DEFAULT 0,
+      sgst_value REAL DEFAULT 0,
+      discount_per REAL DEFAULT 0,
+      legacy_id TEXT,
+      FOREIGN KEY(invoice_id) REFERENCES b2b_invoices(id),
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
   `);
 
   // Insert default settings if they don't exist

@@ -72,7 +72,25 @@ describe('DB Integrity Check', () => {
       ).toBe(true);
     } finally {
       try { if (db) await db.close(); } catch (_) {}
-      if (fs.existsSync(corruptPath)) fs.unlinkSync(corruptPath);
+      if (fs.existsSync(corruptPath)) {
+        let deleted = false;
+        for (let i = 0; i < 10; i++) {
+          try {
+            fs.unlinkSync(corruptPath);
+            deleted = true;
+            break;
+          } catch (e: any) {
+            if (e.code === 'EBUSY') {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            } else {
+              throw e;
+            }
+          }
+        }
+        if (!deleted) {
+          try { fs.unlinkSync(corruptPath); } catch (_) {}
+        }
+      }
     }
     expect(threw).toBe(true);
   });

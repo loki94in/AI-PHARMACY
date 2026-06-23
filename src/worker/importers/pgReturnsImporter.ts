@@ -7,7 +7,7 @@
 
 import { Database } from 'sqlite';
 import { medicineMap, distributorMap, patientMap, customerMap } from './pgMasterImporter.js';
-import { purchaseMap } from './pgPurchaseImporter.js';
+import { purchaseMap, legacyBatchIdToNoMap } from './pgPurchaseImporter.js';
 import { salesInvoiceMap } from './pgSalesImporter.js';
 
 // Maps for cross-referencing
@@ -117,10 +117,13 @@ export async function importReturnOrderItem(row: Record<string, string | null>, 
   const legacyMedId = row['medicine_id'];
   const medicineId = legacyMedId ? medicineMap.get(legacyMedId) : null;
 
+  const legacyBatchId = row['batch_id'];
+  const batchNo = legacyBatchId ? (legacyBatchIdToNoMap.get(legacyBatchId) || legacyBatchId) : null;
+
   returnItemBatch.push({
     return_id: returnId,
     medicine_id: medicineId || null,
-    batch_no: row['batch_id'] || null,
+    batch_no: batchNo,
     quantity: parseInt(row['quantity'] || '0') || 0,
     cost_price: parseFloat(row['cost_price'] || '0') || 0,
     mrp: parseFloat(row['mrp'] || '0') || 0,
@@ -171,9 +174,12 @@ export async function importStockEffect(row: Record<string, string | null>, db: 
   const medicineId = legacyMedId ? medicineMap.get(legacyMedId) : null;
   if (!medicineId) return;
 
+  const legacyBatchId = row['batch_id'];
+  const batchNo = legacyBatchId ? (legacyBatchIdToNoMap.get(legacyBatchId) || legacyBatchId) : null;
+
   stockBatch.push({
     medicine_id: medicineId,
-    batch_no: row['batch_id'] || null,
+    batch_no: batchNo,
     quantity: parseInt(row['quantity'] || '0') || 0,
     transaction_type: row['transaction_type'] || null,
     transaction_id: row['transaction_id'] || null,

@@ -6,7 +6,7 @@
 
 import { Database } from 'sqlite';
 import { medicineMap, doctorMap, patientMap } from './pgMasterImporter.js';
-import { batchMap } from './pgPurchaseImporter.js';
+import { batchMap, legacyBatchIdToNoMap } from './pgPurchaseImporter.js';
 
 // Maps for cross-referencing
 export const salesInvoiceMap = new Map<string, number>(); // legacy order_id → new sales_invoices.id
@@ -81,6 +81,7 @@ export async function importOrder(row: Record<string, string | null>, db: Databa
     igst_value: parseFloat(row['igst_value'] || '0') || 0,
     legacy_id: legacyId,
     business_date: row['business_date'] || row['created_time'] || null,
+    discount: parseFloat(row['discount'] || '0') || 0,
   });
 
   if (salesBatch.length >= 2000) {
@@ -95,9 +96,9 @@ export async function flushSalesInvoices(db: Database) {
     for (const s of salesBatch) {
       try {
         const result = await db.run(
-          `INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount, doctor_id, payment_medium, roff, cgst_value, sgst_value, igst_value, legacy_id, business_date)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [s.invoice_no, s.customer_id, s.date, s.total_amount, s.tax_amount, s.doctor_id, s.payment_medium, s.roff, s.cgst_value, s.sgst_value, s.igst_value, s.legacy_id, s.business_date]
+          `INSERT INTO sales_invoices (invoice_no, customer_id, date, total_amount, tax_amount, doctor_id, payment_medium, roff, cgst_value, sgst_value, igst_value, legacy_id, business_date, discount)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [s.invoice_no, s.customer_id, s.date, s.total_amount, s.tax_amount, s.doctor_id, s.payment_medium, s.roff, s.cgst_value, s.sgst_value, s.igst_value, s.legacy_id, s.business_date, s.discount || 0]
         );
         salesInvoiceMap.set(s.legacy_id, result.lastID!);
       } catch (err: any) {
@@ -132,6 +133,7 @@ export async function importOrderItem(row: Record<string, string | null>, db: Da
   // Resolve batch → inventory_master
   const legacyBatchId = row['batch_id'];
   const inventoryId = legacyBatchId ? batchMap.get(legacyBatchId) : null;
+  const batchNo = legacyBatchId ? (legacyBatchIdToNoMap.get(legacyBatchId) || legacyBatchId) : null;
 
   saleItemBatch.push({
     invoice_id: invoiceId,
@@ -140,7 +142,7 @@ export async function importOrderItem(row: Record<string, string | null>, db: Da
     // total_price is the line total (qty × rate) — use mrp as per-unit price
     unit_price: parseFloat(row['mrp'] || '0') || 0,
     mrp: parseFloat(row['mrp'] || '0') || 0,
-    batch_no: legacyBatchId || null,
+    batch_no: batchNo,
     cgst_value: parseFloat(row['cgst_value'] || '0') || 0,
     sgst_value: parseFloat(row['sgst_value'] || '0') || 0,
     discount_per: parseFloat(row['disc_per'] || '0') || 0,

@@ -12,10 +12,12 @@ import { formatInvoiceWithFY } from '../../utils/migrationValidation.js';
 // Maps for cross-referencing
 export const batchMap = new Map<string, number>();     // legacy batch_id → new inventory_master.id
 export const purchaseMap = new Map<string, number>();   // legacy inventory_id → new purchases.id
+export const legacyBatchIdToNoMap = new Map<string, string>(); // legacy batch_id → batch_no
 
 export function clearPurchaseMap() {
   batchMap.clear();
   purchaseMap.clear();
+  legacyBatchIdToNoMap.clear();
 }
 
 // ─── Batch → inventory_master ───────────────────────────────
@@ -28,6 +30,9 @@ export async function importBatch(row: Record<string, string | null>, db: Databa
   const deleted = row['deleted'];
   if (!legacyBatchId || !legacyMedicineId || deleted === 't') return;
 
+  const batchNo = row['batch_number'] || legacyBatchId;
+  legacyBatchIdToNoMap.set(legacyBatchId, batchNo);
+
   // Resolve medicine
   const medicineId = medicineMap.get(legacyMedicineId);
   if (!medicineId) return; // Medicine was deleted or not imported
@@ -38,7 +43,7 @@ export async function importBatch(row: Record<string, string | null>, db: Databa
 
   batchBatch.push({
     medicine_id: medicineId,
-    batch_no: row['batch_number'] || legacyBatchId,
+    batch_no: batchNo,
     expiry_date: expiryNorm,
     // backup uses 'rack' not 'batch_rack'
     rack_location: row['rack'] || row['batch_rack'] || null,
@@ -163,11 +168,12 @@ export async function importInventoryMedicine(row: Record<string, string | null>
 
   // Resolve batch
   const legacyBatchId = row['batch_id'];
+  const batchNo = legacyBatchId ? (legacyBatchIdToNoMap.get(legacyBatchId) || legacyBatchId) : null;
 
   purchaseItemBatch.push({
     purchase_id: purchaseId,
     medicine_id: medicineId || null,
-    batch_no: legacyBatchId || null,
+    batch_no: batchNo,
     quantity: parseInt(row['quantity'] || '0') || 0,
     free_qty: parseInt(row['free'] || '0') || 0,
     cost_price: parseFloat(row['cost_price'] || '0') || 0,

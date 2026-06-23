@@ -77,6 +77,8 @@ export async function importDistributor(row: Record<string, string | null>, db: 
     city: row['city'] || null,
     email: row['email'] || null,
     dl_no: row['dlno'] || null,
+    phone: row['distributor_sales_phone'] || row['contact'] || null,
+    state_code: row['gst_state'] || null,
   });
 
   if (distributorBatch.length >= 500) {
@@ -91,9 +93,9 @@ export async function flushDistributors(db: Database) {
     for (const d of distributorBatch) {
       try {
         const result = await db.run(
-          `INSERT INTO distributors (name, contact, legacy_id, gstin, address, city, email, dl_no)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [d.name, d.contact, d.legacy_id, d.gstin, d.address, d.city, d.email, d.dl_no]
+          `INSERT INTO distributors (name, contact, legacy_id, gstin, address, city, email, dl_no, phone, state_code)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [d.name, d.contact, d.legacy_id, d.gstin, d.address, d.city, d.email, d.dl_no, d.phone, d.state_code]
         );
         distributorMap.set(d.legacy_id, result.lastID!);
         normalizedDistributorMap.set(d.normName, result.lastID!);
@@ -312,6 +314,17 @@ export async function importMedicine(row: Record<string, string | null>, db: Dat
   const genericId = row['generic_id'];
   const apiReference = genericId ? (genericMap.get(genericId) || null) : null;
 
+  // Build metadata JSON for extra fields not in the main schema
+  const metadata: Record<string, any> = {};
+  if (row['is_chronic'] === 't') metadata.is_chronic = true;
+  if (row['is_banned'] === 't') metadata.is_banned = true;
+  if (row['is_discontinued'] === 't') metadata.is_discontinued = true;
+  if (row['selling_price']) metadata.selling_price = parseFloat(row['selling_price']) || 0;
+  if (row['min_stock']) metadata.min_stock = parseInt(row['min_stock']) || 0;
+  if (row['max_stock']) metadata.max_stock = parseInt(row['max_stock']) || 0;
+  if (row['is_loose'] === 't') metadata.is_loose = true;
+  const metadataJson = Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
+
   medicineBatch.push({
     name,
     legacy_id: legacyId,
@@ -327,6 +340,9 @@ export async function importMedicine(row: Record<string, string | null>, db: Dat
     marketed_by: row['marketer_name'] || null,
     schedule_type: row['therapeutic'] || 'None',
     api_reference: apiReference,
+    generic_name: apiReference, // generic_name mirrors composition from genericMap
+    item_code: row['medicine_short_code'] || row['mdm_itemcode'] || null,
+    metadata: metadataJson,
   });
 
   if (medicineBatch.length >= MEDICINE_BATCH_SIZE) {
@@ -341,9 +357,9 @@ export async function flushMedicines(db: Database) {
     for (const m of medicineBatch) {
       try {
         const result = await db.run(
-          `INSERT INTO medicines (name, legacy_id, hsn_code, manufacturer, category, packaging, item_type, cgst, sgst, igst, rack, marketed_by, schedule_type, api_reference)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [m.name, m.legacy_id, m.hsn_code, m.manufacturer, m.category, m.packaging, m.item_type, m.cgst, m.sgst, m.igst, m.rack, m.marketed_by, m.schedule_type, m.api_reference || null]
+          `INSERT INTO medicines (name, legacy_id, hsn_code, manufacturer, category, packaging, item_type, cgst, sgst, igst, rack, marketed_by, schedule_type, api_reference, generic_name, item_code, metadata)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [m.name, m.legacy_id, m.hsn_code, m.manufacturer, m.category, m.packaging, m.item_type, m.cgst, m.sgst, m.igst, m.rack, m.marketed_by, m.schedule_type, m.api_reference || null, m.generic_name || null, m.item_code || null, m.metadata || null]
         );
         medicineMap.set(m.legacy_id, result.lastID!);
       } catch (err: any) {

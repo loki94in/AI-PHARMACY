@@ -45,6 +45,28 @@ import {
   importStockEffect, flushStockLedger,
 } from './importers/pgReturnsImporter.js';
 
+import {
+  paymentMap, clearPaymentsMap,
+  importPayment, flushPayments,
+  importPaymentDetail, flushPaymentDetails,
+  importOrderCredit, flushOrderCredits,
+  importCrNoteResolution,
+} from './importers/pgPaymentsImporter.js';
+
+import {
+  b2bInvoiceMap, clearB2BMap,
+  importB2BSale, flushB2BInvoices,
+  importB2BSaleItem, flushB2BItems,
+} from './importers/pgB2BImporter.js';
+
+import {
+  purchaseOrderMap, clearExtrasMap,
+  importPurchaseOrder, flushPurchaseOrders,
+  importPurchaseOrderItem, flushPurchaseOrderItems,
+  importScheduledOrder, flushRefills,
+  importRetailer,
+} from './importers/pgExtrasImporter.js';
+
 // Legacy parsers (kept for backward compat with INSERT-style SQL files)
 import { processReturnsLine } from './parsers/returnsParser.js';
 import { processInventoryLine } from './parsers/inventoryParser.js';
@@ -297,7 +319,32 @@ async function processMigrationFile(
       } catch (dbCloseErr) {
         console.warn('Failed to close dbManager connection:', dbCloseErr);
       }
+
+      // 1. Checkpoint WAL of active app.db to merge frames safely before copying
+      try {
+        const Database = (await import('better-sqlite3')).default;
+        const appDb = new Database(DB_PATH);
+        appDb.pragma('wal_checkpoint(FULL)');
+        appDb.close();
+      } catch (checkpointErr) {
+        console.warn('[Migration Worker] Failed to checkpoint app.db WAL before copy:', checkpointErr);
+      }
+
+      // 2. Perform file copy
       await fs.promises.copyFile(DB_PATH, STAGING_DB_PATH);
+
+      // 3. Immediately validate the integrity of staging.db
+      try {
+        const Database = (await import('better-sqlite3')).default;
+        const checkDb = new Database(STAGING_DB_PATH, { readonly: true });
+        const checkResult = checkDb.pragma('integrity_check') as any;
+        checkDb.close();
+        if (!checkResult || !checkResult[0] || checkResult[0].integrity_check !== 'ok') {
+          throw new Error(`Integrity check result not ok: ${JSON.stringify(checkResult)}`);
+        }
+      } catch (integrityErr: any) {
+        throw new Error(`Failed to copy staging database securely: ${integrityErr.message}`);
+      }
     }
 
     let actualFilePath = tempProcessingPath;
@@ -526,12 +573,18 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   clearPurchaseMap();
   clearSalesMap();
   clearReturnsMap();
+  clearPaymentsMap();
+  clearB2BMap();
+  clearExtrasMap();
 
   // Prevent duplicate legacy records if the migration is run again
   const tablesWithLegacyId = [
     'medicines', 'distributors', 'customers', 'doctors',
     'purchases', 'purchase_items', 'sales_invoices', 'sale_items',
-    'returns', 'return_items', 'stock_ledger'
+    'returns', 'return_items', 'stock_ledger',
+    'distributor_payments', 'distributor_payment_details', 'order_credits',
+    'purchase_orders', 'purchase_order_items',
+    'b2b_invoices', 'b2b_invoice_items'
   ];
   for (const table of tablesWithLegacyId) {
     try {
@@ -560,6 +613,14 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
     returns: 0,
     returnItems: 0,
     stockLedger: 0,
+    payments: 0,
+    paymentDetails: 0,
+    orderCredits: 0,
+    b2bInvoices: 0,
+    b2bItems: 0,
+    purchaseOrders: 0,
+    purchaseOrderItems: 0,
+    scheduledOrders: 0,
   };
 
   // ─── PASS 1: Reference Tables ─────────────────────────────
@@ -642,21 +703,29 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
   migrationStatus.progress = 70;
   console.log(migrationStatus.message);
 
-  // ─── PASS 4: Sales & Returns ──────────────────────────────
-  migrationStatus.message = 'Pass 4/4: Importing sales, returns, and stock ledger...';
+  // ─── PASS 4: Sales & Returns (Part 1: Invoices and Returns) ──────────────
+  migrationStatus.message = 'Pass 4/5: Importing sales invoices and return orders...';
   migrationStatus.progress = 75;
 
   await streamPgDump(sqlPath, {
     'orders': wrap('orders', async (row) => { await importOrder(row, db); stats.salesInvoices++; }),
-    'order_item': wrap('order_item', async (row) => { await importOrderItem(row, db); stats.saleItems++; }),
     'return_orders': wrap('return_orders', async (row) => { await importReturnOrder(row, db); stats.returns++; }),
+  }, db);
+
+  await flushSalesInvoices(db);
+  await flushReturns(db);
+
+  // ─── PASS 5: Sales & Returns (Part 2: Items & Movements) ───────────────
+  migrationStatus.message = 'Pass 5/5: Importing sale items, return items, and stock ledger...';
+  migrationStatus.progress = 85;
+
+  await streamPgDump(sqlPath, {
+    'order_item': wrap('order_item', async (row) => { await importOrderItem(row, db); stats.saleItems++; }),
     'return_order_item': wrap('return_order_item', async (row) => { await importReturnOrderItem(row, db); stats.returnItems++; }),
     'stock_effects': wrap('stock_effects', async (row) => { await importStockEffect(row, db); stats.stockLedger++; }),
   }, db);
 
-  await flushSalesInvoices(db);
   await flushSaleItems(db);
-  await flushReturns(db);
   await flushReturnItems(db);
   await flushStockLedger(db);
 
@@ -678,15 +747,66 @@ async function parseAndImportPgDump(sqlPath: string, targetDbPath: string) {
     console.warn('[Migration] Stock quantity rebuild skipped:', qtyErr.message);
   }
 
-  migrationStatus.message = `Pass 4 done: ${stats.salesInvoices} invoices, ${stats.saleItems} sale items, ${stats.returns} returns, ${stats.stockLedger} stock movements`;
-  migrationStatus.progress = 95;
+  migrationStatus.message = `Pass 5 done: ${stats.salesInvoices} invoices, ${stats.saleItems} sale items, ${stats.returns} returns, ${stats.stockLedger} stock movements`;
+  migrationStatus.progress = 88;
+  console.log(migrationStatus.message);
+
+  // ─── PASS 6: Payments, Credits & B2B ────────────────────────
+  migrationStatus.message = 'Pass 6/7: Importing payments, credits, and B2B sales...';
+  migrationStatus.progress = 89;
+
+  await streamPgDump(sqlPath, {
+    'payments': wrap('payments', async (row) => { await importPayment(row, db); stats.payments++; }),
+    'order_credit': wrap('order_credit', async (row) => { await importOrderCredit(row, db); stats.orderCredits++; }),
+    'b2b_sales': wrap('b2b_sales', async (row) => { await importB2BSale(row, db); stats.b2bInvoices++; }),
+    'cr_note_resolution': wrap('cr_note_resolution', async (row) => { await importCrNoteResolution(row, db); }),
+  }, db);
+
+  await flushPayments(db);
+  await flushOrderCredits(db);
+  await flushB2BInvoices(db);
+
+  // Payment details and B2B items depend on parent maps from above
+  await streamPgDump(sqlPath, {
+    'payment_details': wrap('payment_details', async (row) => { await importPaymentDetail(row, db); stats.paymentDetails++; }),
+    'b2b_sales_item': wrap('b2b_sales_item', async (row) => { await importB2BSaleItem(row, db); stats.b2bItems++; }),
+  }, db);
+
+  await flushPaymentDetails(db);
+  await flushB2BItems(db);
+
+  migrationStatus.message = `Pass 6 done: ${stats.payments} payments, ${stats.orderCredits} credits, ${stats.b2bInvoices} B2B invoices`;
+  migrationStatus.progress = 93;
+  console.log(migrationStatus.message);
+
+  // ─── PASS 7: Purchase Orders, Scheduled Orders & Settings ───
+  migrationStatus.message = 'Pass 7/7: Importing purchase orders, schedules, and shop settings...';
+  migrationStatus.progress = 94;
+
+  await streamPgDump(sqlPath, {
+    'purchase_order': wrap('purchase_order', async (row) => { await importPurchaseOrder(row, db); stats.purchaseOrders++; }),
+    'scheduled_orders': wrap('scheduled_orders', async (row) => { await importScheduledOrder(row, db); stats.scheduledOrders++; }),
+    'retailer': wrap('retailer', async (row) => { await importRetailer(row, db); }),
+  }, db);
+
+  await flushPurchaseOrders(db);
+  await flushRefills(db);
+
+  await streamPgDump(sqlPath, {
+    'purchase_order_item': wrap('purchase_order_item', async (row) => { await importPurchaseOrderItem(row, db); stats.purchaseOrderItems++; }),
+  }, db);
+
+  await flushPurchaseOrderItems(db);
+
+  migrationStatus.message = `Pass 7 done: ${stats.purchaseOrders} POs, ${stats.scheduledOrders} schedules`;
+  migrationStatus.progress = 97;
   console.log(migrationStatus.message);
 
     // ─── Generate Summary Report ──────────────────────────────
     migrationStatus.message = 'Generating migration summary report...';
     await generateMigrationReport(db, stats);
 
-    migrationStatus.message = `Migration Complete! ${stats.medicines} medicines, ${stats.purchases} purchases, ${stats.salesInvoices} sales, ${stats.returns} returns imported.`;
+    migrationStatus.message = `Migration Complete! ${stats.medicines} medicines, ${stats.purchases} purchases, ${stats.salesInvoices} sales, ${stats.returns} returns, ${stats.payments} payments, ${stats.b2bInvoices} B2B invoices, ${stats.purchaseOrders} POs imported.`;
     migrationStatus.progress = 100;
     console.log('=== MIGRATION COMPLETE ===');
     console.log(JSON.stringify(stats, null, 2));
@@ -730,8 +850,14 @@ async function streamPgDump(
       // Flush database buffers when the COPY block finishes
       if (currentTable === 'orders') {
         await flushSalesInvoices(db);
+      } else if (currentTable === 'order_item') {
+        await flushSaleItems(db);
       } else if (currentTable === 'return_orders') {
         await flushReturns(db);
+      } else if (currentTable === 'return_order_item') {
+        await flushReturnItems(db);
+      } else if (currentTable === 'stock_effects') {
+        await flushStockLedger(db);
       } else if (currentTable === 'distributor') {
         await flushDistributors(db);
       } else if (currentTable === 'doctor') {
@@ -748,6 +874,22 @@ async function streamPgDump(
         await flushPurchases(db);
       } else if (currentTable === 'inventory_medicine') {
         await flushPurchaseItems(db);
+      } else if (currentTable === 'payments') {
+        await flushPayments(db);
+      } else if (currentTable === 'payment_details') {
+        await flushPaymentDetails(db);
+      } else if (currentTable === 'order_credit') {
+        await flushOrderCredits(db);
+      } else if (currentTable === 'b2b_sales') {
+        await flushB2BInvoices(db);
+      } else if (currentTable === 'b2b_sales_item') {
+        await flushB2BItems(db);
+      } else if (currentTable === 'purchase_order') {
+        await flushPurchaseOrders(db);
+      } else if (currentTable === 'purchase_order_item') {
+        await flushPurchaseOrderItems(db);
+      } else if (currentTable === 'scheduled_orders') {
+        await flushRefills(db);
       }
 
       currentTable = null;
@@ -788,6 +930,9 @@ async function generateMigrationReport(db: any, stats: any) {
       purchases: purchaseMap.size,
       sales_invoices: salesInvoiceMap.size,
       returns: returnMap.size,
+      payments: paymentMap.size,
+      b2b_invoices: b2bInvoiceMap.size,
+      purchase_orders: purchaseOrderMap.size,
     }
   };
 
@@ -798,7 +943,7 @@ async function generateMigrationReport(db: any, stats: any) {
 
   // Quick row-count verification from SQLite
   const counts: Record<string, number> = {};
-  const tables = ['medicines', 'distributors', 'customers', 'doctors', 'inventory_master', 'purchases', 'purchase_items', 'sales_invoices', 'sale_items', 'returns', 'return_items', 'stock_ledger'];
+  const tables = ['medicines', 'distributors', 'customers', 'doctors', 'inventory_master', 'purchases', 'purchase_items', 'sales_invoices', 'sale_items', 'returns', 'return_items', 'stock_ledger', 'distributor_payments', 'distributor_payment_details', 'order_credits', 'b2b_invoices', 'b2b_invoice_items', 'purchase_orders', 'purchase_order_items'];
   for (const tbl of tables) {
     try {
       const row = await db.get(`SELECT COUNT(*) as cnt FROM ${tbl}`);
