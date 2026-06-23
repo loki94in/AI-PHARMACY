@@ -364,9 +364,10 @@ export interface InventoryItem {
   item_code?: string;
 }
 
-export async function getInventory(): Promise<InventoryItem[]> {
+export async function getInventory(search?: string): Promise<InventoryItem[]> {
   try {
-    const items = await request<InventoryItem[]>('/inventory');
+    const endpoint = search ? `/inventory?search=${encodeURIComponent(search.trim())}` : '/inventory';
+    const items = await request<InventoryItem[]>(endpoint);
     // Save to cache mapped to SearchMedicineResult format
     const mapped: SearchMedicineResult[] = items.map(item => ({
       inventory_id: item.id,
@@ -380,12 +381,15 @@ export async function getInventory(): Promise<InventoryItem[]> {
       cost_price: 0,
       item_code: item.item_code || ''
     }));
-    await cacheInventory(mapped);
+    // Only cache full list to avoid overwriting cache with partial search results
+    if (!search) {
+      await cacheInventory(mapped);
+    }
     return items;
   } catch (err) {
     console.log('Online getInventory failed, fallback to local cache:', err);
     const cached = await getCachedInventory();
-    return cached.map(c => ({
+    let result = cached.map(c => ({
       id: c.inventory_id,
       medicine_id: c.medicine_id,
       medicine_name: c.medicine_name,
@@ -394,6 +398,15 @@ export async function getInventory(): Promise<InventoryItem[]> {
       expiry_date: c.expiry_date,
       item_code: c.item_code
     }));
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(item => 
+        item.medicine_name?.toLowerCase().includes(q) || 
+        item.batch_no?.toLowerCase().includes(q) ||
+        item.item_code?.toLowerCase().includes(q)
+      );
+    }
+    return result;
   }
 }
 

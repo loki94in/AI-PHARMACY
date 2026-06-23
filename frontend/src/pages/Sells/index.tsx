@@ -41,16 +41,56 @@ interface SaleInvoice {
   items?: SaleItem[];
 }
 
+const getTodayString = () => {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const Sells = () => {
   const [invoices, setInvoices] = useState<SaleInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(getNDaysAgoString(15));
+  const [dateTo, setDateTo] = useState(getTodayString());
+  const [manualToDate, setManualToDate] = useState(false);
   const [batchFilter, setBatchFilter] = useState('');
   const [minAmount, setMinAmount] = useState<string>('');
   const [maxAmount, setMaxAmount] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setDateTo(getTodayString());
+    }
+  }, [manualToDate]);
+
+  const handleDateFromChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateFrom('2020-01-01');
+    } else {
+      setDateFrom(val);
+    }
+  };
+
+  const handleDateToChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateTo('2020-01-01');
+    } else {
+      setDateTo(val);
+    }
+  };
 
   // Edit modal state
   const [editInvoice, setEditInvoice] = useState<SaleInvoice | null>(null);
@@ -309,7 +349,9 @@ const Sells = () => {
               <input
                 type="date"
                 value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
+                min="2020-01-01"
+                max={getTodayString()}
+                onChange={e => handleDateFromChange(e.target.value)}
                 className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50"
               />
             </div>
@@ -318,9 +360,21 @@ const Sells = () => {
               <input
                 type="date"
                 value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50"
+                min="2020-01-01"
+                max={getTodayString()}
+                disabled={!manualToDate}
+                onChange={e => handleDateToChange(e.target.value)}
+                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 disabled:opacity-50"
               />
+              <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={manualToDate}
+                  onChange={e => setManualToDate(e.target.checked)}
+                  className="rounded border-glass-border text-primary focus:ring-primary/20 bg-black/20"
+                />
+                Edit
+              </label>
             </div>
             <div className="flex items-center gap-2">
               <Package size={14} className="text-muted" />
@@ -355,9 +409,9 @@ const Sells = () => {
                 className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-28"
               />
             </div>
-            {(dateFrom || dateTo || batchFilter || minAmount || maxAmount) && (
+            {(dateFrom !== getNDaysAgoString(15) || dateTo !== getTodayString() || batchFilter || minAmount || maxAmount) && (
               <button
-                onClick={() => { setDateFrom(''); setDateTo(''); setBatchFilter(''); setMinAmount(''); setMaxAmount(''); }}
+                onClick={() => { setDateFrom(getNDaysAgoString(15)); setDateTo(getTodayString()); setManualToDate(false); setBatchFilter(''); setMinAmount(''); setMaxAmount(''); }}
                 className="text-xs text-red hover:text-red/80 font-semibold flex items-center gap-1"
               >
                 <X size={12} /> Clear filters

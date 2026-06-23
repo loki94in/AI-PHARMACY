@@ -106,6 +106,23 @@ const formatExpiryToMMYY = (val: string): string => {
   return val;
 };
 
+const getTodayString = () => {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const Returns: React.FC = () => {
   const location = useLocation();
 
@@ -266,14 +283,37 @@ const Returns: React.FC = () => {
   };
 
   // Filters
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(getNDaysAgoString(15));
+  const [dateTo, setDateTo] = useState(getTodayString());
+  const [manualToDate, setManualToDate] = useState(false);
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showGroupedPreview, setShowGroupedPreview] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraTargetIndex, setCameraTargetIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setDateTo(getTodayString());
+    }
+  }, [manualToDate]);
+
+  const handleDateFromChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateFrom('2020-01-01');
+    } else {
+      setDateFrom(val);
+    }
+  };
+
+  const handleDateToChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateTo('2020-01-01');
+    } else {
+      setDateTo(val);
+    }
+  };
 
   const handleCameraScanResult = (result: any) => {
     if (cameraTargetIndex === null) return;
@@ -688,18 +728,34 @@ const Returns: React.FC = () => {
                   <input
                     type="date"
                     value={dateFrom}
-                    onChange={e => setDateFrom(e.target.value)}
+                    min="2020-01-01"
+                    max={getTodayString()}
+                    onChange={e => handleDateFromChange(e.target.value)}
                     className="px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
                   />
                 </div>
                 <div className="flex items-center justify-between gap-1">
                   <label className="text-muted">To</label>
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={e => setDateTo(e.target.value)}
-                    className="px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
-                  />
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="date"
+                      value={dateTo}
+                      min="2020-01-01"
+                      max={getTodayString()}
+                      disabled={!manualToDate}
+                      onChange={e => handleDateToChange(e.target.value)}
+                      className="px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none disabled:opacity-50 w-24"
+                    />
+                    <label className="text-[9px] text-muted flex items-center gap-0.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={manualToDate}
+                        onChange={e => setManualToDate(e.target.checked)}
+                        className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg"
+                      />
+                      Edit
+                    </label>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 justify-between">
                   <label className="text-muted">Min</label>

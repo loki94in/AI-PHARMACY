@@ -2,9 +2,49 @@ import { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Download, IndianRupee, ShoppingBag, Package, FileText, Info } from 'lucide-react';
 import { api } from '../../services/api';
 
+const getTodayString = () => {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const Reports = () => {
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(getNDaysAgoString(15));
+  const [toDate, setToDate] = useState(getTodayString());
+  const [manualToDate, setManualToDate] = useState(false);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setToDate(getTodayString());
+    }
+  }, [manualToDate]);
+
+  const handleFromDateChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setFromDate('2020-01-01');
+    } else {
+      setFromDate(val);
+    }
+  };
+
+  const handleToDateChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setToDate('2020-01-01');
+    } else {
+      setToDate(val);
+    }
+  };
   const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'purchases' | 'expiry'>('sales');
   const [stats, setStats] = useState({ totalSales: 0, totalPurchases: 0, profitMargin: 0, itemsSold: 0 });
   const [records, setRecords] = useState<any[]>([]);
@@ -110,9 +150,11 @@ const Reports = () => {
             <span>From</span>
             <input
               type="date"
+              min="2020-01-01"
+              max={getTodayString()}
               className="bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onChange={(e) => handleFromDateChange(e.target.value)}
               aria-label="From Date"
             />
           </div>
@@ -120,11 +162,23 @@ const Reports = () => {
             <span>To</span>
             <input
               type="date"
-              className="bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
+              min="2020-01-01"
+              max={getTodayString()}
+              disabled={!manualToDate}
+              className="bg-bg3 border border-glass-border rounded-lg px-2 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none disabled:opacity-50"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              onChange={(e) => handleToDateChange(e.target.value)}
               aria-label="To Date"
             />
+            <label className="text-[10px] text-muted flex items-center gap-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={manualToDate}
+                onChange={e => setManualToDate(e.target.checked)}
+                className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg3"
+              />
+              Edit
+            </label>
           </div>
           <button
             onClick={fetchReportData}

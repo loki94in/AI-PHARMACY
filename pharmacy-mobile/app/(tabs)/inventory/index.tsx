@@ -22,9 +22,9 @@ export default function InventoryScreen() {
   const [editReason, setEditReason] = useState('');
   const [updating, setUpdating] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (query = '') => {
     try {
-      const data = await getInventory();
+      const data = await getInventory(query);
       setItems(data);
     } catch (e) {
       console.warn('Inventory fetch error:', e);
@@ -35,19 +35,21 @@ export default function InventoryScreen() {
   }, []);
 
   useEffect(() => {
-    fetchData();
     isAdminMode().then(setIsAdmin);
-  }, [fetchData]);
+  }, []);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return items;
-    const q = search.toLowerCase();
-    return items.filter(i =>
-      i.medicine_name?.toLowerCase().includes(q) ||
-      i.batch_no?.toLowerCase().includes(q) ||
-      i.rack_location?.toLowerCase().includes(q)
-    );
-  }, [items, search]);
+  // Debounced search fetch
+  useEffect(() => {
+    if (search.trim()) {
+      setLoading(true);
+    }
+    const timer = setTimeout(() => {
+      fetchData(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search, fetchData]);
+
+  const filtered = items;
 
   const handlePeek = async (item: InventoryItem) => {
     setPeekName(item.medicine_name);

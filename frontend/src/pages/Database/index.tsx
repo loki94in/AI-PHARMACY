@@ -26,7 +26,9 @@ const DatabasePage = () => {
   const [medicines, setMedicines] = useState<MedicineRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [appending, setAppending] = useState(false);
+  const [searchPending, setSearchPending] = useState(false);
   const [productNameInput, setProductNameInput] = useState('');
+
   const [productNameTerm, setProductNameTerm] = useState('');
   const [mrpInput, setMrpInput] = useState('');
   const [mrpTerm, setMrpTerm] = useState('');
@@ -324,6 +326,17 @@ const DatabasePage = () => {
 
   // Debounce search input
   useEffect(() => {
+    const hasChanges = 
+      productNameInput !== productNameTerm ||
+      mrpInput !== mrpTerm ||
+      apiInput !== apiTerm ||
+      packagingInput !== packagingTerm ||
+      distributorInput !== distributorTerm;
+
+    if (hasChanges) {
+      setSearchPending(true);
+    }
+
     const timer = setTimeout(() => {
       setPage(1); // Reset to page 1 on new search
       setProductNameTerm(productNameInput);
@@ -331,9 +344,10 @@ const DatabasePage = () => {
       setApiTerm(apiInput);
       setPackagingTerm(packagingInput);
       setDistributorTerm(distributorInput);
+      setSearchPending(false);
     }, 500);
     return () => clearTimeout(timer);
-  }, [productNameInput, mrpInput, apiInput, packagingInput, distributorInput]);
+  }, [productNameInput, mrpInput, apiInput, packagingInput, distributorInput, productNameTerm, mrpTerm, apiTerm, packagingTerm, distributorTerm]);
 
   return (
     <div className="h-full flex flex-col fade-in relative gap-2">
@@ -413,6 +427,14 @@ const DatabasePage = () => {
 
         {/* Data Table */}
         <div className="flex-1 overflow-auto bg-bg2 relative">
+          {/* Slim progress bar during sync/load */}
+          <div className="relative shrink-0">
+            {(loading || searchPending || appending) && (
+              <div className="h-0.5 w-full bg-sky-500/20 overflow-hidden absolute top-0 left-0 z-50">
+                <div className="h-full bg-sky-500 animate-pulse w-full" style={{ animationDuration: '1s' }} />
+              </div>
+            )}
+          </div>
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-bg/95 backdrop-blur z-10 shadow-md">
               <tr>

@@ -24,6 +24,23 @@ interface ExpiryItem {
   rack_location?: string;
 }
 
+const getTodayString = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const Expiry = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ExpiryItem[]>([]);
@@ -36,11 +53,34 @@ const Expiry = () => {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   
   // Custom Filters
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(getNDaysAgoString(15));
+  const [dateTo, setDateTo] = useState(getTodayString());
+  const [manualToDate, setManualToDate] = useState(false);
   const [minQty, setMinQty] = useState('');
   const [maxQty, setMaxQty] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setDateTo(getTodayString());
+    }
+  }, [manualToDate]);
+
+  const handleDateFromChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateFrom('2020-01-01');
+    } else {
+      setDateFrom(val);
+    }
+  };
+
+  const handleDateToChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateTo('2020-01-01');
+    } else {
+      setDateTo(val);
+    }
+  };
   
 
 
@@ -372,7 +412,9 @@ const Expiry = () => {
                   <input
                     type="date"
                     value={dateFrom}
-                    onChange={e => setDateFrom(e.target.value)}
+                    min="2020-01-01"
+                    max={getTodayString()}
+                    onChange={e => handleDateFromChange(e.target.value)}
                     className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50"
                   />
                 </div>
@@ -381,9 +423,21 @@ const Expiry = () => {
                   <input
                     type="date"
                     value={dateTo}
-                    onChange={e => setDateTo(e.target.value)}
-                    className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50"
+                    min="2020-01-01"
+                    max={getTodayString()}
+                    disabled={!manualToDate}
+                    onChange={e => handleDateToChange(e.target.value)}
+                    className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 disabled:opacity-50"
                   />
+                  <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={manualToDate}
+                      onChange={e => setManualToDate(e.target.checked)}
+                      className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg"
+                    />
+                    <span>Edit</span>
+                  </label>
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-xs font-semibold text-muted">Qty</label>

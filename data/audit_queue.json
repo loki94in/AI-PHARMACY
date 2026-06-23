@@ -1,110 +1,29 @@
 [
   {
-    "id": "audit_1782107197051",
-    "imagePath": "data\\audit_images\\audit_1782107197051.jpg",
+    "id": "audit_1782196800686",
+    "imagePath": "data\\audit_images\\audit_1782196800686.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-22T05:46:37.109Z"
+    "createdAt": "2026-06-23T06:40:00.785Z"
   },
   {
-    "id": "audit_1782108898713",
-    "imagePath": "data\\audit_images\\audit_1782108898713.jpg",
+    "id": "audit_1782196977711",
+    "imagePath": "data\\audit_images\\audit_1782196977711.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-22T06:14:58.725Z"
+    "createdAt": "2026-06-23T06:42:57.756Z"
   },
   {
-    "id": "audit_1782110165804",
-    "imagePath": "data\\audit_images\\audit_1782110165804.jpg",
+    "id": "audit_1782197103877",
+    "imagePath": "data\\audit_images\\audit_1782197103877.jpg",
     "rawOcrText": "",
     "cloudSuggestedText": "",
     "cloudDetails": null,
     "status": "pending_human_review",
-    "createdAt": "2026-06-22T06:36:05.830Z"
-  },
-  {
-    "id": "audit_1782113171489",
-    "imagePath": "data\\audit_images\\audit_1782113171489.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-22T07:26:11.501Z"
-  },
-  {
-    "id": "audit_1782122498732",
-    "imagePath": "data\\audit_images\\audit_1782122498732.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-22T10:01:38.756Z"
-  },
-  {
-    "id": "audit_1782149593348",
-    "imagePath": "data\\audit_images\\audit_1782149593348.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-22T17:33:13.377Z"
-  },
-  {
-    "id": "audit_1782150040354",
-    "imagePath": "data\\audit_images\\audit_1782150040354.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-22T17:40:40.372Z"
-  },
-  {
-    "id": "audit_1782150107750",
-    "imagePath": "data\\audit_images\\audit_1782150107750.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-22T17:41:47.801Z"
-  },
-  {
-    "id": "audit_1782150159635",
-    "imagePath": "data\\audit_images\\audit_1782150159635.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-22T17:42:39.659Z"
-  },
-  {
-    "id": "audit_1782185916280",
-    "imagePath": "data\\audit_images\\audit_1782185916280.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-23T03:38:36.323Z"
-  },
-  {
-    "id": "audit_1782187105230",
-    "imagePath": "data\\audit_images\\audit_1782187105230.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-23T03:58:25.253Z"
-  },
-  {
-    "id": "audit_1782187210110",
-    "imagePath": "data\\audit_images\\audit_1782187210110.jpg",
-    "rawOcrText": "",
-    "cloudSuggestedText": "",
-    "cloudDetails": null,
-    "status": "pending_human_review",
-    "createdAt": "2026-06-23T04:00:10.244Z"
+    "createdAt": "2026-06-23T06:45:03.902Z"
   }
 ]

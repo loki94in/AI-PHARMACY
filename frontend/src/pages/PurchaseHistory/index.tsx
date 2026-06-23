@@ -19,17 +19,57 @@ interface PurchaseTransaction {
   original_amount?: number;
 }
 
+const getTodayString = () => {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const PurchaseHistory = () => {
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<PurchaseTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [dateRange, setDateRange] = useState({ start: getNDaysAgoString(15), end: getTodayString() });
+  const [manualToDate, setManualToDate] = useState(false);
   const [statusFilter, setStatusFilter] = useState('All');
   const [supplierFilter, setSupplierFilter] = useState('All');
   const [productFilter, setProductFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setDateRange(prev => ({ ...prev, end: getTodayString() }));
+    }
+  }, [manualToDate]);
+
+  const handleDateFromChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateRange(prev => ({ ...prev, start: '2020-01-01' }));
+    } else {
+      setDateRange(prev => ({ ...prev, start: val }));
+    }
+  };
+
+  const handleDateToChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateRange(prev => ({ ...prev, end: '2020-01-01' }));
+    } else {
+      setDateRange(prev => ({ ...prev, end: val }));
+    }
+  };
 
   // Reconciliation States
   const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>('history');
@@ -863,26 +903,42 @@ const PurchaseHistory = () => {
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-gray-400 text-sm">Date Range</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-gray-400 text-sm">Date Range</label>
+                  <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={manualToDate}
+                      onChange={e => setManualToDate(e.target.checked)}
+                      className="rounded border-glass-border text-primary focus:ring-primary/20 bg-black/20"
+                    />
+                    Edit
+                  </label>
+                </div>
                 <div className="flex items-center gap-2 bg-black/40 border border-glass-border rounded-xl p-2.5">
                   <input
                     type="date"
                     value={dateRange.start}
-                    onChange={(e) => setDateRange(prev => ({...prev, start: e.target.value}))}
+                    min="2020-01-01"
+                    max={getTodayString()}
+                    onChange={(e) => handleDateFromChange(e.target.value)}
                     className="w-full bg-transparent text-white text-sm focus:outline-none"
                   />
                   <span className="text-gray-500">to</span>
                   <input
                     type="date"
                     value={dateRange.end}
-                    onChange={(e) => setDateRange(prev => ({...prev, end: e.target.value}))}
-                    className="w-full bg-transparent text-white text-sm focus:outline-none"
+                    min="2020-01-01"
+                    max={getTodayString()}
+                    disabled={!manualToDate}
+                    onChange={(e) => handleDateToChange(e.target.value)}
+                    className="w-full bg-transparent text-white text-sm focus:outline-none disabled:opacity-50"
                   />
                 </div>
               </div>
 
               <button 
-                onClick={() => { setSupplierFilter('All'); setDateRange({start: '', end: ''}); }}
+                onClick={() => { setSupplierFilter('All'); setDateRange({start: getNDaysAgoString(15), end: getTodayString()}); setManualToDate(false); }}
                 className="w-full mt-2 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-semibold transition-colors border border-white/10"
               >
                 Clear Filters
@@ -897,7 +953,7 @@ const PurchaseHistory = () => {
             >
               <Filter size={18} />
               Filter
-              {(supplierFilter !== 'All' || dateRange.start || dateRange.end) && (
+              {(supplierFilter !== 'All' || dateRange.start !== getNDaysAgoString(15) || dateRange.end !== getTodayString()) && (
                 <span className="w-2 h-2 rounded-full bg-primary absolute top-0 right-0 animate-pulse"></span>
               )}
             </button>

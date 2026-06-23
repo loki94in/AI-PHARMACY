@@ -60,6 +60,8 @@ export async function ensureSchema(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines (name);
     CREATE INDEX IF NOT EXISTS idx_medicines_api_ref ON medicines (api_reference);
     CREATE INDEX IF NOT EXISTS idx_catalog_jobs_status ON catalog_jobs (status);
+    CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases (date);
+
 
     -- Reference dataset for composition auto-enrichment
     CREATE TABLE IF NOT EXISTS medicine_reference (
@@ -440,6 +442,8 @@ export async function ensureSchema(dbPath: string) {
       FOREIGN KEY(purchase_id) REFERENCES purchases(id),
       FOREIGN KEY(medicine_id) REFERENCES medicines(id)
     );
+    CREATE INDEX IF NOT EXISTS idx_purchase_items_medicine_id ON purchase_items (medicine_id);
+    CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase_id ON purchase_items (purchase_id);
 
     -- Migration: Return line items
     CREATE TABLE IF NOT EXISTS return_items (

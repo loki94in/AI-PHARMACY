@@ -76,6 +76,23 @@ interface SelectedDetails {
   }>;
 }
 
+const getTodayString = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const InvestigationCenter = () => {
   const [filters, setFilters] = useState<SearchFilters>({
     q: '',
@@ -85,10 +102,34 @@ const InvestigationCenter = () => {
     purchaseBillNo: '',
     batchNo: '',
     distributor: '',
-    dateFrom: '',
-    dateTo: '',
+    dateFrom: getNDaysAgoString(15),
+    dateTo: getTodayString(),
     type: 'All'
   });
+
+  const [manualToDate, setManualToDate] = useState(false);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setFilters(prev => ({ ...prev, dateTo: getTodayString() }));
+    }
+  }, [manualToDate]);
+
+  const handleDateFromChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setFilters(prev => ({ ...prev, dateFrom: '2020-01-01' }));
+    } else {
+      setFilters(prev => ({ ...prev, dateFrom: val }));
+    }
+  };
+
+  const handleDateToChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setFilters(prev => ({ ...prev, dateTo: '2020-01-01' }));
+    } else {
+      setFilters(prev => ({ ...prev, dateTo: val }));
+    }
+  };
 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -165,10 +206,11 @@ const InvestigationCenter = () => {
       purchaseBillNo: '',
       batchNo: '',
       distributor: '',
-      dateFrom: '',
-      dateTo: '',
+      dateFrom: getNDaysAgoString(15),
+      dateTo: getTodayString(),
       type: 'All'
     });
+    setManualToDate(false);
     setSearchResults([]);
   };
 
@@ -742,7 +784,9 @@ const InvestigationCenter = () => {
                   <input 
                     type="date"
                     value={filters.dateFrom}
-                    onChange={e => handleFilterChange('dateFrom', e.target.value)}
+                    min="2020-01-01"
+                    max={getTodayString()}
+                    onChange={e => handleDateFromChange(e.target.value)}
                     className="w-full bg-bg3 border border-glass-border rounded-lg pl-7 pr-1.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary/50"
                   />
                 </div>
@@ -750,14 +794,28 @@ const InvestigationCenter = () => {
 
               {/* Date To */}
               <div className="flex flex-col gap-1 w-28 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Date To</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-muted uppercase">Date To</label>
+                  <label className="text-[9px] text-muted flex items-center gap-0.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={manualToDate}
+                      onChange={e => setManualToDate(e.target.checked)}
+                      className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg w-2.5 h-2.5"
+                    />
+                    <span>Edit</span>
+                  </label>
+                </div>
                 <div className="relative">
                   <Calendar className="absolute left-2 top-2.5 text-muted" size={13} />
                   <input 
                     type="date"
                     value={filters.dateTo}
-                    onChange={e => handleFilterChange('dateTo', e.target.value)}
-                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-7 pr-1.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary/50"
+                    min="2020-01-01"
+                    max={getTodayString()}
+                    disabled={!manualToDate}
+                    onChange={e => handleDateToChange(e.target.value)}
+                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-7 pr-1.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary/50 disabled:opacity-50"
                   />
                 </div>
               </div>

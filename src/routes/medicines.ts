@@ -19,24 +19,22 @@ router.get('/medicines', async (req, res) => {
     const db = await dbManager.getConnection();
     
     let query = `
-      SELECT medicines.*, 
-        (SELECT pi.cost_price 
-         FROM purchase_items pi 
-         JOIN purchases p ON pi.purchase_id = p.id 
-         WHERE pi.medicine_id = medicines.id 
-         ORDER BY p.date DESC LIMIT 1) as last_purchase_rate,
-        (SELECT pi.mrp 
-         FROM purchase_items pi 
-         JOIN purchases p ON pi.purchase_id = p.id 
-         WHERE pi.medicine_id = medicines.id 
-         ORDER BY p.date DESC LIMIT 1) as last_purchase_mrp,
-        (SELECT d.name 
-         FROM purchase_items pi 
-         JOIN purchases p ON pi.purchase_id = p.id 
-         JOIN distributors d ON p.distributor_id = d.id 
-         WHERE pi.medicine_id = medicines.id 
-         ORDER BY p.date DESC LIMIT 1) as last_distributor_name
+      WITH latest_purchase AS (
+        SELECT pi.medicine_id,
+               pi.cost_price,
+               pi.mrp,
+               d.name AS last_distributor_name,
+               ROW_NUMBER() OVER (PARTITION BY pi.medicine_id ORDER BY p.date DESC) AS rn
+        FROM purchase_items pi
+        JOIN purchases p ON pi.purchase_id = p.id
+        LEFT JOIN distributors d ON p.distributor_id = d.id
+      )
+      SELECT medicines.*,
+             lp.cost_price AS last_purchase_rate,
+             lp.mrp AS last_purchase_mrp,
+             lp.last_distributor_name
       FROM medicines
+      LEFT JOIN latest_purchase lp ON lp.medicine_id = medicines.id AND lp.rn = 1
     `;
     let countQuery = 'SELECT COUNT(*) as total FROM medicines';
     const params: any[] = [];

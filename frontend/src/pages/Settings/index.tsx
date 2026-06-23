@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   X,
   QrCode,
+  History,
 } from 'lucide-react';
 import { toastEvent } from '../../services/events';
 import { MobileConnectionModal } from '../../components/MobileConnectionModal';

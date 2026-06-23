@@ -99,6 +99,23 @@ const WhatsAppMedia = ({
   );
 };
 
+const getTodayString = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const CRM = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,11 +123,34 @@ const CRM = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(getNDaysAgoString(15));
+  const [dateTo, setDateTo] = useState(getTodayString());
+  const [manualToDate, setManualToDate] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setDateTo(getTodayString());
+    }
+  }, [manualToDate]);
+
+  const handleDateFromChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateFrom('2020-01-01');
+    } else {
+      setDateFrom(val);
+    }
+  };
+
+  const handleDateToChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setDateTo('2020-01-01');
+    } else {
+      setDateTo(val);
+    }
+  };
 
 
   // WhatsApp states
@@ -955,16 +995,42 @@ const CRM = () => {
                   className="premium-input pl-8 pr-3 py-1.5 text-xs w-full"
                 />
               </div>
-              <div className="flex items-center justify-between gap-1 text-[9px] text-muted">
-                <div className="flex items-center gap-1">
-                  <span>From:</span>
-                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                    className="px-1 py-0.5 bg-bg2 border border-glass-border rounded text-[9px] text-text focus:outline-none" />
+              <div className="flex flex-col gap-1.5 text-[9px] text-muted">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1">
+                    <span>From:</span>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      min="2020-01-01"
+                      max={getTodayString()}
+                      onChange={e => handleDateFromChange(e.target.value)}
+                      className="px-1 py-0.5 bg-bg2 border border-glass-border rounded text-[9px] text-text focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span>To:</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      min="2020-01-01"
+                      max={getTodayString()}
+                      disabled={!manualToDate}
+                      onChange={e => handleDateToChange(e.target.value)}
+                      className="px-1 py-0.5 bg-bg2 border border-glass-border rounded text-[9px] text-text focus:outline-none disabled:opacity-50"
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span>To:</span>
-                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                    className="px-1 py-0.5 bg-bg2 border border-glass-border rounded text-[9px] text-text focus:outline-none" />
+                <div className="flex justify-end">
+                  <label className="flex items-center gap-1 cursor-pointer select-none text-[8px]">
+                    <input
+                      type="checkbox"
+                      checked={manualToDate}
+                      onChange={e => setManualToDate(e.target.checked)}
+                      className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg w-2.5 h-2.5"
+                    />
+                    <span>Edit To Date</span>
+                  </label>
                 </div>
               </div>
             </div>

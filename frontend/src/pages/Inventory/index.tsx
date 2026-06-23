@@ -64,8 +64,7 @@ const Inventory = () => {
     api.getInventory({ search: searchQuery })
       .then(data => {
         const fetchedItems = data && (data as any).data ? (data as any).data : data;
-        const hasFilters = !!searchQuery;
-        setItems(Array.isArray(fetchedItems) ? (hasFilters ? fetchedItems : fetchedItems.slice(0, 50)) : []);
+        setItems(Array.isArray(fetchedItems) ? fetchedItems : []);
         setLoading(false);
       })
       .catch(err => {

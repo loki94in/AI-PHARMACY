@@ -6,7 +6,7 @@ jest.unstable_mockModule('node-telegram-bot-api', () => {
     onText: jest.fn(),
     on: jest.fn(),
     isPolling: jest.fn().mockReturnValue(true),
-    stopPolling: jest.fn().mockResolvedValue(undefined),
+    stopPolling: jest.fn(() => Promise.resolve()),
   };
   const MockBotConstructor = jest.fn(() => mockBotInstance);
   return {

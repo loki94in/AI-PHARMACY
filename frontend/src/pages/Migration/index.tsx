@@ -7,6 +7,23 @@ import {
 } from 'lucide-react';
 import { api, apiClient } from '../../services/api';
 
+const getTodayString = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getNDaysAgoString = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type WizardStep = 1 | 2 | 3 | 4;
 type DataType = 'inventory' | 'purchases' | 'sales' | 'customers' | 'returns' | 'combined' | 'unknown';
@@ -442,9 +459,33 @@ const Migration = () => {
     rate: '',
     manufacturer: '',
     marketer: '',
-    startDate: '',
-    endDate: ''
+    startDate: getNDaysAgoString(15),
+    endDate: getTodayString()
   });
+
+  const [manualToDate, setManualToDate] = useState(false);
+
+  useEffect(() => {
+    if (!manualToDate) {
+      setAdvFilters(prev => ({ ...prev, endDate: getTodayString() }));
+    }
+  }, [manualToDate]);
+
+  const handleDateFromChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setAdvFilters(prev => ({ ...prev, startDate: '2020-01-01' }));
+    } else {
+      setAdvFilters(prev => ({ ...prev, startDate: val }));
+    }
+  };
+
+  const handleDateToChange = (val: string) => {
+    if (val && val < '2020-01-01') {
+      setAdvFilters(prev => ({ ...prev, endDate: '2020-01-01' }));
+    } else {
+      setAdvFilters(prev => ({ ...prev, endDate: val }));
+    }
+  };
 
   // Final Ingestion Summary Report
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
@@ -2372,22 +2413,25 @@ const Migration = () => {
                       </button>
                       
                       <button
-                        onClick={() => setAdvFilters({
-                          medicineName: '',
-                          batch: '',
-                          expiry: '',
-                          distributor: '',
-                          invoiceNumber: '',
-                          hsnCode: '',
-                          category: '',
-                          tax: '',
-                          mrp: '',
-                          rate: '',
-                          manufacturer: '',
-                          marketer: '',
-                          startDate: '',
-                          endDate: ''
-                        })}
+                        onClick={() => {
+                          setAdvFilters({
+                            medicineName: '',
+                            batch: '',
+                            expiry: '',
+                            distributor: '',
+                            invoiceNumber: '',
+                            hsnCode: '',
+                            category: '',
+                            tax: '',
+                            mrp: '',
+                            rate: '',
+                            manufacturer: '',
+                            marketer: '',
+                            startDate: getNDaysAgoString(15),
+                            endDate: getTodayString()
+                          });
+                          setManualToDate(false);
+                        }}
                         className="premium-btn bg-bg3 border border-glass-border text-muted hover:text-text text-xs font-bold py-2 px-3.5 shrink-0"
                       >
                         Reset
@@ -2520,20 +2564,36 @@ const Migration = () => {
                         />
                       </div>
                       <div className="flex flex-col gap-1 sm:col-span-2">
-                        <label className="text-[10px] font-bold text-muted uppercase">Date Range</label>
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold text-muted uppercase">Date Range</label>
+                          <label className="text-[9px] text-muted flex items-center gap-0.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={manualToDate}
+                              onChange={e => setManualToDate(e.target.checked)}
+                              className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg w-2.5 h-2.5"
+                            />
+                            <span>Edit To Date</span>
+                          </label>
+                        </div>
                         <div className="flex gap-2">
                           <input
                             type="date"
                             value={advFilters.startDate}
-                            onChange={(e) => setAdvFilters({ ...advFilters, startDate: e.target.value })}
+                            min="2020-01-01"
+                            max={getTodayString()}
+                            onChange={(e) => handleDateFromChange(e.target.value)}
                             className="w-full bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
                           />
                           <span className="text-muted text-xs flex items-center">to</span>
                           <input
                             type="date"
                             value={advFilters.endDate}
-                            onChange={(e) => setAdvFilters({ ...advFilters, endDate: e.target.value })}
-                            className="w-full bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none"
+                            min="2020-01-01"
+                            max={getTodayString()}
+                            disabled={!manualToDate}
+                            onChange={(e) => handleDateToChange(e.target.value)}
+                            className="w-full bg-bg3 border border-glass-border rounded-lg p-2 text-xs text-text focus:border-primary outline-none disabled:opacity-50"
                           />
                         </div>
                       </div>
