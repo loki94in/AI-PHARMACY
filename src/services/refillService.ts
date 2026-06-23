@@ -68,6 +68,88 @@ export async function triggerPendingRefillsForMedicine(db: Database, medicineId:
   }
 }
 
+export async function sendConsolidatedSpecialOrderNotification(db: Database, phone: string): Promise<void> {
+  if (!phone) return;
+  const cleanPhone = phone.replace(/\D/g, '');
+  const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+  // Check if there are any remaining Pending or Ordered special orders for this customer (same phone number)
+  const activeCountRow = await db.get(
+    `SELECT COUNT(*) as cnt FROM special_orders 
+     WHERE phone = ? AND (status = 'Pending' OR status = 'Ordered')`,
+    [phone]
+  );
+  const activeCount = activeCountRow ? (activeCountRow.cnt || 0) : 0;
+
+  // If there are still pending or ordered items, wait until all are ready before sending notification
+  if (activeCount > 0) return;
+
+  // Fetch all 'Ready' but not notified special orders for this customer
+  const readyOrders = await db.all(
+    `SELECT id, product, qty, requester FROM special_orders 
+     WHERE phone = ? AND status = 'Ready' AND notified = 0`,
+    [phone]
+  );
+
+  if (readyOrders.length === 0) return;
+
+  const requester = readyOrders[0].requester || 'Customer';
+  
+  let medicalName = 'XYZ MEDICAL';
+  const nameRow = await db.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
+  if (nameRow && nameRow.value) {
+    medicalName = nameRow.value;
+  }
+
+  // Format the consolidated list of items
+  let productList = '';
+  if (readyOrders.length === 1) {
+    productList = `${readyOrders[0].product} (Qty: ${readyOrders[0].qty})`;
+  } else {
+    productList = readyOrders.map((o, idx) => `${idx + 1}. ${o.product} (Qty: ${o.qty})`).join('\n');
+  }
+
+  const msg = `Hi ${requester},\n\nAll of your requested medicines are now READY for collection at ${medicalName}:\n\n${productList}\n\nPlease visit us to collect them.`;
+
+  try {
+    await sendMessage(formattedPhone, undefined, msg);
+
+    // Update notified statuses to 1
+    for (const order of readyOrders) {
+      await db.run("UPDATE special_orders SET notified = 1 WHERE id = ?", [order.id]);
+      
+      // Log notification in automation_notifications
+      try {
+        await db.run(
+          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          ['order_ready', requester, formattedPhone, msg, 'sent', String(order.id)]
+        );
+      } catch (logErr) {
+        console.error('Failed to log ready order notification to DB:', logErr);
+      }
+    }
+  } catch (wsError: any) {
+    console.error(`Failed to send consolidated WhatsApp notification to ${requester}:`, wsError);
+    const errMsg = wsError.message || 'Unknown error';
+    try {
+      await db.run(
+        "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
+        'AUTOMATION_ALERT',
+        `❌ WhatsApp Alert Failure: Failed to send consolidated notification to ${requester} (${phone}). Error: ${errMsg}`
+      );
+      
+      for (const order of readyOrders) {
+        await db.run(
+          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['order_ready', requester, formattedPhone, msg, 'failed', errMsg, String(order.id)]
+        );
+      }
+    } catch (_) {}
+  }
+}
+
 export async function triggerPendingSpecialOrdersForMedicineName(db: Database, medicineName: string): Promise<void> {
   if (!medicineName) return;
   const pendingOrders = await db.all(
@@ -75,30 +157,18 @@ export async function triggerPendingSpecialOrdersForMedicineName(db: Database, m
     [medicineName.trim()]
   );
 
+  const uniquePhones = new Set<string>();
+
   for (const order of pendingOrders) {
-    await db.run("UPDATE special_orders SET status = 'Ready', notified = 1 WHERE id = ?", [order.id]);
-
+    await db.run("UPDATE special_orders SET status = 'Ready' WHERE id = ?", [order.id]);
     if (order.phone) {
-      try {
-        const cleanPhone = order.phone.replace(/\D/g, '');
-        const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-        
-        let medicalName = 'XYZ MEDICAL';
-        const nameRow = await db.get("SELECT value FROM app_settings WHERE key = 'medical_name'");
-        if (nameRow && nameRow.value) {
-          medicalName = nameRow.value;
-        }
-
-        const msg = `Hi ${order.requester || 'Customer'}, your special order for ${order.product} (Qty: ${order.qty}) is now READY for collection at ${medicalName}. Please visit us to collect it.`;
-        await sendMessage(formattedPhone, undefined, msg);
-      } catch (wsError: any) {
-        console.error(`Failed to send special order arrival WhatsApp to ${order.requester}:`, wsError);
-        await db.run(
-          "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
-          ['AUTOMATION_ALERT', `❌ WhatsApp Alert Failure: Failed to send special order ready notification to ${order.requester} (${order.phone}). Error: ${wsError.message || 'Unknown error'}`]
-        );
-      }
+      uniquePhones.add(order.phone);
     }
+  }
+
+  // Trigger consolidated alerts for each affected customer
+  for (const phone of uniquePhones) {
+    await sendConsolidatedSpecialOrderNotification(db, phone);
   }
 }
 

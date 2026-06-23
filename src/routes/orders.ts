@@ -270,35 +270,13 @@ router.put('/:id', async (req, res) => {
       [newStatus, newPriority, newQty, newProduct, newRequester, newPhone, newDistributor, newRate, newMrp, newMapped, newAdvancePayment, id]
     );
 
-    // If status changes to 'Ready' and the customer wasn't notified, auto send WhatsApp
+    // If status changes to 'Ready' and the customer wasn't notified, auto send consolidated WhatsApp
     if (newStatus === 'Ready' && existing.status !== 'Ready' && newPhone) {
-      const cleanPhone = newPhone.replace(/\D/g, '');
-      const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-      const msg = `Hi ${newRequester || 'Customer'}, your special order for ${newProduct} (Qty: ${newQty}) is now READY for collection. Please visit us to collect it.`;
-      
       try {
-        await sendMessage(formattedPhone, undefined, msg);
-        await db.run('UPDATE special_orders SET notified = 1 WHERE id = ?', [id]);
-        
-        await db.run(
-          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          ['order_ready', newRequester || 'Customer', formattedPhone, msg, 'sent', String(id)]
-        );
-      } catch (wsError: any) {
-        console.error(`Failed to send status update WhatsApp to ${newRequester}:`, wsError);
-        const errMsg = wsError.message || 'Unknown error';
-        await db.run(
-          "INSERT INTO action_logs (action_type, description) VALUES (?, ?)",
-          'AUTOMATION_ALERT',
-          `❌ WhatsApp Alert Failure: Failed to send "Ready" notification to ${newRequester} (${newPhone}). Error: ${errMsg}`
-        );
-        
-        await db.run(
-          `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ['order_ready', newRequester || 'Customer', formattedPhone, msg, 'failed', errMsg, String(id)]
-        );
+        const { sendConsolidatedSpecialOrderNotification } = await import('../services/refillService.js');
+        await sendConsolidatedSpecialOrderNotification(db, newPhone);
+      } catch (err) {
+        console.error(`Failed to send consolidated notification from status change handler:`, err);
       }
     }
 
