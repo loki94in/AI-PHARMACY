@@ -776,6 +776,15 @@ export async function ensureSchema(dbPath: string) {
       FOREIGN KEY(invoice_id) REFERENCES b2b_invoices(id),
       FOREIGN KEY(medicine_id) REFERENCES medicines(id)
     );
+
+    -- Pharmarack cart snapshots for auto-notifier state diffing
+    CREATE TABLE IF NOT EXISTS pharmarack_cart_snapshots (
+      store_id INTEGER PRIMARY KEY,
+      store_name TEXT,
+      items_json TEXT,
+      delivery_persons_json TEXT,
+      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Insert default settings if they don't exist

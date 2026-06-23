@@ -328,6 +328,130 @@ export class NotificationService {
       return false;
     }
   }
+
+  /**
+   * Send WhatsApp notification to distributor and delivery boy about a cart order.
+   * This is triggered manually or automatically when cart is placed/cleared.
+   */
+  async notifyAboutCartOrder(
+    storeName: string,
+    storeId: number,
+    deliveryPersons: { name: string; code: string }[],
+    items: any[]
+  ): Promise<boolean> {
+    if (!storeName || !items || items.length === 0) return false;
+
+    let db = null;
+    try {
+      db = await dbManager.getConnection();
+
+      // 1. Retrieve distributor phone number
+      const distributor = await db.get(
+        "SELECT phone FROM distributors WHERE name LIKE ? OR name = ?",
+        [`%${storeName}%`, storeName]
+      );
+
+      let rawPhone = distributor?.phone || '';
+      if (!rawPhone.trim()) {
+        console.warn(`[CartOrderNotif] Distributor ${storeName} has no phone number in database.`);
+      }
+
+      // 2. Format medicines list
+      const medicinesText = items
+        .map(item => `- ${item.productName || item.name || 'Unknown Product'} × ${item.qty || item.Quantity || 1}`)
+        .join('\n');
+
+      // 3. Resolve delivery boy(s) contact details from DB using their names
+      let deliveryBoysText = '';
+      const resolvedDeliveryBoys: { name: string; phone: string }[] = [];
+
+      if (deliveryPersons && deliveryPersons.length > 0) {
+        for (const boy of deliveryPersons) {
+          if (!boy.name) continue;
+          const dbBoy = await db.get(
+            "SELECT name, whatsapp_number FROM delivery_boys WHERE (name LIKE ? OR name = ?) AND is_active = 1",
+            [`%${boy.name}%`, boy.name]
+          );
+
+          const boyPhoneRaw = dbBoy?.whatsapp_number || '';
+          const boyPhones = boyPhoneRaw
+            .split(/[\s,;]+/)
+            .map((num: string) => num.replace(/\D/g, ''))
+            .filter((num: string) => num.length >= 10)
+            .map((num: string) => num.length === 10 ? `91${num}` : num);
+
+          const boyPhonesUnique: string[] = Array.from(new Set(boyPhones));
+          const phonesDisplay = boyPhonesUnique.join(', ') || 'No contact set';
+          deliveryBoysText += `${boy.name}\nMobile: ${phonesDisplay}\n\n`;
+
+          if (boyPhonesUnique.length > 0) {
+            resolvedDeliveryBoys.push({ name: boy.name, phone: boyPhonesUnique[0] });
+          }
+        }
+        deliveryBoysText = deliveryBoysText.trim();
+      }
+
+      if (!deliveryBoysText) {
+        deliveryBoysText = 'Not assigned yet';
+      }
+
+      // 4. Format message
+      const message = `Order Finalized (Pharmarack Cart)\n\nMedicines:\n${medicinesText}\n\nDelivery Boy:\n${deliveryBoysText}\n\nExpected Delivery:\nToday`;
+
+      // 5. Parse distributor numbers
+      const distPhones = rawPhone
+        .split(/[\s,;]+/)
+        .map((num: string) => num.replace(/\D/g, ''))
+        .filter((num: string) => num.length >= 10)
+        .map((num: string) => num.length === 10 ? `91${num}` : num);
+
+      const uniqueDistPhones: string[] = Array.from(new Set(distPhones));
+
+      let sentCount = 0;
+
+      // Send to distributor
+      if (uniqueDistPhones.length > 0) {
+        for (const phone of uniqueDistPhones) {
+          try {
+            await sendMessage(phone, undefined, message);
+            sentCount++;
+            await db.run(
+              `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              ['distributor_cart_order', storeName, phone, message, 'sent', `store_${storeId}`]
+            );
+          } catch (err: any) {
+            console.error(`[CartOrderNotif] Failed to notify distributor ${storeName} at ${phone}:`, err);
+            await db.run(
+              `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, error_message, reference_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              ['distributor_cart_order', storeName, phone, message, 'failed', err.message || 'Unknown error', `store_${storeId}`]
+            );
+          }
+        }
+      }
+
+      // Send to delivery boy(s)
+      for (const boy of resolvedDeliveryBoys) {
+        try {
+          await sendMessage(boy.phone, undefined, message);
+          sentCount++;
+          await db.run(
+            `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            ['delivery_boy_cart_order', boy.name, boy.phone, message, 'sent', `store_${storeId}`]
+          );
+        } catch (err: any) {
+          console.error(`[CartOrderNotif] Failed to notify delivery boy ${boy.name} at ${boy.phone}:`, err);
+        }
+      }
+
+      return sentCount > 0;
+    } catch (err) {
+      console.error('[CartOrderNotif] Error sending cart order notifications:', err);
+      return false;
+    }
+  }
 }
 
 // Singleton instance

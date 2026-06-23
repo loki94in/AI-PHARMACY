@@ -379,6 +379,8 @@ export const api = {
   }>) => 
     apiClient.post('/pharmarack/cart/add', { items }).then(res => res.data),
   getPharmarackCart: () => apiClient.get('/pharmarack/cart').then(res => res.data),
+  sendManualCartNotification: (data: { storeId: number; storeName: string; deliveryPersons: any[]; items: any[] }) =>
+    apiClient.post('/pharmarack/cart/notify-manual', data).then(res => res.data),
   getPharmarackDistributors: () => apiClient.get('/pharmarack/distributors').then(res => res.data),
   checkPharmarackSession: () => apiClient.get('/pharmarack/session-status').then(res => res.data),
   launchPharmarackLoginWindow: () => apiClient.post('/pharmarack/login-window').then(res => res.data),

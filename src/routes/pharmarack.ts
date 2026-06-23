@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import puppeteer from 'puppeteer-core';
 import { dbManager } from '../database/connection.js';
+import { notificationService } from '../services/notificationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -995,6 +996,65 @@ router.post('/cart/add', async (req, res) => {
   }
 });
 
+// Helper to verify if an order was placed on Pharmarack for a specific store today
+async function verifyOrderPlacedInPharmarack(storeId: number): Promise<boolean> {
+  try {
+    const today = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`; // YYYY-MM-DD
+    const payload = {
+      FromDate: todayStr,
+      ToDate: todayStr,
+      SkipCount: 0,
+      Count: 15
+    };
+    const response = await fetchPharmarack('https://pharmretail-api.pharmarack.com/order/api/v1/GetOrderList', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (response.ok) {
+      const data: any = await response.json();
+      let orders: any[] = [];
+      if (data) {
+        if (Array.isArray(data.data)) {
+          orders = data.data;
+        } else if (data.data && Array.isArray(data.data.Orders)) {
+          orders = data.data.Orders;
+        } else if (Array.isArray(data.Orders)) {
+          orders = data.Orders;
+        }
+      }
+      const matchingOrder = orders.find((order: any) => Number(order.StoreId) === storeId || Number(order.Storeid) === storeId);
+      if (matchingOrder) {
+        return true;
+      }
+    }
+  } catch (err: any) {
+    console.error('[Pharmarack Order Verify] Failed to verify order list:', err.message);
+  }
+  return false;
+}
+
+// Manual notification trigger
+router.post('/cart/notify-manual', async (req, res) => {
+  const { storeId, storeName, deliveryPersons, items } = req.body;
+  if (!storeName || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Missing distributor info or items list' });
+  }
+
+  try {
+    const success = await notificationService.notifyAboutCartOrder(storeName, Number(storeId), deliveryPersons || [], items);
+    if (success) {
+      res.json({ success: true, message: 'Notifications sent successfully via WhatsApp!' });
+    } else {
+      res.status(500).json({ error: 'Failed to send WhatsApp messages.' });
+    }
+  } catch (err: any) {
+    console.error('Manual notification route error:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
 // Fetch current Pharmarack cart
 router.get('/cart', async (req, res) => {
   try {
@@ -1053,6 +1113,60 @@ router.get('/cart', async (req, res) => {
     }));
 
     const totalItems = distributors.reduce((s: number, d: any) => s + d.items.length, 0);
+
+    // Auto-notification transition logic
+    try {
+      const db = await dbManager.getConnection();
+      
+      // 1. Get all stored snapshots
+      const snapshots = await db.all("SELECT store_id, store_name, items_json, delivery_persons_json FROM pharmarack_cart_snapshots");
+      const snapshotMap = new Map<number, any>();
+      snapshots.forEach(s => {
+        snapshotMap.set(s.store_id, {
+          storeName: s.store_name,
+          items: JSON.parse(s.items_json),
+          deliveryPersons: JSON.parse(s.delivery_persons_json)
+        });
+      });
+
+      // 2. Identify active stores in fresh cart
+      const activeStoreIds = new Set(distributors.map((d: any) => d.storeId));
+
+      // 3. For each snapshot that is NOT in the active stores, it was emptied. Check if ordered!
+      for (const [storeId, snap] of snapshotMap.entries()) {
+        if (!activeStoreIds.has(storeId) && snap.items.length > 0) {
+          console.log(`[AutoNotif] Detected empty cart transition for store ${storeId} (${snap.storeName})`);
+          
+          // Verify with Pharmarack Order List that order was actually placed
+          const isOrderPlaced = await verifyOrderPlacedInPharmarack(storeId);
+          if (isOrderPlaced) {
+            console.log(`[AutoNotif] Order placement verified for store ${storeId}. Triggering auto notifications...`);
+            await notificationService.notifyAboutCartOrder(snap.storeName, storeId, snap.deliveryPersons, snap.items);
+          } else {
+            console.log(`[AutoNotif] No order verified for store ${storeId}. Assuming manual cart clear/deletion. Skipping.`);
+          }
+
+          // Delete snapshot for this store as it is now empty
+          await db.run("DELETE FROM pharmarack_cart_snapshots WHERE store_id = ?", [storeId]);
+        }
+      }
+
+      // 4. Update snapshot database for currently active stores in the cart
+      for (const dist of distributors) {
+        if (dist.items.length > 0) {
+          await db.run(
+            `INSERT OR REPLACE INTO pharmarack_cart_snapshots (store_id, store_name, items_json, delivery_persons_json, last_updated)
+             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [dist.storeId, dist.storeName, JSON.stringify(dist.items), JSON.stringify(dist.deliveryPersons)]
+          );
+        } else {
+          // If empty in fresh cart, ensure it is deleted from snapshot
+          await db.run("DELETE FROM pharmarack_cart_snapshots WHERE store_id = ?", [dist.storeId]);
+        }
+      }
+    } catch (dbErr) {
+      console.error('[AutoNotif] Error running automatic cart transition checks:', dbErr);
+    }
 
     return res.json({ success: true, mode: 'Live', distributors, totalItems });
   } catch (err: any) {

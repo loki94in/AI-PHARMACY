@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock } from 'lucide-react';
+import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock, Send } from 'lucide-react';
 import { api } from '../../services/api';
 import { toastEvent } from '../../services/events';
 
@@ -36,6 +36,29 @@ export default function PharmarackCart() {
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
   const [priceHistoryCache, setPriceHistoryCache] = useState<Record<string, any[]>>({});
+  const [sendingNotifId, setSendingNotifId] = useState<number | null>(null);
+
+  const handleSendManualNotification = async (dist: Distributor) => {
+    setSendingNotifId(dist.storeId);
+    try {
+      const res = await api.sendManualCartNotification({
+        storeId: dist.storeId,
+        storeName: dist.storeName,
+        deliveryPersons: dist.deliveryPersons,
+        items: dist.items
+      });
+      if (res && res.success) {
+        toastEvent.trigger(res.message || 'Notification sent successfully!', 'success');
+      } else {
+        toastEvent.trigger(res?.error || 'Failed to send notifications.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Failed to send notifications:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to send notifications.', 'error');
+    } finally {
+      setSendingNotifId(null);
+    }
+  };
 
   const fetchPriceHistories = async (currDistributors: Distributor[]) => {
     const uniqueNames = Array.from(
@@ -313,6 +336,19 @@ export default function PharmarackCart() {
                   <span className="text-[10px] text-muted font-bold px-2 py-0.5 bg-bg/50 rounded-full border border-glass-border/30">
                     {dist.items.length} item{dist.items.length !== 1 ? 's' : ''}
                   </span>
+                  <button
+                    onClick={() => handleSendManualNotification(dist)}
+                    disabled={sendingNotifId === dist.storeId}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 disabled:opacity-50 text-[10px] font-bold transition-all active:scale-95 shadow-sm"
+                    title="Send WhatsApp alert to distributor & delivery boy"
+                  >
+                    {sendingNotifId === dist.storeId ? (
+                      <span className="w-2.5 h-2.5 border border-emerald-400/20 border-t-emerald-400 rounded-full animate-spin" />
+                    ) : (
+                      <Send size={10} />
+                    )}
+                    <span>Notify Order</span>
+                  </button>
                 </div>
               </div>
 
