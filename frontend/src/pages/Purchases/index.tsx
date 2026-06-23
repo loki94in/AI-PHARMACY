@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Edit, Camera, CheckCircle, Mail, Package, TrendingDown, X, Plus, BookOpen, AlertTriangle, ShieldAlert, Factory, RefreshCw } from 'lucide-react';
 import { api, apiClient } from '../../services/api';
@@ -663,7 +664,7 @@ const Purchases: React.FC = () => {
 
 
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     fetchDistributors();
     fetchPurchaseHistory();
   }, []);

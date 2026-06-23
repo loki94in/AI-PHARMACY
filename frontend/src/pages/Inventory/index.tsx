@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 import { PackageSearch, Filter, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Search, Edit, Save } from 'lucide-react';
 import { api, type InventoryItem } from '../../services/api';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
@@ -81,7 +82,7 @@ const Inventory = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, loadInventory]);
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     api.getOrders()
       .then(data => {
         if (Array.isArray(data)) {

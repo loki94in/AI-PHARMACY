@@ -347,7 +347,9 @@ export default function PharmarackCart() {
             <span>Open External</span>
           </a>
         </div>
-        {/* ── Main Area ── */}
+      </div>
+
+      {/* ── Main Area ── */}
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left Sidebar: Add Pending Order panel */}
         {!loading && !error && (

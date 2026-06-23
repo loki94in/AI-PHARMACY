@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 import { Users, UserPlus, Search, Trash2, Edit, X, Clock, ChevronRight, CheckCircle, MessageCircle, Send, RefreshCw, Mail, Smartphone, LogIn, LogOut, Paperclip, Smile, FileText, Download } from 'lucide-react';
 import { api } from '../../services/api';
 import { toastEvent } from '../../services/events';
@@ -240,7 +241,7 @@ const CRM = () => {
     }
   };
 
-  useEffect(() => { 
+  useDeferredEffect(() => { 
     fetchPatients(); 
     fetchWaStatus();
     const interval = setInterval(fetchWaStatus, 5000);

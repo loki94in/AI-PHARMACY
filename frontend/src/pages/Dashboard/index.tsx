@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 import { IndianRupee, PackageOpen, ListTodo, Server, ArrowUpRight, AlertTriangle, Clock, CheckCircle, Activity, MessageCircle, Mail, Send } from 'lucide-react';
 import { api } from '../../services/api';
 import type { DashboardStats } from '../../services/api';
@@ -9,7 +10,7 @@ const Dashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [dateStr, setDateStr] = useState('');
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     setDateStr(new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
     
     api.getDashboard()

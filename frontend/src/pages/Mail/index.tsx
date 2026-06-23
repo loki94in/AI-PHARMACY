@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Mail as MailIcon,
@@ -270,18 +271,20 @@ const Mail = () => {
   // After first visit the 2-minute periodic sync keeps data fresh in the background.
   useEffect(() => {
     loadLocalInbox();
+  }, [loadLocalInbox]);
 
-    // Only do an immediate IMAP sync on first visit (cold cache)
-    // On subsequent visits the page shows cached data instantly with no flicker
+  useDeferredEffect(() => {
+    // Only do an immediate IMAP sync on first visit (cold cache).
+    // On subsequent visits the page shows cached data instantly with no flicker.
     let syncDelay: ReturnType<typeof setTimeout> | undefined;
     if (cachedEmails.length === 0) {
       syncDelay = setTimeout(() => triggerSync(), 1500);
     }
 
-    // Periodic background refresh: re-read local DB every 10s (silent, no loading indicator)
+    // Periodic background refresh: re-read local DB every 10s (silent, no loading indicator).
     const refreshInterval = setInterval(() => silentRefreshLocal(), 10000);
 
-    // Periodic IMAP sync every 2 minutes
+    // Periodic IMAP sync every 2 minutes.
     const syncInterval = setInterval(() => triggerSync(), 120000);
 
     return () => {
@@ -289,7 +292,7 @@ const Mail = () => {
       clearInterval(refreshInterval);
       clearInterval(syncInterval);
     };
-  }, [loadLocalInbox, triggerSync, silentRefreshLocal]);
+  }, [triggerSync, silentRefreshLocal]);
 
   const handleManualRefresh = () => {
     loadLocalInbox();

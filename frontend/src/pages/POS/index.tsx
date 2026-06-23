@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Calendar, UserCheck, Edit, Loader2 } from 'lucide-react';
@@ -264,7 +265,7 @@ const POS = () => {
     return () => clearTimeout(delayDebounce);
   }, [rowSearchTerm, activeRowSearchIndex]);
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     api.getDoctors()
       .then(data => {
         if (Array.isArray(data)) {
@@ -346,7 +347,7 @@ const POS = () => {
       .catch(() => {});
   }, [patientName]);
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     api.getOrders()
       .then(data => {
         if (Array.isArray(data)) {

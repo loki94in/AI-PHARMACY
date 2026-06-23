@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { 
   Bell, 
   Plus, 
@@ -23,6 +23,7 @@ import {
 import { api } from '../../services/api';
 import type { Refill, AutomationNotification } from '../../services/api';
 import { toastEvent } from '../../services/events';
+import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 
 const AutomationCenter = () => {
   const [activeTab, setActiveTab] = useState<'reminders' | 'logs'>('reminders');
@@ -98,19 +99,19 @@ const AutomationCenter = () => {
     }
   }, [logsTypeFilter, logsStatusFilter, logsSearch, showToast]);
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     if (activeTab === 'reminders') {
       fetchRefills();
     }
   }, [activeTab, fetchRefills]);
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     if (activeTab === 'logs') {
       fetchLogs();
     }
   }, [activeTab, fetchLogs]);
 
-  useEffect(() => {
+  useDeferredEffect(() => {
     if (activeTab === 'logs') {
       fetchLogs();
     }
