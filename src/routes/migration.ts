@@ -37,7 +37,7 @@ export async function closeAllStagingConnections() {
   for (const db of openConnections) {
     try {
       await db.close();
-    } catch (_) {}
+    } catch (_) { }
   }
   openConnections.clear();
 }
@@ -179,7 +179,7 @@ router.post('/run', async (req, res) => {
       'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
       ['MIGRATION', `Requested manual migration for: ${tasks ? 'Queue (' + tasks.length + ' files)' : fileName}`]
     );
-    
+
     // Call the worker in the background
     if (tasks && Array.isArray(tasks)) {
       runManualMigrationQueue(tasks).catch(error => {
@@ -359,18 +359,18 @@ router.post('/pre-migration-simulate', async (req, res) => {
 router.post('/analyze', async (req, res) => {
   const { fileName, skipLines } = req.body;
   if (!fileName) return res.status(400).json({ error: 'fileName required' });
-  
+
   const filePath = path.join(MIGRATION_DIR, fileName);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-  
+
   if (!fileName.toLowerCase().endsWith('.csv')) {
     return res.json({ headers: [], sample: {}, isCsv: false });
   }
-  
+
   const headersSet = new Set<string>();
   let sampleRows: any[] = [];
   const skipCount = parseInt(skipLines) || 0;
-  
+
   try {
     await new Promise<void>((resolve, reject) => {
       fs.createReadStream(filePath)
@@ -386,10 +386,10 @@ router.post('/analyze', async (req, res) => {
         .on('end', resolve)
         .on('error', reject);
     });
-    
+
     // Also get file size as an indicator of data amount
     const stat = fs.statSync(filePath);
-    
+
     res.json({
       isCsv: true,
       headers: Array.from(headersSet).filter(h => h.trim() !== ''),
@@ -453,17 +453,17 @@ router.post('/analyze-zip', async (req, res) => {
   try {
     const buffer = fs.readFileSync(filePath);
     const isGzip = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
-    
+
     const files: any[] = [];
-    
+
     if (isGzip) {
       // Decompress GZIP in memory
       const decompressed = zlib.gunzipSync(buffer);
-      
+
       // Determine a reasonable filename for the inner SQL file
       const baseName = fileName.replace(/\.zip$/i, '').replace(/\.gz$/i, '');
       const innerName = baseName.toLowerCase().endsWith('.sql') ? baseName : `${baseName}.sql`;
-      
+
       const extractedName = `zip_${Date.now()}_${innerName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const extractedPath = path.join(MIGRATION_DIR, extractedName);
       fs.writeFileSync(extractedPath, decompressed);
@@ -592,7 +592,7 @@ router.put('/staging/inventory/:id', async (req, res) => {
       rack_location, medicine_name, api_reference, batch_no, expiry_date,
       quantity, loose_quantity, mrp, cost_price, hsn_code, manufacturer, marketed_by, cgst, sgst
     } = req.body;
-    
+
     const updates = [];
     const params = [];
     if (rack_location !== undefined) { updates.push('rack_location = ?'); params.push(rack_location); }
@@ -602,28 +602,28 @@ router.put('/staging/inventory/:id', async (req, res) => {
     if (loose_quantity !== undefined) { updates.push('loose_quantity = ?'); params.push(loose_quantity); }
     if (mrp !== undefined) { updates.push('mrp = ?'); params.push(mrp); }
     if (cost_price !== undefined) { updates.push('cost_price = ?'); params.push(cost_price); }
-    
+
     if (updates.length > 0) {
       await db.run(`UPDATE inventory_master SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.id]);
     }
-    
+
     if (
       medicine_name !== undefined || api_reference !== undefined || hsn_code !== undefined ||
       manufacturer !== undefined || marketed_by !== undefined || cgst !== undefined || sgst !== undefined
     ) {
-       const inv = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', req.params.id);
-       if (inv && inv.medicine_id) {
-          const mUpdates = [];
-          const mParams = [];
-          if (medicine_name !== undefined) { mUpdates.push('name = ?'); mParams.push(medicine_name); }
-          if (api_reference !== undefined) { mUpdates.push('api_reference = ?'); mParams.push(api_reference); }
-          if (hsn_code !== undefined) { mUpdates.push('hsn_code = ?'); mParams.push(hsn_code); }
-          if (manufacturer !== undefined) { mUpdates.push('manufacturer = ?'); mParams.push(manufacturer); }
-          if (marketed_by !== undefined) { mUpdates.push('marketed_by = ?'); mParams.push(marketed_by); }
-          if (cgst !== undefined) { mUpdates.push('cgst = ?'); mParams.push(cgst); }
-          if (sgst !== undefined) { mUpdates.push('sgst = ?'); mParams.push(sgst); }
-          await db.run(`UPDATE medicines SET ${mUpdates.join(', ')} WHERE id = ?`, [...mParams, inv.medicine_id]);
-       }
+      const inv = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', req.params.id);
+      if (inv && inv.medicine_id) {
+        const mUpdates = [];
+        const mParams = [];
+        if (medicine_name !== undefined) { mUpdates.push('name = ?'); mParams.push(medicine_name); }
+        if (api_reference !== undefined) { mUpdates.push('api_reference = ?'); mParams.push(api_reference); }
+        if (hsn_code !== undefined) { mUpdates.push('hsn_code = ?'); mParams.push(hsn_code); }
+        if (manufacturer !== undefined) { mUpdates.push('manufacturer = ?'); mParams.push(manufacturer); }
+        if (marketed_by !== undefined) { mUpdates.push('marketed_by = ?'); mParams.push(marketed_by); }
+        if (cgst !== undefined) { mUpdates.push('cgst = ?'); mParams.push(cgst); }
+        if (sgst !== undefined) { mUpdates.push('sgst = ?'); mParams.push(sgst); }
+        await db.run(`UPDATE medicines SET ${mUpdates.join(', ')} WHERE id = ?`, [...mParams, inv.medicine_id]);
+      }
     }
     await db.close();
     res.json({ success: true });
@@ -668,18 +668,18 @@ router.put('/staging/sales/:id', async (req, res) => {
     if (invoice_no !== undefined) { updates.push('invoice_no = ?'); params.push(invoice_no); }
     if (date !== undefined) { updates.push('date = ?'); params.push(date); }
     if (total_amount !== undefined) { updates.push('total_amount = ?'); params.push(total_amount); }
-    
+
     if (updates.length > 0) {
       await db.run(`UPDATE sales_invoices SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.id]);
     }
-    
+
     const sale = await db.get('SELECT customer_id, doctor_id FROM sales_invoices WHERE id = ?', req.params.id);
     if (sale) {
       if (patient_name !== undefined && sale.customer_id) {
-         await db.run('UPDATE customers SET name = ? WHERE id = ?', [patient_name, sale.customer_id]);
+        await db.run('UPDATE customers SET name = ? WHERE id = ?', [patient_name, sale.customer_id]);
       }
       if (doctor_name !== undefined && sale.doctor_id) {
-         await db.run('UPDATE doctors SET name = ? WHERE id = ?', [doctor_name, sale.doctor_id]);
+        await db.run('UPDATE doctors SET name = ? WHERE id = ?', [doctor_name, sale.doctor_id]);
       }
     }
     await db.close();
@@ -724,15 +724,15 @@ router.put('/staging/purchases/:id', async (req, res) => {
     if (invoice_no !== undefined) { updates.push('invoice_no = ?'); params.push(invoice_no); }
     if (date !== undefined) { updates.push('date = ?'); params.push(date); }
     if (total_amount !== undefined) { updates.push('total_amount = ?'); params.push(total_amount); }
-    
+
     if (updates.length > 0) {
       await db.run(`UPDATE purchases SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.id]);
     }
-    
+
     if (distributor_name !== undefined) {
       const pur = await db.get('SELECT distributor_id FROM purchases WHERE id = ?', req.params.id);
       if (pur && pur.distributor_id) {
-         await db.run('UPDATE distributors SET name = ? WHERE id = ?', [distributor_name, pur.distributor_id]);
+        await db.run('UPDATE distributors SET name = ? WHERE id = ?', [distributor_name, pur.distributor_id]);
       }
     }
     await db.close();
@@ -781,15 +781,15 @@ router.put('/staging/returns/:id', async (req, res) => {
     if (return_sub_type !== undefined) { updates.push('return_sub_type = ?'); params.push(return_sub_type); }
     if (raw_return_type !== undefined) { updates.push('raw_return_type = ?'); params.push(raw_return_type); }
     if (return_date_time !== undefined) { updates.push('return_date_time = ?'); params.push(return_date_time); }
-    
+
     if (updates.length > 0) {
       await db.run(`UPDATE returns SET ${updates.join(', ')} WHERE id = ?`, [...params, req.params.id]);
     }
-    
+
     if (distributor_name !== undefined) {
       const ret = await db.get('SELECT distributor_id FROM returns WHERE id = ?', req.params.id);
       if (ret && ret.distributor_id) {
-         await db.run('UPDATE distributors SET name = ? WHERE id = ?', [distributor_name, ret.distributor_id]);
+        await db.run('UPDATE distributors SET name = ? WHERE id = ?', [distributor_name, ret.distributor_id]);
       }
     }
     await db.close();
@@ -1060,8 +1060,8 @@ router.post('/staging/finalize', async (req, res) => {
       const invoices = await db.all('SELECT id FROM sales_invoices ORDER BY id ASC');
       let counter = 1;
       const today = new Date();
-      const prefix = `INV-${today.getFullYear()}${(today.getMonth()+1).toString().padStart(2,'0')}`;
-      
+      const prefix = `INV-${today.getFullYear()}${(today.getMonth() + 1).toString().padStart(2, '0')}`;
+
       await db.run('BEGIN TRANSACTION');
       for (const inv of invoices) {
         const newInvoiceNo = `${prefix}-${counter.toString().padStart(5, '0')}`;
@@ -1128,20 +1128,20 @@ router.post('/staging/finalize', async (req, res) => {
     const appWal = DB_PATH + '-wal';
     const appShm = DB_PATH + '-shm';
     if (fs.existsSync(appWal)) {
-      try { fs.unlinkSync(appWal); } catch (_) {}
+      try { fs.unlinkSync(appWal); } catch (_) { }
     }
     if (fs.existsSync(appShm)) {
-      try { fs.unlinkSync(appShm); } catch (_) {}
+      try { fs.unlinkSync(appShm); } catch (_) { }
     }
 
     // Delete staging database WAL and SHM files
     const stagingWal = STAGING_DB_PATH + '-wal';
     const stagingShm = STAGING_DB_PATH + '-shm';
     if (fs.existsSync(stagingWal)) {
-      try { fs.unlinkSync(stagingWal); } catch (_) {}
+      try { fs.unlinkSync(stagingWal); } catch (_) { }
     }
     if (fs.existsSync(stagingShm)) {
-      try { fs.unlinkSync(stagingShm); } catch (_) {}
+      try { fs.unlinkSync(stagingShm); } catch (_) { }
     }
 
     // Replace app.db with staging.db
@@ -1165,7 +1165,7 @@ router.post('/staging/finalize', async (req, res) => {
       }
       throw new Error(`Swapped database integrity check failed. Restored from backup. Details: ${integrityErr.message}`);
     }
-    
+
     // Reset migration status
     migrationStatus.isStagingReady = false;
     migrationStatus.message = 'Idle';
@@ -1177,7 +1177,7 @@ router.post('/staging/finalize', async (req, res) => {
     } catch (err) {
       console.warn('Failed to restart workers:', err);
     }
-    
+
     res.json({ success: true, message: 'Migration finalized and live!' });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -1259,7 +1259,7 @@ router.post('/staging/resolve', async (req, res) => {
       return res.status(404).json({ error: 'Conflict not found' });
     }
     const rawRow = JSON.parse(conflict.raw_imported_data);
-    
+
     if (conflict.module_type === 'inventory') {
       if (resolution === 'skip') {
         // Just resolve it
@@ -1289,7 +1289,7 @@ router.post('/staging/resolve', async (req, res) => {
         );
       }
     }
-    
+
     await db.run('UPDATE migration_conflicts SET status = ? WHERE id = ?', [`resolved_${resolution}`, conflictId]);
     await db.close();
     res.json({ success: true });
@@ -1328,10 +1328,10 @@ router.post('/snapshots/restore', async (req, res) => {
       const appWal = DB_PATH + '-wal';
       const appShm = DB_PATH + '-shm';
       if (fs.existsSync(appWal)) {
-        try { fs.unlinkSync(appWal); } catch (_) {}
+        try { fs.unlinkSync(appWal); } catch (_) { }
       }
       if (fs.existsSync(appShm)) {
-        try { fs.unlinkSync(appShm); } catch (_) {}
+        try { fs.unlinkSync(appShm); } catch (_) { }
       }
 
       fs.copyFileSync(snapshot.backup_path, DB_PATH);

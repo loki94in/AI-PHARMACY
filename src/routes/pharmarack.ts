@@ -37,6 +37,176 @@ async function getPharmarackSettings() {
   return settings;
 }
 
+function copyProfileFolder(src: string, dest: string) {
+  if (!fs.existsSync(src)) return;
+  fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+
+  const skippedNames = new Set([
+    'cache',
+    'code cache',
+    'gpucache',
+    'dawngraphitecache',
+    'dawnwebgpucache',
+    'gpupersistentcache',
+    'grshadercache',
+    'shadercache',
+    'browsermetrics',
+    'crashpad',
+    'lockfile',
+    'parent.lock',
+    'singletonlock',
+    'lock',
+    'devtoolsactiveport'
+  ]);
+
+  for (const entry of entries) {
+    const lowerName = entry.name.toLowerCase();
+    if (skippedNames.has(lowerName)) {
+      continue;
+    }
+
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      copyProfileFolder(srcPath, destPath);
+    } else {
+      try {
+        fs.copyFileSync(srcPath, destPath);
+      } catch (err: any) {
+        console.warn(`[Pharmarack Sync] Warning: Could not copy file ${srcPath}: ${err.message}`);
+      }
+    }
+  }
+}
+
+async function refreshPharmarackToken(): Promise<string | null> {
+  const chromePath = findChromePath();
+  if (!chromePath) {
+    console.error('[Pharmarack Token Refresh] Chrome path not found.');
+    return null;
+  }
+
+  const mainProfilePath = path.resolve(__dirname, '..', '..', 'data', 'pharmarack_profile');
+  if (!fs.existsSync(mainProfilePath)) {
+    console.error('[Pharmarack Token Refresh] Main profile folder does not exist.');
+    return null;
+  }
+
+  const randomSuffix = Math.floor(Math.random() * 1000000);
+  const tempProfilePath = path.resolve(__dirname, '..', '..', 'data', `pharmarack_profile_temp_${Date.now()}_${randomSuffix}`);
+
+  console.log(`[Pharmarack Token Refresh] Copying session profile to ${tempProfilePath} to bypass locks...`);
+  try {
+    copyProfileFolder(mainProfilePath, tempProfilePath);
+  } catch (copyErr: any) {
+    console.error('[Pharmarack Token Refresh] Profile duplication failed:', copyErr.message);
+    return null;
+  }
+
+  let browser;
+  const holder = { token: null as string | null };
+
+  try {
+    console.log('[Pharmarack Token Refresh] Launching background headless Chrome for silent session capture...');
+    browser = await puppeteer.launch({
+      executablePath: chromePath,
+      headless: true,
+      userDataDir: tempProfilePath,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const [page] = await browser.pages();
+    
+    page.on('request', request => {
+      const headers = request.headers();
+      const auth = headers['authorization'] || headers['Authorization'];
+      if (auth && auth.length > 15) {
+        let tokenVal = auth;
+        if (auth.startsWith('Bearer ') || auth.startsWith('bearer ')) {
+          tokenVal = auth.substring(7);
+        }
+        if (tokenVal && tokenVal.length > 10) {
+          holder.token = tokenVal;
+        }
+      }
+    });
+
+    await page.goto('https://retailers.pharmarack.com/', { waitUntil: 'networkidle2', timeout: 30000 });
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    if (holder.token) {
+      console.log('[Pharmarack Token Refresh] Successfully captured fresh token:', holder.token.substring(0, 15) + '...');
+      const db = await dbManager.getConnection();
+      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_session_token', ?)", [holder.token]);
+      await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_mode', 'Live')");
+      return holder.token;
+    } else {
+      console.warn('[Pharmarack Token Refresh] Headless navigation completed but no authorization header was captured.');
+      return null;
+    }
+  } catch (err: any) {
+    console.error('[Pharmarack Token Refresh] Failed to refresh token in background:', err.message);
+    return null;
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeErr) {
+        // ignore
+      }
+    }
+    try {
+      if (fs.existsSync(tempProfilePath)) {
+        fs.rmSync(tempProfilePath, { recursive: true, force: true });
+        console.log(`[Pharmarack Token Refresh] Cleared temp profile directory at ${tempProfilePath}`);
+      }
+    } catch (rmErr: any) {
+      console.warn(`[Pharmarack Token Refresh] Could not remove temp folder: ${rmErr.message}`);
+    }
+  }
+}
+
+async function fetchPharmarack(url: string, options: any = {}): Promise<Response> {
+  const settings = await getPharmarackSettings();
+  let token = settings['pharmarack_session_token'] || '';
+
+  const getHeaders = (t: string) => {
+    const authHeader = t.startsWith('Bearer ') ? t : `Bearer ${t}`;
+    return {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+      'devicetype': 'web',
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://retailers.pharmarack.com/',
+      'Origin': 'https://retailers.pharmarack.com',
+      ...(options.headers || {})
+    };
+  };
+
+  const executeFetch = async (t: string) => {
+    return await fetch(url, {
+      ...options,
+      headers: getHeaders(t)
+    });
+  };
+
+  let response = await executeFetch(token);
+
+  if (response.status === 401 || response.status === 403) {
+    console.log(`[Pharmarack Fetch] API ${url} returned ${response.status}. Attempting silent background token refresh...`);
+    const freshToken = await refreshPharmarackToken();
+    if (freshToken) {
+      console.log(`[Pharmarack Fetch] Retrying API ${url} with fresh token...`);
+      response = await executeFetch(freshToken);
+    }
+  }
+
+  return response;
+}
+
 // In-memory cache for search queries to prevent upstream rate limits (429)
 const searchCache = new Map<string, { timestamp: number; data: any }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
@@ -81,17 +251,8 @@ router.get('/search', async (req, res) => {
         CartSource: 'MOVP'
       };
 
-      const response = await fetch('https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/search', {
+      const response = await fetchPharmarack('https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/search', {
         method: 'POST',
-        headers: {
-          'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'devicetype': 'web',
-          'Accept': 'application/json, text/plain, */*',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://retailers.pharmarack.com/',
-          'Origin': 'https://retailers.pharmarack.com'
-        },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(6000)
       });
@@ -153,17 +314,8 @@ router.get('/distributors', async (req, res) => {
 
     const authHeader = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
 
-    const response = await fetch('https://pharmretail-api.pharmarack.com/user/api/v2/store-list', {
+    const response = await fetchPharmarack('https://pharmretail-api.pharmarack.com/user/api/v2/store-list', {
       method: 'GET',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-        'devicetype': 'web',
-        'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://retailers.pharmarack.com/',
-        'Origin': 'https://retailers.pharmarack.com'
-      },
       signal: AbortSignal.timeout(10000)
     });
 
@@ -480,17 +632,8 @@ router.post('/cart/add', async (req, res) => {
             IsSort: 1,
             CartSource: 'MOVP'
           };
-          const searchRes = await fetch('https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/search', {
+          const searchRes = await fetchPharmarack('https://pharmretail-elasticsearch.pharmarack.com/open-search/api/v2/search', {
             method: 'POST',
-            headers: {
-              'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'devicetype': 'web',
-              'Accept': 'application/json, text/plain, */*',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Referer': 'https://retailers.pharmarack.com/',
-              'Origin': 'https://retailers.pharmarack.com'
-            },
             body: JSON.stringify(searchPayload),
             signal: AbortSignal.timeout(4000)
           });
@@ -599,17 +742,8 @@ router.post('/cart/add', async (req, res) => {
           Packing: item.packaging || item.Packing || '1 strip'
         };
 
-        const response = await fetch('https://pharmretail-api.pharmarack.com/cart/api/v1/AddUserProductCartDetail', {
+        const response = await fetchPharmarack('https://pharmretail-api.pharmarack.com/cart/api/v1/AddUserProductCartDetail', {
           method: 'POST',
-          headers: {
-            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'devicetype': 'web',
-            'Accept': 'application/json, text/plain, */*',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://retailers.pharmarack.com/',
-            'Origin': 'https://retailers.pharmarack.com'
-          },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(6000)
         });
@@ -641,18 +775,30 @@ router.post('/cart/add', async (req, res) => {
       if (chromePath) {
         console.log('API cart requests failed. Initiating headless browser fallback...');
         const pharmarackProfilePath = path.resolve(__dirname, '..', '..', 'data', 'pharmarack_profile');
+        const randomSuffix = Math.floor(Math.random() * 1000000);
+        const tempProfilePath = path.resolve(__dirname, '..', '..', 'data', `pharmarack_profile_temp_${Date.now()}_${randomSuffix}`);
+
+        try {
+          copyProfileFolder(pharmarackProfilePath, tempProfilePath);
+        } catch (copyErr: any) {
+          console.error('[Pharmarack Fallback] Profile copy failed:', copyErr.message);
+        }
+
         let browser;
         try {
           browser = await puppeteer.launch({
             executablePath: chromePath,
             headless: true,
-            userDataDir: pharmarackProfilePath,
+            userDataDir: tempProfilePath,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
           });
           const [page] = await browser.pages();
           
           await page.goto('https://retailers.pharmarack.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
           
+          const freshSettings = await getPharmarackSettings();
+          const activeToken = freshSettings['pharmarack_session_token'] || token;
+
           for (const item of items) {
             const rateVal = Number(item.rate || item.ptr || item.PTR || 0);
             const payload = {
@@ -753,7 +899,7 @@ router.post('/cart/add', async (req, res) => {
               } catch (e) {
                 return { success: false, error: e.message };
               }
-            }`, payload, token) as { success: boolean; error?: string };
+            }`, payload, activeToken) as { success: boolean; error?: string };
 
             if (contextResult && contextResult.success) {
               cartSuccess = true;
@@ -782,9 +928,34 @@ router.post('/cart/add', async (req, res) => {
               
               await new Promise(r => setTimeout(r, 3000));
               
-              const addBtnSelector = 'button[class*="add" i], button[id*="add" i], button[title*="add" i], .add-to-cart, .btn-add';
-              await page.waitForSelector(addBtnSelector, { timeout: 10000 });
-              await page.click(addBtnSelector);
+              // Distributor-specific selector targeting inside page evaluate
+              const clickedDistributor = await page.evaluate(async (targetStoreName) => {
+                const elements = Array.from(document.querySelectorAll('tr, div.product-card, div.row, div.item, .search-result-item'));
+                for (const el of elements) {
+                  const text = el.textContent || '';
+                  const hasAddButton = el.querySelector('button, .add-to-cart, .btn-add');
+                  if (hasAddButton && targetStoreName) {
+                    if (text.toLowerCase().includes(targetStoreName.toLowerCase())) {
+                      const btn = el.querySelector('button, .add-to-cart, .btn-add') as HTMLElement;
+                      if (btn) {
+                        btn.click();
+                        return true;
+                      }
+                    }
+                  }
+                }
+                // Fallback: Click first available add button
+                const fallbackBtn = document.querySelector('button[class*="add" i], button[id*="add" i], button[title*="add" i], .add-to-cart, .btn-add') as HTMLElement;
+                if (fallbackBtn) {
+                  fallbackBtn.click();
+                  return true;
+                }
+                return false;
+              }, item.storeName || '');
+
+              if (!clickedDistributor) {
+                console.warn(`[Pharmarack Fallback] Could not click add button for ${item.name} / ${item.storeName}`);
+              }
               await new Promise(r => setTimeout(r, 2000));
             }
             cartSuccess = true;
@@ -794,7 +965,21 @@ router.post('/cart/add', async (req, res) => {
           console.error('Headless browser fallback failed:', pwErr.message);
           lastError += ` | Headless fallback error: ${pwErr.message}`;
         } finally {
-          if (browser) await browser.close();
+          if (browser) {
+            try {
+              await browser.close();
+            } catch (closeErr) {
+              // ignore
+            }
+          }
+          try {
+            if (fs.existsSync(tempProfilePath)) {
+              fs.rmSync(tempProfilePath, { recursive: true, force: true });
+              console.log(`[Pharmarack Fallback] Cleared temp profile directory at ${tempProfilePath}`);
+            }
+          } catch (rmErr) {
+            // ignore
+          }
         }
       }
     }
@@ -822,17 +1007,8 @@ router.get('/cart', async (req, res) => {
 
     const authHeader = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
 
-    const response = await fetch('https://pharmretail-api.pharmarack.com/cart/api/v1/GetUserCartDetails', {
+    const response = await fetchPharmarack('https://pharmretail-api.pharmarack.com/cart/api/v1/GetUserCartDetails', {
       method: 'GET',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-        'devicetype': 'web',
-        'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://retailers.pharmarack.com/',
-        'Origin': 'https://retailers.pharmarack.com'
-      },
       signal: AbortSignal.timeout(15000)
     });
 

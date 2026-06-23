@@ -17,6 +17,8 @@ data/*.db.bak*-shm
 data/*.db.bak*-wal
 backup/
 data/temp_migration/
+data/migration_reports/
+
 
 # Media Uploads & Temp files
 uploads/
