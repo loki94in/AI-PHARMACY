@@ -289,7 +289,8 @@ const POS = () => {
             packSize: parseInt(med.pack_size || '10', 10) || 10,
             recommendedQty: 1,
             recommendedLooseQty: 0,
-            recommendationMsg: ''
+            recommendationMsg: '',
+            quantity: med.stock_quantity
           }));
 
           // Batch enrich with recommended quantities from sales history
@@ -471,7 +472,8 @@ const POS = () => {
                   mrp: matched.mrp,
                   costPrice: matched.cost_price,
                   salts: matched.salts || matched.hsn_code || 'Generic',
-                  packSize: matched.pack_size || 10
+                  packSize: matched.pack_size || 10,
+                  quantity: matched.quantity
                 });
                 setSearchTerm('');
                 setSearchResults([]);
@@ -507,64 +509,8 @@ const POS = () => {
     return () => clearTimeout(delayDebounce);
   }, [searchTerm]);
 
-  // Manual Billing Row States
-  const [manualName, setManualName] = useState('');
-
   // Universal Edit state
   const [editMedicineId, setEditMedicineId] = useState<number | null>(null);
-  const [manualBatch, setManualBatch] = useState('');
-  const [manualExpiry, setManualExpiry] = useState('');
-  const [manualQty, setManualQty] = useState(0);
-  const [manualLooseQty, setManualLooseQty] = useState(0);
-  const [manualDiscount, setManualDiscount] = useState(0);
-  const [manualPackSize, setManualPackSize] = useState(10);
-  const [manualMrp, setManualMrp] = useState(0);
-  const [manualCostPrice, setManualCostPrice] = useState(0);
-  const [manualSuggestions, setManualSuggestions] = useState<any[]>([]);
-  const [showManualSuggestions, setShowManualSuggestions] = useState(false);
-
-  useEffect(() => {
-    if (manualName.trim().length < 3) {
-      setManualSuggestions([]);
-      setShowManualSuggestions(false);
-      return;
-    }
-    
-    const delayDebounce = setTimeout(() => {
-      api.searchMedicine(manualName)
-        .then(data => {
-          if (Array.isArray(data)) {
-            // Auto-fill on exact barcode match
-            const term = manualName.trim().toUpperCase();
-            if (data.length === 1) {
-              const matched = data[0];
-              const barcode = (matched.item_code || '').toUpperCase().trim();
-              if (barcode === term) {
-                selectManualSuggestion(matched);
-                return;
-              }
-            }
-
-            setManualSuggestions(data.slice(0, 8));
-            setShowManualSuggestions(true);
-          }
-        })
-        .catch(err => console.error('Error searching manual medicine:', err));
-    }, 300);
-    
-    return () => clearTimeout(delayDebounce);
-  }, [manualName]);
-
-  const selectManualSuggestion = (med: any) => {
-    setManualName(med.medicine_name);
-    setManualBatch(med.batch_no || 'MANUAL');
-    setManualExpiry(med.expiry_date || '12/28');
-    setManualMrp(med.mrp || 0);
-    setManualCostPrice(med.cost_price || (med.mrp * 0.7));
-    setManualPackSize(med.pack_size || 10);
-    setManualSuggestions([]);
-    setShowManualSuggestions(false);
-  };
 
   const addToCart = (med: any) => {
     // Expiry check
@@ -594,14 +540,20 @@ const POS = () => {
     if (pendingMatches.length > 0) {
       alert(`🔔 Pending Out-of-Stock Request:\nCustomer "${pendingMatches[0].requester}" requested ${pendingMatches[0].qty} unit(s) of "${med.name}". Please ensure it is reserved or reconciled if needed!`);
     }
-
     updateCart(prevCart => {
-      const existing = prevCart.find(item => item.id === med.id);
+      const existing = prevCart.find(item => {
+        const isDbId = (id: any) => typeof id === 'number' && id < 1000000;
+        const idMatches = isDbId(item.id) && isDbId(med.id) && item.id === med.id;
+        const nameAndBatchMatch = 
+          (item.medicine_id !== undefined && med.medicine_id !== undefined && item.medicine_id === med.medicine_id && item.batch.toLowerCase().trim() === (med.batch || 'B-GEN').toLowerCase().trim()) ||
+          (item.name.toLowerCase().trim() === med.name.toLowerCase().trim() && item.batch.toLowerCase().trim() === (med.batch || 'B-GEN').toLowerCase().trim());
+        return idMatches || nameAndBatchMatch;
+      });
       const incQty = med.recommendedQty !== undefined ? med.recommendedQty : 1;
       const incLooseQty = med.recommendedLooseQty || 0;
       if (existing) {
         return prevCart.map(item => 
-          item.id === med.id ? { 
+          item.id === existing.id ? { 
             ...item, 
             qty: item.qty + incQty,
             looseQty: (item.looseQty || 0) + incLooseQty
@@ -616,11 +568,12 @@ const POS = () => {
         expiry: med.expiry || '12/28', 
         qty: incQty, 
         looseQty: incLooseQty,
-        discount: 0,
+        discount: med.discount !== undefined ? med.discount : 0,
         packSize: med.packSize || 10,
         mrp: med.mrp, 
         costPrice: med.costPrice || (med.mrp * 0.7),
-        salts: med.salts || '' 
+        salts: med.salts || '',
+        availableStock: med.quantity !== undefined ? med.quantity : (med.availableStock !== undefined ? med.availableStock : 0)
       }];
     });
   };
@@ -655,56 +608,6 @@ const POS = () => {
     }
   };
 
-  const addManualItem = () => {
-    if (!manualName.trim()) {
-      // Focus input if empty
-      const inputEl = document.querySelector('input[placeholder*="Add Next Medicine"]') as HTMLInputElement;
-      if (inputEl) inputEl.focus();
-      return;
-    }
-    
-    // Check manual item
-    const pendingMatches = specialOrders.filter(
-      o => o.product.toLowerCase().trim() === manualName.toLowerCase().trim() ||
-           manualName.toLowerCase().includes(o.product.toLowerCase().trim())
-    );
-    if (pendingMatches.length > 0) {
-      alert(`🔔 Pending Out-of-Stock Request:\nCustomer "${pendingMatches[0].requester}" requested ${pendingMatches[0].qty} unit(s) of "${manualName}".`);
-    }
-    
-    const newItem = {
-      id: Date.now(),
-      name: manualName.trim(),
-      batch: manualBatch.trim() || 'MANUAL',
-      expiry: manualExpiry.trim() || '12/28',
-      qty: manualQty === 0 && manualLooseQty === 0 ? 1 : manualQty,
-      looseQty: manualLooseQty,
-      discount: manualDiscount,
-      packSize: manualPackSize,
-      mrp: manualMrp,
-      costPrice: manualCostPrice || (manualMrp * 0.7),
-      salts: 'Custom Manual Entry'
-    };
-    
-    updateCart(prev => [...prev, newItem]);
-    
-    // Reset manual input fields
-    setManualName('');
-    setManualBatch('');
-    setManualExpiry('');
-    setManualQty(0);
-    setManualLooseQty(0);
-    setManualDiscount(0);
-    setManualPackSize(10);
-    setManualMrp(0);
-    setManualCostPrice(0);
-    
-    // Focus back on the manualName input for fast continuous entry
-    setTimeout(() => {
-      document.getElementById('manual-medicine-name-input')?.focus();
-    }, 50);
-  };
-
   const removeFromCart = (id: number) => {
     updateCart(prevCart => prevCart.filter(item => item.id !== id));
   };
@@ -729,7 +632,8 @@ const POS = () => {
         mrp: med.mrp,
         costPrice: med.cost_price,
         salts: med.salts || med.hsn_code || 'Generic',
-        packSize: med.pack_size || 10
+        packSize: med.pack_size || 10,
+        availableStock: med.quantity !== undefined ? med.quantity : 0
       };
     }));
     setActiveRowSearchIndex(null);
@@ -850,7 +754,8 @@ const POS = () => {
           salts: matched.salts || matched.hsn_code || 'Generic',
           packSize: matched.pack_size || 10,
           scanImage: result.capturedImage,
-          rawOcrText: result.text
+          rawOcrText: result.text,
+          quantity: matched.quantity
         });
       } else {
         // Add as custom manual entry from scan details
@@ -864,7 +769,8 @@ const POS = () => {
           salts: 'OCR Scan Entry',
           packSize: 10,
           scanImage: result.capturedImage,
-          rawOcrText: result.text
+          rawOcrText: result.text,
+          quantity: 0
         });
       }
     }).catch(err => {
@@ -1045,34 +951,34 @@ const POS = () => {
     doc.name.toLowerCase().includes(doctor.toLowerCase())
   );
 
-    return (
-    <div className="h-full flex flex-col fade-in overflow-hidden pb-2">
+  return (
+    <div className="h-full flex flex-col fade-in overflow-hidden pb-2 bg-bg text-text">
 
       {/* Main Container: Split into Left Workspace and Right Sidebar */}
-      <div className="flex-1 flex gap-3 overflow-hidden min-h-0">
+      <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
         
         {/* LEFT WORKSPACE (approx 72-75% width) - Takes up full height */}
-        <div className="flex-1 flex flex-col gap-3 overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col gap-4 min-h-0">
           
           {/* A. Search & Scan Medicine Area (Header) */}
-          <div className="glass-panel p-3 flex flex-col gap-2.5 bg-glass-bg border-glass-border relative z-30 shrink-0">
+          <div className="glass-panel p-4 flex flex-col gap-3 bg-glass-bg border-glass-border relative z-30 shrink-0 shadow-md">
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
-                <span className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-muted">
-                  <Search size={16} />
+                <span className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-muted">
+                  <Search size={18} />
                 </span>
                 <input 
                   type="text" 
                   placeholder="Search medicine by name, composition, batch, or price..." 
-                  className="premium-input w-full text-base py-2 pl-6 pr-4"
+                  className="premium-input w-full text-sm pl-10 pr-4 py-2.5 bg-bg2/40 border-border/60 text-text rounded-2xl focus:ring-primary/20"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                 />
                 
                 {/* Empty inventory fallback dropdown */}
                 {searchTerm.trim().length >= 3 && searchResults.length === 0 && (
-                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
-                    <div className="p-3 border-b border-glass-border/30 text-[10px] font-bold text-muted uppercase tracking-wider">
+                  <div className="absolute left-0 right-0 top-full z-[100] mt-2 bg-bg2 border border-border rounded-2xl overflow-hidden max-h-80 overflow-y-auto shadow-2xl backdrop-blur-xl">
+                    <div className="p-3 border-b border-border/30 text-[10px] font-bold text-muted uppercase tracking-wider bg-bg3/55">
                       ⚠️ No matching inventory found
                     </div>
                     <div className="flex flex-col">
@@ -1087,44 +993,22 @@ const POS = () => {
                             mrp: 0,
                             costPrice: 0,
                             salts: 'Custom Manual Entry',
-                            packSize: 10
+                            packSize: 10,
+                            quantity: 0
                           });
                           setSearchTerm('');
                         }}
-                        className="flex items-center justify-between p-3 hover:bg-bg2 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                        className="flex items-center justify-between p-3.5 hover:bg-bg3 border-b border-border/20 text-left transition-all text-xs w-full group"
                       >
-                        <div className="flex flex-col gap-0.5">
+                        <div className="flex flex-col gap-1">
                           <span className="font-semibold text-text group-hover:text-primary transition-all">Add "{searchTerm.trim()}" directly to cart (Quick Add)</span>
-                          <span className="text-[9px] text-muted font-normal">Will use default batch MANUAL and expiry 12/28 (editable later)</span>
+                          <span className="text-[10px] text-muted font-normal">Will use default batch MANUAL and expiry 12/28 (editable later)</span>
                         </div>
-                        <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
+                        <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-3 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setManualName(searchTerm.trim());
-                          setSearchTerm('');
-                          // Scroll to and focus manual billing input
-                          setTimeout(() => {
-                            const inputEl = document.getElementById('manual-medicine-name-input');
-                            if (inputEl) {
-                              inputEl.focus();
-                              inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }
-                          }, 100);
-                        }}
-                        className="flex items-center justify-between p-3 hover:bg-bg2 text-left transition-all text-xs w-full group"
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-semibold text-text group-hover:text-sky transition-all">Prefill manual entry row at bottom with "{searchTerm.trim()}"</span>
-                          <span className="text-[9px] text-muted font-normal">Recommended: lets you fill batch, expiry, MRP before adding</span>
-                        </div>
-                        <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-2.5 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">📝 Prefill</span>
-                      </button>
-                      
                       {searchingOnline && (
-                        <div className="flex items-center justify-center p-4 text-xs text-muted gap-2 border-t border-glass-border/10">
+                        <div className="flex items-center justify-center p-4 text-xs text-muted gap-2 border-t border-border/20 bg-bg3/20">
                           <Loader2 size={14} className="animate-spin text-sky" />
                           <span>Searching internet for active compositions...</span>
                         </div>
@@ -1132,7 +1016,7 @@ const POS = () => {
 
                       {onlineResults.length > 0 && (
                         <>
-                          <div className="p-3 bg-black/10 border-t border-glass-border/20 text-[10px] font-bold text-sky uppercase tracking-wider">
+                          <div className="p-3 bg-bg3/55 border-t border-border/30 text-[10px] font-bold text-sky uppercase tracking-wider">
                             🌐 Internet Suggestion (Auto-Enrich to Database)
                           </div>
                           {onlineResults.map((sug, sidx) => (
@@ -1140,14 +1024,14 @@ const POS = () => {
                               key={`online_${sidx}`}
                               type="button"
                               onClick={() => handleSelectOnlineSuggestion(sug)}
-                              className="flex items-center justify-between p-3 hover:bg-bg2 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                              className="flex items-center justify-between p-3.5 hover:bg-bg3 border-b border-border/10 text-left transition-all text-xs w-full group"
                             >
-                              <div className="flex flex-col gap-0.5">
+                              <div className="flex flex-col gap-1">
                                 <span className="font-semibold text-text group-hover:text-sky transition-all">{sug.name}</span>
                                 <span className="text-[10px] text-muted font-normal">Active Salts: <strong className="text-text">{sug.api_reference || 'Generic'}</strong></span>
                                 {sug.manufacturer && <span className="text-[9px] text-muted font-normal">Mfr: {sug.manufacturer}</span>}
                               </div>
-                              <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-2.5 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">✨ Import & Add</span>
+                              <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-3 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">✨ Import & Add</span>
                             </button>
                           ))}
                         </>
@@ -1158,8 +1042,8 @@ const POS = () => {
                 
                 {/* Search results dropdown */}
                 {searchResults.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1.5 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-72 overflow-y-auto shadow-2xl">
-                    <div className="p-2 border-b border-glass-border/30 bg-black/20 text-[10px] font-bold text-muted uppercase tracking-wider">
+                  <div className="absolute left-0 right-0 top-full z-[100] mt-2 bg-bg2 border border-border rounded-2xl overflow-hidden max-h-80 overflow-y-auto shadow-2xl backdrop-blur-xl">
+                    <div className="p-3 border-b border-border/30 bg-bg3/55 text-[10px] font-bold text-muted uppercase tracking-wider">
                       Matching Inventory Records:
                     </div>
                     <div className="flex flex-col">
@@ -1184,14 +1068,15 @@ const POS = () => {
                                   mrp: item.mrp,
                                   costPrice: item.cost_price,
                                   salts: item.salts || item.hsn_code || 'Generic',
-                                  packSize: item.pack_size || 10
+                                  packSize: item.pack_size || 10,
+                                  quantity: item.quantity
                                 });
                                 setSearchTerm('');
                                 setSearchResults([]);
                               }}
-                              className={`flex items-center justify-between p-3 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full group ${isAlt ? 'pl-8 bg-sky/5' : ''}`}
+                              className={`flex items-center justify-between p-3.5 hover:bg-bg3 border-b border-border/10 text-left transition-all text-xs w-full group ${isAlt ? 'pl-8 bg-sky/5' : ''}`}
                             >
-                              <div className="flex flex-col gap-0.5">
+                              <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {isAlt && <span className="text-[9px] bg-sky/20 text-sky px-1.5 py-0.5 rounded font-bold mr-1">ALT</span>}
                                   <span className="font-semibold text-text group-hover:text-primary transition-all">{item.medicine_name}</span>
@@ -1215,12 +1100,12 @@ const POS = () => {
                                       e.stopPropagation();
                                       setEditMedicineId(item.medicine_id);
                                     }}
-                                    className="p-1.5 rounded-lg bg-bg border border-glass-border/40 text-muted hover:text-text hover:bg-bg3 transition-all"
+                                    className="p-1.5 rounded-lg bg-bg border border-border/40 text-muted hover:text-text hover:bg-bg3 transition-all"
                                     title="Quick Edit Medicine"
                                   >
                                     <Edit size={12} />
                                   </button>
-                                  <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-2.5 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
+                                  <span className="text-[10px] bg-primary/10 border border-primary/20 text-primary py-1 px-3 rounded-lg font-bold group-hover:bg-primary group-hover:text-text transition-all">+ Add</span>
                                 </div>
                               </div>
                             </button>
@@ -1229,12 +1114,12 @@ const POS = () => {
 
                         if (med.is_out_of_stock) {
                           return (
-                            <div key={`oos_${med.medicine_id}`} className="flex flex-col border-b border-glass-border/10">
-                              <div className="p-2.5 bg-red-500/10 text-xs w-full flex flex-col gap-1 border-l-2 border-red-500">
+                            <div key={`oos_${med.medicine_id}`} className="flex flex-col border-b border-border/10">
+                              <div className="p-3 bg-red-500/5 text-xs w-full flex flex-col gap-1 border-l-2 border-red-500">
                                  <div className="flex items-center justify-between">
                                    <div>
                                      <span className="font-bold text-red-400 line-through mr-2">{med.medicine_name}</span>
-                                     <span className="text-[9px] text-red-400 font-bold uppercase border border-red-500/30 px-1.5 py-0.5 rounded bg-red-500/10">Out of Stock</span>
+                                     <span className="text-[9px] text-red-400 font-bold uppercase border border-red-500/20 px-1.5 py-0.5 rounded bg-red-500/10">Out of Stock</span>
                                    </div>
                                  </div>
                                  {med.alternatives && med.alternatives.length > 0 && (
@@ -1253,7 +1138,7 @@ const POS = () => {
                           <div key={`in_stock_${med.inventory_id}`} className="flex flex-col">
                             {renderMedicineItem(med, false)}
                             {med.alternatives && med.alternatives.length > 0 && (
-                              <div className="flex flex-col border-l-2 border-sky/30 ml-2 bg-black/20">
+                              <div className="flex flex-col border-l-2 border-sky/30 ml-2 bg-bg3/30">
                                 <div className="px-6 py-1 bg-sky/5 text-[9px] text-sky font-bold uppercase tracking-wider flex items-center gap-1">
                                   <span className="rotate-90">↱</span> Substitutes Available:
                                 </div>
@@ -1265,7 +1150,7 @@ const POS = () => {
                       })}
                       
                       {searchingOnline && (
-                        <div className="flex items-center justify-center p-3 text-xs text-muted gap-2 border-t border-glass-border/10">
+                        <div className="flex items-center justify-center p-3 text-xs text-muted gap-2 border-t border-border/10 bg-bg3/25">
                           <Loader2 size={14} className="animate-spin text-sky" />
                           <span>Searching internet for active compositions...</span>
                         </div>
@@ -1273,7 +1158,7 @@ const POS = () => {
 
                       {onlineResults.length > 0 && (
                         <>
-                          <div className="p-2 border-t border-glass-border/30 bg-black/20 text-[10px] font-bold text-sky uppercase tracking-wider">
+                          <div className="p-2 border-t border-border/30 bg-bg3/55 text-[10px] font-bold text-sky uppercase tracking-wider">
                             🌐 Internet Suggestion (Auto-Enrich to Database):
                           </div>
                           {onlineResults.map((sug, sidx) => (
@@ -1281,14 +1166,14 @@ const POS = () => {
                               key={`online_${sidx}`}
                               type="button"
                               onClick={() => handleSelectOnlineSuggestion(sug)}
-                              className="flex items-center justify-between p-3 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full group"
+                              className="flex items-center justify-between p-3.5 hover:bg-bg3 border-b border-border/10 text-left transition-all text-xs w-full group"
                             >
-                              <div className="flex flex-col gap-0.5">
+                              <div className="flex flex-col gap-1">
                                 <span className="font-semibold text-text group-hover:text-sky transition-all">{sug.name}</span>
                                 <span className="text-[10px] text-muted font-normal">Active Salts: <strong className="text-text">{sug.api_reference || 'Generic'}</strong></span>
                                 {sug.manufacturer && <span className="text-[9px] text-muted font-normal">Mfr: {sug.manufacturer}</span>}
                               </div>
-                              <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-2.5 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">✨ Import & Add</span>
+                              <span className="text-[10px] bg-sky/10 border border-sky/20 text-sky py-1 px-3 rounded-lg font-bold group-hover:bg-sky group-hover:text-text transition-all">✨ Import & Add</span>
                             </button>
                           ))}
                         </>
@@ -1301,7 +1186,7 @@ const POS = () => {
               <button 
                 type="button"
                 onClick={() => setShowCamera(true)}
-                className="premium-btn bg-primary text-text shadow-[0_4px_14px_rgba(59,130,246,0.3)] hover:bg-teal-500 transition-all flex items-center gap-2 px-5 h-11 shrink-0"
+                className="premium-btn bg-primary text-text shadow-[0_4px_14px_rgba(59,130,246,0.25)] hover:bg-teal-500 transition-all flex items-center gap-2 px-5 h-10.5 rounded-2xl shrink-0"
               >
                 <Camera size={18} />
                 <span>AI Camera Scan</span>
@@ -1310,7 +1195,7 @@ const POS = () => {
 
             {/* Quick Add Combinations */}
             {commonCombinations.length > 0 && (
-              <div className="border-t border-glass-border/30 pt-2 flex flex-col gap-1.5">
+              <div className="border-t border-border/30 pt-2 flex flex-col gap-1.5">
                 <span className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1.5 select-none">
                   ⚡ Quick Add (Frequently Sold):
                 </span>
@@ -1319,7 +1204,7 @@ const POS = () => {
                     <button
                       key={med.id}
                       onClick={() => addToCart(med)}
-                      className="flex items-center gap-2.5 bg-bg2 border border-glass-border/60 hover:border-primary/40 hover:bg-primary/5 px-3 py-1.5 rounded-full transition-all group whitespace-nowrap"
+                      className="flex items-center gap-2.5 bg-bg2 border border-border/50 hover:border-primary/50 hover:bg-primary/5 px-3 py-1.5 rounded-full transition-all group whitespace-nowrap"
                     >
                       <span className="text-xs font-semibold text-text group-hover:text-primary transition-all">
                         {med.name}
@@ -1338,9 +1223,9 @@ const POS = () => {
           </div>
 
           {/* B. Cart Panel - Takes up all remaining height */}
-          <div className="flex-1 glass-panel flex flex-col overflow-hidden bg-glass-bg border-glass-border h-full relative z-10 min-h-0">
+          <div className="flex-1 glass-panel flex flex-col overflow-hidden bg-glass-bg border-glass-border h-full relative z-10 min-h-0 shadow-md">
             {/* Cart Header / Tab System */}
-            <div className="p-2 border-b border-glass-border flex items-center justify-between gap-3 bg-black/20 flex-nowrap shrink-0 rounded-t-[2rem]">
+            <div className="p-2.5 border-b border-border flex items-center justify-between gap-3 bg-bg3/30 flex-nowrap shrink-0 rounded-t-[2rem]">
               <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 scrollbar-thin py-0.5">
                 {tabs.map((t) => {
                   const isActive = t.id === activeTabId;
@@ -1350,18 +1235,18 @@ const POS = () => {
                     <div
                       key={t.id}
                       onClick={() => switchTab(t.id)}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-xs transition-all select-none cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                      className={`flex items-center gap-2 px-3.5 py-1.8 rounded-xl border font-bold text-xs transition-all select-none cursor-pointer flex-shrink-0 whitespace-nowrap ${
                         isActive 
-                          ? 'bg-primary/10 border-primary text-primary shadow-[inset_0_0_12px_rgba(59,130,246,0.15)]' 
-                          : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
+                          ? 'bg-primary/10 border-primary text-primary shadow-[inset_0_0_12px_rgba(59,130,246,0.1)]' 
+                          : 'bg-bg border-border text-muted hover:text-text hover:bg-bg2'
                       }`}
                     >
-                      <ShoppingCart size={12} className={isActive ? 'text-primary' : 'text-muted'} />
+                      <ShoppingCart size={13} className={isActive ? 'text-primary' : 'text-muted'} />
                       <span>{displayName} ({count})</span>
                       {tabs.length > 1 && (
                         <span 
                           onClick={(e) => closeTab(t.id, e)}
-                          className="hover:bg-white/15 rounded-full p-0.5 ml-1 transition-all cursor-pointer flex items-center justify-center text-muted hover:text-text"
+                          className="hover:bg-bg3 rounded-full p-0.5 ml-1 transition-all cursor-pointer flex items-center justify-center text-muted hover:text-text"
                           title="Close Tab"
                         >
                           <X size={10} />
@@ -1372,35 +1257,36 @@ const POS = () => {
                 })}
                 <button
                   onClick={addNewTab}
-                  className="flex items-center justify-center flex-shrink-0 p-1.5 rounded-lg border border-dashed border-glass-border text-muted hover:text-text hover:border-text transition-all bg-white/5 hover:bg-white/10 h-[28px] w-[28px]"
+                  className="flex items-center justify-center flex-shrink-0 p-1.5 rounded-xl border border-dashed border-border text-muted hover:text-text hover:border-text transition-all bg-bg hover:bg-bg2 h-[28px] w-[28px]"
                   title="Add New Cart"
                 >
-                  <Plus size={12} />
+                  <Plus size={13} />
                 </button>
               </div>
               
               <button 
                 onClick={clearCart}
-                className="premium-btn bg-red/10 border border-red/20 text-red text-xs py-1.5 px-3 hover:bg-red/20 transition-all flex items-center gap-1.5 ml-auto"
+                className="premium-btn bg-red/10 border border-red/20 text-red text-xs py-1.5 px-3 hover:bg-red/20 transition-all flex items-center gap-1.5 ml-auto rounded-xl"
               >
                 <Trash2 size={12} /> Clear Cart
               </button>
             </div>
 
             {/* Cart Table Container */}
-            <div className="flex-1 overflow-auto bg-black/10">
+            <div className="flex-1 overflow-auto bg-bg/25 scrollbar-thin">
               <table className="w-full text-left border-collapse text-xs">
-                <thead className="sticky top-0 bg-bg3/95 backdrop-blur z-10">
+                <thead className="sticky top-0 bg-bg2/95 backdrop-blur-xl z-10">
                   <tr>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Medicine</th>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Batch</th>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Expiry</th>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Qty (Str)</th>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Loose Qty</th>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-center">Disc %</th>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right">MRP</th>
-                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border text-right">Total</th>
-                    <th className="p-3 text-xs font-bold text-muted tracking-wider border-b border-glass-border"></th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80">Medicine</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80">Batch</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80 text-center">Expiry</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80 text-center text-primary font-extrabold">Stock</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80 text-center">Qty (Str)</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80 text-center">Loose Qty</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80 text-center">Disc %</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80 text-right">MRP</th>
+                    <th className="p-3 text-xs font-bold text-muted uppercase tracking-wider border-b border-border/80 text-right">Total</th>
+                    <th className="p-3 text-xs font-bold text-muted tracking-wider border-b border-border/80"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1409,7 +1295,7 @@ const POS = () => {
                     const itemTotal = ((item.mrp * item.qty) + (unitRate * (item.looseQty || 0))) * (1 - (item.discount || 0) / 100);
                     
                     // Near expiry highlight
-                    let expBadgeClass = "bg-bg2 border border-glass-border text-text";
+                    let expBadgeClass = "bg-bg3 border border-border text-text";
                     if (item.expiry) {
                       const parts = item.expiry.split('/');
                       if (parts.length === 2) {
@@ -1420,25 +1306,25 @@ const POS = () => {
                         const diffMs = expDate.getTime() - new Date().getTime();
                         const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
                         if (diffDays <= 90) {
-                          expBadgeClass = "bg-amber-500/10 border border-amber-500/35 text-amber-500 font-bold";
+                          expBadgeClass = "bg-amber-500/10 border border-amber-500/30 text-amber-500 font-bold";
                         }
                       }
                     }
 
                     return (
-                      <tr key={item.id} data-medicine-id={item.medicine_id} className="border-b border-glass-border/20 hover:bg-white/5 transition-all">
+                      <tr key={item.id} data-medicine-id={item.medicine_id} className="border-b border-border/30 hover:bg-bg2/40 transition-all">
                         {/* Medicine Search/Change */}
-                        <td className="p-2 min-w-[150px] relative">
+                        <td className="p-2 min-w-[160px] relative">
                           <div className="flex items-center">
                             {item.scanImage && (
-                              <div className="relative group/thumb shrink-0 mr-2 select-none animate-in fade-in duration-200">
+                              <div className="relative group/thumb shrink-0 mr-2.5 select-none animate-in fade-in duration-200">
                                 <img 
                                   src={item.scanImage} 
                                   alt="Scan thumbnail" 
-                                  className="w-8 h-8 object-cover rounded-md border border-glass-border/60 hover:border-primary/60 transition-all cursor-zoom-in shadow-md"
+                                  className="w-9 h-9 object-cover rounded-xl border border-border/60 hover:border-primary/60 transition-all cursor-zoom-in shadow-sm"
                                   onClick={() => setZoomedImage(item.scanImage)}
                                 />
-                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/thumb:block z-dropdown bg-bg3 border border-glass-border rounded-xl p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)] w-48 animate-in fade-in duration-150">
+                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/thumb:block z-[100] bg-bg2 border border-border rounded-xl p-2 shadow-2xl w-48 animate-in fade-in duration-150">
                                   <img src={item.scanImage} alt="Scan preview" className="w-full h-auto rounded-lg object-contain" />
                                   <div className="text-[8px] text-muted text-center mt-1 font-semibold">Click to enlarge</div>
                                 </div>
@@ -1447,7 +1333,7 @@ const POS = () => {
                             <div className="flex-1 relative">
                               <input 
                                 type="text" 
-                                className="w-full bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/40 focus:ring-0 text-xs font-semibold text-text py-0.5"
+                                className="w-full bg-transparent border-0 border-b border-transparent hover:border-border/60 focus:border-primary/60 focus:ring-0 text-xs font-semibold text-text py-1 px-1 rounded"
                                 value={activeRowSearchIndex === cart.indexOf(item) ? rowSearchTerm : item.name}
                                 onChange={e => {
                                   const val = e.target.value;
@@ -1464,7 +1350,7 @@ const POS = () => {
                               />
                               
                               {activeRowSearchIndex === cart.indexOf(item) && rowSearchResults.length > 0 && (
-                                <div className="absolute left-0 right-0 z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64 shadow-2xl">
+                                <div className="absolute left-0 right-0 z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-64 shadow-2xl">
                                   {rowSearchResults.map((med) => {
                                     const rowPendingMatches = specialOrders.filter(
                                       o => o.product.toLowerCase().trim() === med.medicine_name.toLowerCase().trim() ||
@@ -1479,7 +1365,7 @@ const POS = () => {
                                           const idx = cart.indexOf(item);
                                           changeRowMedicine(idx, med);
                                         }}
-                                        className="flex flex-col p-2.5 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full"
+                                        className="flex flex-col p-2.5 hover:bg-bg3 border-b border-border/10 text-left transition-all text-xs w-full"
                                       >
                                         <div className="flex items-center gap-1.5 flex-wrap">
                                           <span className="font-semibold text-text">{med.medicine_name}</span>
@@ -1498,7 +1384,6 @@ const POS = () => {
                               )}
                             </div>
                           </div>
-                          <div className="text-[9px] text-muted ml-1.5 mt-0.5 truncate max-w-[160px]">{item.salts || 'Generic Salts'}</div>
                         </td>
 
                         {/* Batch Selection */}
@@ -1506,7 +1391,7 @@ const POS = () => {
                           <div className="relative">
                             <input
                               type="text"
-                              className="w-28 text-center bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/40 focus:ring-0 text-xs font-mono font-semibold py-0.5"
+                              className="w-28 text-center bg-bg/40 border border-border/40 hover:border-border/80 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-xs font-mono font-semibold py-1 px-1.5 rounded-lg"
                               value={item.batch || ''}
                               placeholder="Batch"
                               onChange={e => updateCartItem(item.id, 'batch', e.target.value)}
@@ -1531,8 +1416,8 @@ const POS = () => {
                             />
                             
                             {activeBatchRowId === item.id && rowBatchesList.length > 1 && (
-                              <div className="absolute left-1 z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
-                                <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
+                              <div className="absolute left-1 z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
+                                <div className="p-1.5 border-b border-border/30 bg-bg3/60 text-[9px] font-bold text-muted uppercase tracking-wider">
                                   Switch Batch:
                                 </div>
                                 {rowBatchesList.map(b => (
@@ -1549,12 +1434,13 @@ const POS = () => {
                                           expiry: b.expiry_date,
                                           mrp: b.mrp,
                                           costPrice: b.cost_price,
-                                          packSize: b.pack_size || cItem.packSize
+                                          packSize: b.pack_size || cItem.packSize,
+                                          availableStock: b.quantity !== undefined ? b.quantity : 0
                                         };
                                       }));
                                       setActiveBatchRowId(null);
                                     }}
-                                    className={`w-full text-left px-2.5 py-1.5 hover:bg-sky/15 border-b border-glass-border/10 text-[10px] font-mono transition-all block ${b.batch_no === item.batch ? 'bg-sky/10 text-sky' : 'text-text'}`}
+                                    className={`w-full text-left px-2.5 py-1.5 hover:bg-sky/15 border-b border-border/10 text-[10px] font-mono transition-all block ${b.batch_no === item.batch ? 'bg-sky/10 text-sky' : 'text-text'}`}
                                   >
                                     <span className="font-bold block">{b.batch_no}</span>
                                     <span className="text-muted block text-[8px]">Exp: {b.expiry_date} | Stock: {b.quantity} | MRP: ₹{b.mrp}</span>
@@ -1567,14 +1453,29 @@ const POS = () => {
                         
                         {/* Expiry */}
                         <td className="p-2 text-center">
-                          <div className={`font-mono text-xs font-semibold px-2 py-0.5 rounded inline-block ${expBadgeClass}`}>{item.expiry}</div>
+                          <div className={`font-mono text-[10px] font-bold px-2 py-0.8 rounded-lg inline-block shadow-sm ${expBadgeClass}`}>{item.expiry}</div>
                         </td>
 
-                        {/* Qty (Strips) */}
+                        {/* Stock */}
+                        <td className="p-2 text-center">
+                          <div className={`font-mono text-xs font-bold bg-bg3/50 px-2 py-1 rounded-lg border border-border/30 inline-block shadow-sm ${
+                            item.availableStock === 'N/A' || item.availableStock === undefined || item.availableStock === null
+                              ? 'text-muted'
+                              : Number(item.availableStock) <= 0
+                              ? 'text-red font-extrabold bg-red/5 border-red/20'
+                              : Number(item.availableStock) <= 10
+                              ? 'text-amber-500 font-bold bg-amber-500/5 border-amber-500/20'
+                              : 'text-green font-bold bg-green/5 border-green/20'
+                          }`}>
+                            {item.availableStock !== undefined ? item.availableStock : 'N/A'}
+                          </div>
+                        </td>
+
+                        {/* Qty */}
                         <td className="p-2 text-center">
                           <input 
                             type="number" 
-                            className="w-20 text-center font-mono font-bold text-text bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/45 focus:ring-0 py-0.5" 
+                            className="w-16 text-center bg-bg/40 border border-border/40 hover:border-border/80 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-xs font-mono font-bold py-1 px-1 rounded-lg"
                             value={item.qty === 0 || item.qty === undefined || item.qty === null ? '' : item.qty}
                             onChange={e => updateCartItem(item.id, 'qty', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
                             min="0"
@@ -1585,18 +1486,18 @@ const POS = () => {
                         <td className="p-2 text-center">
                           <input 
                             type="number" 
-                            className="w-20 text-center font-mono font-bold text-amber-500 bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-amber-45 focus:ring-0 py-0.5" 
+                            className="w-16 text-center bg-bg/40 border border-border/40 hover:border-border/80 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-xs font-mono font-bold text-amber-500 py-1 px-1 rounded-lg"
                             value={item.looseQty === 0 || item.looseQty === undefined || item.looseQty === null ? '' : item.looseQty}
                             onChange={e => updateCartItem(item.id, 'looseQty', e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
                             min="0"
                           />
                         </td>
 
-                        {/* Disc % */}
+                        {/* Discount */}
                         <td className="p-2 text-center">
                           <input 
                             type="number" 
-                            className="w-20 text-center font-mono font-bold text-sky bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-sky/45 focus:ring-0 py-0.5" 
+                            className="w-16 text-center bg-bg/40 border border-border/40 hover:border-border/80 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-xs font-mono font-bold text-sky py-1 px-1 rounded-lg"
                             value={item.discount === 0 || item.discount === undefined || item.discount === null ? '' : item.discount}
                             onChange={e => updateCartItem(item.id, 'discount', e.target.value === '' ? 0 : Math.min(100, Math.max(0, Number(e.target.value))))}
                             min="0"
@@ -1608,7 +1509,7 @@ const POS = () => {
                         <td className="p-2 text-right">
                           <input 
                             type="number" 
-                            className="w-16 text-right font-mono bg-transparent border-0 border-b border-transparent hover:border-glass-border/40 focus:border-primary/40 focus:ring-0 py-0.5" 
+                            className="w-16 text-right font-mono bg-bg/40 border border-border/40 hover:border-border/80 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-xs py-1 px-1.5 rounded-lg" 
                             value={item.mrp || ''}
                             placeholder="0.00"
                             onChange={e => updateCartItem(item.id, 'mrp', Math.max(0, Number(e.target.value)))}
@@ -1617,14 +1518,14 @@ const POS = () => {
 
                         {/* Total */}
                         <td className="p-2 text-right">
-                          <div className="font-mono text-xs font-bold text-green">
+                          <div className="font-mono text-xs font-bold text-green pr-1">
                             ₹{Math.round(itemTotal)}
                           </div>
                         </td>
 
                         {/* Actions */}
                         <td className="p-2 text-center">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1632,14 +1533,14 @@ const POS = () => {
                                 if (item.medicine_id) setEditMedicineId(item.medicine_id);
                               }}
                               disabled={!item.medicine_id}
-                              className={`p-1 rounded-lg transition-all ${item.medicine_id ? 'hover:bg-sky/10 text-muted hover:text-sky' : 'opacity-30 cursor-not-allowed text-muted'}`}
+                              className={`p-1.5 rounded-lg transition-all ${item.medicine_id ? 'hover:bg-sky/10 text-muted hover:text-sky' : 'opacity-30 cursor-not-allowed text-muted'}`}
                               title="Quick Edit Medicine"
                             >
                               <Edit size={13} />
                             </button>
                             <button 
                               onClick={() => removeFromCart(item.id)}
-                              className="p-1 hover:bg-red/10 text-muted hover:text-red rounded-lg transition-all"
+                              className="p-1.5 hover:bg-red/10 text-muted hover:text-red rounded-lg transition-all"
                             >
                               <Trash2 size={13} />
                             </button>
@@ -1648,168 +1549,6 @@ const POS = () => {
                       </tr>
                     );
                   })}
-
-                  {/* MANUAL BILLING ROW */}
-                  <tr className="bg-white/5 border-t-2 border-primary/20 hover:bg-white/10 transition-all">
-                    <td className="p-2">
-                      <div className="relative">
-                        <span className="absolute inset-y-0 left-0 pl-1.5 flex items-center pointer-events-none">
-                          <Plus size={13} className="text-sky animate-pulse stroke-[3]" />
-                        </span>
-                        <input 
-                          id="manual-medicine-name-input"
-                          type="text" 
-                          placeholder="Add Next Medicine / Custom Entry..." 
-                          className="premium-input text-xs py-2 pl-5 pr-2 w-full border-sky/30 text-text bg-white/5 font-semibold placeholder:text-muted focus:border-sky" 
-                          value={manualName}
-                          onChange={e => setManualName(e.target.value)}
-                          onFocus={() => {
-                            if (manualName.trim().length >= 3) {
-                              setShowManualSuggestions(true);
-                            }
-                          }}
-                          onBlur={() => {
-                            setTimeout(() => {
-                              setShowManualSuggestions(false);
-                            }, 250);
-                          }}
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                        />
-                        {showManualSuggestions && manualSuggestions.length > 0 && (
-                          <div className="absolute left-0 right-0 z-[100] mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-72 shadow-2xl text-left">
-                            <div className="p-1.5 border-b border-glass-border/30 bg-black/20 text-[9px] font-bold text-muted uppercase tracking-wider">
-                              Select Medicine:
-                            </div>
-                            {manualSuggestions.map((med) => (
-                              <button
-                                key={med.inventory_id || med.id}
-                                type="button"
-                                onClick={() => selectManualSuggestion(med)}
-                                className="flex flex-col p-2.5 hover:bg-white/5 border-b border-glass-border/10 text-left transition-all text-xs w-full"
-                              >
-                                <span className="font-semibold text-text">{med.medicine_name}</span>
-                                <span className="text-[9px] text-muted font-mono mt-0.5">Batch: {med.batch_no} | Exp: {med.expiry_date}</span>
-                                <span className="text-[9px] text-green font-bold font-mono mt-0.5">MRP: ₹{Math.round(med.mrp)} | Stock: {med.quantity}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    
-                    <td className="p-2">
-                      <input 
-                        type="text" 
-                        placeholder="Batch" 
-                        className={`premium-input text-xs font-mono py-2 px-1.5 w-28 text-center font-bold bg-white/5 text-text border-glass-border/40 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
-                        value={manualBatch}
-                        onChange={e => setManualBatch(e.target.value)}
-                        disabled={!manualName.trim()}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                    </td>
-
-                    <td className="p-2 text-center">
-                      <input 
-                        type="text" 
-                        placeholder="MM/YY" 
-                        className={`premium-input text-xs font-mono py-2 px-1 text-center w-14 font-bold bg-white/5 text-text border-glass-border/40 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
-                        value={manualExpiry}
-                        onChange={e => setManualExpiry(e.target.value)}
-                        disabled={!manualName.trim()}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                    </td>
-
-                    <td className="p-2 text-center">
-                      <input 
-                        type="number" 
-                        className={`premium-input text-xs font-mono py-2 px-1.5 w-20 text-center font-bold bg-white/5 text-text border-primary/30 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
-                        value={manualQty === 0 || manualQty === undefined || manualQty === null ? '' : manualQty}
-                        onChange={e => setManualQty(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
-                        min="0"
-                        disabled={!manualName.trim()}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                    </td>
-
-                    <td className="p-2 text-center">
-                      <input 
-                        type="number" 
-                        className={`premium-input text-xs font-mono py-2 px-1.5 w-20 text-center font-bold bg-white/5 text-amber-500 border-amber-500/30 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
-                        value={manualLooseQty === 0 || manualLooseQty === undefined || manualLooseQty === null ? '' : manualLooseQty}
-                        onChange={e => setManualLooseQty(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
-                        min="0"
-                        disabled={!manualName.trim()}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                    </td>
-
-                    <td className="p-2 text-center">
-                      <input 
-                        type="number" 
-                        className={`premium-input text-xs font-mono py-2 px-1.5 w-20 text-center font-bold bg-white/5 text-sky border-sky/30 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
-                        value={manualDiscount === 0 || manualDiscount === undefined || manualDiscount === null ? '' : manualDiscount}
-                        onChange={e => setManualDiscount(e.target.value === '' ? 0 : Math.min(100, Math.max(0, Number(e.target.value))))}
-                        min="0"
-                        max="100"
-                        disabled={!manualName.trim()}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                    </td>
-
-                    <td className="p-2 text-right">
-                      <input 
-                        type="number" 
-                        placeholder="0.00" 
-                        className={`premium-input text-xs font-mono py-2 px-1.5 w-16 text-right bg-white/5 ${!manualName.trim() ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`}
-                        value={manualMrp || ''}
-                        onChange={e => setManualMrp(Math.max(0, Number(e.target.value)))}
-                        disabled={!manualName.trim()}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addManualItem(); } }}
-                      />
-                    </td>
-
-                    <td className="p-2 text-right">
-                      <div className="font-mono text-xs font-bold text-green bg-green/10 border border-green/20 rounded px-2 py-1.5 text-right">
-                        ₹{Math.round(((manualMrp * manualQty) + ((manualPackSize > 0 ? manualMrp / manualPackSize : manualMrp) * (manualLooseQty || 0))) * (1 - (manualDiscount || 0) / 100))}
-                      </div>
-                    </td>
-
-                    <td className="p-2 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button 
-                          onClick={addManualItem}
-                          className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-sky/20 border-sky text-sky hover:bg-sky/30 active:scale-95 cursor-pointer"
-                          title="Add to Invoice"
-                          onKeyDown={e => {
-                            if (e.key === 'Tab' && !e.shiftKey) {
-                              e.preventDefault();
-                              document.getElementById('manual-medicine-name-input')?.focus();
-                            }
-                          }}
-                        >
-                          <Plus size={13} className="stroke-[3]" />
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setManualName('');
-                            setManualBatch('');
-                            setManualExpiry('');
-                            setManualQty(0);
-                            setManualLooseQty(0);
-                            setManualDiscount(0);
-                            setManualMrp(0);
-                            setManualCostPrice(0);
-                          }}
-                          className="p-1.5 rounded-lg border flex items-center justify-center transition-all bg-red/20 border-red text-red hover:bg-red/30 active:scale-95 cursor-pointer"
-                          title="Clear Inputs"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
                 </tbody>
               </table>
             </div>
@@ -1817,11 +1556,11 @@ const POS = () => {
         </div>
 
         {/* RIGHT SIDEBAR (approx 25-28% width) - Houses Customer, Copilot, Summary & Checkout */}
-        <div className="w-80 xl:w-96 flex flex-col gap-2 shrink-0 z-20 select-none h-full overflow-hidden justify-between">
+        <div className="w-80 xl:w-96 flex flex-col gap-3 shrink-0 z-20 select-none h-full overflow-hidden justify-between">
           
           {/* Section 1: Customer & Prescriber Context */}
-          <div className="glass-panel p-2.5 bg-glass-bg border-glass-border flex flex-col gap-2 shrink-0 relative z-30">
-            <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider shrink-0 border-b border-glass-border/30 pb-2">
+          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex flex-col gap-3 shrink-0 relative z-30 shadow-md">
+            <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider shrink-0 border-b border-border/40 pb-2">
               <span className="text-sky">👤</span> Patient & Doctor Context
             </h3>
             
@@ -1831,7 +1570,7 @@ const POS = () => {
               <div className="flex gap-1 items-center">
                 <input 
                   type="text" 
-                  className="premium-input text-xs h-9 px-3 flex-1 w-full" 
+                  className="premium-input text-xs h-9 px-3 flex-1 w-full bg-bg2/40 border-border/60 rounded-xl" 
                   placeholder="Walk-in Customer" 
                   value={patientName}
                   onChange={e => { updatePatientName(e.target.value); setPatientHighlightIndex(-1); }}
@@ -1860,7 +1599,7 @@ const POS = () => {
                   aria-label="Patient Name"
                 />
                 {showPatientSuggestions && (
-                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-2xl">
+                  <div className="absolute left-0 right-0 top-full z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-2xl">
                     {patientSuggestions.map((c, idx) => (
                       <button
                         key={c.id}
@@ -1871,7 +1610,7 @@ const POS = () => {
                           setShowPatientSuggestions(false);
                           setPatientHighlightIndex(-1);
                         }}
-                        className={`w-full text-left px-3 py-2 text-xs border-b border-glass-border/10 transition-all flex items-center justify-between gap-2 ${
+                        className={`w-full text-left px-3 py-2 text-xs border-b border-border/10 transition-all flex items-center justify-between gap-2 ${
                           idx === patientHighlightIndex
                             ? 'bg-primary/20 text-text font-bold'
                             : 'text-text hover:bg-primary/10'
@@ -1899,7 +1638,7 @@ const POS = () => {
               <div className="flex gap-2">
                 <input 
                   type="text" 
-                  className="premium-input text-xs h-9 px-3 w-full font-mono text-text" 
+                  className="premium-input text-xs h-9 px-3 w-full font-mono text-text bg-bg2/40 border-border/60 rounded-xl" 
                   placeholder="9876543210"
                   value={patientPhone}
                   onChange={e => setPatientPhone(e.target.value)}
@@ -1907,10 +1646,10 @@ const POS = () => {
                 />
                 <button 
                   onClick={() => setSendWhatsApp(!sendWhatsApp)}
-                  className={`h-9 px-2.5 rounded-xl border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 transition-all select-none shrink-0 ${
+                  className={`h-9 px-3 rounded-xl border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none shrink-0 ${
                     sendWhatsApp 
-                      ? 'bg-green/15 border-green/40 text-green hover:bg-green/25' 
-                      : 'bg-bg border-glass-border text-muted hover:text-text hover:bg-bg3'
+                      ? 'bg-green/15 border-green/30 text-green hover:bg-green/25' 
+                      : 'bg-bg border-border text-muted hover:text-text hover:bg-bg2'
                   }`}
                   title={sendWhatsApp ? "WhatsApp Notifications Active" : "WhatsApp Notifications Inactive"}
                 >
@@ -1932,7 +1671,7 @@ const POS = () => {
               <div className="flex gap-1 relative">
                 <input 
                   type="text"
-                  className="premium-input text-xs h-9 pl-3 pr-7 bg-bg2 w-full text-text focus:border-sky"
+                  className="premium-input text-xs h-9 pl-3 pr-7 bg-bg2/40 border-border/60 w-full text-text focus:border-sky rounded-xl"
                   placeholder="Type or Select Doctor..."
                   value={doctor}
                   onChange={e => { setDoctor(e.target.value); setDoctorHighlightIndex(-1); }}
@@ -1965,7 +1704,7 @@ const POS = () => {
                 </span>
                 
                 {isDoctorDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full z-dropdown mt-1 bg-bg3 border border-glass-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
+                  <div className="absolute left-0 right-0 top-full z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
                     {filteredDoctors.length > 0 ? (
                       filteredDoctors.map((doc, idx) => (
                         <button
@@ -1976,7 +1715,7 @@ const POS = () => {
                             setIsDoctorDropdownOpen(false);
                             setDoctorHighlightIndex(-1);
                           }}
-                          className={`w-full text-left px-3 py-2 text-xs border-b border-glass-border/10 transition-all font-semibold ${
+                          className={`w-full text-left px-3 py-2 text-xs border-b border-border/10 transition-all font-semibold ${
                             idx === doctorHighlightIndex
                               ? 'bg-sky/20 text-text font-bold'
                               : 'text-text hover:bg-sky/10'
@@ -2007,7 +1746,7 @@ const POS = () => {
               <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Billing Date</label>
               <input 
                 type="date" 
-                className="premium-input text-xs h-9 px-3 text-text w-full font-mono" 
+                className="premium-input text-xs h-9 px-3 text-text w-full font-mono bg-bg2/40 border-border/60 rounded-xl" 
                 value={date}
                 onChange={e => setDate(e.target.value)}
                 aria-label="Transaction Date"
@@ -2016,41 +1755,41 @@ const POS = () => {
           </div>
 
           {/* Section 2: Clinical Copilot Insights & Feed */}
-          <div className="glass-panel p-2.5 bg-glass-bg border-glass-border flex-1 flex flex-col gap-1.5 min-h-0">
+          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex-1 flex flex-col gap-2 min-h-0 shadow-md">
             {/* Interactive Scanner Box */}
             <button 
               type="button"
               onClick={() => setShowCamera(true)}
-              className="relative w-full flex-1 min-h-[5rem] bg-black/40 hover:bg-black/60 border border-glass-border hover:border-green/45 rounded-xl flex items-center justify-center select-none overflow-hidden group transition-all duration-300 cursor-pointer"
+              className="relative w-full flex-1 min-h-[5.5rem] bg-bg/50 hover:bg-bg/85 border border-border hover:border-green/40 rounded-xl flex items-center justify-center select-none overflow-hidden group transition-all duration-300 cursor-pointer shadow-inner"
               title="Click to Scan Prescription / Medicine"
             >
-              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(16,185,129,0.05)_1px,transparent_1px)] bg-[size:100%_6px] animate-scan-slow" />
-              <div className="absolute left-0 right-0 h-0.5 bg-green/40 shadow-[0_0_8px_rgba(16,185,129,0.6)] group-hover:bg-green group-hover:shadow-[0_0_12px_rgba(16,185,129,0.8)] animate-scan-bar" />
+              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(16,185,129,0.03)_1px,transparent_1px)] bg-[size:100%_6px] animate-scan-slow" />
+              <div className="absolute left-0 right-0 h-0.5 bg-green/40 shadow-[0_0_8px_rgba(16,185,129,0.5)] group-hover:bg-green group-hover:shadow-[0_0_12px_rgba(16,185,129,0.75)] animate-scan-bar" />
               <div className="flex items-center gap-2.5 relative z-10">
                 <Camera className="text-green group-hover:scale-110 transition-all duration-300 animate-pulse" size={20} />
                 <span className="text-[10px] text-green/80 group-hover:text-green font-mono font-bold tracking-widest uppercase">
-                  [ SCAN ]
+                  [ Prescription Scan ]
                 </span>
               </div>
             </button>
 
             {/* Clinical Insights */}
             {doctor && (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <span className="text-[9px] font-bold text-muted uppercase tracking-wider block mb-0.5">Co-prescribed Suggestions:</span>
-                <div className="max-h-24 overflow-y-auto scrollbar-thin space-y-1">
+                <div className="max-h-28 overflow-y-auto scrollbar-thin space-y-1.5">
                   {commonCombinations.slice(0, 3).map((med, idx) => (
                     <button 
                       key={`dr-sugg-${idx}`}
                       onClick={() => addToCart(med)}
-                      className="w-full flex items-center justify-between p-1.5 rounded-lg bg-white/5 border border-glass-border/40 hover:border-primary/40 hover:bg-primary/5 text-left text-[11px] transition-all duration-200 hover:translate-x-1"
+                      className="w-full flex items-center justify-between p-2 rounded-xl bg-bg2/45 border border-border hover:border-primary/40 hover:bg-primary/5 text-left text-[11px] transition-all duration-200 hover:translate-x-1"
                     >
                       <div className="min-w-0 flex-1 pr-2 truncate">
                         <span className="font-semibold text-text truncate">
                           {med.name}
                         </span>
                       </div>
-                      <span className="text-[9px] bg-primary/10 border border-primary/20 text-primary py-0.5 px-2 rounded font-bold shrink-0">+ Add</span>
+                      <span className="text-[9px] bg-primary/10 border border-primary/20 text-primary py-0.5 px-2 rounded-lg font-bold shrink-0">+ Add</span>
                     </button>
                   ))}
                   {commonCombinations.length === 0 && (
@@ -2062,67 +1801,80 @@ const POS = () => {
           </div>
 
           {/* Section 3: Checkout Summary & Total */}
-          <div className="glass-panel p-2.5 bg-glass-bg border-glass-border flex flex-col gap-2 mt-auto shrink-0">
-            <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider border-b border-glass-border/30 pb-1.5">
+          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex flex-col gap-3 mt-auto shrink-0 shadow-lg">
+            <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider border-b border-border/40 pb-2">
               💳 Payment & Checkout
             </h3>
 
-            {/* Calculations Breakdown */}
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between items-center text-muted">
-                <span>Subtotal</span>
-                <span className="font-mono text-text">₹{Math.round(subtotal)}</span>
-              </div>
-              
-              <div className="flex justify-between items-center text-muted">
-                <span>Overall Discount %</span>
-                <input 
-                  type="number" 
-                  className="premium-input text-xs py-0.5 px-1.5 w-12 text-center font-mono" 
-                  value={discount === 0 || discount === undefined || discount === null ? '' : discount}
-                  onChange={e => setDiscount(e.target.value === '' ? 0 : Math.min(100, Math.max(0, Number(e.target.value))))}
-                  min="0"
-                  max="100"
-                />
-              </div>
+            {/* Calculations Breakdown Receipt Card */}
+            <div className="bg-bg2/80 border border-border rounded-2xl p-3.5 space-y-3.5 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-green to-amber-500" />
+              <h4 className="font-bold flex items-center gap-2 text-[10px] text-muted uppercase tracking-widest">
+                🧾 Digital Invoice
+              </h4>
 
-              {discountAmount > 0 && (
-                <div className="flex justify-between items-center text-amber-500 font-bold">
-                  <span>Saved Amount</span>
-                  <span className="font-mono">-₹{Math.round(discountAmount)}</span>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between items-center text-muted">
+                  <span>Subtotal</span>
+                  <span className="font-mono text-text font-semibold">₹{Math.round(subtotal)}</span>
                 </div>
-              )}
-
-              {/* Payment selector tabs */}
-              <div className="pt-1">
-                <span className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Payment Method</span>
-                <div className="flex bg-bg2 border border-glass-border rounded-lg p-0.5 w-full">
-                  {[
-                    { id: 'CASH', label: '💵 Cash', color: 'peer-checked:bg-green/20 peer-checked:text-green peer-checked:border-green/30 border-transparent border' },
-                    { id: 'UPI', label: '📱 UPI', color: 'peer-checked:bg-primary/20 peer-checked:text-primary peer-checked:border-primary/30 border-transparent border' },
-                    { id: 'CREDIT', label: '💳 Credit', color: 'peer-checked:bg-amber-500/20 peer-checked:text-amber-500 peer-checked:border-amber-500/30 border-transparent border' }
-                  ].map(item => (
-                    <label key={item.id} className="relative cursor-pointer flex-1 text-center">
-                      <input 
-                        type="radio" 
-                        name="payment_medium" 
-                        value={item.id} 
-                        checked={paymentMedium === item.id} 
-                        onChange={e => setPaymentMedium(e.target.value)}
-                        className="sr-only peer"
-                      />
-                      <span className={`py-1 rounded-md text-[10px] uppercase font-bold tracking-wider block transition-all hover:bg-white/5 ${paymentMedium === item.id ? item.color : 'text-muted'}`}>
-                        {item.label}
-                      </span>
-                    </label>
-                  ))}
+                
+                <div className="flex justify-between items-center text-muted">
+                  <span>Overall Discount %</span>
+                  <input 
+                    type="number" 
+                    className="premium-input text-xs py-0.5 px-1.5 w-14 text-center font-mono bg-bg border-border rounded-lg" 
+                    value={discount === 0 || discount === undefined || discount === null ? '' : discount}
+                    onChange={e => setDiscount(e.target.value === '' ? 0 : Math.min(100, Math.max(0, Number(e.target.value))))}
+                    min="0"
+                    max="100"
+                  />
                 </div>
-              </div>
 
-              {/* Grand Total */}
-              <div className="pt-1.5 border-t border-glass-border/45 flex justify-between items-center">
-                <span className="text-sm font-extrabold text-primary uppercase">Grand Total</span>
-                <span className="font-mono text-2xl font-black text-primary">₹{grandTotal}</span>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between items-center text-amber-500 font-bold bg-amber-500/5 px-2 py-1 rounded-lg border border-amber-500/20">
+                    <span>Discount Applied</span>
+                    <span className="font-mono">-₹{Math.round(discountAmount)}</span>
+                  </div>
+                )}
+
+                {/* Payment selector tabs */}
+                <div className="pt-1.5">
+                  <span className="text-[9px] font-bold text-muted uppercase tracking-wider block mb-1.5">Payment Method</span>
+                  <div className="flex bg-bg3 border border-border rounded-xl p-1 w-full gap-1">
+                    {[
+                      { id: 'CASH', label: '💵 Cash', activeClass: 'bg-green/15 text-green border-green/30' },
+                      { id: 'UPI', label: '📱 UPI', activeClass: 'bg-primary/15 text-primary border-primary/30' },
+                      { id: 'CREDIT', label: '💳 Credit', activeClass: 'bg-amber-500/15 text-amber-500 border-amber-500/30' }
+                    ].map(item => (
+                      <label key={item.id} className="relative cursor-pointer flex-1 text-center select-none">
+                        <input 
+                          type="radio" 
+                          name="payment_medium" 
+                          value={item.id} 
+                          checked={paymentMedium === item.id} 
+                          onChange={e => setPaymentMedium(e.target.value)}
+                          className="sr-only peer"
+                        />
+                        <span className={`py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-wider block border transition-all ${
+                          paymentMedium === item.id 
+                            ? `${item.activeClass} border shadow-sm` 
+                            : 'border-transparent text-muted hover:text-text hover:bg-bg2/40'
+                        }`}>
+                          {item.label}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-dashed border-border/80 my-2" />
+
+                {/* Grand Total */}
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-sm font-extrabold text-primary uppercase tracking-wider">Grand Total</span>
+                  <span className="font-mono text-2xl font-black text-primary">₹{grandTotal}</span>
+                </div>
               </div>
             </div>
 
@@ -2130,10 +1882,10 @@ const POS = () => {
             <button 
               onClick={handleCompleteSale}
               disabled={cart.length === 0}
-              className={`w-full text-text py-2.5 px-4 text-xs flex items-center justify-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all shadow-[0_4px_14px_rgba(16,185,129,0.3)] ${
+              className={`w-full text-text py-3 px-4 text-xs flex items-center justify-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all ${
                 cart.length === 0 
-                  ? 'bg-white/5 border border-glass-border text-muted cursor-not-allowed' 
-                  : 'bg-green hover:bg-emerald-600 animate-pulse-subtle'
+                  ? 'bg-bg3 border border-border text-muted cursor-not-allowed' 
+                  : 'bg-green hover:bg-emerald-600 shadow-[0_4px_14px_rgba(16,185,129,0.25)] animate-pulse-subtle hover:-translate-y-0.5'
               }`}
             >
               <CheckCircle size={15} /> Save Bill (Ctrl+S)
@@ -2154,7 +1906,7 @@ const POS = () => {
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-global-modal flex items-center justify-center p-4 cursor-pointer animate-in fade-in duration-200"
           onClick={() => setZoomedImage(null)}
         >
-          <div className="relative max-w-3xl max-h-[85vh] bg-bg2 border border-glass-border rounded-2xl overflow-hidden p-2 shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="relative max-w-3xl max-h-[85vh] bg-bg2 border border-border rounded-2xl overflow-hidden p-2 shadow-2xl animate-in zoom-in-95 duration-200">
             <img src={zoomedImage} alt="Zoomed medicine scan" className="max-w-full max-h-[80vh] object-contain rounded-lg" />
             <button 
               className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-text rounded-full p-2 transition-all"
@@ -2171,16 +1923,16 @@ const POS = () => {
       {/* Patient Profile & Auto-Refills Modal */}
       {showPatientModal && createPortal(
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-fade-in">
-          <div className="glass-panel max-w-md w-full p-6 space-y-5 border-glass-border bg-bg2/95 rounded-2xl relative">
+          <div className="glass-panel max-w-md w-full p-6 space-y-5 border-border bg-bg2/95 rounded-2xl relative shadow-2xl">
             {/* Modal Header */}
-            <div className="flex justify-between items-center border-b border-glass-border pb-3">
+            <div className="flex justify-between items-center border-b border-border pb-3">
               <h3 className="font-bold flex items-center gap-2 text-lg text-text">
                 <UserCheck size={20} className="text-primary" />
                 Manage Patient & Refills
               </h3>
               <button 
                 onClick={() => setShowPatientModal(false)}
-                className="p-1 rounded-lg hover:bg-white/10 text-muted hover:text-text transition-all"
+                className="p-1.5 rounded-lg hover:bg-bg3 text-muted hover:text-text transition-all"
               >
                 <X size={18} />
               </button>
@@ -2193,7 +1945,7 @@ const POS = () => {
                 <span className="text-xs font-bold text-muted uppercase tracking-wider">Patient Card ID</span>
                 <input 
                   type="text" 
-                  className="premium-input w-full text-xs font-mono py-2 px-3 bg-white/5 cursor-not-allowed" 
+                  className="premium-input w-full text-xs font-mono py-2 px-3 bg-bg3/40 cursor-not-allowed rounded-xl" 
                   value={patientId}
                   disabled
                   title="Auto-generated unique card ID"
@@ -2205,7 +1957,7 @@ const POS = () => {
                 <span className="text-xs font-bold text-muted uppercase tracking-wider">Full Name</span>
                 <input 
                   type="text" 
-                  className="premium-input w-full text-sm py-2 px-3" 
+                  className="premium-input w-full text-sm py-2 px-3 bg-bg2/50 border-border/80 rounded-xl" 
                   placeholder="Enter full name" 
                   value={patientName}
                   onChange={e => updatePatientName(e.target.value)}
@@ -2219,7 +1971,7 @@ const POS = () => {
                 </span>
                 <input 
                   type="text" 
-                  className="premium-input w-full text-sm font-mono py-2 px-3" 
+                  className="premium-input w-full text-sm font-mono py-2 px-3 bg-bg2/50 border-border/80 rounded-xl" 
                   placeholder="e.g. 9130558910" 
                   value={patientPhone}
                   onChange={e => setPatientPhone(e.target.value)}
@@ -2227,7 +1979,7 @@ const POS = () => {
               </div>
 
               {/* Auto-Refill Manager Section */}
-              <div className="border border-glass-border rounded-xl p-4 bg-white/5 space-y-3">
+              <div className="border border-border rounded-2xl p-4 bg-bg3/30 space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="space-y-0.5">
                     <span className="text-xs font-bold text-text uppercase tracking-wider flex items-center gap-1.5">
@@ -2242,12 +1994,12 @@ const POS = () => {
                       checked={refillEnabled}
                       onChange={e => setRefillEnabled(e.target.checked)}
                     />
-                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-muted after:border-glass-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary peer-checked:after:bg-text"></div>
+                    <div className="w-9 h-5 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-text after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-muted after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary peer-checked:after:bg-text"></div>
                   </label>
                 </div>
 
                 {refillEnabled && (
-                  <div className="space-y-3 pt-2 border-t border-glass-border/40 animate-fade-in">
+                  <div className="space-y-3 pt-2 border-t border-border/40 animate-fade-in">
                     <div className="space-y-1.5">
                       <span className="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-1">
                         <Calendar size={12} /> Refill Interval (Days)
@@ -2255,7 +2007,7 @@ const POS = () => {
                       <div className="flex gap-2">
                         <input 
                           type="number" 
-                          className="premium-input text-sm font-mono py-1.5 px-3 w-20 text-center" 
+                          className="premium-input text-sm font-mono py-1.5 px-3 w-20 text-center bg-bg border-border rounded-xl" 
                           value={refillDays}
                           onChange={e => setRefillDays(Math.min(100, Math.max(1, Number(e.target.value))))}
                           min="1"
@@ -2267,7 +2019,7 @@ const POS = () => {
                               key={days}
                               type="button"
                               onClick={() => setRefillDays(days)}
-                              className={`text-xs py-1 px-2.5 rounded-lg border font-mono transition-all flex-1 ${refillDays === days ? 'bg-primary/20 border-primary text-primary' : 'bg-white/5 border-glass-border text-muted hover:text-text'}`}
+                              className={`text-xs py-1 px-2.5 rounded-xl border font-mono transition-all flex-1 ${refillDays === days ? 'bg-primary/20 border-primary text-primary' : 'bg-bg2 border-border text-muted hover:text-text'}`}
                             >
                               {days}d
                             </button>
@@ -2288,7 +2040,7 @@ const POS = () => {
                           max="100"
                           value={refillDays}
                           onChange={e => setRefillDays(Number(e.target.value))}
-                          className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
+                          className="w-full h-1.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary"
                         />
                       </div>
                     </div>
@@ -2298,16 +2050,16 @@ const POS = () => {
             </div>
 
             {/* Modal Footer */}
-            <div className="pt-2 border-t border-glass-border flex justify-end gap-3">
+            <div className="pt-2 border-t border-border flex justify-end gap-3">
               <button 
                 onClick={() => setShowPatientModal(false)}
-                className="premium-btn bg-white/5 border border-glass-border text-muted hover:text-text hover:bg-white/10 py-2 px-4 text-xs font-bold uppercase tracking-wider"
+                className="premium-btn bg-bg2 border border-border text-muted hover:text-text hover:bg-bg3 py-2 px-4 text-xs font-bold uppercase tracking-wider rounded-xl"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleSavePatientProfile}
-                className="premium-btn bg-primary text-text hover:bg-teal-500 py-2 px-5 text-xs font-bold uppercase tracking-wider"
+                className="premium-btn bg-primary text-text hover:bg-teal-500 py-2 px-5 text-xs font-bold uppercase tracking-wider rounded-xl shadow-md"
               >
                 Save Profile (Ctrl+S)
               </button>
@@ -2320,9 +2072,9 @@ const POS = () => {
       {/* Doctor Registration Modal */}
       {showDoctorModal && createPortal(
         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in">
-          <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
-            <div className="px-5 py-4 border-b border-glass-border bg-white/5 flex items-center justify-between">
-              <h3 className="font-bold flex items-center gap-2 text-sky">
+          <div className="bg-bg border border-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-border bg-bg3/30 flex items-center justify-between">
+              <h3 className="font-bold flex items-center gap-2 text-sky text-sm">
                 <Plus size={18} />
                 Register New Doctor
               </h3>
@@ -2338,7 +2090,7 @@ const POS = () => {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm font-semibold">Dr.</span>
                   <input
                     type="text"
-                    className="premium-input w-full pl-9"
+                    className="premium-input w-full pl-9 rounded-xl bg-bg2/40 border-border"
                     placeholder="John Doe"
                     value={newDoctorName}
                     onChange={(e) => setNewDoctorName(e.target.value)}
@@ -2350,7 +2102,7 @@ const POS = () => {
                 <label className="text-xs font-bold text-muted uppercase tracking-wider">Specialization</label>
                 <input
                   type="text"
-                  className="premium-input w-full"
+                  className="premium-input w-full rounded-xl bg-bg2/40 border-border"
                   placeholder="e.g. Cardiologist"
                   value={newDoctorSpecialty}
                   onChange={(e) => setNewDoctorSpecialty(e.target.value)}
@@ -2361,7 +2113,7 @@ const POS = () => {
                 <label className="text-xs font-bold text-muted uppercase tracking-wider">Phone</label>
                 <input
                   type="text"
-                  className="premium-input w-full"
+                  className="premium-input w-full rounded-xl bg-bg2/40 border-border"
                   placeholder="Contact Number"
                   value={newDoctorPhone}
                   onChange={(e) => setNewDoctorPhone(e.target.value)}
@@ -2372,7 +2124,7 @@ const POS = () => {
                 <label className="text-xs font-bold text-muted uppercase tracking-wider">Clinic Name</label>
                 <input
                   type="text"
-                  className="premium-input w-full"
+                  className="premium-input w-full rounded-xl bg-bg2/40 border-border"
                   placeholder="Clinic / Hospital Name"
                   value={newDoctorClinic}
                   onChange={(e) => setNewDoctorClinic(e.target.value)}
@@ -2383,7 +2135,7 @@ const POS = () => {
                 <label className="text-xs font-bold text-muted uppercase tracking-wider">Registration No.</label>
                 <input
                   type="text"
-                  className="premium-input w-full"
+                  className="premium-input w-full rounded-xl bg-bg2/40 border-border"
                   placeholder="e.g. MMC-12345"
                   value={newDoctorRegNo}
                   onChange={(e) => setNewDoctorRegNo(e.target.value)}
@@ -2391,17 +2143,17 @@ const POS = () => {
               </div>
             </div>
             
-            <div className="px-5 py-4 border-t border-glass-border bg-black/20 flex justify-end gap-3">
+            <div className="px-5 py-4 border-t border-border bg-bg3/30 flex justify-end gap-3">
               <button 
                 onClick={() => setShowDoctorModal(false)}
-                className="px-4 py-2 rounded-xl text-sm font-bold text-muted hover:text-text hover:bg-white/5 transition-all"
+                className="px-4 py-2 rounded-xl text-sm font-bold text-muted hover:text-text hover:bg-bg2 transition-all border border-transparent"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleRegisterDoctor}
                 disabled={!newDoctorName}
-                className="px-4 py-2 rounded-xl text-sm font-bold bg-sky text-text hover:bg-sky/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(14,165,233,0.3)]"
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-sky text-text hover:bg-sky/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_15px_rgba(14,165,233,0.2)]"
               >
                 <CheckCircle size={16} /> Save Doctor
               </button>
@@ -2414,7 +2166,7 @@ const POS = () => {
       {/* Barcode Print Prompt Modal */}
       {showBarcodeModal && createPortal(
         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-md fade-in">
-          <div className="bg-bg border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
+          <div className="bg-bg border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
             <div className="text-center space-y-2">
               <div className="inline-flex p-3 rounded-full bg-green/10 border border-green/20 text-green mb-2">
                 <CheckCircle size={32} className="animate-bounce" />
@@ -2423,7 +2175,7 @@ const POS = () => {
               <p className="text-xs text-muted">Invoice No: <span className="font-mono text-sky font-semibold">{lastSavedInvoiceNo}</span></p>
             </div>
 
-            <div className="bg-white/5 border border-glass-border/40 p-4 rounded-xl space-y-3">
+            <div className="bg-bg2/60 border border-border/40 p-4 rounded-xl space-y-3">
               <p className="text-xs text-center text-text font-medium leading-relaxed">
                 Would you like to print unique barcode/QR code labels for the medicines in this bill, or generate a single barcode for the bill itself?
               </p>
@@ -2476,7 +2228,7 @@ const POS = () => {
                 onClick={() => {
                   setShowBarcodeModal(false);
                 }}
-                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-white/5 border border-glass-border/60 text-muted hover:text-text hover:bg-white/10 transition-all"
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-bg2 border border-border text-muted hover:text-text hover:bg-bg3 transition-all"
               >
                 No / Skip
               </button>

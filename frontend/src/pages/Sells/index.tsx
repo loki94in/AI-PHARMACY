@@ -151,7 +151,8 @@ const Sells = () => {
         batch: batchFilter || undefined,
       });
       const hasFilters = !!(search || dateFrom || dateTo || batchFilter);
-      setInvoices(Array.isArray(data) ? (hasFilters ? data : data.slice(0, 50)) : []);
+      const invoicesList = Array.isArray(data) ? data : (data && Array.isArray(data.invoices) ? data.invoices : []);
+      setInvoices(hasFilters ? invoicesList : invoicesList.slice(0, 50));
     } catch (err) {
       console.error('Failed to load sales:', err);
       toastEvent.trigger('Failed to load sales', 'error');

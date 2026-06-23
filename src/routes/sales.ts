@@ -10,6 +10,45 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
+// Configuration: tune these values for your environment
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 500;           // hard cap to avoid huge payloads
+const MAX_ITEMS_IN_BATCH = 200;  // max invoices to fetch items for in a single response
+const SQLITE_BUSY_RETRIES = 5;
+const SQLITE_BUSY_BASE_DELAY_MS = 100; // exponential backoff base
+
+// Helper sleep
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Wrap DB queries to retry on SQLITE_BUSY and set busy_timeout
+async function queryAllWithRetry(db: Database, sql: string, params: any[] = []) {
+  // Ensure busy timeout is set (ms). Safe to call repeatedly.
+  try {
+    await db.run('PRAGMA busy_timeout = 5000'); // 5 seconds
+  } catch (e) {
+    // ignore if not supported
+  }
+
+  let attempt = 0;
+  while (true) {
+    try {
+      return await db.all(sql, params);
+    } catch (err: any) {
+      const code = err && (err.code || err.errno || err.message);
+      const isBusy = typeof code === 'string' ? code.includes('BUSY') : (err && err.message && err.message.includes('BUSY'));
+      if (isBusy && attempt < SQLITE_BUSY_RETRIES) {
+        const backoff = SQLITE_BUSY_BASE_DELAY_MS * Math.pow(2, attempt);
+        await sleep(backoff);
+        attempt++;
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 const generateInvoiceNo = async (db: Database) => {
   const year = new Date().getFullYear();
   const prefix = `S-${year}-`;
@@ -389,9 +428,49 @@ router.get('/list', async (req, res) => {
   let db;
   try {
     db = await dbManager.getConnection();
-    const { search, date_from, date_to, batch } = req.query;
+    
+    // Parse filters
+    const search = (req.query.search as string) || '';
+    const date_from = (req.query.date_from as string) || '';
+    const date_to = (req.query.date_to as string) || '';
+    const batch = (req.query.batch as string) || '';
 
-    let query = `
+    // Pagination params
+    const clientLimitRaw = req.query.limit ? parseInt(req.query.limit as string, 10) : NaN;
+    const page = req.query.page ? Math.max(0, parseInt(req.query.page as string, 10)) : 0;
+    // Decide final limit: if client explicitly provided limit, respect it but cap to MAX_LIMIT.
+    const limit = Number.isFinite(clientLimitRaw) ? Math.min(Math.max(1, clientLimitRaw), MAX_LIMIT) : DEFAULT_LIMIT;
+    const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset as string, 10)) : page * limit;
+
+    // include_items must be explicitly requested (default false)
+    const includeItems = (req.query.include_items === '1' || req.query.include_items === 'true');
+
+    // Build WHERE clause safely
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+
+    if (search) {
+      whereClauses.push('(si.invoice_no LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR EXISTS (SELECT 1 FROM sale_items sale_it JOIN inventory_master inv_m ON sale_it.inventory_id = inv_m.id WHERE sale_it.invoice_id = si.id AND inv_m.batch_no LIKE ?))');
+      const s = `%${search}%`;
+      params.push(s, s, s, s);
+    }
+    if (date_from) {
+      whereClauses.push('DATE(si.date) >= DATE(?)');
+      params.push(date_from);
+    }
+    if (date_to) {
+      whereClauses.push('DATE(si.date) <= DATE(?)');
+      params.push(date_to);
+    }
+    if (batch) {
+      whereClauses.push('EXISTS (SELECT 1 FROM sale_items sale_it JOIN inventory_master inv_m ON sale_it.inventory_id = inv_m.id WHERE sale_it.invoice_id = si.id AND inv_m.batch_no LIKE ?)');
+      params.push(`%${batch}%`);
+    }
+
+    const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : 'WHERE 1=1';
+
+    // Query invoices (only invoice-level fields; avoid heavy joins here)
+    const invoicesSql = `
       SELECT 
         si.id, si.invoice_no, si.date, si.total_amount, si.tax_amount,
         si.payment_medium, si.payment_status, si.roff, si.discount, si.subtotal,
@@ -401,73 +480,87 @@ router.get('/list', async (req, res) => {
       FROM sales_invoices si
       LEFT JOIN customers c ON si.customer_id = c.id
       LEFT JOIN doctors d ON si.doctor_id = d.id
-      WHERE 1=1
+      ${where}
+      ORDER BY si.date DESC, si.id DESC
+      LIMIT ? OFFSET ?
     `;
-    const params: any[] = [];
+    const invoicesParams = params.concat([limit, offset]);
 
-    if (search) {
-      query += ` AND (si.invoice_no LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR EXISTS (
-        SELECT 1 FROM sale_items sale_it 
-        JOIN inventory_master inv_m ON sale_it.inventory_id = inv_m.id 
-        WHERE sale_it.invoice_id = si.id AND inv_m.batch_no LIKE ?
-      ))`;
-      const s = `%${search}%`;
-      params.push(s, s, s, s);
-    }
-    if (date_from) {
-      query += ` AND DATE(si.date) >= DATE(?)`;
-      params.push(date_from);
-    }
-    if (date_to) {
-      query += ` AND DATE(si.date) <= DATE(?)`;
-      params.push(date_to);
-    }
+    const invoices = await queryAllWithRetry(db, invoicesSql, invoicesParams);
 
-    const hasFilters = !!(search || date_from || date_to || batch);
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : (hasFilters ? 5000 : 50);
-    query += ` ORDER BY si.date DESC LIMIT ?`;
-    params.push(limit);
+    // If client asked for items, fetch them in a single batched query (avoid N+1).
+    if (includeItems && invoices.length > 0) {
+      const invoiceIds = invoices.map((i: any) => i.id);
 
-    const invoices = await db.all(query, params);
+      // Guard: protect server and client from extremely large IN(...) queries and huge payloads.
+      if (invoiceIds.length > MAX_ITEMS_IN_BATCH) {
+        // Do not automatically include items for huge pages; instruct client to fetch per-invoice or reduce page size.
+        return res.status(400).json({
+          ok: false,
+          message: `Too many invoices (${invoiceIds.length}) to include line items. Reduce page size or request items per-invoice.`,
+          invoices,
+          hint: 'Request /api/sales/:id for specific invoice items or set include_items only when limit <= ' + MAX_ITEMS_IN_BATCH
+        });
+      }
 
-    // If batch filter requested, further filter by item batch numbers
-    if (batch) {
-      const batchLower = `%${batch}%`;
-      const filtered = [];
+      // Prepare placeholders for IN clause
+      const placeholders = invoiceIds.map(() => '?').join(',');
+      const itemsSql = `
+        SELECT si.*, im.batch_no as batch_number, im.expiry_date, m.name as medicine_name,
+               m.mrp, m.id as medicine_id, 10 as pack_size
+        FROM sale_items si
+        JOIN inventory_master im ON si.inventory_id = im.id
+        JOIN medicines m ON im.medicine_id = m.id
+        WHERE si.invoice_id IN (${placeholders})
+        ORDER BY si.invoice_id, si.id
+      `;
+      const allItems = await queryAllWithRetry(db, itemsSql, invoiceIds);
+
+      // Map items back to invoices
+      const itemsMap: Record<number, any[]> = {};
+      for (const it of allItems) {
+        const invId = it.invoice_id;
+        if (!itemsMap[invId]) itemsMap[invId] = [];
+        itemsMap[invId].push(it);
+      }
       for (const inv of invoices) {
-        const items = await db.all(
-          `SELECT si.*, im.batch_no as batch_number, m.name as medicine_name, m.id as medicine_id
-           FROM sale_items si
-           JOIN inventory_master im ON si.inventory_id = im.id
-           JOIN medicines m ON im.medicine_id = m.id
-           WHERE si.invoice_id = ? AND (im.batch_no LIKE ? OR m.name LIKE ?)`,
-          [inv.id, batchLower, batchLower]
-        );
-        if (items.length > 0) {
-          inv.items = items;
-          filtered.push(inv);
+        inv.items = itemsMap[inv.id] || [];
+      }
+    } else {
+      // Don't include items; but include a small preview count to help the UI (cheap aggregate query)
+      if (invoices.length > 0) {
+        const invoiceIds = invoices.map((i: any) => i.id);
+        const placeholders = invoiceIds.map(() => '?').join(',');
+        const countsSql = `SELECT invoice_id, COUNT(*) as item_count FROM sale_items WHERE invoice_id IN (${placeholders}) GROUP BY invoice_id`;
+        const counts = await queryAllWithRetry(db, countsSql, invoiceIds);
+        const countMap: Record<number, number> = {};
+        for (const c of counts) countMap[c.invoice_id] = c.item_count;
+        for (const inv of invoices) {
+          inv.item_count = countMap[inv.id] || 0;
+          inv.items = []; // Ensure items is defined
         }
       }
-            return res.json(filtered);
     }
 
-    // Attach items for each invoice
-    for (const inv of invoices) {
-      inv.items = await db.all(
-        `SELECT si.*, im.batch_no as batch_number, im.expiry_date, m.name as medicine_name, m.mrp, 10 as pack_size, m.id as medicine_id
-         FROM sale_items si
-         JOIN inventory_master im ON si.inventory_id = im.id
-         JOIN medicines m ON im.medicine_id = m.id
-         WHERE si.invoice_id = ?`,
-        [inv.id]
-      );
-    }
+    // Optional: total count for pagination (lightweight count query with same filters)
+    const countSql = `SELECT COUNT(*) as total FROM sales_invoices si LEFT JOIN customers c ON si.customer_id = c.id ${where}`;
+    const countResult = await queryAllWithRetry(db, countSql, params);
+    const total = (countResult && countResult[0] && countResult[0].total) ? countResult[0].total : 0;
 
-        res.json(invoices);
-  } catch (error) {
-    const err = error as Error;
-    console.error(JSON.stringify({ message: 'Failed to list sales', error: err.message, timestamp: new Date().toISOString() }));
-    res.status(500).json({ error: 'Internal server error' });
+    // Return format: if paginated, include_items or page was specified, return the new paginated object.
+    // Otherwise return array directly for full backwards-compatibility.
+    if (req.query.paginated === 'true' || req.query.page !== undefined || req.query.limit !== undefined) {
+      return res.json({
+        ok: true,
+        meta: { total, limit, offset },
+        invoices
+      });
+    } else {
+      return res.json(invoices);
+    }
+  } catch (err: any) {
+    console.error('sales/list error:', err);
+    return res.status(500).json({ error: 'Internal server error', details: err.message });
   }
 });
 
@@ -619,9 +712,10 @@ router.get('/:id', async (req, res) => {
   let db;
   try {
     db = await dbManager.getConnection();
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
 
-    const invoice = await db.get(
+    const invoices = await queryAllWithRetry(
+      db,
       `SELECT si.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address, d.name as doctor_name
        FROM sales_invoices si
        LEFT JOIN customers c ON si.customer_id = c.id
@@ -630,11 +724,13 @@ router.get('/:id', async (req, res) => {
       [id]
     );
 
-    if (!invoice) {
-            return res.status(404).json({ error: 'Invoice not found' });
+    if (!invoices || invoices.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
     }
+    const invoice = invoices[0];
 
-    invoice.items = await db.all(
+    invoice.items = await queryAllWithRetry(
+      db,
       `SELECT si.*, im.batch_no as batch_number, im.expiry_date, im.mrp as item_mrp, 10 as pack_size,
               m.name as medicine_name, m.mrp as medicine_mrp, m.id as medicine_id
        FROM sale_items si
@@ -644,11 +740,10 @@ router.get('/:id', async (req, res) => {
       [id]
     );
 
-        res.json(invoice);
-  } catch (error) {
-    const err = error as Error;
-    console.error(JSON.stringify({ message: 'Failed to get sale', error: err.message, timestamp: new Date().toISOString() }));
-    res.status(500).json({ error: 'Internal server error' });
+    res.json(invoice);
+  } catch (error: any) {
+    console.error('sales/:id error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
