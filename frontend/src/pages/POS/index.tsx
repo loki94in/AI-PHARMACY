@@ -1022,6 +1022,200 @@ const POS = () => {
         {/* LEFT WORKSPACE (approx 72-75% width) - Takes up full height */}
         <div className="flex-1 flex flex-col gap-4 min-h-0">
           
+          {/* Patient & Doctor Context Bar */}
+          <div className="glass-panel p-4 bg-glass-bg border-glass-border shrink-0 relative z-40 shadow-md rounded-2xl">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              {/* Patient Name */}
+              <div className="relative z-20">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Patient / Customer</label>
+                <div className="flex gap-1 items-center">
+                  <input 
+                    type="text" 
+                    className="premium-input text-xs h-9 px-3 flex-1 w-full bg-bg2/40 border-border/60 rounded-xl" 
+                    placeholder="Walk-in Customer" 
+                    value={patientName}
+                    onChange={e => { updatePatientName(e.target.value); setPatientHighlightIndex(-1); }}
+                    onFocus={() => { if (patientSuggestions.length > 0) setShowPatientSuggestions(true); }}
+                    onBlur={() => setTimeout(() => setShowPatientSuggestions(false), 180)}
+                    onKeyDown={e => {
+                      if (!showPatientSuggestions || patientSuggestions.length === 0) return;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setPatientHighlightIndex(i => Math.min(i + 1, patientSuggestions.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setPatientHighlightIndex(i => Math.max(i - 1, 0));
+                      } else if (e.key === 'Enter' && patientHighlightIndex >= 0) {
+                        e.preventDefault();
+                        const sel = patientSuggestions[patientHighlightIndex];
+                        updatePatientName(sel.name);
+                        setPatientPhone(sel.phone || '');
+                        setShowPatientSuggestions(false);
+                        setPatientHighlightIndex(-1);
+                      } else if (e.key === 'Escape') {
+                        setShowPatientSuggestions(false);
+                        setPatientHighlightIndex(-1);
+                      }
+                    }}
+                    aria-label="Patient Name"
+                  />
+                  {showPatientSuggestions && (
+                    <div className="absolute left-0 right-0 top-full z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-2xl">
+                      {patientSuggestions.map((c, idx) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onMouseDown={() => {
+                            updatePatientName(c.name);
+                            setPatientPhone(c.phone || '');
+                            setShowPatientSuggestions(false);
+                            setPatientHighlightIndex(-1);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs border-b border-border/10 transition-all flex items-center justify-between gap-2 ${
+                            idx === patientHighlightIndex
+                              ? 'bg-primary/20 text-text font-bold'
+                              : 'text-text hover:bg-primary/10'
+                          }`}
+                        >
+                          <span className="font-semibold truncate">{c.name}</span>
+                          {c.phone && <span className="text-muted font-mono text-[10px] shrink-0">{c.phone}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button 
+                    onClick={() => setShowPatientModal(true)}
+                    className="h-9 w-9 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary transition-all flex items-center justify-center shrink-0"
+                    title="Manage Patient Profile & Refills"
+                  >
+                    <Plus size={14} className="stroke-[3]" />
+                  </button>
+                </div>
+              </div>
+
+              {/* WhatsApp Contact */}
+              <div>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">WhatsApp Number</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    className="premium-input text-xs h-9 px-3 w-full font-mono text-text bg-bg2/40 border-border/60 rounded-xl" 
+                    placeholder="9876543210"
+                    value={patientPhone}
+                    onChange={e => setPatientPhone(e.target.value)}
+                    aria-label="Phone Number"
+                  />
+                  <button 
+                    onClick={() => setSendWhatsApp(!sendWhatsApp)}
+                    className={`h-9 px-3 rounded-xl border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none shrink-0 ${
+                      sendWhatsApp 
+                        ? 'bg-green/15 border-green/30 text-green hover:bg-green/25' 
+                        : 'bg-bg border-border text-muted hover:text-text hover:bg-bg2'
+                    }`}
+                    title={sendWhatsApp ? "WhatsApp Notifications Active" : "WhatsApp Notifications Inactive"}
+                  >
+                    {sendWhatsApp ? (
+                      <>
+                        <span className="h-1.5 w-1.5 rounded-full bg-green animate-pulse" />
+                        <span>WA: ON</span>
+                      </>
+                    ) : (
+                      <span>WA: OFF</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Doctor */}
+              <div className="relative z-20">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Prescribing Doctor</label>
+                <div className="flex gap-1 relative">
+                  <input 
+                    type="text"
+                    className="premium-input text-xs h-9 pl-3 pr-7 bg-bg2/40 border-border/60 w-full text-text focus:border-sky rounded-xl"
+                    placeholder="Type or Select Doctor..."
+                    value={doctor}
+                    onChange={e => { setDoctor(e.target.value); setDoctorHighlightIndex(-1); }}
+                    onFocus={() => setIsDoctorDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setIsDoctorDropdownOpen(false), 200)}
+                    onKeyDown={e => {
+                      if (!isDoctorDropdownOpen || filteredDoctors.length === 0) return;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setDoctorHighlightIndex(i => Math.min(i + 1, filteredDoctors.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setDoctorHighlightIndex(i => Math.max(i - 1, 0));
+                      } else if (e.key === 'Enter' && doctorHighlightIndex >= 0) {
+                        e.preventDefault();
+                        setDoctor(filteredDoctors[doctorHighlightIndex].name);
+                        setIsDoctorDropdownOpen(false);
+                        setDoctorHighlightIndex(-1);
+                      } else if (e.key === 'Escape') {
+                        setIsDoctorDropdownOpen(false);
+                        setDoctorHighlightIndex(-1);
+                      }
+                    }}
+                    title="Select or Type Doctor Name"
+                  />
+                  <span className="absolute inset-y-0 right-11 pr-2 flex items-center pointer-events-none text-muted">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                  </span>
+                  
+                  {isDoctorDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
+                      {filteredDoctors.length > 0 ? (
+                        filteredDoctors.map((doc, idx) => (
+                          <button
+                            key={doc.id}
+                            type="button"
+                            onMouseDown={() => {
+                              setDoctor(doc.name);
+                              setIsDoctorDropdownOpen(false);
+                              setDoctorHighlightIndex(-1);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-xs border-b border-border/10 transition-all font-semibold ${
+                              idx === doctorHighlightIndex
+                                ? 'bg-sky/20 text-text font-bold'
+                                : 'text-text hover:bg-sky/10'
+                            }`}
+                          >
+                            {doc.name}
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-xs text-muted italic">
+                          Press Enter to add custom: "{doctor}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <button 
+                    onClick={() => setShowDoctorModal(true)}
+                    className="h-9 w-9 rounded-xl bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky transition-all flex items-center justify-center shrink-0"
+                    title="Register New Doctor"
+                  >
+                    <Plus size={14} className="stroke-[3]" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Billing Date</label>
+                <input 
+                  type="date" 
+                  className="premium-input text-xs h-9 px-3 text-text w-full font-mono bg-bg2/40 border-border/60 rounded-xl" 
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                  aria-label="Transaction Date"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* A. Search & Scan Medicine Area (Header) */}
           <div className="glass-panel p-4 flex flex-col gap-3 bg-glass-bg border-glass-border relative z-30 shrink-0 shadow-md">
             <div className="flex items-center gap-3">
@@ -1606,253 +1800,11 @@ const POS = () => {
           </div>
         </div>
 
-        {/* RIGHT SIDEBAR (approx 25-28% width) - Houses Customer, Copilot, Summary & Checkout */}
-        <div className="w-80 xl:w-96 flex flex-col gap-3 shrink-0 z-20 select-none h-full overflow-hidden justify-between">
+        {/* RIGHT SIDEBAR (approx 25-28% width) - Houses Summary & Checkout */}
+        <div className="w-80 xl:w-96 flex flex-col gap-3 shrink-0 z-20 select-none h-full overflow-hidden justify-start">
           
-          {/* Section 1: Customer & Prescriber Context */}
-          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex flex-col gap-3 shrink-0 relative z-30 shadow-md">
-            <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider shrink-0 border-b border-border/40 pb-2">
-              <span className="text-sky">👤</span> Patient & Doctor Context
-            </h3>
-            
-            {/* Patient Name */}
-            <div className="relative z-20">
-              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Patient / Customer</label>
-              <div className="flex gap-1 items-center">
-                <input 
-                  type="text" 
-                  className="premium-input text-xs h-9 px-3 flex-1 w-full bg-bg2/40 border-border/60 rounded-xl" 
-                  placeholder="Walk-in Customer" 
-                  value={patientName}
-                  onChange={e => { updatePatientName(e.target.value); setPatientHighlightIndex(-1); }}
-                  onFocus={() => { if (patientSuggestions.length > 0) setShowPatientSuggestions(true); }}
-                  onBlur={() => setTimeout(() => setShowPatientSuggestions(false), 180)}
-                  onKeyDown={e => {
-                    if (!showPatientSuggestions || patientSuggestions.length === 0) return;
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setPatientHighlightIndex(i => Math.min(i + 1, patientSuggestions.length - 1));
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setPatientHighlightIndex(i => Math.max(i - 1, 0));
-                    } else if (e.key === 'Enter' && patientHighlightIndex >= 0) {
-                      e.preventDefault();
-                      const sel = patientSuggestions[patientHighlightIndex];
-                      updatePatientName(sel.name);
-                      setPatientPhone(sel.phone || '');
-                      setShowPatientSuggestions(false);
-                      setPatientHighlightIndex(-1);
-                    } else if (e.key === 'Escape') {
-                      setShowPatientSuggestions(false);
-                      setPatientHighlightIndex(-1);
-                    }
-                  }}
-                  aria-label="Patient Name"
-                />
-                {showPatientSuggestions && (
-                  <div className="absolute left-0 right-0 top-full z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-44 overflow-y-auto shadow-2xl">
-                    {patientSuggestions.map((c, idx) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onMouseDown={() => {
-                          updatePatientName(c.name);
-                          setPatientPhone(c.phone || '');
-                          setShowPatientSuggestions(false);
-                          setPatientHighlightIndex(-1);
-                        }}
-                        className={`w-full text-left px-3 py-2 text-xs border-b border-border/10 transition-all flex items-center justify-between gap-2 ${
-                          idx === patientHighlightIndex
-                            ? 'bg-primary/20 text-text font-bold'
-                            : 'text-text hover:bg-primary/10'
-                        }`}
-                      >
-                        <span className="font-semibold truncate">{c.name}</span>
-                        {c.phone && <span className="text-muted font-mono text-[10px] shrink-0">{c.phone}</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <button 
-                  onClick={() => setShowPatientModal(true)}
-                  className="h-9 w-9 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary transition-all flex items-center justify-center shrink-0"
-                  title="Manage Patient Profile & Refills"
-                >
-                  <Plus size={14} className="stroke-[3]" />
-                </button>
-              </div>
-            </div>
-
-            {/* WhatsApp Contact */}
-            <div>
-              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">WhatsApp Number</label>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  className="premium-input text-xs h-9 px-3 w-full font-mono text-text bg-bg2/40 border-border/60 rounded-xl" 
-                  placeholder="9876543210"
-                  value={patientPhone}
-                  onChange={e => setPatientPhone(e.target.value)}
-                  aria-label="Phone Number"
-                />
-                <button 
-                  onClick={() => setSendWhatsApp(!sendWhatsApp)}
-                  className={`h-9 px-3 rounded-xl border text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 transition-all select-none shrink-0 ${
-                    sendWhatsApp 
-                      ? 'bg-green/15 border-green/30 text-green hover:bg-green/25' 
-                      : 'bg-bg border-border text-muted hover:text-text hover:bg-bg2'
-                  }`}
-                  title={sendWhatsApp ? "WhatsApp Notifications Active" : "WhatsApp Notifications Inactive"}
-                >
-                  {sendWhatsApp ? (
-                    <>
-                      <span className="h-1.5 w-1.5 rounded-full bg-green animate-pulse" />
-                      <span>WA: ON</span>
-                    </>
-                  ) : (
-                    <span>WA: OFF</span>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Doctor */}
-            <div className="relative z-10">
-              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Prescribing Doctor</label>
-              <div className="flex gap-1 relative">
-                <input 
-                  type="text"
-                  className="premium-input text-xs h-9 pl-3 pr-7 bg-bg2/40 border-border/60 w-full text-text focus:border-sky rounded-xl"
-                  placeholder="Type or Select Doctor..."
-                  value={doctor}
-                  onChange={e => { setDoctor(e.target.value); setDoctorHighlightIndex(-1); }}
-                  onFocus={() => setIsDoctorDropdownOpen(true)}
-                  onBlur={() => setTimeout(() => setIsDoctorDropdownOpen(false), 200)}
-                  onKeyDown={e => {
-                    if (!isDoctorDropdownOpen || filteredDoctors.length === 0) return;
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setDoctorHighlightIndex(i => Math.min(i + 1, filteredDoctors.length - 1));
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setDoctorHighlightIndex(i => Math.max(i - 1, 0));
-                    } else if (e.key === 'Enter' && doctorHighlightIndex >= 0) {
-                      e.preventDefault();
-                      setDoctor(filteredDoctors[doctorHighlightIndex].name);
-                      setIsDoctorDropdownOpen(false);
-                      setDoctorHighlightIndex(-1);
-                    } else if (e.key === 'Escape') {
-                      setIsDoctorDropdownOpen(false);
-                      setDoctorHighlightIndex(-1);
-                    }
-                  }}
-                  title="Select or Type Doctor Name"
-                />
-                <span className="absolute inset-y-0 right-11 pr-2 flex items-center pointer-events-none text-muted">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
-                  </svg>
-                </span>
-                
-                {isDoctorDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-48 overflow-y-auto shadow-2xl">
-                    {filteredDoctors.length > 0 ? (
-                      filteredDoctors.map((doc, idx) => (
-                        <button
-                          key={doc.id}
-                          type="button"
-                          onMouseDown={() => {
-                            setDoctor(doc.name);
-                            setIsDoctorDropdownOpen(false);
-                            setDoctorHighlightIndex(-1);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs border-b border-border/10 transition-all font-semibold ${
-                            idx === doctorHighlightIndex
-                              ? 'bg-sky/20 text-text font-bold'
-                              : 'text-text hover:bg-sky/10'
-                          }`}
-                        >
-                          {doc.name}
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-3 py-2 text-xs text-muted italic">
-                        Press Enter to add custom: "{doctor}"
-                      </div>
-                    )}
-                  </div>
-                )}
-                <button 
-                  onClick={() => setShowDoctorModal(true)}
-                  className="h-9 w-9 rounded-xl bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky transition-all flex items-center justify-center shrink-0"
-                  title="Register New Doctor"
-                >
-                  <Plus size={14} className="stroke-[3]" />
-                </button>
-              </div>
-            </div>
-
-            {/* Date */}
-            <div>
-              <label className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Billing Date</label>
-              <input 
-                type="date" 
-                className="premium-input text-xs h-9 px-3 text-text w-full font-mono bg-bg2/40 border-border/60 rounded-xl" 
-                value={date}
-                onChange={e => setDate(e.target.value)}
-                aria-label="Transaction Date"
-              />
-            </div>
-          </div>
-
-          {/* Section 2: Clinical Copilot Insights & Feed */}
-          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex-1 flex flex-col gap-2 min-h-0 shadow-md">
-            {/* Interactive Scanner Box */}
-            <button 
-              type="button"
-              onClick={() => setShowCamera(true)}
-              className="relative w-full flex-1 min-h-[5.5rem] bg-bg/50 hover:bg-bg/85 border border-border hover:border-green/40 rounded-xl flex items-center justify-center select-none overflow-hidden group transition-all duration-300 cursor-pointer shadow-inner"
-              title="Click to Scan Prescription / Medicine"
-            >
-              <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(16,185,129,0.03)_1px,transparent_1px)] bg-[size:100%_6px] animate-scan-slow" />
-              <div className="absolute left-0 right-0 h-0.5 bg-green/40 shadow-[0_0_8px_rgba(16,185,129,0.5)] group-hover:bg-green group-hover:shadow-[0_0_12px_rgba(16,185,129,0.75)] animate-scan-bar" />
-              <div className="flex items-center gap-2.5 relative z-10">
-                <Camera className="text-green group-hover:scale-110 transition-all duration-300 animate-pulse" size={20} />
-                <span className="text-[10px] text-green/80 group-hover:text-green font-mono font-bold tracking-widest uppercase">
-                  [ Prescription Scan ]
-                </span>
-              </div>
-            </button>
-
-            {/* Clinical Insights */}
-            {doctor && (
-              <div className="space-y-1.5">
-                <span className="text-[9px] font-bold text-muted uppercase tracking-wider block mb-0.5">Co-prescribed Suggestions:</span>
-                <div className="max-h-28 overflow-y-auto scrollbar-thin space-y-1.5">
-                  {commonCombinations.slice(0, 3).map((med, idx) => (
-                    <button 
-                      key={`dr-sugg-${idx}`}
-                      onClick={() => addToCart(med)}
-                      className="w-full flex items-center justify-between p-2 rounded-xl bg-bg2/45 border border-border hover:border-primary/40 hover:bg-primary/5 text-left text-[11px] transition-all duration-200 hover:translate-x-1"
-                    >
-                      <div className="min-w-0 flex-1 pr-2 truncate">
-                        <span className="font-semibold text-text truncate">
-                          {med.name}
-                        </span>
-                      </div>
-                      <span className="text-[9px] bg-primary/10 border border-primary/20 text-primary py-0.5 px-2 rounded-lg font-bold shrink-0">+ Add</span>
-                    </button>
-                  ))}
-                  {commonCombinations.length === 0 && (
-                    <span className="text-[10px] text-muted text-center italic block py-1">No suggestions found</span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Section 3: Checkout Summary & Total */}
-          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex flex-col gap-3 mt-auto shrink-0 shadow-lg">
+          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex flex-col gap-3 shrink-0 shadow-lg">
             <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider border-b border-border/40 pb-2">
               💳 Payment & Checkout
             </h3>
