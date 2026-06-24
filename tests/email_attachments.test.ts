@@ -15,6 +15,33 @@ describe('Email Attachments API', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'email-attachment-test-'));
     dbPath = path.join(tmpDir, 'app.db');
     await ensureSchema(dbPath);
+
+    // Create special_orders table which is queried by inventory overrides
+    const { open } = await import('sqlite');
+    const sqlite3 = await import('sqlite3');
+    const db = await open({ filename: dbPath, driver: sqlite3.default.Database });
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS special_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product TEXT,
+        requester TEXT,
+        phone TEXT,
+        qty INTEGER,
+        priority TEXT,
+        status TEXT DEFAULT 'Pending',
+        date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        notified INTEGER DEFAULT 0,
+        pharmarack_distributor TEXT,
+        pharmarack_rate REAL,
+        pharmarack_mrp REAL,
+        pharmarack_mapped INTEGER DEFAULT 0,
+        pharmarack_scheme TEXT,
+        advance_payment REAL DEFAULT 0.0,
+        source_refill_id INTEGER DEFAULT NULL
+      )
+    `);
+    await db.close();
+
     process.env.DB_PATH = dbPath;
 
     // Create a mock uploads directory inside our tmpDir

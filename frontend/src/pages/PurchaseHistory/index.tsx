@@ -912,6 +912,9 @@ const PurchaseHistory = () => {
                     <div>
                       <strong className="block text-white text-xs">Missing Order - Action Required</strong>
                       <span className="text-xs block mt-0.5">This order exists as a distributor email receipt, but is <strong>NOT</strong> recorded in the purchase history and items have <strong>NOT</strong> been delivered to inventory.</span>
+                      <span className="text-xs block mt-1 text-red-300 font-semibold">
+                        💡 Reissuing this order will automatically update inventory and trigger any pending patient refills for these medicines, generating pre-filled checkout bills!
+                      </span>
                     </div>
                   </div>
                 )}

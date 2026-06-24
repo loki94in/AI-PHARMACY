@@ -54,7 +54,8 @@ describe('Patient Refills & POS Auto-Save Integration', () => {
         pharmarack_mrp REAL,
         pharmarack_mapped INTEGER DEFAULT 0,
         pharmarack_scheme TEXT,
-        advance_payment REAL DEFAULT 0.0
+        advance_payment REAL DEFAULT 0.0,
+        source_refill_id INTEGER DEFAULT NULL
       )
     `);
     await db.close();

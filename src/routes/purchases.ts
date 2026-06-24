@@ -1849,6 +1849,8 @@ router.post('/reconciliation/reissue', async (req, res) => {
     );
     const purchaseId = purchRes.lastID;
 
+    const uniqueMedicineIds = new Set<number>();
+
     // Process items & update inventory
     for (const item of parsedItems) {
       let medId = null;
@@ -1863,6 +1865,9 @@ router.post('/reconciliation/reissue', async (req, res) => {
           const medResult = await db.run('INSERT INTO medicines (name) VALUES (?)', [item.name]);
           medId = medResult.lastID;
         }
+      }
+      if (medId) {
+        uniqueMedicineIds.add(medId);
       }
 
       const rawBatch = item.batch_no || 'B-REISSUE-' + Date.now().toString().slice(-4);
@@ -1903,6 +1908,16 @@ router.post('/reconciliation/reissue', async (req, res) => {
     );
 
     await db.run('COMMIT');
+
+    // Trigger refills and special orders after transaction commits successfully
+    const { inventoryService } = await import('../services/inventoryService.js');
+    for (const medId of uniqueMedicineIds) {
+      try {
+        await inventoryService.checkAndTriggerRefillsForMedicine(medId);
+      } catch (err) {
+        console.error(`Failed to trigger refills/special orders for medicine ID ${medId} in reissue:`, err);
+      }
+    }
     
     res.json({
       success: true,

@@ -361,7 +361,9 @@ export async function ensureSchema(dbPath: string) {
       status TEXT DEFAULT 'pending',
       error_message TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      reference_id TEXT
+      reference_id TEXT,
+      needs_confirmation INTEGER DEFAULT 0,
+      lifecycle_status TEXT DEFAULT 'sent'
     );
 
     CREATE TABLE IF NOT EXISTS staged_sales (

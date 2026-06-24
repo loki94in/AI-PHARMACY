@@ -45,15 +45,23 @@ export class MessagingQueue {
     const cleanPhone = recipientPhone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
+    // Patient notification safety: stage patient notifications for manual validation
+    const isPatientNotif = type === 'order_ready' || type === 'refill_reminder' || type === 'refill_collection';
+    const status = isPatientNotif ? 'staged' : 'pending';
+    const needsConfirmation = isPatientNotif ? 1 : 0;
+
     const result = await db.run(
-      `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, reference_id)
-       VALUES (?, ?, ?, ?, 'pending', ?)`,
-      [type, recipientName, formattedPhone, message, referenceId || null]
+      `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, needs_confirmation, reference_id, lifecycle_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [type, recipientName, formattedPhone, message, status, needsConfirmation, referenceId || null, status]
     );
 
-    console.log(`[MessagingQueue] Queued message to ${recipientName} (${formattedPhone}) - ID: ${result.lastID}`);
-    // Trigger queue processing asynchronously
-    this.processQueue().catch(err => console.error('[MessagingQueue] Async process fail:', err));
+    console.log(`[MessagingQueue] Queued message to ${recipientName} (${formattedPhone}) - ID: ${result.lastID} (Status: ${status})`);
+    
+    // Only trigger queue processing if not staged
+    if (status === 'pending') {
+      this.processQueue().catch(err => console.error('[MessagingQueue] Async process fail:', err));
+    }
     
     return result.lastID!;
   }
