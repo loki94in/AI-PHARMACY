@@ -46,34 +46,65 @@ import BackupCenterModal from './components/BackupCenterModal';
 
 // ponytail: lazy-load all pages so each is its own JS chunk — avoids loading
 // all 26 pages upfront and eliminates the main cause of slow page switching.
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Inventory = lazy(() => import('./pages/Inventory'));
-const POS = lazy(() => import('./pages/POS'));
-const Purchases = lazy(() => import('./pages/Purchases'));
-const CRM = lazy(() => import('./pages/CRM'));
-const PurchaseHistory = lazy(() => import('./pages/PurchaseHistory'));
-const Migration = lazy(() => import('./pages/Migration'));
-const Doctors = lazy(() => import('./pages/Doctors'));
-const Dispatch = lazy(() => import('./pages/Dispatch'));
-const Reports = lazy(() => import('./pages/Reports'));
-const License = lazy(() => import('./pages/License'));
-const Settings = lazy(() => import('./pages/Settings'));
-const Mail = lazy(() => import('./pages/Mail'));
-const Returns = lazy(() => import('./pages/Returns'));
-const CatalogUpload = lazy(() => import('./pages/CatalogUpload'));
-const Orders = lazy(() => import('./pages/Orders'));
-const Expiry = lazy(() => import('./pages/Expiry'));
-const Sells = lazy(() => import('./pages/Sells'));
-const Learning = lazy(() => import('./pages/Learning'));
-const DatabasePage = lazy(() => import('./pages/Database'));
-const CompositionQueue = lazy(() => import('./pages/CompositionQueue'));
-const CustomerReturn = lazy(() => import('./pages/CustomerReturn'));
-const CustomerReturnHistory = lazy(() => import('./pages/CustomerReturnHistory'));
-const PharmarackCart = lazy(() => import('./pages/PharmarackCart'));
-const NonMappedDistributors = lazy(() => import('./pages/NonMappedDistributors'));
-const AutomationCenter = lazy(() => import('./pages/AutomationCenter'));
-const InvestigationCenter = lazy(() => import('./pages/Investigation'));
-const PhoneSales = lazy(() => import('./pages/PhoneSales'));
+export const pageImports: Record<string, () => Promise<any>> = {
+  '/dashboard': () => import('./pages/Dashboard'),
+  '/inventory': () => import('./pages/Inventory'),
+  '/pos': () => import('./pages/POS'),
+  '/purchases': () => import('./pages/Purchases'),
+  '/crm': () => import('./pages/CRM'),
+  '/purchase-history': () => import('./pages/PurchaseHistory'),
+  '/migration': () => import('./pages/Migration'),
+  '/doctors': () => import('./pages/Doctors'),
+  '/dispatch': () => import('./pages/Dispatch'),
+  '/reports': () => import('./pages/Reports'),
+  '/license': () => import('./pages/License'),
+  '/settings': () => import('./pages/Settings'),
+  '/mail': () => import('./pages/Mail'),
+  '/returns': () => import('./pages/Returns'),
+  '/catalog': () => import('./pages/CatalogUpload'),
+  '/orders': () => import('./pages/Orders'),
+  '/expiry': () => import('./pages/Expiry'),
+  '/sells': () => import('./pages/Sells'),
+  '/learning': () => import('./pages/Learning'),
+  '/database': () => import('./pages/Database'),
+  '/composition-queue': () => import('./pages/CompositionQueue'),
+  '/customer-returns': () => import('./pages/CustomerReturn'),
+  '/customer-return-history': () => import('./pages/CustomerReturnHistory'),
+  '/pharmarack-cart': () => import('./pages/PharmarackCart'),
+  '/non-mapped-distributors': () => import('./pages/NonMappedDistributors'),
+  '/automation-center': () => import('./pages/AutomationCenter'),
+  '/investigation': () => import('./pages/Investigation'),
+  '/phone-sales': () => import('./pages/PhoneSales'),
+};
+
+const Dashboard = lazy(pageImports['/dashboard']);
+const Inventory = lazy(pageImports['/inventory']);
+const POS = lazy(pageImports['/pos']);
+const Purchases = lazy(pageImports['/purchases']);
+const CRM = lazy(pageImports['/crm']);
+const PurchaseHistory = lazy(pageImports['/purchase-history']);
+const Migration = lazy(pageImports['/migration']);
+const Doctors = lazy(pageImports['/doctors']);
+const Dispatch = lazy(pageImports['/dispatch']);
+const Reports = lazy(pageImports['/reports']);
+const License = lazy(pageImports['/license']);
+const Settings = lazy(pageImports['/settings']);
+const Mail = lazy(pageImports['/mail']);
+const Returns = lazy(pageImports['/returns']);
+const CatalogUpload = lazy(pageImports['/catalog']);
+const Orders = lazy(pageImports['/orders']);
+const Expiry = lazy(pageImports['/expiry']);
+const Sells = lazy(pageImports['/sells']);
+const Learning = lazy(pageImports['/learning']);
+const DatabasePage = lazy(pageImports['/database']);
+const CompositionQueue = lazy(pageImports['/composition-queue']);
+const CustomerReturn = lazy(pageImports['/customer-returns']);
+const CustomerReturnHistory = lazy(pageImports['/customer-return-history']);
+const PharmarackCart = lazy(pageImports['/pharmarack-cart']);
+const NonMappedDistributors = lazy(pageImports['/non-mapped-distributors']);
+const AutomationCenter = lazy(pageImports['/automation-center']);
+const InvestigationCenter = lazy(pageImports['/investigation']);
+const PhoneSales = lazy(pageImports['/phone-sales']);
 
 // Minimal page-switch loading fallback — renders instantly, no layout shift
 const PageLoader = () => (
@@ -209,6 +240,9 @@ const Sidebar = ({
               <Link
                 key={item.path}
                 to={item.path}
+                onMouseEnter={() => {
+                  pageImports[item.path]?.();
+                }}
                 className={`
                   flex items-center gap-3 px-5 py-2.5 mx-2 rounded-lg text-sm font-medium uppercase transition-all duration-200
                   ${isActive 

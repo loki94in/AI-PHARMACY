@@ -24,14 +24,17 @@ const OriginalDatabase = sqlite3.Database;
       return;
     }
     
-    // Set journal_mode and busy_timeout immediately on opening
+    // Set journal_mode, busy_timeout, and performance tunings immediately on opening
     db.serialize(() => {
       db.run('PRAGMA journal_mode = WAL;', (err1) => {
         if (err1) {
           if (callback) callback(err1);
           return;
         }
-        db.run('PRAGMA busy_timeout = 10000;', (err2) => {
+        db.run('PRAGMA busy_timeout = 10000;');
+        db.run('PRAGMA cache_size = -16000;');
+        db.run('PRAGMA temp_store = MEMORY;');
+        db.run('PRAGMA synchronous = NORMAL;', (err2) => {
           if (callback) callback(err2 || null);
         });
       });

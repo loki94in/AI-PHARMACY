@@ -498,16 +498,32 @@ function extractMedicineInfo(text: string) {
   return info;
 }
 
-// Fetch return items for a specific return
+
+// Fetch return items for a specific return — enriched with distributor, invoice, expiry
 router.get('/:id/items', async (req, res) => {
   let db;
   try {
     const { id } = req.params;
     db = await dbManager.getConnection();
     const rows = await db.all(`
-      SELECT ri.*, m.name as medicine_name
+      SELECT
+        ri.*,
+        COALESCE(m.name, ri.medicine_name) AS medicine_name,
+        r.distributor_id,
+        d.name                             AS distributor_name,
+        p.invoice_no,
+        p.date                             AS purchase_date,
+        COALESCE(ri.expiry_date, pi.expiry_date) AS expiry_date,
+        COALESCE(ri.batch_no,   pi.batch_no)     AS batch_no
       FROM return_items ri
-      LEFT JOIN medicines m ON ri.medicine_id = m.id
+      LEFT JOIN medicines    m  ON m.id  = ri.medicine_id
+      LEFT JOIN returns      r  ON r.id  = ri.return_id
+      LEFT JOIN distributors d  ON d.id  = r.distributor_id
+      LEFT JOIN purchases    p  ON p.id  = r.original_invoice_id
+      LEFT JOIN purchase_items pi
+             ON pi.medicine_id = ri.medicine_id
+            AND pi.batch_no    = ri.batch_no
+            AND pi.purchase_id = p.id
       WHERE ri.return_id = ?
     `, [id]);
     res.json(rows);
@@ -517,5 +533,150 @@ router.get('/:id/items', async (req, res) => {
   }
 });
 
-export default router;
+// Auto-resolve missing fields using a 3-strategy waterfall:
+//   1. Same-invoice purchase_items (highest confidence)
+//   2. Most-recent purchase of that medicine
+//   3. Current inventory_master stock
+router.get('/:id/resolve-missing', async (req, res) => {
+  let db;
+  try {
+    const { id } = req.params;
+    db = await dbManager.getConnection();
 
+    // Get base items + parent return context
+    const items = await db.all(`
+      SELECT ri.*,
+        COALESCE(m.name, ri.medicine_name) AS medicine_name,
+        r.original_invoice_id,
+        r.distributor_id                   AS ret_distributor_id,
+        d.name                             AS ret_distributor_name,
+        p.invoice_no                       AS ret_invoice_no,
+        p.date                             AS ret_purchase_date
+      FROM return_items ri
+      LEFT JOIN medicines    m ON m.id = ri.medicine_id
+      LEFT JOIN returns      r ON r.id = ri.return_id
+      LEFT JOIN distributors d ON d.id = r.distributor_id
+      LEFT JOIN purchases    p ON p.id = r.original_invoice_id
+      WHERE ri.return_id = ?
+    `, [id]);
+
+    const enriched = [];
+    for (const item of items) {
+      const resolved: Record<string, any> = { ...item, _resolved_fields: [] as string[] };
+
+      const needs = (field: string) => !resolved[field] || resolved[field] === 0;
+
+      // ── Strategy 1: Same purchase invoice ────────────────────────────────
+      if (item.original_invoice_id && (needs('batch_no') || needs('expiry_date') || needs('cost_price') || needs('mrp'))) {
+        const same = await db.get(`
+          SELECT pi.batch_no, pi.expiry_date, pi.cost_price, pi.mrp
+          FROM   purchase_items pi
+          WHERE  pi.medicine_id = ? AND pi.purchase_id = ?
+          ORDER  BY pi.id DESC LIMIT 1
+        `, [item.medicine_id, item.original_invoice_id]);
+
+        if (same) {
+          for (const f of ['batch_no', 'expiry_date', 'cost_price', 'mrp'] as const) {
+            if (needs(f) && same[f]) { resolved[f] = same[f]; resolved._resolved_fields.push(f); }
+          }
+        }
+      }
+
+      // ── Strategy 2: Most recent purchase of this medicine ────────────────
+      if (needs('batch_no') || needs('expiry_date') || needs('cost_price') || needs('mrp') || needs('invoice_no') || needs('distributor_name')) {
+        const recent = await db.get(`
+          SELECT pi.batch_no, pi.expiry_date, pi.cost_price, pi.mrp,
+                 p.invoice_no, p.date AS purchase_date,
+                 d.name AS distributor_name, d.id AS distributor_id
+          FROM   purchase_items pi
+          JOIN   purchases    p ON p.id  = pi.purchase_id
+          LEFT JOIN distributors d ON d.id = p.distributor_id
+          WHERE  pi.medicine_id = ?
+          ORDER  BY p.date DESC LIMIT 1
+        `, [item.medicine_id]);
+
+        if (recent) {
+          for (const f of ['batch_no', 'expiry_date', 'cost_price', 'mrp', 'invoice_no', 'distributor_name', 'distributor_id', 'purchase_date'] as const) {
+            if (needs(f) && recent[f]) { resolved[f] = recent[f]; if (!resolved._resolved_fields.includes(f)) resolved._resolved_fields.push(f); }
+          }
+        }
+      }
+
+      // ── Strategy 3: Current inventory (fallback) ──────────────────────────
+      if (needs('batch_no') || needs('expiry_date') || needs('cost_price') || needs('mrp')) {
+        const inv = await db.get(`
+          SELECT batch_no, expiry_date, cost_price, mrp
+          FROM   inventory_master
+          WHERE  medicine_id = ? AND quantity > 0
+          ORDER  BY expiry_date ASC LIMIT 1
+        `, [item.medicine_id]);
+
+        if (inv) {
+          for (const f of ['batch_no', 'expiry_date', 'cost_price', 'mrp'] as const) {
+            if (needs(f) && inv[f]) { resolved[f] = inv[f]; if (!resolved._resolved_fields.includes(f)) resolved._resolved_fields.push(f); }
+          }
+        }
+      }
+
+      // Fall back to parent return distributor / invoice if still missing
+      if (!resolved.distributor_name && item.ret_distributor_name) resolved.distributor_name = item.ret_distributor_name;
+      if (!resolved.invoice_no && item.ret_invoice_no) resolved.invoice_no = item.ret_invoice_no;
+
+      enriched.push(resolved);
+    }
+
+    res.json(enriched);
+  } catch (err: any) {
+    console.error('Error resolving return items:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update a return bill
+router.put('/:id', async (req, res) => {
+  let db;
+  try {
+    const { id } = req.params;
+    const { items, total_amount } = req.body;
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({ error: 'items array is required' });
+    }
+    db = await dbManager.getConnection();
+    await db.run('BEGIN TRANSACTION');
+    await db.run('DELETE FROM return_items WHERE return_id = ?', [id]);
+    for (const item of items) {
+      await db.run(
+        `INSERT INTO return_items (return_id, medicine_id, batch_no, quantity, cost_price, mrp, total_price) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, item.medicine_id, item.batch_no, item.quantity, item.cost_price, item.mrp || 0, (item.cost_price || 0) * (item.quantity || 0)]
+      );
+    }
+    const computed = items.reduce((s, i) => s + (i.cost_price || 0) * (i.quantity || 0), 0);
+    await db.run('UPDATE returns SET total_amount = ? WHERE id = ?', [total_amount ?? computed, id]);
+    await db.run('COMMIT');
+    res.json({ success: true, message: 'Return updated' });
+  } catch (err: any) {
+    if (db) await db.run('ROLLBACK');
+    console.error('Error updating return:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete a return bill and its items
+router.delete('/:id', async (req, res) => {
+  let db;
+  try {
+    const { id } = req.params;
+    db = await dbManager.getConnection();
+    await db.run('BEGIN TRANSACTION');
+    await db.run('DELETE FROM return_items WHERE return_id = ?', [id]);
+    await db.run('DELETE FROM returns WHERE id = ?', [id]);
+    await db.run('COMMIT');
+    res.json({ success: true, message: 'Return deleted' });
+  } catch (err: any) {
+    if (db) await db.run('ROLLBACK');
+    console.error('Error deleting return:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+export default router;

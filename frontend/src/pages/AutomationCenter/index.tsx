@@ -1,5 +1,6 @@
 // @ts-nocheck
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Bell, 
   Plus, 
@@ -40,7 +41,7 @@ const AutomationCenter = () => {
   const [patientPhone, setPatientPhone] = useState('');
   const [refillInterval, setRefillInterval] = useState<number>(30);
   const [medicineQuery, setMedicineQuery] = useState('');
-  const [selectedMedicineId, setSelectedMedicineId] = useState<number | null>(null);
+  const [selectedMedicines, setSelectedMedicines] = useState<Array<{ id: number; name: string }>>([]);
   const [medicineSearchResults, setMedicineSearchResults] = useState<any[]>([]);
   const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
   const [loadingMedicineSearch, setLoadingMedicineSearch] = useState(false);
@@ -119,7 +120,7 @@ const AutomationCenter = () => {
 
   const medicineSearchTimeout = useRef<number | null>(null);
   useEffect(() => {
-    if (!medicineQuery.trim() || medicineQuery.trim().length < 2 || selectedMedicineId !== null) {
+    if (!medicineQuery.trim() || medicineQuery.trim().length < 2) {
       setMedicineSearchResults([]);
       setShowMedicineDropdown(false);
       setLoadingMedicineSearch(false);
@@ -133,11 +134,19 @@ const AutomationCenter = () => {
     setLoadingMedicineSearch(true);
     medicineSearchTimeout.current = window.setTimeout(async () => {
       try {
-        const results = await api.catalogSearch(medicineQuery.trim());
-        setMedicineSearchResults(Array.isArray(results) ? results : []);
-        setShowMedicineDropdown(Array.isArray(results) && results.length > 0);
+        // Search from inventory instead of catalog
+        const inventoryData = await api.getInventory({ search: medicineQuery.trim(), limit: 30 });
+        // Extract unique medicines from inventory and filter out already selected ones
+        const inventoryMeds = Array.isArray(inventoryData) ? inventoryData : [];
+        const uniqueMeds = inventoryMeds
+          .filter((item: any) => item.medicine_name && !selectedMedicines.find(m => m.name === item.medicine_name))
+          .map((item: any, idx: number) => ({ id: item.medicine_id || item.id || idx, name: item.medicine_name }))
+          .slice(0, 15); // limit display to 15 items
+        setMedicineSearchResults(uniqueMeds);
+        setShowMedicineDropdown(uniqueMeds.length > 0);
       } catch (err) {
         console.error('Medicine query failed:', err);
+        setMedicineSearchResults([]);
       } finally {
         setLoadingMedicineSearch(false);
       }
@@ -146,12 +155,22 @@ const AutomationCenter = () => {
     return () => {
       if (medicineSearchTimeout.current) window.clearTimeout(medicineSearchTimeout.current);
     };
-  }, [medicineQuery, selectedMedicineId]);
+  }, [medicineQuery, selectedMedicines]);
 
   const handleSelectMedicine = useCallback((med: any) => {
-    setSelectedMedicineId(med.id);
-    setMedicineQuery(med.name);
+    // Add to selected medicines array (multi-select)
+    setSelectedMedicines(prev => {
+      if (!prev.find(m => m.id === med.id)) {
+        return [...prev, { id: med.id, name: med.name }];
+      }
+      return prev;
+    });
+    setMedicineQuery(''); // Clear input after selection
     setShowMedicineDropdown(false);
+  }, []);
+
+  const handleRemoveMedicine = useCallback((medId: number) => {
+    setSelectedMedicines(prev => prev.filter(m => m.id !== medId));
   }, []);
 
   const handleSaveReminder = useCallback(async (e?: React.FormEvent<HTMLFormElement>) => {
@@ -159,8 +178,8 @@ const AutomationCenter = () => {
     if (!patientName.trim()) return showToast('Patient name is required.', 'error');
     if (!patientPhone.trim()) return showToast('Phone number is required.', 'error');
     if (patientPhone.replace(/\D/g, '').length < 10) return showToast('Please enter a valid 10-digit phone number.', 'error');
-    if (!selectedMedicineId) return showToast('Please select a medicine from catalog search.', 'error');
-    if (refillInterval < 1 || refillInterval > 100) return showToast('Refill interval must be 1 to 100 days.', 'error');
+    if (selectedMedicines.length === 0) return showToast('Please select at least one medicine from inventory.', 'error');
+    if (refillInterval < 0 || refillInterval > 120) return showToast('Refill interval must be 0 to 120 days.', 'error');
 
     setModalSubmitting(true);
     const cleanPhone = patientPhone.replace(/\D/g, '');
@@ -168,21 +187,25 @@ const AutomationCenter = () => {
 
     try {
       if (editingRefillId) {
+        // For editing, just update the first medicine (backward compatibility)
         await api.updateRefill(editingRefillId, {
           patient_name: patientName.trim(),
           patient_phone: formattedPhone,
-          medicine_id: selectedMedicineId,
+          medicine_id: selectedMedicines[0].id,
           refill_interval_days: refillInterval,
         });
         showToast('Prescription refill reminder updated.', 'success');
       } else {
-        await api.createRefill({
-          patient_name: patientName.trim(),
-          patient_phone: formattedPhone,
-          medicine_id: selectedMedicineId,
-          refill_interval_days: refillInterval,
-        });
-        showToast('Prescription refill reminder created successfully.', 'success');
+        // Create multiple refill entries (one for each medicine)
+        for (const medicine of selectedMedicines) {
+          await api.createRefill({
+            patient_name: patientName.trim(),
+            patient_phone: formattedPhone,
+            medicine_id: medicine.id,
+            refill_interval_days: refillInterval,
+          });
+        }
+        showToast(`Refill reminders created for ${selectedMedicines.length} medicine${selectedMedicines.length > 1 ? 's' : ''}.`, 'success');
       }
 
       setShowReminderModal(false);
@@ -191,7 +214,7 @@ const AutomationCenter = () => {
       setPatientPhone('');
       setRefillInterval(30);
       setMedicineQuery('');
-      setSelectedMedicineId(null);
+      setSelectedMedicines([]);
       fetchRefills();
     } catch (err) {
       console.error('Error saving reminder:', err);
@@ -199,7 +222,7 @@ const AutomationCenter = () => {
     } finally {
       setModalSubmitting(false);
     }
-  }, [editingRefillId, patientName, patientPhone, refillInterval, selectedMedicineId, fetchRefills, showToast]);
+  }, [editingRefillId, patientName, patientPhone, refillInterval, selectedMedicines, fetchRefills, showToast]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -214,7 +237,7 @@ const AutomationCenter = () => {
       setPatientPhone('');
       setRefillInterval(30);
       setMedicineQuery('');
-      setSelectedMedicineId(null);
+      setSelectedMedicines([]);
       setManualSendNotification(null);
     }
   }, [handleSaveReminder]);
@@ -229,8 +252,9 @@ const AutomationCenter = () => {
     setPatientName(refill.patient_name);
     setPatientPhone(refill.patient_phone);
     setRefillInterval(refill.refill_interval_days);
-    setSelectedMedicineId(refill.medicine_id);
-    setMedicineQuery(refill.medicine_name || '');
+    // For edit mode, pre-select the current medicine
+    setSelectedMedicines([{ id: refill.medicine_id, name: refill.medicine_name || `Medicine ${refill.medicine_id}` }]);
+    setMedicineQuery('');
     setShowReminderModal(true);
   }, []);
 
@@ -263,7 +287,7 @@ const AutomationCenter = () => {
   }, [activeTab, fetchRefills, fetchLogs, showToast]);
 
   const handleSaveIntervalInline = useCallback(async (id: number, interval: number) => {
-    if (interval < 1 || interval > 100) return showToast('Interval must be 1 to 100 days.', 'error');
+    if (interval < 0 || interval > 120) return showToast('Interval must be 0 to 120 days.', 'error');
     try {
       await api.updateRefill(id, { refill_interval_days: interval });
       showToast('Refill interval updated.', 'success');
@@ -420,7 +444,7 @@ const AutomationCenter = () => {
                   setPatientPhone('');
                   setRefillInterval(30);
                   setMedicineQuery('');
-                  setSelectedMedicineId(null);
+                  setSelectedMedicines([]);
                   setShowReminderModal(true);
                 }}
                 className="premium-btn bg-primary text-white shadow-[0_4px_14px_rgba(14,165,233,0.35)] px-4 py-2 text-xs flex items-center gap-1.5"
@@ -472,8 +496,8 @@ const AutomationCenter = () => {
                       <td className="p-4 text-center">
                         <input
                           type="number"
-                          min="1"
-                          max="100"
+                          min="0"
+                          max="120"
                           defaultValue={refill.refill_interval_days}
                           onBlur={e => handleSaveIntervalInline(refill.id, parseInt(e.target.value) || 30)}
                           onKeyDown={e => {
@@ -712,9 +736,9 @@ const AutomationCenter = () => {
         </div>
       )}
 
-      {showReminderModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="glass-panel w-full max-w-md p-6 bg-bg2 border border-glass-border animate-slide-in shadow-2xl relative">
+      {showReminderModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="glass-panel w-full max-w-md p-6 bg-bg2 border border-glass-border animate-slide-in shadow-2xl relative my-8">
             <h3 className="text-base font-bold text-text mb-4 border-b border-glass-border pb-3">
               {editingRefillId ? 'Modify Refill Reminder Configuration' : 'Register New Patient Refill Schedule'}
             </h3>
@@ -743,17 +767,15 @@ const AutomationCenter = () => {
                 />
               </div>
               <div className="space-y-2 relative">
-                <label className="text-[10px] font-black text-muted uppercase tracking-wider">Select Catalog Medicine *</label>
+                <label className="text-[10px] font-black text-muted uppercase tracking-wider">Select Inventory Medicines * (Multiple)</label>
                 <input
                   type="text"
-                  required
                   value={medicineQuery}
                   onChange={e => {
                     setMedicineQuery(e.target.value);
-                    setSelectedMedicineId(null);
                   }}
                   onFocus={() => { if (medicineSearchResults.length > 0) setShowMedicineDropdown(true); }}
-                  placeholder="Search catalog medicines..."
+                  placeholder="Search inventory medicines..."
                   className="premium-input w-full font-semibold"
                 />
                 {loadingMedicineSearch && (
@@ -762,7 +784,7 @@ const AutomationCenter = () => {
                   </div>
                 )}
                 {showMedicineDropdown && medicineSearchResults.length > 0 && (
-                  <div className="absolute left-0 right-0 mt-1 bg-bg3 border border-glass-border rounded-xl shadow-2xl z-50 max-h-48 overflow-y-auto scrollbar-thin">
+                  <div className="absolute left-0 right-0 mt-1 bg-bg3 border border-glass-border rounded-xl shadow-2xl z-[10000] max-h-48 overflow-y-auto scrollbar-thin">
                     {medicineSearchResults.map((med, idx) => (
                       <div
                         key={idx}
@@ -775,19 +797,51 @@ const AutomationCenter = () => {
                     ))}
                   </div>
                 )}
+                {selectedMedicines.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedMedicines.map(med => (
+                      <div
+                        key={med.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 border border-primary/40 rounded-lg text-[11px] font-bold text-primary"
+                      >
+                        <span>{med.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMedicine(med.id)}
+                          className="hover:text-primary/70 transition-colors"
+                          title="Remove medicine"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-muted uppercase tracking-wider">Refill Cycle Interval (1 - 100 Days) *</label>
-                <input
-                  type="number"
-                  required
-                  value={refillInterval}
-                  onChange={e => setRefillInterval(Math.max(1, parseInt(e.target.value) || 30))}
-                  min="1"
-                  max="100"
-                  placeholder="30"
-                  className="premium-input w-full font-mono font-semibold"
-                />
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-black text-muted uppercase tracking-wider">Refill Cycle Interval (0 - 120 Days) *</label>
+                  <span className="text-xs font-bold text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">{refillInterval} days</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="120"
+                    value={refillInterval}
+                    onChange={e => setRefillInterval(parseInt(e.target.value) || 0)}
+                    className="flex-1 accent-primary h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    required
+                    value={refillInterval}
+                    onChange={e => setRefillInterval(Math.max(0, Math.min(120, parseInt(e.target.value) || 0)))}
+                    min="0"
+                    max="120"
+                    className="premium-input w-20 text-center font-mono font-semibold"
+                  />
+                </div>
               </div>
               <div className="flex gap-3 justify-end pt-4 border-t border-glass-border">
                 <button
@@ -807,12 +861,13 @@ const AutomationCenter = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {manualSendNotification && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="glass-panel w-full max-w-lg p-6 bg-bg2 border border-glass-border animate-slide-in shadow-2xl">
+      {manualSendNotification && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="glass-panel w-full max-w-lg p-6 bg-bg2 border border-glass-border animate-slide-in shadow-2xl my-8">
             <h3 className="text-base font-bold text-text mb-2 flex items-center gap-2">
               <ExternalLink size={18} className="text-amber-500" />
               Manual WhatsApp Send Assistant
@@ -867,7 +922,8 @@ const AutomationCenter = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

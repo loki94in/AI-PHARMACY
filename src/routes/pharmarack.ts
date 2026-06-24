@@ -95,28 +95,32 @@ async function refreshPharmarackToken(): Promise<string | null> {
     return null;
   }
 
-  const randomSuffix = Math.floor(Math.random() * 1000000);
-  const tempProfilePath = path.resolve(__dirname, '..', '..', 'data', `pharmarack_profile_temp_${Date.now()}_${randomSuffix}`);
-
-  console.log(`[Pharmarack Token Refresh] Copying session profile to ${tempProfilePath} to bypass locks...`);
-  try {
-    copyProfileFolder(mainProfilePath, tempProfilePath);
-  } catch (copyErr: any) {
-    console.error('[Pharmarack Token Refresh] Profile duplication failed:', copyErr.message);
-    return null;
-  }
-
   let browser;
   const holder = { token: null as string | null };
+  let tempProfilePathToDelete = '';
 
   try {
     console.log('[Pharmarack Token Refresh] Launching background headless Chrome for silent session capture...');
-    browser = await puppeteer.launch({
-      executablePath: chromePath,
-      headless: true,
-      userDataDir: tempProfilePath,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    try {
+      browser = await puppeteer.launch({
+        executablePath: chromePath,
+        headless: true,
+        userDataDir: mainProfilePath,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+    } catch (launchErr: any) {
+      console.log('[Pharmarack Token Refresh] Main profile is locked. Copying to temp profile...', launchErr.message);
+      const randomSuffix = Math.floor(Math.random() * 1000000);
+      const tempProfilePath = path.resolve(__dirname, '..', '..', 'data', `pharmarack_profile_temp_${Date.now()}_${randomSuffix}`);
+      copyProfileFolder(mainProfilePath, tempProfilePath);
+      browser = await puppeteer.launch({
+        executablePath: chromePath,
+        headless: true,
+        userDataDir: tempProfilePath,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      tempProfilePathToDelete = tempProfilePath;
+    }
 
     const [page] = await browser.pages();
     
@@ -134,8 +138,17 @@ async function refreshPharmarackToken(): Promise<string | null> {
       }
     });
 
-    await page.goto('https://retailers.pharmarack.com/', { waitUntil: 'networkidle2', timeout: 30000 });
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Start navigation with a 10s timeout and domcontentloaded
+    const navPromise = page.goto('https://retailers.pharmarack.com/', { waitUntil: 'domcontentloaded', timeout: 10000 })
+      .catch(err => {
+        console.log('[Pharmarack Token Refresh] Headless navigation error/timeout:', err.message);
+      });
+
+    // Poll for captured token or timeout (10s max)
+    const startTime = Date.now();
+    while (!holder.token && Date.now() - startTime < 10000) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
 
     if (holder.token) {
       console.log('[Pharmarack Token Refresh] Successfully captured fresh token:', holder.token.substring(0, 15) + '...');
@@ -158,13 +171,15 @@ async function refreshPharmarackToken(): Promise<string | null> {
         // ignore
       }
     }
-    try {
-      if (fs.existsSync(tempProfilePath)) {
-        fs.rmSync(tempProfilePath, { recursive: true, force: true });
-        console.log(`[Pharmarack Token Refresh] Cleared temp profile directory at ${tempProfilePath}`);
+    if (tempProfilePathToDelete) {
+      try {
+        if (fs.existsSync(tempProfilePathToDelete)) {
+          fs.rmSync(tempProfilePathToDelete, { recursive: true, force: true });
+          console.log(`[Pharmarack Token Refresh] Cleared temp profile directory at ${tempProfilePathToDelete}`);
+        }
+      } catch (rmErr: any) {
+        console.warn(`[Pharmarack Token Refresh] Could not remove temp folder: ${rmErr.message}`);
       }
-    } catch (rmErr: any) {
-      console.warn(`[Pharmarack Token Refresh] Could not remove temp folder: ${rmErr.message}`);
     }
   }
 }
@@ -196,12 +211,20 @@ async function fetchPharmarack(url: string, options: any = {}): Promise<Response
 
   let response = await executeFetch(token);
 
-  if (response.status === 401 || response.status === 403) {
+  if ((response.status === 401 || response.status === 403) && token) {
     console.log(`[Pharmarack Fetch] API ${url} returned ${response.status}. Attempting silent background token refresh...`);
     const freshToken = await refreshPharmarackToken();
     if (freshToken) {
       console.log(`[Pharmarack Fetch] Retrying API ${url} with fresh token...`);
       response = await executeFetch(freshToken);
+    } else {
+      console.log(`[Pharmarack Fetch] Silent background token refresh failed. Clearing expired session token.`);
+      try {
+        const db = await dbManager.getConnection();
+        await db.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('pharmarack_session_token', '')");
+      } catch (dbErr) {
+        console.error('Failed to clear expired session token:', dbErr);
+      }
     }
   }
 
@@ -776,23 +799,30 @@ router.post('/cart/add', async (req, res) => {
       if (chromePath) {
         console.log('API cart requests failed. Initiating headless browser fallback...');
         const pharmarackProfilePath = path.resolve(__dirname, '..', '..', 'data', 'pharmarack_profile');
-        const randomSuffix = Math.floor(Math.random() * 1000000);
-        const tempProfilePath = path.resolve(__dirname, '..', '..', 'data', `pharmarack_profile_temp_${Date.now()}_${randomSuffix}`);
-
-        try {
-          copyProfileFolder(pharmarackProfilePath, tempProfilePath);
-        } catch (copyErr: any) {
-          console.error('[Pharmarack Fallback] Profile copy failed:', copyErr.message);
-        }
-
         let browser;
+        let tempProfilePathToDelete = '';
+
         try {
-          browser = await puppeteer.launch({
-            executablePath: chromePath,
-            headless: true,
-            userDataDir: tempProfilePath,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          });
+          try {
+            browser = await puppeteer.launch({
+              executablePath: chromePath,
+              headless: true,
+              userDataDir: pharmarackProfilePath,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+          } catch (launchErr: any) {
+            console.log('[Pharmarack Fallback] Main profile is locked. Copying to temp profile...', launchErr.message);
+            const randomSuffix = Math.floor(Math.random() * 1000000);
+            const tempProfilePath = path.resolve(__dirname, '..', '..', 'data', `pharmarack_profile_temp_${Date.now()}_${randomSuffix}`);
+            copyProfileFolder(pharmarackProfilePath, tempProfilePath);
+            browser = await puppeteer.launch({
+              executablePath: chromePath,
+              headless: true,
+              userDataDir: tempProfilePath,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            tempProfilePathToDelete = tempProfilePath;
+          }
           const [page] = await browser.pages();
           
           await page.goto('https://retailers.pharmarack.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -973,13 +1003,15 @@ router.post('/cart/add', async (req, res) => {
               // ignore
             }
           }
-          try {
-            if (fs.existsSync(tempProfilePath)) {
-              fs.rmSync(tempProfilePath, { recursive: true, force: true });
-              console.log(`[Pharmarack Fallback] Cleared temp profile directory at ${tempProfilePath}`);
+          if (tempProfilePathToDelete) {
+            try {
+              if (fs.existsSync(tempProfilePathToDelete)) {
+                fs.rmSync(tempProfilePathToDelete, { recursive: true, force: true });
+                console.log(`[Pharmarack Fallback] Cleared temp profile directory at ${tempProfilePathToDelete}`);
+              }
+            } catch (rmErr) {
+              // ignore
             }
-          } catch (rmErr) {
-            // ignore
           }
         }
       }

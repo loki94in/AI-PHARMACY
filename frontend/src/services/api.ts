@@ -185,7 +185,7 @@ export const api = {
   searchMedicine: (q: string) => apiClient.get('/sales/search-medicine', { params: { q } }).then(res => res.data),
   
   // Sells (invoice list/edit)
-  listSales: (params?: { search?: string; date_from?: string; date_to?: string; batch?: string }) =>
+  listSales: (params?: { search?: string; date_from?: string; date_to?: string; batch?: string; limit?: number }) =>
     apiClient.get('/sales/list', { params }).then(res => res.data),
   getSale: (id: number) => apiClient.get(`/sales/${id}`).then(res => res.data),
   updateSale: (id: number, data: any) => apiClient.put(`/sales/${id}`, data).then(res => res.data),
@@ -412,6 +412,10 @@ export const api = {
   
   // Returns
   getReturns: (params?: { search?: string; date_from?: string; date_to?: string; min_amount?: number; max_amount?: number; limit?: number }) => apiClient.get('/returns', { params }).then(res => res.data),
+  getReturnItems: (id: number) => apiClient.get(`/returns/${id}/items`).then(res => res.data),
+  resolveReturnMissing: (id: number) => apiClient.get(`/returns/${id}/resolve-missing`).then(res => res.data),
+  deleteReturn: (id: number) => apiClient.delete(`/returns/${id}`).then(res => res.data),
+  updateReturn: (id: number, data: { items: any[]; total_amount: number }) => apiClient.put(`/returns/${id}`, data).then(res => res.data),
   createReturn: (data: any) => apiClient.post('/returns', data).then(res => res.data),
   getNearExpiry: (months: number = 6) => apiClient.get('/returns/near-expiry', { params: { months } }).then(res => res.data),
   lookupPurchases: (name: string, batch?: string) => {
@@ -451,6 +455,7 @@ export const api = {
   // CRM — extended
   updatePatient: (id: number, data: any) => apiClient.put(`/crm/patients/${id}`, data).then(res => res.data),
   deletePatient: (id: number) => apiClient.delete(`/crm/patients/${id}`).then(res => res.data),
+  deleteDoctor: (id: number | string) => apiClient.delete(`/crm/doctors/${id}`).then(res => res.data),
   getPatientHistory: (id: number) => apiClient.get(`/crm/${id}/history`).then(res => res.data),
 
   // Catalog Upload & Import

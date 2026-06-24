@@ -150,6 +150,19 @@ router.put('/doctors/:id', async (req, res) => {
   }
 });
 
+// Delete a doctor
+router.delete('/doctors/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    await db.run('DELETE FROM doctors WHERE id = ?', id);
+    res.json({ success: true, message: 'Doctor deleted successfully' });
+  } catch (error) {
+    console.error('Failed to delete doctor:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Trigger daily doctor WhatsApp reports manually for testing
 router.post('/doctors/send-daily-reports', async (req, res) => {
   const { date } = req.body; // e.g. "2026-06-22", optional

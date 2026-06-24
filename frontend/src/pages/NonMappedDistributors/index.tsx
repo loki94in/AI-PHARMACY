@@ -64,6 +64,10 @@ export default function NonMappedDistributors() {
   // Cart addition quantities per product code
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [addingToCart, setAddingToCart] = useState<Record<string, boolean>>({});
+  const [addErrors, setAddErrors] = useState<Record<string, string | null>>({});
+  // refs to hold debounce timers and controllers per product
+  const saveRefs = React.useRef<Record<string, { timer?: number; controller?: AbortController; lastSavedQty?: number }>>({});
+
 
   useEffect(() => {
     const fetchDistributors = async () => {
@@ -127,18 +131,62 @@ export default function NonMappedDistributors() {
   const updateQuantity = (productCode: string, delta: number) => {
     setQuantities(prev => {
       const current = prev[productCode] || 1;
+      const next = Math.max(1, current + delta);
+
+      // start debounce auto-commit for this product
+      scheduleAutoCommit(productCode, next);
+
       return {
         ...prev,
-        [productCode]: Math.max(1, current + delta)
+        [productCode]: next
       };
     });
   };
 
+  const scheduleAutoCommit = (productCode: string, qty: number) => {
+    const ref = saveRefs.current[productCode] || {};
+    if (ref.timer) window.clearTimeout(ref.timer);
+    // cancel pending controller (if any) as user changed qty
+    if (ref.controller) {
+      try { ref.controller.abort(); } catch {};
+      ref.controller = undefined;
+    }
+    // set a new debounce to emit an auto-commit event after 700ms
+    const timer = window.setTimeout(() => {
+      autoCommitQuantity(productCode, qty);
+    }, 700);
+    saveRefs.current[productCode] = { ...ref, timer };
+  };
+
+  const autoCommitQuantity = (productCode: string, qty: number) => {
+    // store lastSavedQty to avoid duplicate auto-commits
+    const ref = saveRefs.current[productCode] || {};
+    if (ref.lastSavedQty === qty) return;
+    ref.lastSavedQty = qty;
+    saveRefs.current[productCode] = ref;
+
+    // Emit a local event to inform other components that qty changed and is stable
+    window.dispatchEvent(new CustomEvent('pharmarack-qty-changed', { detail: { productCode, qty } }));
+  };
+
+
   const handleAddToCart = async (prod: ProductResult) => {
     const qty = quantities[prod.productCode] || 1;
     const key = prod.productCode;
-    
+
+    // cancel any pending add for this product
+    const prevRef = saveRefs.current[key];
+    if (prevRef && prevRef.controller) {
+      try { prevRef.controller.abort(); } catch {};
+      prevRef.controller = undefined;
+    }
+
+    setAddErrors(prev => ({ ...prev, [key]: null }));
     setAddingToCart(prev => ({ ...prev, [key]: true }));
+
+    const controller = new AbortController();
+    saveRefs.current[key] = { ...(saveRefs.current[key] || {}), controller };
+
     try {
       await api.addPharmarackCart([{
         productId: prod.productId,
@@ -156,17 +204,26 @@ export default function NonMappedDistributors() {
 
       toastEvent.trigger(`Added "${prod.name}" to cart from ${selectedDist?.storeName || 'distributor'}!`, 'success');
       
-      // Reset quantity
+      // Reset quantity locally
       setQuantities(prev => ({ ...prev, [key]: 1 }));
       
       // Emit cart refresh event to notify other page components
       window.dispatchEvent(new CustomEvent('refresh-pharmarack-cart'));
+
     } catch (err: any) {
-      console.error('Error adding to live cart:', err);
-      const detailed = err?.response?.data?.details || err?.response?.data?.error || err?.message || 'Unknown error';
-      toastEvent.trigger(`Addition failed: ${detailed}`, 'error');
+      if (err.name === 'AbortError') {
+        // request was cancelled; do not show an error
+        console.info('Add to cart aborted for', key);
+      } else {
+        console.error('Error adding to live cart:', err);
+        const detailed = err?.response?.data?.details || err?.response?.data?.error || err?.message || 'Unknown error';
+        setAddErrors(prev => ({ ...prev, [key]: String(detailed) }));
+        toastEvent.trigger(`Addition failed: ${detailed}`, 'error');
+      }
     } finally {
       setAddingToCart(prev => ({ ...prev, [key]: false }));
+      // clear controller
+      if (saveRefs.current[key]) saveRefs.current[key].controller = undefined;
     }
   };
 
@@ -407,9 +464,20 @@ export default function NonMappedDistributors() {
                                   >
                                     <Minus size={11} />
                                   </button>
-                                  <span className="text-[11px] font-extrabold font-mono text-text">
-                                    {qty}
-                                  </span>
+                                  <input
+                                    aria-label={`Quantity for ${prod.name}`}
+                                    className="w-10 text-center text-[11px] font-extrabold font-mono bg-transparent outline-none"
+                                    value={String(qty)}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
+                                      setQuantities(prev => ({ ...prev, [prod.productCode]: isNaN(val) ? 1 : Math.max(1, val) }));
+                                    }}
+                                    onBlur={() => {
+                                      // ensure quantity is at least 1 on blur
+                                      setQuantities(prev => ({ ...prev, [prod.productCode]: Math.max(1, prev[prod.productCode] || 1) }));
+                                    }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                                  />
                                   <button
                                     type="button"
                                     onClick={() => updateQuantity(prod.productCode, 1)}
@@ -420,18 +488,26 @@ export default function NonMappedDistributors() {
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center">
-                                <button
-                                  onClick={() => handleAddToCart(prod)}
-                                  disabled={adding}
-                                  className="w-full h-8 premium-btn bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-[10px] uppercase flex items-center justify-center gap-1 rounded-xl transition-all active:scale-95"
-                                >
-                                  {adding ? (
-                                    <Loader2 size={11} className="animate-spin" />
-                                  ) : (
-                                    <ShoppingCart size={11} />
-                                  )}
-                                  <span>Add</span>
-                                </button>
+                                <div className="flex flex-col gap-1">
+                                  {prod.rate ? (
+                                    <div className="text-[11px] text-muted font-mono">Subtotal: ₹{(qty * (prod.rate || 0)).toFixed(2)}</div>
+                                  ) : null}
+                                  <button
+                                    onClick={() => handleAddToCart(prod)}
+                                    disabled={adding}
+                                    className="w-full h-8 premium-btn bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-[10px] uppercase flex items-center justify-center gap-1 rounded-xl transition-all active:scale-95"
+                                  >
+                                    {adding ? (
+                                      <Loader2 size={11} className="animate-spin" />
+                                    ) : (
+                                      <ShoppingCart size={11} />
+                                    )}
+                                    <span>Add</span>
+                                  </button>
+                                  {addErrors[prod.productCode] ? (
+                                    <div className="text-[11px] text-red mt-1">{addErrors[prod.productCode]}</div>
+                                  ) : null}
+                                </div>
                               </td>
                             </tr>
                           );

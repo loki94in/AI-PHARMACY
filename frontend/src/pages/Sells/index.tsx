@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Edit3, Trash2, X, ChevronDown, ChevronUp, Calendar, Package, User, FileText, Save, AlertTriangle, TrendingUp, Activity, CreditCard, BookOpen, RefreshCw, ShieldAlert, Factory } from 'lucide-react';
+import { Edit3, Trash2, X, User, FileText, Save, AlertTriangle, BookOpen, RefreshCw, ShieldAlert, Factory } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { api } from '../../services/api';
@@ -61,14 +61,6 @@ const getNDaysAgoString = (n: number) => {
 const Sells = () => {
   const [invoices, setInvoices] = useState<SaleInvoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState(getNDaysAgoString(15));
-  const [dateTo, setDateTo] = useState(getTodayString());
-  const [manualToDate, setManualToDate] = useState(false);
-  const [batchFilter, setBatchFilter] = useState('');
-  const [minAmount, setMinAmount] = useState<string>('');
-  const [maxAmount, setMaxAmount] = useState<string>('');
-  const [showFilters, setShowFilters] = useState(false);
   const [colFilterNo, setColFilterNo] = useState('');
   const [colFilterName, setColFilterName] = useState('');
   const [colFilterDate, setColFilterDate] = useState('');
@@ -76,28 +68,6 @@ const Sells = () => {
   const [colFilterMinAmount, setColFilterMinAmount] = useState('');
   const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
   const [colFilterPayVia, setColFilterPayVia] = useState('');
-
-  useEffect(() => {
-    if (!manualToDate) {
-      setDateTo(getTodayString());
-    }
-  }, [manualToDate]);
-
-  const handleDateFromChange = (val: string) => {
-    if (val && val < '2020-01-01') {
-      setDateFrom('2020-01-01');
-    } else {
-      setDateFrom(val);
-    }
-  };
-
-  const handleDateToChange = (val: string) => {
-    if (val && val < '2020-01-01') {
-      setDateTo('2020-01-01');
-    } else {
-      setDateTo(val);
-    }
-  };
 
   // Edit modal state
   const [editInvoice, setEditInvoice] = useState<SaleInvoice | null>(null);
@@ -144,31 +114,20 @@ const Sells = () => {
   const fetchInvoices = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const data = await api.listSales({
-        search: search || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        batch: batchFilter || undefined,
-      });
-      const hasFilters = !!(search || dateFrom || dateTo || batchFilter);
+      const data = await api.listSales({ limit: 200 });
       const invoicesList = Array.isArray(data) ? data : (data && Array.isArray(data.invoices) ? data.invoices : []);
-      setInvoices(hasFilters ? invoicesList : invoicesList.slice(0, 50));
+      setInvoices(invoicesList);
     } catch (err) {
       console.error('Failed to load sales:', err);
       toastEvent.trigger('Failed to load sales', 'error');
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [search, dateFrom, dateTo, batchFilter]);
+  }, []);
 
   useEffect(() => {
     fetchInvoices();
   }, [fetchInvoices]);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchInvoices();
-  };
 
   const openView = async (invoice: SaleInvoice) => {
     try {
@@ -269,168 +228,10 @@ const Sells = () => {
   };
 
   return (
-    <div className="h-full flex flex-col px-6 pt-0 pb-0 animate-in fade-in duration-500">
-
-      {/* Face Sell Report (Fast Metrics) */}
-      <div className="grid grid-cols-1 md:grid-cols-2">
-
-        <div className="bg-white/10 backdrop-blur-lg rounded-tl-xl p-6 border border-white/20 border-b-0 border-r-0 relative overflow-hidden group hover:bg-white/5 transition-all">
-          <div className="absolute -right-4 -top-4 text-primary/10 group-hover:text-primary/20 transition-colors transform group-hover:-rotate-12 group-hover:scale-110 duration-500">
-            <Activity size={100} strokeWidth={1} />
-          </div>
-          <div className="relative z-10">
-            <h3 className="text-xs font-bold text-muted uppercase tracking-wider mb-2 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-              Avg. Order Value
-            </h3>
-            <div className="text-3xl font-black text-primary mb-1">
-              ₹{invoices.length > 0 ? Math.round(invoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0) / invoices.length) : 0}
-            </div>
-            <div className="text-xs text-muted font-medium">Per customer average</div>
-          </div>
-        </div>
-
-        <div className="bg-white/10 backdrop-blur-lg rounded-tr-xl p-6 border border-white/20 border-b-0 relative overflow-hidden group hover:bg-white/5 transition-all">
-          <div className="absolute -right-4 -top-4 text-purple-500/10 group-hover:text-purple-500/20 transition-colors transform group-hover:rotate-6 group-hover:scale-110 duration-500">
-            <CreditCard size={100} strokeWidth={1} />
-          </div>
-          <div className="relative z-10">
-            <h3 className="text-xs font-bold text-muted uppercase tracking-wider mb-2 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
-              Payment Split
-            </h3>
-            <div className="flex gap-4 mt-2">
-              <div>
-                <div className="text-2xl font-black text-text">
-                  {invoices.filter(i => i.payment_medium === 'CASH').length}
-                </div>
-                <div className="text-xs text-muted font-medium uppercase tracking-wider">Cash</div>
-              </div>
-              <div className="w-px h-10 bg-glass-border"></div>
-              <div>
-                <div className="text-2xl font-black text-purple-400">
-                  {invoices.filter(i => i.payment_medium !== 'CASH').length}
-                </div>
-                <div className="text-xs text-muted font-medium uppercase tracking-wider">Digital</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Search & Filters */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-none p-5 border border-white/20 border-b-0 relative z-20">
-        <form onSubmit={handleSearch} className="flex flex-wrap gap-4 items-center">
-          <div className="relative flex-1 min-w-[250px] group">
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search by invoice #, batch, customer, or phone..."
-              className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded-xl text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-inner"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold border transition-all transform active:scale-95 ${
-              showFilters ? 'bg-primary/20 border-primary/40 text-primary shadow-[0_0_15px_rgba(37,99,235,0.2)]' : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
-            }`}
-          >
-            <Filter size={16} />
-            Filters
-            {showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </button>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-gradient-to-r from-primary to-blue-600 text-white rounded-xl text-sm font-bold hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:scale-105 active:scale-95 transition-all"
-          >
-            Search
-          </button>
-        </form>
-
-        {showFilters && (
-          <div className="mt-4 pt-4 border-t border-glass-border flex flex-wrap gap-4">
-            <div className="flex items-center gap-2">
-              <Calendar size={14} className="text-muted" />
-              <label className="text-xs font-semibold text-muted">From</label>
-              <input
-                type="date"
-                value={dateFrom}
-                min="2020-01-01"
-                max={getTodayString()}
-                onChange={e => handleDateFromChange(e.target.value)}
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-muted">To</label>
-              <input
-                type="date"
-                value={dateTo}
-                min="2020-01-01"
-                max={getTodayString()}
-                disabled={!manualToDate}
-                onChange={e => handleDateToChange(e.target.value)}
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 disabled:opacity-50"
-              />
-              <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={manualToDate}
-                  onChange={e => setManualToDate(e.target.checked)}
-                  className="rounded border-glass-border text-primary focus:ring-primary/20 bg-black/20"
-                />
-                Edit
-              </label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Package size={14} className="text-muted" />
-              <label className="text-xs font-semibold text-muted">Batch</label>
-              <input
-                type="text"
-                value={batchFilter}
-                onChange={e => setBatchFilter(e.target.value)}
-                placeholder="Batch number..."
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-primary/50 w-40"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-muted">Amount</label>
-              <input
-                type="number"
-                value={minAmount}
-                onChange={e => setMinAmount(e.target.value)}
-                placeholder="Min 0"
-                min="0"
-                max="100000000"
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
-              />
-              <span className="text-muted text-xs">-</span>
-              <input
-                type="number"
-                value={maxAmount}
-                onChange={e => setMaxAmount(e.target.value)}
-                placeholder="Max 100M"
-                min="0"
-                max="100000000"
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-28"
-              />
-            </div>
-            {(dateFrom !== getNDaysAgoString(15) || dateTo !== getTodayString() || batchFilter || minAmount || maxAmount) && (
-              <button
-                onClick={() => { setDateFrom(getNDaysAgoString(15)); setDateTo(getTodayString()); setManualToDate(false); setBatchFilter(''); setMinAmount(''); setMaxAmount(''); }}
-                className="text-xs text-red hover:text-red/80 font-semibold flex items-center gap-1"
-              >
-                <X size={12} /> Clear filters
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+    <div className="h-full flex flex-col px-6 py-6 animate-in fade-in duration-500">
 
       {/* Invoices Table */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-b-xl p-0 border border-white/20 flex-1 flex flex-col overflow-hidden min-h-0">
+      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-0 border border-white/20 flex-1 flex flex-col overflow-hidden min-h-0">
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
             <div className="animate-pulse">Loading invoices...</div>
@@ -546,11 +347,6 @@ const Sells = () => {
               <tbody>
                 {invoices.filter(inv => {
                   const total = Number(inv.total_amount) || 0;
-                  
-                  // Top filters panel (minAmount / maxAmount)
-                  const min = minAmount ? Number(minAmount) : 0;
-                  const max = maxAmount ? Number(maxAmount) : 100000000;
-                  if (total < min || total > max) return false;
 
                   // Column header filters
                   if (colFilterNo && !inv.invoice_no.toLowerCase().includes(colFilterNo.toLowerCase())) {

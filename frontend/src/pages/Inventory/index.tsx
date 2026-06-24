@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
-import { PackageSearch, Filter, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Search, Edit, Save } from 'lucide-react';
+import { PackageSearch, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save } from 'lucide-react';
 import { api, type InventoryItem } from '../../services/api';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { createPortal } from 'react-dom';
@@ -36,12 +36,6 @@ const formatExpiryToMMYY = (val: string): string => {
 const Inventory = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [minQty, setMinQty] = useState('');
-  const [maxQty, setMaxQty] = useState('');
-  const [minMRP, setMinMRP] = useState('');
-  const [maxMRP, setMaxMRP] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   const [colFilters, setColFilters] = useState({
     medicine: '', batch: '', expiry: '', packs: '', loose: '', mrp: '', rack: ''
   });
@@ -60,9 +54,9 @@ const Inventory = () => {
 
   const [specialOrders, setSpecialOrders] = useState<any[]>([]);
 
-  const loadInventory = useCallback((searchQuery = '') => {
+  const loadInventory = useCallback(() => {
     setLoading(true);
-    api.getInventory({ search: searchQuery })
+    api.getInventory({ limit: 1000 })
       .then(data => {
         const fetchedItems = data && (data as any).data ? (data as any).data : data;
         setItems(Array.isArray(fetchedItems) ? fetchedItems : []);
@@ -75,12 +69,8 @@ const Inventory = () => {
   }, []);
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      loadInventory(searchTerm);
-    }, 300);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, loadInventory]);
+    loadInventory();
+  }, [loadInventory]);
 
   useDeferredEffect(() => {
     api.getOrders()
@@ -130,7 +120,7 @@ const Inventory = () => {
         setIsSaving(false);
         setIsEditing(false);
         setSelectedItem({ ...selectedItem, ...editForm } as InventoryItem);
-        loadInventory(searchTerm);
+        loadInventory();
       })
       .catch(err => {
         console.error('Failed to update item:', err);
@@ -141,25 +131,10 @@ const Inventory = () => {
   const filteredItems = items.filter(item => {
     const itemName = item.name || '';
     const itemBatch = item.batch_number || '';
-    const itemID = String(item.id || '');
     const itemExpiry = item.expiry_date || '';
     const itemRack = item.rack_location || '';
     const itemStock = String(item.stock_quantity || 0);
     const itemMrp = String(item.mrp || 0);
-    const searchLower = searchTerm.toLowerCase();
-
-    const matchesSearch = itemName.toLowerCase().includes(searchLower) ||
-      itemBatch.toLowerCase().includes(searchLower) ||
-      itemID.includes(searchLower) ||
-      itemExpiry.toLowerCase().includes(searchLower) ||
-      itemRack.toLowerCase().includes(searchLower) ||
-      itemStock.includes(searchLower) ||
-      itemMrp.includes(searchLower);
-      
-    const matchesMinQty = !minQty || item.stock_quantity >= Number(minQty);
-    const matchesMaxQty = !maxQty || item.stock_quantity <= Number(maxQty);
-    const matchesMinMRP = !minMRP || (item.mrp || 0) >= Number(minMRP);
-    const matchesMaxMRP = !maxMRP || (item.mrp || 0) <= Number(maxMRP);
     
     const matchesColFilters = 
       itemName.toLowerCase().includes(colFilters.medicine.toLowerCase()) &&
@@ -170,75 +145,12 @@ const Inventory = () => {
       (!colFilters.mrp || itemMrp.includes(colFilters.mrp)) &&
       itemRack.toLowerCase().includes(colFilters.rack.toLowerCase());
     
-    return matchesSearch && matchesMinQty && matchesMaxQty && matchesMinMRP && matchesMaxMRP && matchesColFilters;
+    return matchesColFilters;
   });
 
   return (
-    <div className="h-full flex flex-col fade-in relative px-4 pb-4 pt-2 gap-2">
+    <div className="h-full flex flex-col fade-in relative px-4 pb-4 pt-4 gap-2">
       <div className="glass-panel flex-1 flex flex-col overflow-hidden">
-        <div className="p-3 border-b border-glass-border flex justify-between items-center bg-white/5">
-          <div className="flex items-center gap-3 w-full">
-            <div className="relative flex-1 max-w-md">
-              <input 
-                type="text" 
-                placeholder="Search inventory..." 
-                className="w-full px-4 py-2 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 transition-all"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <button onClick={() => setShowFilters(!showFilters)} className={`px-4 py-2 rounded-lg border text-sm font-medium flex items-center gap-2 transition-colors ${showFilters ? 'bg-primary/20 border-primary/30 text-primary' : 'bg-white/5 border-glass-border hover:bg-white/10 text-muted hover:text-white'}`}>
-              <Filter size={16} /> Filters
-            </button>
-            <div className="flex-1"></div>
-            <button className="px-4 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 text-sky-400 text-sm font-bold flex items-center gap-2 transition-colors" onClick={() => loadInventory(searchTerm)} aria-label="Refresh inventory" title="Refresh inventory">
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> 
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-          </div>
-        </div>
-
-        {showFilters && (
-          <div className="bg-black/40 p-4 border-b border-glass-border flex flex-wrap gap-4 items-center">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-muted">Stock Qty</label>
-              <input
-                type="number"
-                value={minQty}
-                onChange={e => setMinQty(e.target.value)}
-                placeholder="Min"
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
-              />
-              <span className="text-muted text-xs">-</span>
-              <input
-                type="number"
-                value={maxQty}
-                onChange={e => setMaxQty(e.target.value)}
-                placeholder="Max"
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-muted">MRP</label>
-              <input
-                type="number"
-                value={minMRP}
-                onChange={e => setMinMRP(e.target.value)}
-                placeholder="Min ₹"
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
-              />
-              <span className="text-muted text-xs">-</span>
-              <input
-                type="number"
-                value={maxMRP}
-                onChange={e => setMaxMRP(e.target.value)}
-                placeholder="Max ₹"
-                className="px-3 py-1.5 bg-black/20 border border-glass-border rounded-lg text-sm text-text focus:outline-none focus:border-primary/50 w-24"
-              />
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 overflow-auto bg-black/20 relative">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">

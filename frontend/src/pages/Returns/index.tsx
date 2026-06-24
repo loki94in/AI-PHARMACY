@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { api, apiClient } from '../../services/api';
-import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera, X, Loader2 } from 'lucide-react';
+import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera, X, Loader2, Edit, Wand2 } from 'lucide-react';
 import AICamera from '../../components/AICamera';
 
 const generateUUID = () => {
@@ -148,6 +148,7 @@ const Returns: React.FC = () => {
   const handleSelectHistoryReturn = async (ret: any) => {
     setSelectedHistoryReturn(ret);
     setLoadingHistoryItems(true);
+    setIsEditingHistory(false);
     try {
       const response = await api.getReturnItems(ret.id);
       const mapped = (response || []).map((item: any) => ({
@@ -159,11 +160,15 @@ const Returns: React.FC = () => {
         quantity: item.quantity,
         cost_price: item.cost_price,
         mrp: item.mrp || 0,
-        invoice_no: ret.original_invoice_id ? String(ret.original_invoice_id) : 'N/A',
-        distributor_name: ret.distributor_name || 'Unknown Distributor',
-        distributor_id: ret.distributor_id,
+        // Prefer the invoice_no joined from purchases; fall back to parent return's original_invoice_id
+        invoice_no: item.invoice_no || (ret.original_invoice_id ? String(ret.original_invoice_id) : 'N/A'),
+        purchase_date: item.purchase_date || '',
+        // Prefer distributor from the joined row; fall back to parent return
+        distributor_name: item.distributor_name || ret.distributor_name || 'Unknown Distributor',
+        distributor_id: item.distributor_id || ret.distributor_id,
       }));
       setHistoryReturnItems(mapped);
+      setEditingItems(mapped.map(i => ({ ...i })));
     } catch (error) {
       console.error('Error fetching return items:', error);
     } finally {
@@ -174,6 +179,73 @@ const Returns: React.FC = () => {
   const handleClearHistorySelection = () => {
     setSelectedHistoryReturn(null);
     setHistoryReturnItems([]);
+  };
+
+  const handleDeleteReturn = async (ret: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete return ${ret.return_no}? This cannot be undone.`)) return;
+    try {
+      await api.deleteReturn(ret.id);
+      if (selectedHistoryReturn?.id === ret.id) handleClearHistorySelection();
+      fetchReturnHistory(dateFrom, dateTo, minAmount, maxAmount);
+    } catch (err) {
+      console.error('Failed to delete return:', err);
+      alert('Failed to delete return');
+    }
+  };
+
+  const handleEditHistoryReturn = async (ret: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await handleSelectHistoryReturn(ret);
+    setIsEditingHistory(true);
+  };
+
+  const handleSaveHistoryEdit = async () => {
+    if (!selectedHistoryReturn) return;
+    setSaving(true);
+    try {
+      const validItems = editingItems.filter(i => i.medicine_id && (parseFloat(i.quantity) || 0) > 0);
+      const total = validItems.reduce((s, i) => s + (i.cost_price || 0) * (i.quantity || 0), 0);
+      await api.updateReturn(selectedHistoryReturn.id, { items: validItems, total_amount: total });
+      setIsEditingHistory(false);
+      await handleSelectHistoryReturn(selectedHistoryReturn);
+      fetchReturnHistory(dateFrom, dateTo, minAmount, maxAmount);
+    } catch (err) {
+      console.error('Failed to save return:', err);
+      alert('Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResolveMissing = async () => {
+    if (!selectedHistoryReturn) return;
+    setIsResolving(true);
+    try {
+      const response = await api.resolveReturnMissing(selectedHistoryReturn.id);
+      const mapped = (response || []).map((item: any) => ({
+        id: String(item.id),
+        medicine_id: item.medicine_id,
+        medicine_name: item.medicine_name || 'Unknown Medicine',
+        batch_no: item.batch_no || '',
+        expiry_date: item.expiry_date ? formatExpiryToMMYY(item.expiry_date) : '',
+        quantity: item.quantity,
+        cost_price: item.cost_price,
+        mrp: item.mrp || 0,
+        invoice_no: item.invoice_no || item.ret_invoice_no || 'N/A',
+        purchase_date: item.purchase_date || item.ret_purchase_date || '',
+        distributor_name: item.distributor_name || item.ret_distributor_name || 'Unknown Distributor',
+        distributor_id: item.distributor_id || item.ret_distributor_id,
+        _resolved_fields: item._resolved_fields || [],
+      }));
+      setEditingItems(mapped);
+      setIsEditingHistory(true);
+    } catch (err) {
+      console.error('Failed to resolve missing data:', err);
+      alert('Failed to auto-fill missing data');
+    } finally {
+      setIsResolving(false);
+    }
   };
 
   const groupGivenItemsByInvoice = (itemsToGroup: ReturnItem[]): GroupedReturn[] => {
@@ -288,10 +360,20 @@ const Returns: React.FC = () => {
   const [manualToDate, setManualToDate] = useState(false);
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [distributorFilter, setDistributorFilter] = useState('');
   const [showGroupedPreview, setShowGroupedPreview] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraTargetIndex, setCameraTargetIndex] = useState<number | null>(null);
+
+  // Edit history state
+  const [isEditingHistory, setIsEditingHistory] = useState(false);
+  const [editingItems, setEditingItems] = useState<any[]>([]);
+  const [isResolving, setIsResolving] = useState(false);
+
+  // True when any loaded history item has null/zero batch, expiry, or cost
+  const hasMissingData = historyReturnItems.some(
+    i => !i.batch_no || !i.expiry_date || !(i.cost_price)
+  );
 
   useEffect(() => {
     if (!manualToDate) {
@@ -491,14 +573,14 @@ const Returns: React.FC = () => {
     setActiveSearchIndex(null);
   };
 
-  const updateItem = (index: number, field: keyof ReturnItem, value: any) => {
+  const updateItem = (index: number, field: keyof ReturnItem, value: any, format = false) => {
     const newItems = [...items];
     const item = newItems[index];
 
     if (field === 'quantity' || field === 'cost_price' || field === 'mrp') {
       (item as any)[field] = value;
     } else if (field === 'expiry_date') {
-      (item as any)[field] = formatExpiryToMMYY(value);
+      (item as any)[field] = format ? formatExpiryToMMYY(value) : value;
     } else {
       (item as any)[field] = value;
     }
@@ -711,108 +793,77 @@ const Returns: React.FC = () => {
 
           {/* Section B: History */}
           <div className="flex-shrink-0 flex flex-col min-h-0 border-t border-glass-border pt-3">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Return History</h3>
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="text-[10px] text-muted hover:text-text flex items-center gap-1"
-              >
-                Filters
-              </button>
-            </div>
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted mb-2">Return History</h3>
 
-            {showFilters && (
-              <div className="mb-2 p-2 bg-bg3/50 rounded-lg border border-glass-border space-y-1.5 text-[10px] flex-shrink-0">
-                <div className="flex items-center justify-between gap-1">
-                  <label className="text-muted">From</label>
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    min="2020-01-01"
-                    max={getTodayString()}
-                    onChange={e => handleDateFromChange(e.target.value)}
-                    className="px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-1">
-                  <label className="text-muted">To</label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="date"
-                      value={dateTo}
-                      min="2020-01-01"
-                      max={getTodayString()}
-                      disabled={!manualToDate}
-                      onChange={e => handleDateToChange(e.target.value)}
-                      className="px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none disabled:opacity-50 w-24"
-                    />
-                    <label className="text-[9px] text-muted flex items-center gap-0.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={manualToDate}
-                        onChange={e => setManualToDate(e.target.checked)}
-                        className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg"
-                      />
-                      Edit
-                    </label>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 justify-between">
-                  <label className="text-muted">Min</label>
-                  <input
-                    type="number"
-                    value={minAmount}
-                    onChange={e => setMinAmount(e.target.value)}
-                    placeholder="Min"
-                    className="px-1 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none w-14"
-                  />
-                  <label className="text-muted">Max</label>
-                  <input
-                    type="number"
-                    value={maxAmount}
-                    onChange={e => setMaxAmount(e.target.value)}
-                    placeholder="Max"
-                    className="px-1 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none w-14"
-                  />
-                </div>
+            {/* Always-visible compact filters */}
+            <div className="mb-2 p-2 bg-bg3/40 rounded-lg border border-glass-border space-y-1.5 text-[10px] flex-shrink-0">
+              <div className="flex items-center gap-1">
+                <label className="text-muted w-7">From</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  min="2020-01-01"
+                  max={getTodayString()}
+                  onChange={e => handleDateFromChange(e.target.value)}
+                  className="flex-1 px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
+                />
+                <label className="text-muted w-4">To</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  min="2020-01-01"
+                  max={getTodayString()}
+                  onChange={e => { setManualToDate(true); handleDateToChange(e.target.value); }}
+                  className="flex-1 px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
+                />
               </div>
-            )}
+              <div>
+                <select
+                  value={distributorFilter}
+                  onChange={e => setDistributorFilter(e.target.value)}
+                  className="w-full px-1.5 py-0.5 bg-bg border border-glass-border rounded text-[10px] text-text focus:outline-none"
+                >
+                  <option value="">All Distributors</option>
+                  {[...new Set(returnHistory.map(r => r.distributor_name).filter(Boolean))].map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              {(distributorFilter || minAmount || maxAmount) && (
+                <button
+                  onClick={() => { setDistributorFilter(''); setMinAmount(''); setMaxAmount(''); }}
+                  className="text-[9px] text-red hover:text-red/80 font-semibold"
+                >✕ Clear filters</button>
+              )}
+            </div>
 
             <div className="space-y-1.5">
               {loading ? (
                 <div className="text-center py-4 text-xs text-muted">Loading...</div>
               ) : returnHistory.filter(ret => {
-                  let matchesDate = true;
-                  if (dateFrom || dateTo) {
-                    const itemDate = ret.date ? ret.date.substring(0, 10) : '';
-                    const start = dateFrom || '0000-00-00';
-                    const end = dateTo || '9999-99-99';
-                    matchesDate = itemDate >= start && itemDate <= end;
-                  }
+                  const itemDate = ret.date ? ret.date.substring(0, 10) : '';
+                  const matchesDate = (!dateFrom || itemDate >= dateFrom) && (!dateTo || itemDate <= dateTo);
                   const matchesMin = !minAmount || (ret.total_amount || 0) >= Number(minAmount);
                   const matchesMax = !maxAmount || (ret.total_amount || 0) <= Number(maxAmount);
-                  return matchesDate && matchesMin && matchesMax;
+                  const matchesDist = !distributorFilter || ret.distributor_name === distributorFilter;
+                  return matchesDate && matchesMin && matchesMax && matchesDist;
                 }).length === 0 ? (
                 <div className="text-center py-4 text-xs text-muted">No returns found.</div>
               ) : (
                 returnHistory.filter(ret => {
-                  let matchesDate = true;
-                  if (dateFrom || dateTo) {
-                    const itemDate = ret.date ? ret.date.substring(0, 10) : '';
-                    const start = dateFrom || '0000-00-00';
-                    const end = dateTo || '9999-99-99';
-                    matchesDate = itemDate >= start && itemDate <= end;
-                  }
+                  const itemDate = ret.date ? ret.date.substring(0, 10) : '';
+                  const matchesDate = (!dateFrom || itemDate >= dateFrom) && (!dateTo || itemDate <= dateTo);
                   const matchesMin = !minAmount || (ret.total_amount || 0) >= Number(minAmount);
                   const matchesMax = !maxAmount || (ret.total_amount || 0) <= Number(maxAmount);
-                  return matchesDate && matchesMin && matchesMax;
+                  const matchesDist = !distributorFilter || ret.distributor_name === distributorFilter;
+                  return matchesDate && matchesMin && matchesMax && matchesDist;
                 }).map((ret) => {
                   const isSelected = selectedHistoryReturn?.id === ret.id;
                   return (
                     <div 
                       key={ret.id} 
                       onClick={() => handleSelectHistoryReturn(ret)}
-                      className={`p-2 rounded-lg border transition-all flex flex-col gap-0.5 text-[10px] font-medium cursor-pointer select-none ${
+                      className={`p-2 rounded-lg border transition-all flex flex-col gap-0.5 text-[10px] font-medium cursor-pointer select-none group/hist ${
                         isSelected 
                           ? 'bg-primary/10 border-primary text-text font-bold' 
                           : 'border-glass-border bg-bg3/30 hover:bg-bg3/60'
@@ -820,7 +871,25 @@ const Returns: React.FC = () => {
                     >
                       <div className="flex justify-between items-center text-text font-semibold">
                         <span>{ret.return_no}</span>
-                        <span className="text-emerald-500 font-bold">₹{ret.total_amount?.toFixed(2) || '0.00'}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-emerald-500 font-bold">₹{ret.total_amount?.toFixed(2) || '0.00'}</span>
+                          <button
+                            onClick={(e) => handleEditHistoryReturn(ret, e)}
+                            className="p-0.5 rounded hover:bg-primary/20 text-muted hover:text-primary transition-colors flex-shrink-0"
+                            title="Edit this return"
+                            aria-label={`Edit return ${ret.return_no}`}
+                          >
+                            <Edit size={11} />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteReturn(ret, e)}
+                            className="p-0.5 rounded hover:bg-red/20 text-muted hover:text-red transition-colors flex-shrink-0"
+                            title="Delete this return"
+                            aria-label={`Delete return ${ret.return_no}`}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
                       </div>
                       {ret.distributor_name && (
                         <div className="text-[9px] text-muted truncate mt-0.5">
@@ -959,43 +1028,171 @@ const Returns: React.FC = () => {
             <div className="flex justify-between items-center border-b border-glass-border pb-3">
               <div>
                 <h2 className="text-base font-bold text-text flex items-center gap-2">
-                  <span>Finalized Return: {selectedHistoryReturn.return_no}</span>
+                  {isEditingHistory && <span className="text-xs px-2 py-0.5 bg-amber/20 text-amber rounded-lg font-semibold">Editing</span>}
+                  <span>{isEditingHistory ? 'Edit Return: ' : 'Finalized Return: '}{selectedHistoryReturn.return_no}</span>
                 </h2>
                 <p className="text-xs text-muted">
-                  Read-only view of return items processed for {selectedHistoryReturn.distributor_name || 'Unknown distributor'}.
+                  {isEditingHistory
+                    ? 'Edit quantities or cost prices below, then save.'
+                    : `Read-only view of return items processed for ${selectedHistoryReturn.distributor_name || 'Unknown distributor'}.`}
                 </p>
               </div>
-              <button
-                onClick={handleClearHistorySelection}
-                className="bg-bg3 border border-glass-border hover:bg-bg3/80 text-text font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all"
-              >
-                <span>Back to Draft Editor</span>
-              </button>
+              <div className="flex gap-2">
+                {isEditingHistory ? (
+                  <>
+                    <button
+                      onClick={handleSaveHistoryEdit}
+                      disabled={saving}
+                      className="bg-green hover:bg-green/90 text-white font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+                    >
+                      {saving ? 'Saving…' : 'Save Changes'}
+                    </button>
+                    <button
+                      onClick={() => setIsEditingHistory(false)}
+                      className="bg-bg3 border border-glass-border hover:bg-bg3/80 text-text font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {hasMissingData && !isEditingHistory && (
+                      <button
+                        onClick={handleResolveMissing}
+                        disabled={isResolving}
+                        className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all disabled:opacity-60"
+                        title="Auto-fill missing batch, expiry, cost from purchase history"
+                      >
+                        {isResolving
+                          ? <><Loader2 size={13} className="animate-spin" /> Resolving…</>
+                          : <><Wand2 size={13} /> Auto-fill Missing</>}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setEditingItems(historyReturnItems.map(i => ({ ...i }))); setIsEditingHistory(true); }}
+                      className="bg-primary/10 hover:bg-primary/20 text-primary font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all"
+                    >
+                      <Edit size={13} /> Edit
+                    </button>
+                    <button
+                      onClick={handleClearHistorySelection}
+                      className="bg-bg3 border border-glass-border hover:bg-bg3/80 text-text font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all"
+                    >
+                      <span>Back</span>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
-            {/* Table Viewer */}
+            {/* Table Viewer / Editor */}
             <div className="flex-1 overflow-auto bg-bg/50 rounded-xl border border-glass-border">
               {loadingHistoryItems ? (
                 <div className="flex flex-col items-center justify-center h-full py-12 gap-3 text-muted">
                   <Loader2 className="animate-spin text-primary" size={32} />
                   <span className="text-xs font-semibold">Loading items...</span>
                 </div>
-              ) : historyReturnItems.length === 0 ? (
-                <div className="text-center py-12 text-muted text-xs">
-                  No items recorded for this return invoice.
-                </div>
-              ) : (
+              ) : isEditingHistory ? (
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 z-20 bg-bg2 border-b border-glass-border shadow-sm">
                     <tr className="text-left text-muted border-b border-glass-border">
-                      <th className="p-3 text-xs font-semibold w-10">#</th>
-                      <th className="p-3 text-xs font-semibold min-w-[200px]">Medicine</th>
+                      <th className="p-3 text-xs font-semibold w-8">#</th>
+                      <th className="p-3 text-xs font-semibold min-w-[170px]">Medicine</th>
                       <th className="p-3 text-xs font-semibold w-24">Batch</th>
-                      <th className="p-3 text-xs font-semibold w-28">Expiry</th>
-                      <th className="p-3 text-xs font-semibold w-20 text-center">Qty</th>
+                      <th className="p-3 text-xs font-semibold w-20">Expiry</th>
+                      <th className="p-3 text-xs font-semibold w-16 text-center">Qty</th>
                       <th className="p-3 text-xs font-semibold w-24 text-right">Cost Price</th>
                       <th className="p-3 text-xs font-semibold w-24 text-right">Total</th>
-                      <th className="p-3 text-xs font-semibold w-28 text-center">Invoice Ref</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editingItems.map((item, idx) => {
+                      const rf: string[] = item._resolved_fields || [];
+                      const hi = (f: string) => rf.includes(f)
+                        ? 'ring-1 ring-amber-400 bg-amber-400/10'
+                        : '';
+                      return (
+                        <tr key={item.id} className="border-b border-glass-border hover:bg-bg3/20 transition-colors">
+                          <td className="p-3 text-xs text-muted">{idx + 1}</td>
+                          <td className="p-3 text-xs font-semibold text-text">{item.medicine_name}</td>
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={item.batch_no}
+                              onChange={e => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, batch_no: e.target.value } : it))}
+                              className={`w-full bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text font-mono focus:outline-none focus:ring-1 focus:ring-primary ${hi('batch_no')}`}
+                              placeholder="—"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={item.expiry_date}
+                              onChange={e => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, expiry_date: e.target.value } : it))}
+                              className={`w-full bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text font-mono focus:outline-none focus:ring-1 focus:ring-primary ${hi('expiry_date')}`}
+                              placeholder="MM/YY"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.quantity}
+                              onChange={e => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: parseFloat(e.target.value) || 0 } : it))}
+                              className="w-16 bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text text-center focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                          </td>
+                          <td className="p-2 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.cost_price}
+                              onChange={e => setEditingItems(prev => prev.map((it, i) => i === idx ? { ...it, cost_price: parseFloat(e.target.value) || 0 } : it))}
+                              className={`w-20 bg-bg3 border border-glass-border rounded px-2 py-1 text-xs text-text text-right focus:outline-none focus:ring-1 focus:ring-primary ${hi('cost_price')}`}
+                            />
+                          </td>
+                          <td className="p-3 text-xs text-text font-bold text-right">
+                            ₹{((item.cost_price || 0) * (item.quantity || 0)).toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 bg-bg2 border-t border-glass-border">
+                    <tr>
+                      <td colSpan={6} className="p-3 text-xs font-bold text-text text-right">Updated Total:</td>
+                      <td className="p-3 text-sm font-black text-emerald-500 text-right">
+                        ₹{editingItems.reduce((s, i) => s + (i.cost_price || 0) * (i.quantity || 0), 0).toFixed(2)}
+                      </td>
+                    </tr>
+                    {editingItems.some(i => (i._resolved_fields || []).length > 0) && (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-1.5">
+                          <div className="flex items-center gap-1.5 text-[10px] text-amber-500">
+                            <span className="inline-block w-3 h-3 rounded bg-amber-400/30 ring-1 ring-amber-400 flex-shrink-0" />
+                            Amber cells were auto-filled from purchase history. Verify before saving.
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+              ) : historyReturnItems.length === 0 ? (
+                <div className="text-center py-12 text-muted text-xs">No items recorded for this return invoice.</div>
+              ) : (
+                   <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-20 bg-bg2 border-b border-glass-border shadow-sm">
+                    <tr className="text-left text-muted border-b border-glass-border">
+                      <th className="p-3 text-xs font-semibold w-10">#</th>
+                      <th className="p-3 text-xs font-semibold min-w-[180px]">Medicine</th>
+                      <th className="p-3 text-xs font-semibold w-24">Batch</th>
+                      <th className="p-3 text-xs font-semibold w-20">Expiry</th>
+                      <th className="p-3 text-xs font-semibold w-14 text-center">Qty</th>
+                      <th className="p-3 text-xs font-semibold w-22 text-right">Cost Price</th>
+                      <th className="p-3 text-xs font-semibold w-22 text-right">Total</th>
+                      <th className="p-3 text-xs font-semibold w-24 text-center">Invoice Ref</th>
+                      <th className="p-3 text-xs font-semibold min-w-[120px]">Distributor</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1005,13 +1202,22 @@ const Returns: React.FC = () => {
                         <td className="p-3 text-xs font-semibold text-text">{item.medicine_name}</td>
                         <td className="p-3 text-xs font-mono text-muted">{item.batch_no || '—'}</td>
                         <td className="p-3 text-xs font-mono text-muted">{item.expiry_date || '—'}</td>
-                        <td className="p-3 text-xs font-semibold text-text text-center">{item.quantity}</td>
-                        <td className="p-3 text-xs text-text text-right">₹{(item.cost_price || 0).toFixed(2)}</td>
-                        <td className="p-3 text-xs text-text font-bold text-right">₹{((item.cost_price || 0) * (item.quantity || 0)).toFixed(2)}</td>
+                        <td className="p-3 text-xs font-semibold text-text text-center">{item.quantity ?? '—'}</td>
+                        <td className="p-3 text-xs text-text text-right">
+                          {item.cost_price != null ? `₹${(item.cost_price || 0).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="p-3 text-xs text-text font-bold text-right">
+                          {item.cost_price != null && item.quantity != null
+                            ? `₹${((item.cost_price || 0) * (item.quantity || 0)).toFixed(2)}`
+                            : '—'}
+                        </td>
                         <td className="p-3 text-center">
                           <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-lg text-[9px] font-semibold">
                             {item.invoice_no || 'N/A'}
                           </span>
+                        </td>
+                        <td className="p-3 text-xs text-muted truncate max-w-[140px]">
+                          {item.distributor_name || '—'}
                         </td>
                       </tr>
                     ))}
@@ -1124,7 +1330,8 @@ const Returns: React.FC = () => {
                         <input
                           type="text"
                           value={item.expiry_date}
-                          onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
+                          onChange={(e) => updateItem(index, 'expiry_date', e.target.value, false)}
+                          onBlur={(e) => updateItem(index, 'expiry_date', e.target.value, true)}
                           className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1 text-text text-xs focus:ring-1 focus:ring-primary focus:outline-none"
                           placeholder="MM/YY"
                         />
