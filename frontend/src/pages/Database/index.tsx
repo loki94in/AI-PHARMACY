@@ -22,9 +22,12 @@ interface MedicineRow {
   last_distributor_name?: string;
 }
 
+// Module-level cache for instant re-mount
+let cachedMedicines: MedicineRow[] | null = null;
+
 const DatabasePage = () => {
-  const [medicines, setMedicines] = useState<MedicineRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [medicines, setMedicines] = useState<MedicineRow[]>(cachedMedicines || []);
+  const [loading, setLoading] = useState(!cachedMedicines);
   const [appending, setAppending] = useState(false);
   const [searchPending, setSearchPending] = useState(false);
   const [productNameInput, setProductNameInput] = useState('');
@@ -281,6 +284,7 @@ const DatabasePage = () => {
       .then((res: any) => {
         if (page === 1) {
           setMedicines(res.data || []);
+          cachedMedicines = res.data || [];
           setSelectedIds([]);
           setAllSelectedAcrossPages(false);
         } else {

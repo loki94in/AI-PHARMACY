@@ -281,8 +281,8 @@ const Mail = () => {
       syncDelay = setTimeout(() => triggerSync(), 1500);
     }
 
-    // Periodic background refresh: re-read local DB every 10s (silent, no loading indicator).
-    const refreshInterval = setInterval(() => silentRefreshLocal(), 10000);
+    // Periodic background refresh: re-read local DB every 30s (silent, no loading indicator).
+    const refreshInterval = setInterval(() => silentRefreshLocal(), 30000);
 
     // Periodic IMAP sync every 2 minutes.
     const syncInterval = setInterval(() => triggerSync(), 120000);

@@ -123,6 +123,8 @@ const getNDaysAgoString = (n: number) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+let cachedReturnHistory: any[] | null = null;
+
 const Returns: React.FC = () => {
   const location = useLocation();
 
@@ -134,8 +136,8 @@ const Returns: React.FC = () => {
   const [activeTabId, setActiveTabId] = useState<string>(initialActiveTabId);
 
   const [items, setItems] = useState<ReturnItem[]>(initialActiveTab.items || []);
-  const [returnHistory, setReturnHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [returnHistory, setReturnHistory] = useState<any[]>(cachedReturnHistory || []);
+  const [loading, setLoading] = useState(!cachedReturnHistory);
   const [saving, setSaving] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
@@ -477,8 +479,8 @@ const Returns: React.FC = () => {
     }
   }, []);
 
-  const fetchReturnHistory = async (start = dateFrom, end = dateTo, min = minAmount, max = maxAmount) => {
-    setLoading(true);
+  const fetchReturnHistory = async (start = dateFrom, end = dateTo, min = minAmount, max = maxAmount, silent = false) => {
+    if (!silent && !cachedReturnHistory) setLoading(true);
     try {
       const params = {
         date_from: start || undefined,
@@ -489,6 +491,7 @@ const Returns: React.FC = () => {
       const response = await api.getReturns(params);
       const returns = Array.isArray(response) ? response : (response.data || []);
       setReturnHistory(returns);
+      cachedReturnHistory = returns;
     } catch (error) {
       console.error('Error fetching returns:', error);
     } finally {
@@ -497,7 +500,7 @@ const Returns: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchReturnHistory(dateFrom, dateTo, minAmount, maxAmount);
+    fetchReturnHistory(dateFrom, dateTo, minAmount, maxAmount, !!cachedReturnHistory);
   }, [dateFrom, dateTo, minAmount, maxAmount]);
 
   const searchTimeoutRef = React.useRef<any>(null);

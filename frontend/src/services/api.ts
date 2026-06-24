@@ -234,8 +234,7 @@ export const api = {
 
 
   
-  // CRM
-  getPatients: () => apiClient.get('/crm/patients').then(r => r.data),
+  getPatients: (params?: { q?: string; limit?: number }) => apiClient.get('/crm/patients', { params }).then(r => r.data),
   
   // Migration Endpoints
   uploadMigrationFile: (file: File) => {

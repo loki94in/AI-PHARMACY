@@ -31,61 +31,224 @@ interface DeliveryBoy {
   is_active: number;
 }
 
+interface SettingsData {
+  pharmacyName: string;
+  address: string;
+  phone: string;
+  gstin: string;
+  drugLicense: string;
+  email: string;
+  gmailUser: string;
+  gmailPass: string;
+  googleClientId: string;
+  googleClientSecret: string;
+  gmailAuthMethod: string;
+  emailAutodeleteEnabled: boolean;
+  emailAutodeleteLimit: number;
+  automationEnabled: boolean;
+  adminRemoteMode: boolean;
+  adminUsername: string;
+  adminPassword: string;
+  adminUniqueKey: string;
+  adminAuthorizedDeviceId: string;
+  adminAuthorizedDeviceName: string;
+  prUsername: string;
+  prPassword: string;
+  prToken: string;
+  prMode: string;
+  defaultTaxRate: number;
+  invoicePrefix: string;
+  autoPrint: boolean;
+  defaultPaymentMode: string;
+  whatsappNotif: boolean;
+  emailAlerts: boolean;
+  lowStockThreshold: number;
+  expiryAlertDays: number;
+  dineshWhatsappNumber: string;
+  telegramEnabled: boolean;
+  telegramToken: string;
+  telegramChatId: string;
+  whatsappEnabled: boolean;
+  waBusinessEnabled: boolean;
+  waBusinessPhoneNumberId: string;
+  waBusinessAccessToken: string;
+  waBusinessWabaId: string;
+  waBusinessWebhookVerifyToken: string;
+  whatsappPreferredSystem: string;
+  backupFrequency: string;
+}
+
 const Settings = () => {
-  // Pharmacy Details
-  const [pharmacyName, setPharmacyName] = useState('');
-  const [address, setAddress] = useState('');
-  const [phone, setPhone] = useState('');
-  const [gstin, setGstin] = useState('');
-  const [drugLicense, setDrugLicense] = useState('');
-  const [email, setEmail] = useState('');
-  const [gmailUser, setGmailUser] = useState('');
-  const [gmailPass, setGmailPass] = useState('');
-  const [googleClientId, setGoogleClientId] = useState('');
-  const [googleClientSecret, setGoogleClientSecret] = useState('');
-  const [gmailAuthMethod, setGmailAuthMethod] = useState('password');
-  const [emailAutodeleteEnabled, setEmailAutodeleteEnabled] = useState(true);
-  const [emailAutodeleteLimit, setEmailAutodeleteLimit] = useState<number>(10);
-  const [automationEnabled, setAutomationEnabled] = useState(false);
+  // Consolidated settings data state
+  const [settings, setSettings] = useState<SettingsData>({
+    pharmacyName: '',
+    address: '',
+    phone: '',
+    gstin: '',
+    drugLicense: '',
+    email: '',
+    gmailUser: '',
+    gmailPass: '',
+    googleClientId: '',
+    googleClientSecret: '',
+    gmailAuthMethod: 'password',
+    emailAutodeleteEnabled: true,
+    emailAutodeleteLimit: 10,
+    automationEnabled: false,
+    adminRemoteMode: true,
+    adminUsername: 'admin',
+    adminPassword: 'admin123',
+    adminUniqueKey: 'KEY-ADM-837261',
+    adminAuthorizedDeviceId: '',
+    adminAuthorizedDeviceName: '',
+    prUsername: '',
+    prPassword: '',
+    prToken: '',
+    prMode: 'Live',
+    defaultTaxRate: 18,
+    invoicePrefix: 'INV-',
+    autoPrint: false,
+    defaultPaymentMode: 'Cash',
+    whatsappNotif: false,
+    emailAlerts: false,
+    lowStockThreshold: 10,
+    expiryAlertDays: 90,
+    dineshWhatsappNumber: '',
+    telegramEnabled: false,
+    telegramToken: '',
+    telegramChatId: '',
+    whatsappEnabled: false,
+    waBusinessEnabled: false,
+    waBusinessPhoneNumberId: '',
+    waBusinessAccessToken: '',
+    waBusinessWabaId: '',
+    waBusinessWebhookVerifyToken: '',
+    whatsappPreferredSystem: 'automated',
+    backupFrequency: 'off',
+  });
 
-  // Admin Remote Operations Mode state
-  const [adminRemoteMode, setAdminRemoteMode] = useState(true);
-  const [adminUsername, setAdminUsername] = useState('admin');
-  const [adminPassword, setAdminPassword] = useState('admin123');
-  const [adminUniqueKey, setAdminUniqueKey] = useState('KEY-ADM-837261');
-  const [adminAuthorizedDeviceId, setAdminAuthorizedDeviceId] = useState('');
-  const [adminAuthorizedDeviceName, setAdminAuthorizedDeviceName] = useState('');
+  // Transient UI states
   const [showConnectModal, setShowConnectModal] = useState(false);
-
-  // Pharmarack Settings state
-  const [prUsername, setPrUsername] = useState('');
-  const [prPassword, setPrPassword] = useState('');
-  const [prToken, setPrToken] = useState('');
-  const [prMode, setPrMode] = useState('Live');
   const [isOpeningWindow, setIsOpeningWindow] = useState(false);
   const [isOpeningWaWindow, setIsOpeningWaWindow] = useState(false);
-
-  // System reset confirm & loading states
   const [resetConfirm, setResetConfirm] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
-
-
-  // Billing Preferences
-  const [defaultTaxRate, setDefaultTaxRate] = useState<number>(18);
-  const [invoicePrefix, setInvoicePrefix] = useState('INV-');
-  const [autoPrint, setAutoPrint] = useState(false);
-  const [defaultPaymentMode, setDefaultPaymentMode] = useState('Cash');
-
-  // Notifications
-  const [whatsappNotif, setWhatsappNotif] = useState(false);
-  const [emailAlerts, setEmailAlerts] = useState(false);
-  const [lowStockThreshold, setLowStockThreshold] = useState<number>(10);
-  const [expiryAlertDays, setExpiryAlertDays] = useState<number>(90);
-  const [dineshWhatsappNumber, setDineshWhatsappNumber] = useState('');
   const [desktopNotifEnabled, setDesktopNotifEnabled] = useState(() => {
     return 'Notification' in window && Notification.permission === 'granted';
   });
+  const [waStatus, setWaStatus] = useState({ isReady: false, qrUrl: null as string | null, message: '' });
+  const [waBusinessTestResult, setWaBusinessTestResult] = useState<{ success?: boolean; phone?: string; name?: string; error?: string } | null>(null);
+  const [waBusinessTesting, setWaBusinessTesting] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupList, setBackupList] = useState<{ filename: string; sizeBytes: number; createdAt: string }[]>([]);
+  const [backupListLoading, setBackupListLoading] = useState(false);
+  const [restoringFile, setRestoringFile] = useState<string | null>(null);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // Generic helper to update settings fields
+  const updateSetting = <K extends keyof SettingsData>(key: K, value: SettingsData[K] | ((prevVal: SettingsData[K]) => SettingsData[K])) => {
+    setSettings(prev => ({
+      ...prev,
+      [key]: typeof value === 'function' ? (value as Function)(prev[key]) : value
+    }));
+  };
+
+  // Mapped setters for backward compatibility with minimum code churn
+  const setPharmacyName = (val: string | ((p: string) => string)) => updateSetting('pharmacyName', val);
+  const setAddress = (val: string | ((p: string) => string)) => updateSetting('address', val);
+  const setPhone = (val: string | ((p: string) => string)) => updateSetting('phone', val);
+  const setGstin = (val: string | ((p: string) => string)) => updateSetting('gstin', val);
+  const setDrugLicense = (val: string | ((p: string) => string)) => updateSetting('drugLicense', val);
+  const setEmail = (val: string | ((p: string) => string)) => updateSetting('email', val);
+  const setGmailUser = (val: string | ((p: string) => string)) => updateSetting('gmailUser', val);
+  const setGmailPass = (val: string | ((p: string) => string)) => updateSetting('gmailPass', val);
+  const setGoogleClientId = (val: string | ((p: string) => string)) => updateSetting('googleClientId', val);
+  const setGoogleClientSecret = (val: string | ((p: string) => string)) => updateSetting('googleClientSecret', val);
+  const setGmailAuthMethod = (val: string | ((p: string) => string)) => updateSetting('gmailAuthMethod', val);
+  const setEmailAutodeleteEnabled = (val: boolean | ((p: boolean) => boolean)) => updateSetting('emailAutodeleteEnabled', val);
+  const setEmailAutodeleteLimit = (val: number | ((p: number) => number)) => updateSetting('emailAutodeleteLimit', val);
+  const setAutomationEnabled = (val: boolean | ((p: boolean) => boolean)) => updateSetting('automationEnabled', val);
+  const setAdminRemoteMode = (val: boolean | ((p: boolean) => boolean)) => updateSetting('adminRemoteMode', val);
+  const setAdminUsername = (val: string | ((p: string) => string)) => updateSetting('adminUsername', val);
+  const setAdminPassword = (val: string | ((p: string) => string)) => updateSetting('adminPassword', val);
+  const setAdminUniqueKey = (val: string | ((p: string) => string)) => updateSetting('adminUniqueKey', val);
+  const setAdminAuthorizedDeviceId = (val: string | ((p: string) => string)) => updateSetting('adminAuthorizedDeviceId', val);
+  const setAdminAuthorizedDeviceName = (val: string | ((p: string) => string)) => updateSetting('adminAuthorizedDeviceName', val);
+  const setPrUsername = (val: string | ((p: string) => string)) => updateSetting('prUsername', val);
+  const setPrPassword = (val: string | ((p: string) => string)) => updateSetting('prPassword', val);
+  const setPrToken = (val: string | ((p: string) => string)) => updateSetting('prToken', val);
+  const setPrMode = (val: string | ((p: string) => string)) => updateSetting('prMode', val);
+  const setDefaultTaxRate = (val: number | ((p: number) => number)) => updateSetting('defaultTaxRate', val);
+  const setInvoicePrefix = (val: string | ((p: string) => string)) => updateSetting('invoicePrefix', val);
+  const setAutoPrint = (val: boolean | ((p: boolean) => boolean)) => updateSetting('autoPrint', val);
+  const setDefaultPaymentMode = (val: string | ((p: string) => string)) => updateSetting('defaultPaymentMode', val);
+  const setWhatsappNotif = (val: boolean | ((p: boolean) => boolean)) => updateSetting('whatsappNotif', val);
+  const setEmailAlerts = (val: boolean | ((p: boolean) => boolean)) => updateSetting('emailAlerts', val);
+  const setLowStockThreshold = (val: number | ((p: number) => number)) => updateSetting('lowStockThreshold', val);
+  const setExpiryAlertDays = (val: number | ((p: number) => number)) => updateSetting('expiryAlertDays', val);
+  const setDineshWhatsappNumber = (val: string | ((p: string) => string)) => updateSetting('dineshWhatsappNumber', val);
+  const setTelegramEnabled = (val: boolean | ((p: boolean) => boolean)) => updateSetting('telegramEnabled', val);
+  const setTelegramToken = (val: string | ((p: string) => string)) => updateSetting('telegramToken', val);
+  const setTelegramChatId = (val: string | ((p: string) => string)) => updateSetting('telegramChatId', val);
+  const setWhatsappEnabled = (val: boolean | ((p: boolean) => boolean)) => updateSetting('whatsappEnabled', val);
+  const setWaBusinessEnabled = (val: boolean | ((p: boolean) => boolean)) => updateSetting('waBusinessEnabled', val);
+  const setWaBusinessPhoneNumberId = (val: string | ((p: string) => string)) => updateSetting('waBusinessPhoneNumberId', val);
+  const setWaBusinessAccessToken = (val: string | ((p: string) => string)) => updateSetting('waBusinessAccessToken', val);
+  const setWaBusinessWabaId = (val: string | ((p: string) => string)) => updateSetting('waBusinessWabaId', val);
+  const setWaBusinessWebhookVerifyToken = (val: string | ((p: string) => string)) => updateSetting('waBusinessWebhookVerifyToken', val);
+  const setWhatsappPreferredSystem = (val: string | ((p: string) => string)) => updateSetting('whatsappPreferredSystem', val);
+  const setBackupFrequency = (val: string | ((p: string) => string)) => updateSetting('backupFrequency', val);
+
+  // Destructure settings for transparent use in JSX and helper functions
+  const {
+    pharmacyName,
+    address,
+    phone,
+    gstin,
+    drugLicense,
+    email,
+    gmailUser,
+    gmailPass,
+    googleClientId,
+    googleClientSecret,
+    gmailAuthMethod,
+    emailAutodeleteEnabled,
+    emailAutodeleteLimit,
+    automationEnabled,
+    adminRemoteMode,
+    adminUsername,
+    adminPassword,
+    adminUniqueKey,
+    adminAuthorizedDeviceId,
+    adminAuthorizedDeviceName,
+    prUsername,
+    prPassword,
+    prToken,
+    prMode,
+    defaultTaxRate,
+    invoicePrefix,
+    autoPrint,
+    defaultPaymentMode,
+    whatsappNotif,
+    emailAlerts,
+    lowStockThreshold,
+    expiryAlertDays,
+    dineshWhatsappNumber,
+    telegramEnabled,
+    telegramToken,
+    telegramChatId,
+    whatsappEnabled,
+    waBusinessEnabled,
+    waBusinessPhoneNumberId,
+    waBusinessAccessToken,
+    waBusinessWabaId,
+    waBusinessWebhookVerifyToken,
+    whatsappPreferredSystem,
+    backupFrequency,
+  } = settings;
 
   const handleToggleDesktopNotifications = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
@@ -107,36 +270,6 @@ const Settings = () => {
       toastEvent.trigger('Desktop notifications can be disabled in your browser settings.', 'info');
     }
   };
-
-  // Messaging Integrations
-  const [telegramEnabled, setTelegramEnabled] = useState(false);
-  const [telegramToken, setTelegramToken] = useState('');
-  const [telegramChatId, setTelegramChatId] = useState('');
-  
-  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
-  const [waStatus, setWaStatus] = useState({ isReady: false, qrUrl: null as string | null, message: '' });
-
-  // WhatsApp Business API
-  const [waBusinessEnabled, setWaBusinessEnabled] = useState(false);
-  const [waBusinessPhoneNumberId, setWaBusinessPhoneNumberId] = useState('');
-  const [waBusinessAccessToken, setWaBusinessAccessToken] = useState('');
-  const [waBusinessWabaId, setWaBusinessWabaId] = useState('');
-  const [waBusinessWebhookVerifyToken, setWaBusinessWebhookVerifyToken] = useState('');
-  const [waBusinessTestResult, setWaBusinessTestResult] = useState<{ success?: boolean; phone?: string; name?: string; error?: string } | null>(null);
-  const [waBusinessTesting, setWaBusinessTesting] = useState(false);
-  const [whatsappPreferredSystem, setWhatsappPreferredSystem] = useState('automated');
-
-  // Backup & Restore state
-  const [backupLoading, setBackupLoading] = useState(false);
-  const [backupFrequency, setBackupFrequency] = useState('off');
-  const [backupList, setBackupList] = useState<{ filename: string; sizeBytes: number; createdAt: string }[]>([]);
-  const [backupListLoading, setBackupListLoading] = useState(false);
-  const [restoringFile, setRestoringFile] = useState<string | null>(null);
-  const [deletingFile, setDeletingFile] = useState<string | null>(null);
-  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-
-
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -208,6 +341,7 @@ const Settings = () => {
     let timer: any;
     if (whatsappEnabled && !waStatus.isReady) {
       const fetchQR = async () => {
+        if (document.visibilityState !== 'visible') return;
         try {
           const { data } = await apiClient.get('/messaging/qr');
           setWaStatus(data);
@@ -215,10 +349,22 @@ const Settings = () => {
           console.error("Failed to fetch WhatsApp QR", error);
         }
       };
+
       fetchQR(); // Initial fetch
-      timer = setInterval(fetchQR, 5000); // Poll every 5s
+      timer = setInterval(fetchQR, 15000); // Poll every 15s (optimized from 5s)
+
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          fetchQR();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+
+      return () => {
+        clearInterval(timer);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
     }
-    return () => clearInterval(timer);
   }, [whatsappEnabled, waStatus.isReady]);
 
   const handleSaveSettings = async () => {

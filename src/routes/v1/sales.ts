@@ -43,6 +43,7 @@ router.get('/search-medicine', asyncHandler(async (req: express.Request, res: ex
   const db = await dbManager.getConnection();
   const cleanQuery = query.trim();
   const isNumeric = /^\d+(\.\d+)?$/.test(cleanQuery);
+  const searchLikeQuery = `%${cleanQuery}%`;
   
   let rows = [];
   if (isNumeric) {
@@ -164,7 +165,7 @@ router.get('/search-medicine', asyncHandler(async (req: express.Request, res: ex
       WHERE name LIKE ? 
       LIMIT 15
     `;
-    const extraMeds = await db.all(outOfStockSql, [likeQuery]);
+    const extraMeds = await db.all(outOfStockSql, [searchLikeQuery]);
     const outOfStockMeds = extraMeds.filter(m => !foundMedIds.has(m.id)).slice(0, 5);
     
     if (outOfStockMeds.length > 0) {

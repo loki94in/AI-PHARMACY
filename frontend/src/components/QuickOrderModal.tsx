@@ -81,8 +81,13 @@ const getEffectiveRate = (rate: number, schemeStr: string | undefined, qty: numb
   return (qty * rate) / totalItems;
 };
 
-export const QuickOrderModal: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
+export const QuickOrderModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  
+  const handleClose = () => {
+    setIsOpen(false);
+    onClose();
+  };
   
   // Staged Cart List
   const [cart, setCart] = useState<any[]>([]);
@@ -310,47 +315,24 @@ export const QuickOrderModal: React.FC = () => {
   const lastToastedQueryRef = useRef('');
   const ignoreNextSearchRef = useRef(false);
 
-  // Toggle modal on custom event
+  // Autofocus on mount
   useEffect(() => {
-    const handleOpen = () => {
-      setIsOpen(true);
-      // Autofocus medicine name input on open
-      setTimeout(() => {
-        productInputRef.current?.focus();
-      }, 100);
-    };
-    return quickOrderEvent.subscribeOpen(handleOpen);
+    setTimeout(() => {
+      productInputRef.current?.focus();
+    }, 100);
   }, []);
 
-  // Listen to keyboard shortcuts globally
+  // Listen to Escape key to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Toggle shortcuts: Alt+O or Alt+N (or Ctrl+Shift+O)
-      const isToggleKey = 
-        (e.altKey && (e.key === 'o' || e.key === 'O')) ||
-        (e.altKey && (e.key === 'n' || e.key === 'N')) ||
-        (e.ctrlKey && e.shiftKey && (e.key === 'o' || e.key === 'O'));
-
-      if (isToggleKey) {
-        e.preventDefault();
-        setIsOpen(prev => {
-          const next = !prev;
-          if (next) {
-            setTimeout(() => productInputRef.current?.focus(), 100);
-          }
-          return next;
-        });
-      }
-
-      // Close on Escape when open
       if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false);
+        handleClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   // Handle outside clicks for autocomplete
   useEffect(() => {
@@ -701,7 +683,7 @@ export const QuickOrderModal: React.FC = () => {
     setSelectedScheme('');
     setSelectedProductId('');
     setSelectedStoreId('');
-    setIsOpen(false);
+    handleClose();
 
     // Trigger background queue processing (non-blocking)
     toastEvent.trigger(`Starting background logging for ${finalItems.length} request(s)...`, 'info');
@@ -716,7 +698,7 @@ export const QuickOrderModal: React.FC = () => {
         
         {/* Close Button */}
         <button 
-          onClick={() => setIsOpen(false)}
+          onClick={handleClose}
           className="absolute top-4 right-4 p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all"
           title="Close Modal (Esc)"
         >

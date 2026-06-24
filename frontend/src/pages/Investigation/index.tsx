@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   RotateCcw, 
@@ -189,8 +189,18 @@ const InvestigationCenter = () => {
     }
   };
 
+  const isMounted = useRef(false);
+
   useEffect(() => {
-    runSearch();
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
+    const timer = setTimeout(() => {
+      runSearch();
+    }, 300); // 300ms debounce to prevent query cascades
+
+    return () => clearTimeout(timer);
   }, [filters.type, filters.dateFrom, filters.dateTo]);
 
   const handleFilterChange = (key: keyof SearchFilters, val: string) => {

@@ -212,9 +212,8 @@ export class ProductNameFilterService {
   }
 
   async initialize(): Promise<void> {
+    if (this.initialized) return;
     try {
-      const activeDbPath = this.dbPath;
-      process.env.DB_PATH = activeDbPath;
       const db = await dbManager.getConnection();
       const rows = await db.all('SELECT DISTINCT name FROM medicines WHERE name IS NOT NULL AND name <> ""');
       this.medicineNames = rows.map(row => row.name).filter(Boolean);
@@ -233,7 +232,7 @@ export class ProductNameFilterService {
         console.warn('Failed to load corrections from database, falling back to JSON:', dbErr);
       }
 
-            this.initialized = true;
+      this.initialized = true;
     } catch (error) {
       console.error('Failed to initialize ProductNameFilterService:', error);
       throw new Error(`Failed to load medicine names from database: ${(error as any).message}`);
@@ -272,15 +271,13 @@ export class ProductNameFilterService {
     this.saveCorrections();
 
     // Save to SQLite database asynchronously
-    const activeDbPath = this.dbPath;
-    process.env.DB_PATH = activeDbPath;
     dbManager.getConnection()
       .then(async (db) => {
         await db.run(
           'INSERT OR REPLACE INTO ocr_corrections (ocr, correct, count) VALUES (?, ?, ?)',
           [normalizedOcr, normalizedCorrect, count]
         );
-                console.log(`Saved OCR correction to database: "${normalizedOcr}" → "${normalizedCorrect}" (count: ${count})`);
+        console.log(`Saved OCR correction to database: "${normalizedOcr}" → "${normalizedCorrect}" (count: ${count})`);
       })
       .catch((dbErr) => {
         console.error('Failed to save OCR correction to database:', dbErr);

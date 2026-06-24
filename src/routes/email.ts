@@ -212,16 +212,17 @@ router.get('/attachments/preview', async (req, res) => {
 
     const ext = path.extname(filename).toLowerCase();
     if (ext === '.txt' || ext === '.csv') {
-      const text = fs.readFileSync(filePath, 'utf-8');
+      const text = await fs.promises.readFile(filePath, 'utf-8');
       res.json({ success: true, type: 'text', content: text.substring(0, 50000) });
     } else if (ext === '.pdf') {
       const { default: pdfParse } = await import('pdf-parse');
-      const dataBuffer = fs.readFileSync(filePath);
+      const dataBuffer = await fs.promises.readFile(filePath);
       const data = await pdfParse(dataBuffer);
       res.json({ success: true, type: 'text', content: data.text });
     } else if (ext === '.xlsx' || ext === '.xls') {
       const { default: XLSX } = await import('xlsx');
-      const workbook = XLSX.readFile(filePath);
+      const dataBuffer = await fs.promises.readFile(filePath);
+      const workbook = XLSX.read(dataBuffer, { type: 'buffer' });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
       const csv = XLSX.utils.sheet_to_csv(worksheet);

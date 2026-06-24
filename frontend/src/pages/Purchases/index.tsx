@@ -878,27 +878,27 @@ const Purchases: React.FC = () => {
     item.scheme_paid = medicine.scheme_paid;
     item.scheme_free = medicine.scheme_free;
 
-    if (item.original_name && item.original_name !== medicine.name) {
-      try {
-        await api.createMedicineAlias(item.original_name, medicine.id);
-      } catch (e) {
-        console.error('Failed to create alias:', e);
-      }
-    }
+    // PU4: Run alias creation and last purchase lookup in parallel
+    const aliasPromise = (item.original_name && item.original_name !== medicine.name)
+      ? api.createMedicineAlias(item.original_name, medicine.id).catch(e => console.error('Failed to create alias:', e))
+      : Promise.resolve();
 
-    try {
-      const response = await api.getLastPurchase(medicine.name, selectedDistributor || undefined);
-      if (response && response.found) {
-        const lastPurchase = response;
-        item.batch_no = lastPurchase.batch_no || '';
-        item.expiry_date = formatExpiryToMMYY(lastPurchase.expiry_date || '');
-        item.rate = lastPurchase.rate || medicine.rate;
-        item.mrp = lastPurchase.mrp || medicine.mrp;
-        item.cgst_per = lastPurchase.cgst_per !== undefined ? lastPurchase.cgst_per : medicine.cgst_per;
-        item.sgst_per = lastPurchase.sgst_per !== undefined ? lastPurchase.sgst_per : medicine.sgst_per;
-      }
-    } catch (error) {
-      console.log('No last purchase found for this medicine');
+    const lastPurchasePromise = api.getLastPurchase(medicine.name, selectedDistributor || undefined)
+      .catch(e => {
+        console.log('No last purchase found for this medicine');
+        return null;
+      });
+
+    const [, response] = await Promise.all([aliasPromise, lastPurchasePromise]);
+    
+    if (response && response.found) {
+      const lastPurchase = response;
+      item.batch_no = lastPurchase.batch_no || '';
+      item.expiry_date = formatExpiryToMMYY(lastPurchase.expiry_date || '');
+      item.rate = lastPurchase.rate || medicine.rate;
+      item.mrp = lastPurchase.mrp || medicine.mrp;
+      item.cgst_per = lastPurchase.cgst_per !== undefined ? lastPurchase.cgst_per : medicine.cgst_per;
+      item.sgst_per = lastPurchase.sgst_per !== undefined ? lastPurchase.sgst_per : medicine.sgst_per;
     }
 
     item.amount = calculateItemAmount(item);

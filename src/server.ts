@@ -226,6 +226,16 @@ ensureSchema(DB_PATH).then(async () => {
 
   app.listen(PORT, async () => {
     console.log(`Server is running on http://localhost:${PORT}/test`);
+
+    // Pre-initialize fuzzy-matching OCR service in the background (G7)
+    try {
+      const { productNameFilterService } = await import('./services/productNameFilterService.js');
+      console.log('[Boot] Pre-initializing productNameFilterService...');
+      await productNameFilterService.initialize();
+      console.log('[Boot] productNameFilterService pre-initialized successfully.');
+    } catch (err) {
+      console.error('Failed to pre-initialize productNameFilterService on startup:', err);
+    }
     // Pre-initialize background services if automation is enabled in settings
     dbManager.getConnection()
       .then(async (db) => {

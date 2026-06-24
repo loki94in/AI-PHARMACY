@@ -103,8 +103,13 @@ const getEffectiveRate = (rate: number, schemeStr: string | undefined, qty: numb
   return (qty * rate) / totalItems;
 };
 
-export const LiveCartAddModal: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
+export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  
+  const handleClose = () => {
+    setIsOpen(false);
+    onClose();
+  };
   
   // Input fields
   const [product, setProduct] = useState('');
@@ -347,44 +352,24 @@ export const LiveCartAddModal: React.FC = () => {
     }
   }, [isOpen]);
 
-  // Open modal on global event trigger
+  // Autofocus on mount
   useEffect(() => {
-    const handleOpen = () => {
-      setIsOpen(true);
-      setTimeout(() => {
-        productInputRef.current?.focus();
-      }, 100);
-    };
-    return liveCartAddEvent.subscribeOpen(handleOpen);
+    setTimeout(() => {
+      productInputRef.current?.focus();
+    }, 100);
   }, []);
 
-  // Keyboard Navigation & Shortcuts
+  // Listen to Escape key to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Toggle shortcut: Alt+L (or Ctrl+Shift+L)
-      const isToggleKey = 
-        (e.altKey && (e.key === 'l' || e.key === 'L')) ||
-        (e.ctrlKey && e.shiftKey && (e.key === 'l' || e.key === 'L'));
-
-      if (isToggleKey) {
-        e.preventDefault();
-        setIsOpen(prev => {
-          const next = !prev;
-          if (next) {
-            setTimeout(() => productInputRef.current?.focus(), 100);
-          }
-          return next;
-        });
-      }
-
       if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false);
+        handleClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   // Handle clicking outside to dismiss search results
   useEffect(() => {
@@ -602,7 +587,7 @@ export const LiveCartAddModal: React.FC = () => {
         
         {/* Close Button */}
         <button 
-          onClick={() => setIsOpen(false)}
+          onClick={handleClose}
           className="absolute top-4 right-4 p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all"
           title="Close Modal (Esc)"
         >

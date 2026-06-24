@@ -36,10 +36,13 @@ const getNDaysAgoString = (n: number) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// Module-level cache for instant re-mount
+let cachedTransactions: PurchaseTransaction[] | null = null;
+
 const PurchaseHistory = () => {
   const navigate = useNavigate();
-  const [transactions, setTransactions] = useState<PurchaseTransaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState<PurchaseTransaction[]>(cachedTransactions || []);
+  const [loading, setLoading] = useState(!cachedTransactions);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [earliestDate, setEarliestDate] = useState<string>(getTodayString());
@@ -55,6 +58,15 @@ const PurchaseHistory = () => {
   const [colFilterDate, setColFilterDate] = useState('');
   const [colFilterMinAmount, setColFilterMinAmount] = useState('');
   const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, supplierFilter, dateRange.start, dateRange.end, productFilter, colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
 
   // Fetch the date of the earliest transaction on mount
   useEffect(() => {
@@ -137,6 +149,7 @@ const PurchaseHistory = () => {
         end: end || undefined
       });
       setTransactions(Array.isArray(data) ? data : []);
+      cachedTransactions = Array.isArray(data) ? data : [];
     } catch (err) {
       console.error('Error fetching purchase history', err);
     } finally {
@@ -338,6 +351,9 @@ const PurchaseHistory = () => {
 
     return true;
   });
+
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Extract unique suppliers for the filter dropdown
   const uniqueSuppliers = Array.from(new Set(transactions.map(t => t.distributor_name).filter(Boolean)));
@@ -556,7 +572,7 @@ const PurchaseHistory = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredData.map((tx) => (
+                    paginatedData.map((tx) => (
                       <tr key={tx.id} className="hover:bg-white/5 transition-colors group">
                         <td className="px-6 py-4 text-gray-300 font-mono">
                           #{tx.id.toString().padStart(6, '0')}
@@ -628,6 +644,58 @@ const PurchaseHistory = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="px-6 py-3 bg-[#18181b]/60 backdrop-blur-sm border-t border-glass-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text select-none">
+                <div className="text-muted text-gray-400">
+                  Showing <span className="font-semibold text-white">{Math.min(filteredData.length, (currentPage - 1) * pageSize + 1)}</span> to{' '}
+                  <span className="font-semibold text-white">{Math.min(filteredData.length, currentPage * pageSize)}</span> of{' '}
+                  <span className="font-semibold text-white">{filteredData.length}</span> transactions
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  
+                  {/* Page numbers */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                      .map((p, idx, arr) => {
+                        const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
+                        return (
+                          <React.Fragment key={p}>
+                            {showEllipsisBefore && <span className="px-1 text-muted text-gray-500">...</span>}
+                            <button
+                              onClick={() => setCurrentPage(p)}
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border transition-all ${
+                                currentPage === p
+                                  ? 'bg-primary/20 text-primary border-primary/40'
+                                  : 'bg-bg3 hover:bg-white/10 text-text border-glass-border'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          </React.Fragment>
+                        );
+                      })}
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       ) : (

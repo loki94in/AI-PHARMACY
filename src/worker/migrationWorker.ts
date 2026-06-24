@@ -313,12 +313,9 @@ async function processMigrationFile(
     }
     migrationStatus.message = 'Creating staging database...';
     if (fs.existsSync(DB_PATH)) {
-      try {
-        const { dbManager } = await import('../database/connection.js');
-        await dbManager.close(true);
-      } catch (dbCloseErr) {
-        console.warn('Failed to close dbManager connection:', dbCloseErr);
-      }
+      // ponytail: removed dbManager.close(true) — it killed the global singleton
+      // while Express routes were actively serving, causing SQLITE_MISUSE errors.
+      // The WAL checkpoint below uses a separate better-sqlite3 handle which is safe.
 
       // 1. Checkpoint WAL of active app.db to merge frames safely before copying
       try {

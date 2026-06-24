@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ClipboardList, 
@@ -47,16 +47,27 @@ const getNDaysAgoString = (n: number) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+let cachedOrdersList: SpecialOrder[] | null = null;
+
 const Orders = () => {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState<SpecialOrder[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState<SpecialOrder[]>(cachedOrdersList || []);
+  const [loading, setLoading] = useState(!cachedOrdersList);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [dateFrom, setDateFrom] = useState(getNDaysAgoString(15));
   const [dateTo, setDateTo] = useState(getTodayString());
   const [manualToDate, setManualToDate] = useState(false);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!manualToDate) {
@@ -149,12 +160,15 @@ const Orders = () => {
   };
 
   // Fetch all orders
-  const fetchOrders = async (showRefresh = false) => {
+  const fetchOrders = async (showRefresh = false, silent = false) => {
     if (showRefresh) setRefreshing(true);
+    if (!silent && !cachedOrdersList) setLoading(true);
     try {
       const data = await api.getOrders();
       // STRICT RULE: Only show last 100
-      setOrders(Array.isArray(data) ? data.slice(0, 100) : []);
+      const sliced = Array.isArray(data) ? data.slice(0, 100) : [];
+      setOrders(sliced);
+      cachedOrdersList = sliced;
     } catch (err) {
       console.error('Failed to fetch special orders:', err);
       showNotification('Failed to load orders. Please check your connection.', 'error');
@@ -165,10 +179,10 @@ const Orders = () => {
   };
 
   useEffect(() => {
-    fetchOrders();
+    fetchOrders(false, !!cachedOrdersList);
 
     const handleRefresh = () => {
-      fetchOrders(true);
+      fetchOrders(true, true);
     };
     window.addEventListener('refresh-special-orders', handleRefresh);
     return () => {
@@ -403,6 +417,9 @@ const Orders = () => {
     
     return matchesSearch && matchesStatus && matchesDate;
   });
+
+  const totalPages = Math.ceil(filteredOrders.length / pageSize);
+  const paginatedOrders = filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const getPriorityBadgeColor = (p: string) => {
     switch (p) {
@@ -776,7 +793,7 @@ const Orders = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map(order => (
+                  paginatedOrders.map(order => (
                     <tr key={order.id} className="hover:bg-white/5 border-b border-glass-border/20 transition-all">
                       {/* Product Name */}
                       <td className="p-4">
@@ -942,6 +959,61 @@ const Orders = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="px-4 py-3 bg-[#18181b]/60 backdrop-blur-sm border-t border-glass-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text select-none shrink-0">
+              <div className="text-muted text-gray-400">
+                Showing <span className="font-semibold text-white">{Math.min(filteredOrders.length, (currentPage - 1) * pageSize + 1)}</span> to{' '}
+                <span className="font-semibold text-white">{Math.min(filteredOrders.length, currentPage * pageSize)}</span> of{' '}
+                <span className="font-semibold text-white">{filteredOrders.length}</span> requests
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                
+                {/* Page numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, idx, arr) => {
+                      const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
+                      return (
+                        <Fragment key={p}>
+                          {showEllipsisBefore && <span className="px-1 text-muted text-gray-500">...</span>}
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(p)}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border transition-all ${
+                              currentPage === p
+                                ? 'bg-primary/20 text-primary border-primary/40'
+                                : 'bg-bg3 hover:bg-white/10 text-text border-glass-border'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </Fragment>
+                      );
+                    })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Table Footer Stats */}
           <div className="p-3 border-t border-glass-border bg-black/10 text-muted select-none flex justify-between items-center px-4">

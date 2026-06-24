@@ -163,6 +163,7 @@ const CRM = () => {
   const [waStatus, setWaStatus] = useState({ isReady: false, qrUrl: null as string | null, message: '' });
   const [isOpeningWaWindow, setIsOpeningWaWindow] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastWaHeartbeat = useRef(0);
 
   // Input refs
   const inputRef = useRef<HTMLInputElement>(null);
@@ -185,8 +186,8 @@ const CRM = () => {
 
   const fetchPatients = useCallback(async () => {
     try {
-      const data = await api.getPatients();
-      setPatients(Array.isArray(data) ? data.slice(0, 20) : []);
+      const data = await api.getPatients({ limit: 20 });
+      setPatients(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -244,9 +245,21 @@ const CRM = () => {
   useDeferredEffect(() => { 
     fetchPatients(); 
     fetchWaStatus();
-    const interval = setInterval(fetchWaStatus, 5000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        if (!waStatus.isReady) {
+          fetchWaStatus();
+        } else {
+          const now = Date.now();
+          if (now - lastWaHeartbeat.current >= 30000) {
+            lastWaHeartbeat.current = now;
+            fetchWaStatus();
+          }
+        }
+      }
+    }, 5000);
     return () => clearInterval(interval);
-  }, [fetchPatients, fetchWaStatus]);
+  }, [fetchPatients, fetchWaStatus, waStatus.isReady]);
 
   // Listen for real-time WhatsApp events pushed via SSE
   useEffect(() => {

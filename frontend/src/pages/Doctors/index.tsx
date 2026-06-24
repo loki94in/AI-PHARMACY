@@ -35,18 +35,24 @@ const initials = (name: string) =>
     .join('')
     .toUpperCase();
 
+let cachedDoctorsList: any[] | null = null;
+
 const Doctors = () => {
-  const [doctors, setDoctors] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [doctors, setDoctors] = useState<any[]>(cachedDoctorsList || []);
+  const [loading, setLoading] = useState(!cachedDoctorsList);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<DoctorForm>(emptyForm);
   const [editingDoctorId, setEditingDoctorId] = useState<number | null>(null);
 
   const fetchDoctors = (silent = false) => {
-    if (!silent) setLoading(true);
+    if (!silent && !cachedDoctorsList) setLoading(true);
     api.getDoctors()
-      .then(data => { setDoctors(data); setLoading(false); })
+      .then(data => {
+        setDoctors(data);
+        cachedDoctorsList = data;
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   };
 
@@ -72,7 +78,11 @@ const Doctors = () => {
   const handleDelete = (id: number, name: string) => {
     if (!window.confirm(`Delete Dr. ${name}?`)) return;
     // Optimistic UI update
-    setDoctors(prev => prev.filter(d => d.id !== id));
+    setDoctors(prev => {
+      const next = prev.filter(d => d.id !== id);
+      cachedDoctorsList = next;
+      return next;
+    });
     api.deleteDoctor(id)
       .catch(err => {
         console.error('Failed to delete doctor:', err);

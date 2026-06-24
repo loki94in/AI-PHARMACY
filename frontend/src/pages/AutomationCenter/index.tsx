@@ -26,12 +26,16 @@ import type { Refill, AutomationNotification } from '../../services/api';
 import { toastEvent } from '../../services/events';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 
+// Module-level cache to persist data across page navigation (unmount/remount)
+let cachedRefills: Refill[] = [];
+let cachedLogs: AutomationNotification[] = [];
+
 const AutomationCenter = () => {
   const [activeTab, setActiveTab] = useState<'reminders' | 'logs'>('reminders');
 
   // Reminders States
-  const [refills, setRefills] = useState<Refill[]>([]);
-  const [loadingRefills, setLoadingRefills] = useState(false);
+  const [refills, setRefills] = useState<Refill[]>(() => cachedRefills);
+  const [loadingRefills, setLoadingRefills] = useState(() => cachedRefills.length === 0);
   const [refillSearch, setRefillSearch] = useState('');
 
   // Create / Edit Reminder Modal States
@@ -48,8 +52,8 @@ const AutomationCenter = () => {
   const [modalSubmitting, setModalSubmitting] = useState(false);
 
   // Communication Logs States
-  const [logs, setLogs] = useState<AutomationNotification[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logs, setLogs] = useState<AutomationNotification[]>(() => cachedLogs);
+  const [loadingLogs, setLoadingLogs] = useState(() => cachedLogs.length === 0);
   const [logsSearch, setLogsSearch] = useState('');
   const [logsStatusFilter, setLogsStatusFilter] = useState('All');
   const [logsTypeFilter, setLogsTypeFilter] = useState('All');
@@ -72,10 +76,12 @@ const AutomationCenter = () => {
   }, []);
 
   const fetchRefills = useCallback(async () => {
-    setLoadingRefills(true);
+    if (cachedRefills.length === 0) setLoadingRefills(true);
     try {
       const data = await api.getRefills();
-      setRefills(Array.isArray(data) ? data.slice(0, 100) : []);
+      const list = Array.isArray(data) ? data.slice(0, 100) : [];
+      setRefills(list);
+      cachedRefills = list;
     } catch (err) {
       console.error('Failed to fetch refills:', err);
       showToast('Failed to load refills. Please try again.', 'error');
@@ -85,13 +91,15 @@ const AutomationCenter = () => {
   }, [showToast]);
 
   const fetchLogs = useCallback(async (searchOverride?: string) => {
-    setLoadingLogs(true);
+    if (cachedLogs.length === 0) setLoadingLogs(true);
     try {
       const type = logsTypeFilter === 'All' ? undefined : logsTypeFilter;
       const status = logsStatusFilter === 'All' ? undefined : logsStatusFilter;
       const search = searchOverride !== undefined ? searchOverride.trim() : logsSearch.trim();
       const data = await api.getAutomationNotifications({ type, status, search: search || undefined, limit: 100 });
-      setLogs(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setLogs(list);
+      cachedLogs = list;
     } catch (err) {
       console.error('Failed to fetch logs:', err);
       showToast('Failed to load communication logs.', 'error');
@@ -106,12 +114,8 @@ const AutomationCenter = () => {
     }
   }, [activeTab, fetchRefills]);
 
-  useDeferredEffect(() => {
-    if (activeTab === 'logs') {
-      fetchLogs();
-    }
-  }, [activeTab, fetchLogs]);
-
+  // ponytail: merged two duplicate useDeferredEffect hooks into one.
+  // Both called fetchLogs() when activeTab === 'logs', causing double requests.
   useDeferredEffect(() => {
     if (activeTab === 'logs') {
       fetchLogs();
@@ -134,14 +138,18 @@ const AutomationCenter = () => {
     setLoadingMedicineSearch(true);
     medicineSearchTimeout.current = window.setTimeout(async () => {
       try {
-        // Search from inventory instead of catalog
-        const inventoryData = await api.getInventory({ search: medicineQuery.trim(), limit: 30 });
-        // Extract unique medicines from inventory and filter out already selected ones
-        const inventoryMeds = Array.isArray(inventoryData) ? inventoryData : [];
-        const uniqueMeds = inventoryMeds
-          .filter((item: any) => item.medicine_name && !selectedMedicines.find(m => m.name === item.medicine_name))
-          .map((item: any, idx: number) => ({ id: item.medicine_id || item.id || idx, name: item.medicine_name }))
+        // Search from medicines table directly instead of heavy inventory master (AC3)
+        const searchData = await api.searchMedicine(medicineQuery.trim());
+        const medsList = Array.isArray(searchData) ? searchData : [];
+        const uniqueMeds = medsList
+          .map((item: any, idx: number) => {
+            const name = item.name || item.medicine_name || '';
+            const id = item.id || item.medicine_id || idx;
+            return { id, name };
+          })
+          .filter((item) => item.name && !selectedMedicines.find(m => m.name === item.name))
           .slice(0, 15); // limit display to 15 items
+        
         setMedicineSearchResults(uniqueMeds);
         setShowMedicineDropdown(uniqueMeds.length > 0);
       } catch (err) {

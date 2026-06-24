@@ -29,18 +29,25 @@ interface Distributor {
   items: CartLineItem[];
 }
 
+// Module-level cache to persist data across page navigation (unmount/remount)
+let cachedDistributors: Distributor[] = [];
+let cachedPendingOrders: SpecialOrder[] = [];
+let cachedPendingRefills: Refill[] = [];
+let cachedPriceHistory: Record<string, any[]> = {};
+let cachedLastFetched: Date | null = null;
+
 export default function PharmarackCart() {
-  const [distributors, setDistributors] = useState<Distributor[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [distributors, setDistributors] = useState<Distributor[]>(() => cachedDistributors);
+  const [loading, setLoading] = useState(() => cachedDistributors.length === 0);
   const [error, setError] = useState<string | null>(null);
-  const [lastFetched, setLastFetched] = useState<Date | null>(null);
+  const [lastFetched, setLastFetched] = useState<Date | null>(() => cachedLastFetched);
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
-  const [priceHistoryCache, setPriceHistoryCache] = useState<Record<string, any[]>>({});
+  const [priceHistoryCache, setPriceHistoryCache] = useState<Record<string, any[]>>(() => cachedPriceHistory);
   const [sendingNotifId, setSendingNotifId] = useState<number | null>(null);
-  const [pendingOrders, setPendingOrders] = useState<SpecialOrder[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<SpecialOrder[]>(() => cachedPendingOrders);
   const [addingOrderId, setAddingOrderId] = useState<number | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'requests' | 'refills'>('requests');
-  const [pendingRefills, setPendingRefills] = useState<Refill[]>([]);
+  const [pendingRefills, setPendingRefills] = useState<Refill[]>(() => cachedPendingRefills);
   const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
 
   const fetchPendingRefills = async () => {
@@ -53,6 +60,7 @@ export default function PharmarackCart() {
           r.hold_for_stock === 1
         );
         setPendingRefills(filtered);
+        cachedPendingRefills = filtered;
       }
     } catch (err) {
       console.error('Failed to fetch pending refills:', err);
@@ -126,6 +134,7 @@ export default function PharmarackCart() {
           o.date && o.date.substring(0, 10) < todayStr
         );
         setPendingOrders(filtered);
+        cachedPendingOrders = filtered;
       }
     } catch (err) {
       console.error('Failed to fetch pending special orders:', err);
@@ -245,6 +254,7 @@ export default function PharmarackCart() {
             results.forEach(r => {
               next[r.name] = r.data;
             });
+            cachedPriceHistory = next;
             return next;
           });
         });
@@ -271,14 +281,20 @@ export default function PharmarackCart() {
   };
 
   const fetchCart = async () => {
-    setLoading(true);
+    // Only show loading spinner on cold cache (first visit)
+    if (cachedDistributors.length === 0) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const data = await api.getPharmarackCart();
       if (data && data.success) {
         const list = data.distributors || [];
         setDistributors(list);
-        setLastFetched(new Date());
+        cachedDistributors = list;
+        const now = new Date();
+        setLastFetched(now);
+        cachedLastFetched = now;
         fetchPriceHistories(list);
       } else {
         setError('Failed to retrieve cart details.');
@@ -297,7 +313,10 @@ export default function PharmarackCart() {
       if (data && data.success) {
         const list = data.distributors || [];
         setDistributors(list);
-        setLastFetched(new Date());
+        cachedDistributors = list;
+        const now = new Date();
+        setLastFetched(now);
+        cachedLastFetched = now;
         fetchPriceHistories(list);
       }
     } catch (err) {

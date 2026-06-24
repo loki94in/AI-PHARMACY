@@ -22,9 +22,13 @@ interface QueueItem {
   ref_name?: string;
 }
 
+// Module-level cache for instant re-mount
+let cachedStatus: EnrichmentStatus | null = null;
+let cachedQueue: QueueItem[] = [];
+
 export default function CompositionQueue() {
-  const [status, setStatus] = useState<EnrichmentStatus | null>(null);
-  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [status, setStatus] = useState<EnrichmentStatus | null>(cachedStatus);
+  const [queue, setQueue] = useState<QueueItem[]>(cachedQueue);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
@@ -37,6 +41,7 @@ export default function CompositionQueue() {
   const loadStatus = useCallback(async () => {
     try {
       const data = await api.getEnrichmentStatus();
+      cachedStatus = data;
       setStatus(data);
     } catch (err) {
       console.error('Failed to load enrichment status:', err);
@@ -48,6 +53,7 @@ export default function CompositionQueue() {
     try {
       const data = await api.getEnrichmentQueue(page, 50, filter);
       setQueue(data.data || []);
+      cachedQueue = data.data || [];
       setTotalPages(data.totalPages || 1);
       setTotalItems(data.totalItems || 0);
     } catch (err) {

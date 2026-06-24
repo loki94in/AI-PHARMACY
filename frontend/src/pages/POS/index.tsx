@@ -45,6 +45,7 @@ const getInitialPOSActiveTabId = (initialTabs: any[]) => {
 
 let cachedDoctors: any[] | null = null;
 let cachedCommonCombinations: any[] | null = null;
+let cachedSpecialOrders: any[] | null = null;
 
 const POS = () => {
   const initialTabs = getInitialPOSTabs();
@@ -84,10 +85,10 @@ const POS = () => {
   const [cart, setCart] = useState<any[]>(initialActiveTab.items || []);
   const [sendWhatsApp, setSendWhatsApp] = useState(initialActiveTab.sendWhatsApp || false); // DEFAULT: OFF
   const [paymentMedium, setPaymentMedium] = useState<string>(initialActiveTab.paymentMedium || 'CASH'); // DEFAULT: CASH
-  const [specialOrders, setSpecialOrders] = useState<any[]>([]);
+  const [specialOrders, setSpecialOrders] = useState<any[]>(cachedSpecialOrders ? cachedSpecialOrders.filter(o => o.status === 'Pending' || o.status === 'Ordered') : []);
   const [rowBatchesList, setRowBatchesList] = useState<any[]>([]);
   const [activeBatchRowId, setActiveBatchRowId] = useState<number | null>(null);
-  const [commonCombinations, setCommonCombinations] = useState<any[]>([]);
+  const [commonCombinations, setCommonCombinations] = useState<any[]>(cachedCommonCombinations || []);
 
   // Multi-cart tab states
   const [tabs, setTabs] = useState<any[]>(initialTabs);
@@ -269,6 +270,7 @@ const POS = () => {
   }, [rowSearchTerm, activeRowSearchIndex]);
 
   useDeferredEffect(() => {
+    // Silent background refresh of doctors
     api.getDoctors()
       .then(data => {
         if (Array.isArray(data)) {
@@ -278,84 +280,87 @@ const POS = () => {
       })
       .catch(err => console.error('Error fetching doctors:', err));
       
-    // Fetch quick-add common combinations from inventory
-    api.getInventory()
-      .then(async data => {
-        if (Array.isArray(data)) {
-          // Take top 12 active inventory items as quick adds
-          const topItems = data.slice(0, 12).map(med => ({
-            id: med.id,
-            name: med.name,
-            batch: med.batch_number || 'B-GEN',
-            expiry: med.expiry_date || '12/28',
-            mrp: med.mrp || 0,
-            costPrice: med.purchase_price || ((med.mrp || 0) * 0.7),
-            salts: med.hsn || 'Generic',
-            packSize: parseInt(med.pack_size || '10', 10) || 10,
-            recommendedQty: 1,
-            recommendedLooseQty: 0,
-            recommendationMsg: '',
-            quantity: med.stock_quantity
-          }));
+    // Fetch quick-add common combinations from inventory using limit: 12 (P1)
+    if (!cachedCommonCombinations) {
+      api.getInventory({ limit: 12 })
+        .then(async data => {
+          if (Array.isArray(data)) {
+            // Take top 12 active inventory items as quick adds
+            const topItems = data.slice(0, 12).map(med => ({
+              id: med.id,
+              name: med.name,
+              batch: med.batch_number || 'B-GEN',
+              expiry: med.expiry_date || '12/28',
+              mrp: med.mrp || 0,
+              costPrice: med.purchase_price || ((med.mrp || 0) * 0.7),
+              salts: med.hsn || 'Generic',
+              packSize: parseInt(med.pack_size || '10', 10) || 10,
+              recommendedQty: 1,
+              recommendedLooseQty: 0,
+              recommendationMsg: '',
+              quantity: med.stock_quantity
+            }));
 
-          // Batch enrich with recommended quantities in a single backend call!
-          try {
-            const medNames = topItems.map(m => m.name).join(',');
-            const response = await apiClient.get('/sales/recommend-quantity/batch', { params: { medicineNames: medNames } });
-            const recommendations = response.data || {};
+            // Batch enrich with recommended quantities in a single backend call!
+            try {
+              const medNames = topItems.map(m => m.name).join(',');
+              const response = await apiClient.get('/sales/recommend-quantity/batch', { params: { medicineNames: medNames } });
+              const recommendations = response.data || {};
 
-            const enriched = topItems.map(med => {
-              const rec = recommendations[med.name];
-              if (rec) {
-                return {
-                  ...med,
-                  recommendedQty: rec.type === 'strip' ? (rec.recommendedQty || 1) : 0,
-                  recommendedLooseQty: rec.type === 'loose' ? (rec.recommendedQty || 1) : 0,
-                  recommendationMsg: rec.message || ''
-                };
-              }
-              return med;
-            });
+              const enriched = topItems.map(med => {
+                const rec = recommendations[med.name];
+                if (rec) {
+                  return {
+                    ...med,
+                    recommendedQty: rec.type === 'strip' ? (rec.recommendedQty || 1) : 0,
+                    recommendedLooseQty: rec.type === 'loose' ? (rec.recommendedQty || 1) : 0,
+                    recommendationMsg: rec.message || ''
+                  };
+                }
+                return med;
+              });
 
-            setCommonCombinations(enriched);
-            cachedCommonCombinations = enriched;
-          } catch (err) {
-            console.error('Batch quantity enrichment failed:', err);
-            setCommonCombinations(topItems);
-            cachedCommonCombinations = topItems;
+              setCommonCombinations(enriched);
+              cachedCommonCombinations = enriched;
+            } catch (err) {
+              console.error('Batch quantity enrichment failed:', err);
+              setCommonCombinations(topItems);
+              cachedCommonCombinations = topItems;
+            }
           }
-        }
-      })
-      .catch(err => console.error('Error fetching common combinations:', err));
+        })
+        .catch(err => console.error('Error fetching common combinations:', err));
+    }
   }, []);
 
-  // Fetch customer suggestions for patient autocomplete
+  // Fetch customer suggestions for patient autocomplete (P2)
   useEffect(() => {
     if (patientName.trim().length < 2) {
       setPatientSuggestions([]);
       setShowPatientSuggestions(false);
       return;
     }
-    api.getPatients()
-      .then((data: any[]) => {
-        if (Array.isArray(data)) {
-          const lower = patientName.toLowerCase();
-          const filtered = data.filter(
-            (c: any) =>
-              (c.name || '').toLowerCase().includes(lower) ||
-              (c.phone || '').includes(patientName)
-          ).slice(0, 8);
-          setPatientSuggestions(filtered);
-          setShowPatientSuggestions(filtered.length > 0);
-        }
-      })
-      .catch(() => {});
+
+    const delayDebounce = setTimeout(() => {
+      api.getPatients({ q: patientName.trim(), limit: 8 })
+        .then((data: any[]) => {
+          if (Array.isArray(data)) {
+            setPatientSuggestions(data);
+            setShowPatientSuggestions(data.length > 0);
+          }
+        })
+        .catch(() => {});
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(delayDebounce);
   }, [patientName]);
 
   useDeferredEffect(() => {
+    // Skip remote fetch if already cached to prevent redundant DB query
     api.getOrders()
       .then(data => {
         if (Array.isArray(data)) {
+          cachedSpecialOrders = data;
           const active = data.filter(o => o.status === 'Pending' || o.status === 'Ordered');
           setSpecialOrders(active);
         }

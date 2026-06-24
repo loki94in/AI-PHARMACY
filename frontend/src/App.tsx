@@ -594,7 +594,7 @@ const Topbar = ({
       }
     };
     fetchActiveJob();
-    const timer = setInterval(fetchActiveJob, 8000);
+    const timer = setInterval(fetchActiveJob, 30000); // Optimized: poll active catalog jobs every 30s instead of 8s
     return () => clearInterval(timer);
   }, []);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -631,7 +631,7 @@ const Topbar = ({
 
   useEffect(() => {
     fetchDevices();
-    const interval = setInterval(fetchDevices, 5000);
+    const interval = setInterval(fetchDevices, 30000); // Optimized: poll connected devices every 30s instead of 5s
     return () => clearInterval(interval);
   }, [fetchDevices]);
 
@@ -725,12 +725,12 @@ const Topbar = ({
           } else if (data.type === 'sales_sync') {
             toastEvent.trigger(`Mobile synced ${data.payload.count || 1} offline sales bill(s) for review!`, 'info');
             if (typeof (window as any).refreshStagedCounts === 'function') {
-              (window as any).refreshStagedCounts();
+              (window as any).refreshStagedCounts(true);
             }
           } else if (data.type === 'purchases_sync') {
             toastEvent.trigger(`Mobile synced ${data.payload.count || 1} offline purchase bill(s) for review!`, 'info');
             if (typeof (window as any).refreshStagedCounts === 'function') {
-              (window as any).refreshStagedCounts();
+              (window as any).refreshStagedCounts(true);
             }
           }
         } catch (err) {
@@ -1115,6 +1115,11 @@ const Topbar = ({
   );
 };
 
+// Module-level cache for staged counts to prevent redundant database fetches on page switches (G4)
+let cachedStagedSalesCount: number | null = null;
+let cachedStagedPurchasesCount: number | null = null;
+let lastStagedCountsFetchTime = 0;
+
 // ──────────────────────────────────────────────
 // Layout (holds notification state globally)
 // ──────────────────────────────────────────────
@@ -1165,6 +1170,8 @@ const Layout = ({
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [pendingStagedSalesCount, setPendingStagedSalesCount] = useState(0);
   const [pendingStagedPurchasesCount, setPendingStagedPurchasesCount] = useState(0);
+  const [showQuickOrder, setShowQuickOrder] = useState(false);
+  const [showLiveCartAdd, setShowLiveCartAdd] = useState(false);
 
 
   const [showBackupModal, setShowBackupModal] = useState(false);
@@ -1194,12 +1201,22 @@ const Layout = ({
     };
   }, []);
 
-  const fetchStagedCounts = useCallback(async () => {
+  const fetchStagedCounts = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && cachedStagedSalesCount !== null && cachedStagedPurchasesCount !== null && (now - lastStagedCountsFetchTime < 30000)) {
+      setPendingStagedSalesCount(cachedStagedSalesCount);
+      setPendingStagedPurchasesCount(cachedStagedPurchasesCount);
+      return;
+    }
+
     try {
       const [sales, purchases] = await Promise.all([
         api.getStagedSales(),
         api.getStagedPurchases(),
       ]);
+      cachedStagedSalesCount = sales.length;
+      cachedStagedPurchasesCount = purchases.length;
+      lastStagedCountsFetchTime = now;
       setPendingStagedSalesCount(sales.length);
       setPendingStagedPurchasesCount(purchases.length);
     } catch (err) {
@@ -1214,6 +1231,45 @@ const Layout = ({
       delete (window as any).refreshStagedCounts;
     };
   }, [fetchStagedCounts]);
+
+  // Subscribe to global open events for modals (G2)
+  useEffect(() => {
+    const unsubscribeQuickOrder = quickOrderEvent.subscribeOpen(() => setShowQuickOrder(true));
+    const unsubscribeLiveCartAdd = liveCartAddEvent.subscribeOpen(() => setShowLiveCartAdd(true));
+    return () => {
+      unsubscribeQuickOrder();
+      unsubscribeLiveCartAdd();
+    };
+  }, []);
+
+  // Listen to global keyboard shortcuts for modals (G2)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Quick Order Shortcut: Alt+O or Alt+N or Ctrl+Shift+O
+      const isQuickOrderKey = 
+        (e.altKey && (e.key === 'o' || e.key === 'O')) ||
+        (e.altKey && (e.key === 'n' || e.key === 'N')) ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'o' || e.key === 'O'));
+
+      if (isQuickOrderKey) {
+        e.preventDefault();
+        setShowQuickOrder(prev => !prev);
+      }
+
+      // Live Cart Shortcut: Alt+L or Ctrl+Shift+L
+      const isLiveCartKey = 
+        (e.altKey && (e.key === 'l' || e.key === 'L')) ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'l' || e.key === 'L'));
+
+      if (isLiveCartKey) {
+        e.preventDefault();
+        setShowLiveCartAdd(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Global Arrow Key Navigation (Shift columns / Move focus, do not change numbers)
   useEffect(() => {
@@ -1333,13 +1389,17 @@ const Layout = ({
         </main>
         
         {/* Global Modals */}
-        <QuickOrderModal />
-        <LiveCartAddModal />
+        {showQuickOrder && (
+          <QuickOrderModal onClose={() => setShowQuickOrder(false)} />
+        )}
+        {showLiveCartAdd && (
+          <LiveCartAddModal onClose={() => setShowLiveCartAdd(false)} />
+        )}
 
         {showStagedReview && (
           <StagedReviewModal
             onClose={() => setShowStagedReview(false)}
-            onActionComplete={fetchStagedCounts}
+            onActionComplete={() => fetchStagedCounts(true)}
           />
         )}
 

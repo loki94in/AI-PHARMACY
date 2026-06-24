@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BarChart3, TrendingUp, Download, IndianRupee, ShoppingBag, Package, FileText, Info } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -50,6 +50,9 @@ const Reports = () => {
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const [hasGenerated, setHasGenerated] = useState(false);
+  const isMounted = useRef(false);
+
   const fetchReportData = async () => {
     setLoading(true);
     try {
@@ -59,6 +62,7 @@ const Reports = () => {
       ]);
       setStats(summaryData);
       setRecords(tableData);
+      setHasGenerated(true);
     } catch (err) {
       console.error('Error fetching report data:', err);
     } finally {
@@ -67,7 +71,13 @@ const Reports = () => {
   };
 
   useEffect(() => {
-    fetchReportData();
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
+    if (hasGenerated) {
+      fetchReportData();
+    }
   }, [activeTab]);
 
   const handleExport = async (format: 'pdf' | 'excel') => {
@@ -284,7 +294,9 @@ const Reports = () => {
                       </tr>
                     ) : records.length === 0 ? (
                       <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                        <td colSpan={3} className="p-12 text-center text-xs text-muted">No sales records found</td>
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">
+                          {!hasGenerated ? 'Select parameters and click "Generate" to load report data' : 'No sales records found'}
+                        </td>
                       </tr>
                     ) : (
                       records.map((row, idx) => (
@@ -343,7 +355,9 @@ const Reports = () => {
                       </tr>
                     ) : records.length === 0 ? (
                       <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                        <td colSpan={3} className="p-12 text-center text-xs text-muted">No inventory records found</td>
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">
+                          {!hasGenerated ? 'Select parameters and click "Generate" to load report data' : 'No inventory records found'}
+                        </td>
                       </tr>
                     ) : (
                       records.map((row, idx) => (
@@ -403,7 +417,9 @@ const Reports = () => {
                       </tr>
                     ) : records.length === 0 ? (
                       <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                        <td colSpan={4} className="p-12 text-center text-xs text-muted">No purchase records found</td>
+                        <td colSpan={4} className="p-12 text-center text-xs text-muted">
+                          {!hasGenerated ? 'Select parameters and click "Generate" to load report data' : 'No purchase records found'}
+                        </td>
                       </tr>
                     ) : (
                       records.map((row, idx) => (
@@ -463,7 +479,9 @@ const Reports = () => {
                       </tr>
                     ) : records.length === 0 ? (
                       <tr className="hover:bg-bg3/20 transition-colors border-b border-glass-border/30">
-                        <td colSpan={3} className="p-12 text-center text-xs text-muted">No expiry records found</td>
+                        <td colSpan={3} className="p-12 text-center text-xs text-muted">
+                          {!hasGenerated ? 'Select parameters and click "Generate" to load report data' : 'No expiry records found'}
+                        </td>
                       </tr>
                     ) : (
                       records.map((row, idx) => (

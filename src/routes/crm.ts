@@ -12,10 +12,29 @@ const router = express.Router();
 
 // Get patients
 router.get('/patients', async (req, res) => {
+  const { q, limit } = req.query;
   try {
     const db = await dbManager.getConnection();
-    const patients = await db.all('SELECT * FROM customers ORDER BY id DESC');
-        res.json(patients);
+    let query = 'SELECT * FROM customers';
+    const params = [];
+    
+    if (q) {
+      query += ' WHERE name LIKE ? OR phone LIKE ?';
+      params.push(`%${q}%`, `%${q}%`);
+    }
+    
+    query += ' ORDER BY id DESC';
+    
+    if (limit) {
+      const limitVal = parseInt(limit as string, 10);
+      if (!isNaN(limitVal)) {
+        query += ' LIMIT ?';
+        params.push(limitVal);
+      }
+    }
+    
+    const patients = await db.all(query, params);
+    res.json(patients);
   } catch (error) {
     console.error('Failed to fetch patients:', error);
     res.status(500).json({ error: 'Internal server error' });

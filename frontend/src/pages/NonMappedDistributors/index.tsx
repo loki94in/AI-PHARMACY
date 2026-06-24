@@ -44,9 +44,12 @@ interface ProductResult {
   storeId: number;
 }
 
+// Module-level cache for instant re-mount (especially valuable since this hits Pharmarack external API)
+let cachedDistributors: Distributor[] | null = null;
+
 export default function NonMappedDistributors() {
-  const [distributors, setDistributors] = useState<Distributor[]>([]);
-  const [loadingDistributors, setLoadingDistributors] = useState(true);
+  const [distributors, setDistributors] = useState<Distributor[]>(cachedDistributors || []);
+  const [loadingDistributors, setLoadingDistributors] = useState(!cachedDistributors);
   const [distError, setDistError] = useState<string | null>(null);
   
   // Left pane filter
@@ -77,7 +80,9 @@ export default function NonMappedDistributors() {
         const res = await api.getPharmarackDistributors();
         if (res && res.success) {
           // We want the non-mapped distributors for this page
-          setDistributors(res.nonMapped || []);
+          const nonMapped = res.nonMapped || [];
+          cachedDistributors = nonMapped;
+          setDistributors(nonMapped);
         } else {
           setDistError('Failed to fetch distributor list.');
         }

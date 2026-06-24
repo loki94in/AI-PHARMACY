@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment, useRef } from 'react';
 import { Edit3, Trash2, X, User, FileText, Save, AlertTriangle, BookOpen, RefreshCw, ShieldAlert, Factory } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
@@ -58,9 +58,12 @@ const getNDaysAgoString = (n: number) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// Module-level cache for instant re-mount
+let cachedInvoices: SaleInvoice[] | null = null;
+
 const Sells = () => {
-  const [invoices, setInvoices] = useState<SaleInvoice[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [invoices, setInvoices] = useState<SaleInvoice[]>(cachedInvoices || []);
+  const [loading, setLoading] = useState(!cachedInvoices);
   const [colFilterNo, setColFilterNo] = useState('');
   const [colFilterName, setColFilterName] = useState('');
   const [colFilterDate, setColFilterDate] = useState('');
@@ -68,6 +71,15 @@ const Sells = () => {
   const [colFilterMinAmount, setColFilterMinAmount] = useState('');
   const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
   const [colFilterPayVia, setColFilterPayVia] = useState('');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [colFilterNo, colFilterName, colFilterDate, colFilterDrName, colFilterMinAmount, colFilterMaxAmount, colFilterPayVia]);
 
   // Edit modal state
   const [editInvoice, setEditInvoice] = useState<SaleInvoice | null>(null);
@@ -111,11 +123,16 @@ const Sells = () => {
     }
   };
 
+  const isInitial = useRef(true);
+
   const fetchInvoices = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const data = await api.listSales({ limit: 200 });
+      const targetDate = colFilterDate || getTodayString();
+      // S1+S2: Reduced from 200 to 50, default to targeted/today's date range
+      const data = await api.listSales({ limit: 50, date_from: targetDate, date_to: targetDate });
       const invoicesList = Array.isArray(data) ? data : (data && Array.isArray(data.invoices) ? data.invoices : []);
+      cachedInvoices = invoicesList;
       setInvoices(invoicesList);
     } catch (err) {
       console.error('Failed to load sales:', err);
@@ -123,11 +140,21 @@ const Sells = () => {
     } finally {
       if (!silent) setLoading(false);
     }
+  }, [colFilterDate]);
+
+  // Handle mount fetch
+  useEffect(() => {
+    fetchInvoices(!!cachedInvoices);
   }, []);
 
+  // Handle date filter change fetch (skip initial mount)
   useEffect(() => {
-    fetchInvoices();
-  }, [fetchInvoices]);
+    if (isInitial.current) {
+      isInitial.current = false;
+      return;
+    }
+    fetchInvoices(false);
+  }, [colFilterDate]);
 
   const openView = async (invoice: SaleInvoice) => {
     try {
@@ -227,6 +254,41 @@ const Sells = () => {
     }
   };
 
+  const filteredInvoices = invoices.filter(inv => {
+    const total = Number(inv.total_amount) || 0;
+
+    // Column header filters
+    if (colFilterNo && !inv.invoice_no.toLowerCase().includes(colFilterNo.toLowerCase())) {
+      return false;
+    }
+    if (colFilterName) {
+      const nameMatch = (inv.customer_name || 'Walk-in').toLowerCase().includes(colFilterName.toLowerCase());
+      const phoneMatch = (inv.customer_phone || '').includes(colFilterName);
+      if (!nameMatch && !phoneMatch) return false;
+    }
+    if (colFilterDate) {
+      const invDate = inv.date ? inv.date.split('T')[0] : '';
+      if (invDate !== colFilterDate) return false;
+    }
+    if (colFilterDrName && !((inv.doctor_name || '').toLowerCase().includes(colFilterDrName.toLowerCase()))) {
+      return false;
+    }
+    
+    // Column header min/max amount filter
+    const colMin = colFilterMinAmount ? Number(colFilterMinAmount) : 0;
+    const colMax = colFilterMaxAmount ? Number(colFilterMaxAmount) : 100000000;
+    if (total < colMin || total > colMax) return false;
+
+    if (colFilterPayVia && inv.payment_medium !== colFilterPayVia) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredInvoices.length / pageSize);
+  const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   return (
     <div className="h-full flex flex-col px-6 py-6 animate-in fade-in duration-500">
 
@@ -243,8 +305,9 @@ const Sells = () => {
             <p className="text-xs mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-left border-collapse">
+          <>
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-20 bg-[#18181b]/95 backdrop-blur-sm shadow-sm">
                 <tr>
                   <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">No.</th>
@@ -345,37 +408,7 @@ const Sells = () => {
                 </tr>
               </thead>
               <tbody>
-                {invoices.filter(inv => {
-                  const total = Number(inv.total_amount) || 0;
-
-                  // Column header filters
-                  if (colFilterNo && !inv.invoice_no.toLowerCase().includes(colFilterNo.toLowerCase())) {
-                    return false;
-                  }
-                  if (colFilterName) {
-                    const nameMatch = (inv.customer_name || 'Walk-in').toLowerCase().includes(colFilterName.toLowerCase());
-                    const phoneMatch = (inv.customer_phone || '').includes(colFilterName);
-                    if (!nameMatch && !phoneMatch) return false;
-                  }
-                  if (colFilterDate) {
-                    const invDate = inv.date ? inv.date.split('T')[0] : '';
-                    if (invDate !== colFilterDate) return false;
-                  }
-                  if (colFilterDrName && !((inv.doctor_name || '').toLowerCase().includes(colFilterDrName.toLowerCase()))) {
-                    return false;
-                  }
-                  
-                  // Column header min/max amount filter
-                  const colMin = colFilterMinAmount ? Number(colFilterMinAmount) : 0;
-                  const colMax = colFilterMaxAmount ? Number(colFilterMaxAmount) : 100000000;
-                  if (total < colMin || total > colMax) return false;
-
-                  if (colFilterPayVia && inv.payment_medium !== colFilterPayVia) {
-                    return false;
-                  }
-
-                  return true;
-                }).map((inv, idx) => (
+                {paginatedInvoices.map((inv, idx) => (
                   <tr key={inv.id} className="hover:bg-white/10 transition-all duration-300 group relative z-10 hover:shadow-lg hover:-translate-y-0.5">
                     <td className="p-4 border-b border-glass-border/50 relative cursor-pointer">
                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-purple-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>
@@ -455,7 +488,60 @@ const Sells = () => {
               </tbody>
             </table>
           </div>
-        )}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="px-4 py-3 bg-[#18181b]/60 backdrop-blur-sm border-t border-glass-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text select-none">
+              <div className="text-muted">
+                Showing <span className="font-semibold text-text">{Math.min(filteredInvoices.length, (currentPage - 1) * pageSize + 1)}</span> to{' '}
+                <span className="font-semibold text-text">{Math.min(filteredInvoices.length, currentPage * pageSize)}</span> of{' '}
+                <span className="font-semibold text-text">{filteredInvoices.length}</span> invoices
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                
+                {/* Page numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, idx, arr) => {
+                      const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
+                      return (
+                        <Fragment key={p}>
+                          {showEllipsisBefore && <span className="px-1 text-muted">...</span>}
+                          <button
+                            onClick={() => setCurrentPage(p)}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border transition-all ${
+                              currentPage === p
+                                ? 'bg-primary/20 text-primary border-primary/40'
+                                : 'bg-bg3 hover:bg-white/10 text-text border-glass-border'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </Fragment>
+                      );
+                    })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
       </div>
 
       {/* Edit Modal */}

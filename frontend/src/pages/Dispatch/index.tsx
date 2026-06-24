@@ -33,10 +33,14 @@ const statusStyles: Record<string, string> = {
 
 const emptyForm = { patient_name: '', patient_phone: '', address: '', items: '', notes: '', delivery_boy_id: '', invoice_no: '' };
 
+// Module-level cache for instant re-mount
+let cachedOrders: DispatchOrder[] | null = null;
+let cachedDeliveryBoys: DeliveryBoy[] | null = null;
+
 const Dispatch = () => {
-  const [orders, setOrders] = useState<DispatchOrder[]>([]);
-  const [deliveryBoys, setDeliveryBoys] = useState<DeliveryBoy[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState<DispatchOrder[]>(cachedOrders || []);
+  const [deliveryBoys, setDeliveryBoys] = useState<DeliveryBoy[]>(cachedDeliveryBoys || []);
+  const [loading, setLoading] = useState(!cachedOrders);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -53,8 +57,12 @@ const Dispatch = () => {
         api.getDispatchOrders(),
         api.getDeliveryBoys(),
       ]);
-      setOrders(Array.isArray(ordersData) ? ordersData : []);
-      setDeliveryBoys(Array.isArray(boysData) ? boysData.filter((b: DeliveryBoy) => b.is_active) : []);
+      const ordersArr = Array.isArray(ordersData) ? ordersData : [];
+      const boysArr = Array.isArray(boysData) ? boysData.filter((b: DeliveryBoy) => b.is_active) : [];
+      cachedOrders = ordersArr;
+      cachedDeliveryBoys = boysArr;
+      setOrders(ordersArr);
+      setDeliveryBoys(boysArr);
     } catch (err) {
       console.error('Dispatch fetch error:', err);
     } finally {

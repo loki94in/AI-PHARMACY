@@ -41,10 +41,12 @@ const getNDaysAgoString = (n: number) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+let cachedExpiryItems: ExpiryItem[] | null = null;
+
 const Expiry = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<ExpiryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<ExpiryItem[]>(cachedExpiryItems || []);
+  const [loading, setLoading] = useState(!cachedExpiryItems);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [daysFilter, setDaysFilter] = useState(90);
@@ -95,6 +97,7 @@ const Expiry = () => {
 
   const fetchExpiryItems = async (days = daysFilter, showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
+    if (!cachedExpiryItems && !showRefresh) setLoading(true);
     try {
       const data = await api.getExpiryList(days);
       const currentMonth = new Date().getMonth();
@@ -107,6 +110,7 @@ const Expiry = () => {
           return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
         });
         setItems(filtered);
+        cachedExpiryItems = filtered;
       }
     } catch (err) {
       console.error('Error fetching near-expiry items:', err);
