@@ -102,7 +102,7 @@ router.get('/next-invoice', async (req, res) => {
 router.post('/', async (req, res) => {
   let db;
   try {
-    const { items = [], patient_id, doctor_id, doctor_name, discount = 0, patient_name, patient_phone, patient_address, paymentMedium = 'CASH', paymentStatus = 'PAID', sendWhatsApp = false, sale_date, refillEnabled = false, refillDays = 30 } = req.body;
+    const { items = [], patient_id, doctor_id, doctor_name, discount = 0, patient_name, patient_phone, patient_address, paymentMedium = 'CASH', paymentStatus = 'PAID', sendWhatsApp = false, sale_date, refillEnabled = false, refillDays = 30, refillId } = req.body;
 
     // Strict validation: check items parameters to prevent null values
     if (!Array.isArray(items) || items.length === 0) {
@@ -245,6 +245,42 @@ router.post('/', async (req, res) => {
             [patient_name || 'Walk-in Customer', patient_phone || '', invRecord.medicine_id, refillDays, nextDate.toISOString(), 'pending']
           );
         }
+      }
+    }
+
+    // Resolve refill cycle if this sale completes a pending refill
+    if (refillId) {
+      const refill = await db.get('SELECT * FROM patient_refills WHERE id = ?', [refillId]);
+      if (refill) {
+        const nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + Number(refill.refill_interval_days || 30));
+        const nextDateStr = nextDate.toISOString().slice(0, 19).replace('T', ' ');
+
+        await db.run(
+          `UPDATE patient_refills 
+           SET last_refill_date = datetime('now'), 
+               next_refill_date = ?, 
+               acknowledged = 0, 
+               ordering_triggered = 0, 
+               is_ready = 0, 
+               hold_for_stock = 0, 
+               quick_bill_id = NULL 
+           WHERE id = ?`,
+          [nextDateStr, refillId]
+        );
+
+        if (refill.quick_bill_id) {
+          // Delete held bill session (no stock restore since it's checked out)
+          await db.run('DELETE FROM held_bills WHERE id = ?', [refill.quick_bill_id]);
+        }
+
+        // Mark staged message as sent
+        await db.run(
+          `UPDATE automation_notifications 
+           SET lifecycle_status = 'sent' 
+           WHERE type = 'refill_collection' AND reference_id = ? AND lifecycle_status = 'staged'`,
+          [String(refillId)]
+        );
       }
     }
 

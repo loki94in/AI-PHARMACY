@@ -3,16 +3,39 @@ import { sendMessage } from '../whatsappClient.js';
 import { telegramBotService } from '../telegramBot.js';
 
 export async function checkAllRefills(db: Database): Promise<void> {
-  const pendingRefills = await db.all(
+  // Query active refills that are due to catch Sunday and standard lead times
+  const activeRefills = await db.all(
     `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
      JOIN medicines m ON pr.medicine_id = m.id
-     WHERE pr.next_refill_date <= datetime('now', '+3 days') AND pr.status = 'pending' AND pr.is_active = 1`
+     WHERE pr.status = 'pending' AND pr.is_active = 1`
   );
 
   const outOfStockRefills: any[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  for (const refill of pendingRefills) {
-    // Check medicine stock availability
+  for (const refill of activeRefills) {
+    const nextDate = new Date(refill.next_refill_date);
+    nextDate.setHours(0, 0, 0, 0);
+    const diffTime = nextDate.getTime() - today.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    
+    const isRefillSunday = nextDate.getDay() === 0;
+
+    // Trigger configurations
+    // If due date is Sunday: order at 5 days before (Tuesday), highlight at 4 days before (Wednesday).
+    // If due date is not Sunday: order at 6 days before, highlight at 6 days before.
+    const orderThreshold = isRefillSunday ? 5 : 6;
+    const highlightThreshold = isRefillSunday ? 4 : 6;
+
+    const orderTrigger = diffDays <= orderThreshold;
+    const highlightTrigger = diffDays <= highlightThreshold;
+
+    if (!orderTrigger && !highlightTrigger) {
+      continue;
+    }
+
+    // Check stock availability
     const stockRow = await db.get(
       'SELECT SUM(quantity) as total_qty FROM inventory_master WHERE medicine_id = ?',
       [refill.medicine_id]
@@ -20,16 +43,67 @@ export async function checkAllRefills(db: Database): Promise<void> {
     const qty = stockRow ? (stockRow.total_qty || 0) : 0;
 
     if (qty > 0) {
-      // Mark as ready for manual check and send, do not automatically send WhatsApp
-      await db.run("UPDATE patient_refills SET is_ready = 1, hold_for_stock = 0 WHERE id = ?", [refill.id]);
+      // Stock is present!
+      if (highlightTrigger) {
+        let quickBillId = refill.quick_bill_id;
+        if (!quickBillId) {
+          quickBillId = await createQuickBillForRefill(db, refill);
+          await db.run(
+            `UPDATE patient_refills 
+             SET is_ready = 1, hold_for_stock = 0, quick_bill_id = ?
+             WHERE id = ?`,
+            [quickBillId, refill.id]
+          );
+        } else {
+          await db.run(
+            `UPDATE patient_refills 
+             SET is_ready = 1, hold_for_stock = 0
+             WHERE id = ?`,
+            [refill.id]
+          );
+        }
+      }
     } else {
-      // Mark as waiting for stock
-      await db.run("UPDATE patient_refills SET hold_for_stock = 1, is_ready = 0 WHERE id = ?", [refill.id]);
-      outOfStockRefills.push(refill);
+      // Stock is missing!
+      if (orderTrigger) {
+        if (refill.ordering_triggered === 0) {
+          // Log order in special_orders
+          await db.run(
+            `INSERT INTO special_orders (product, requester, phone, qty, priority, status, pharmarack_mapped, source_refill_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [refill.medicine_name, refill.patient_name, refill.patient_phone, 10, 'High', 'Pending', 1, refill.id]
+          );
+          
+          await db.run(
+            `UPDATE patient_refills 
+             SET hold_for_stock = 1, is_ready = 0, ordering_triggered = 1 
+             WHERE id = ?`,
+            [refill.id]
+          );
+
+          outOfStockRefills.push(refill);
+
+          // Silent API post to add to Pharmarack cart
+          try {
+            const port = process.env.PORT || 3000;
+            fetch(`http://localhost:${port}/api/pharmarack/cart/add`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                items: [{
+                  name: refill.medicine_name,
+                  qty: 10
+                }]
+              })
+            }).catch(e => console.error('Failed to auto-add to Pharmarack cart:', e));
+          } catch (e) {
+            console.error('Fetch post error:', e);
+          }
+        }
+      }
     }
   }
 
-  // If there are out of stock refills, send a consolidated daily list of the week to the Pharmacist via Telegram
   if (outOfStockRefills.length > 0) {
     let reportMessage = `📋 PENDING REFILLS OF THE WEEK (OUT OF STOCK):\n\n`;
     outOfStockRefills.forEach((refill, index) => {
@@ -45,6 +119,47 @@ export async function checkAllRefills(db: Database): Promise<void> {
   }
 }
 
+async function createQuickBillForRefill(db: any, refill: any): Promise<number> {
+  const invoice_no = `H-REF-${Date.now()}`;
+  const temp_label = `Refill - ${refill.patient_name}`;
+  
+  const medPriceRow = await db.get('SELECT mrp FROM medicines WHERE id = ?', [refill.medicine_id]);
+  const mrp = medPriceRow ? (medPriceRow.mrp || 0) : 0;
+  const unit_price = mrp || 100;
+
+  const cartItems = [{
+    id: refill.medicine_id,
+    medicine_name: refill.medicine_name,
+    qty: 10,
+    unit_price: unit_price,
+    discount_per: 0
+  }];
+  
+  const cart_data = JSON.stringify(cartItems);
+  const dataBlob = JSON.stringify({
+    items: cartItems,
+    patient: { name: refill.patient_name, phone: refill.patient_phone },
+    discount: 0,
+    date: new Date().toLocaleString(),
+    remarks: 'AUTO_REFILL_BILL'
+  });
+
+  const billResult = await db.run(
+    `INSERT INTO held_bills (invoice_no, temp_label, patient_name, patient_phone, remarks, cart_data, data)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [invoice_no, temp_label, refill.patient_name, refill.patient_phone, 'AUTO_REFILL_BILL', cart_data, dataBlob]
+  );
+  
+  const msg = `Hi ${refill.patient_name}, your refill for ${refill.medicine_name} is in stock and ready. You may collect your medicine anytime from XYZ Pharmacy.`;
+  await db.run(
+    `INSERT INTO automation_notifications (type, recipient_name, recipient_phone, message, status, needs_confirmation, reference_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ['refill_collection', refill.patient_name, refill.patient_phone, msg, 'staged', 1, String(refill.id)]
+  );
+
+  return billResult.lastID;
+}
+
 export async function triggerPendingRefillsForMedicine(db: Database, medicineId: number): Promise<void> {
   const stockRow = await db.get(
     'SELECT SUM(quantity) as total_qty FROM inventory_master WHERE medicine_id = ?',
@@ -54,7 +169,6 @@ export async function triggerPendingRefillsForMedicine(db: Database, medicineId:
 
   if (qty <= 0) return;
 
-  // Fetch pending refills that were held back for stock
   const pendingRefills = await db.all(
     `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
      JOIN medicines m ON pr.medicine_id = m.id
@@ -63,8 +177,14 @@ export async function triggerPendingRefillsForMedicine(db: Database, medicineId:
   );
 
   for (const refill of pendingRefills) {
-    // Instead of auto-sending, mark as ready for manual check
-    await db.run("UPDATE patient_refills SET is_ready = 1, hold_for_stock = 0 WHERE id = ?", [refill.id]);
+    let quickBillId = refill.quick_bill_id;
+    if (!quickBillId) {
+      quickBillId = await createQuickBillForRefill(db, refill);
+    }
+    await db.run(
+      "UPDATE patient_refills SET is_ready = 1, hold_for_stock = 0, quick_bill_id = ? WHERE id = ?",
+      [quickBillId, refill.id]
+    );
   }
 }
 

@@ -571,6 +571,45 @@ const Topbar = ({
     processed_count?: number;
   } | null>(null);
 
+  const [orderAlertCount, setOrderAlertCount] = useState(0);
+
+  const fetchAlertCount = useCallback(async () => {
+    try {
+      const [orders, refills] = await Promise.all([
+        api.getOrders(),
+        api.getRefills(),
+      ]);
+      const pendingOrdersCount = Array.isArray(orders) 
+        ? orders.filter(o => o.status === 'Pending' || o.status === 'Ordered').length 
+        : 0;
+      const pendingRefillsCount = Array.isArray(refills)
+        ? refills.filter(r => r.is_active === 1 && r.status === 'pending' && r.hold_for_stock === 1).length
+        : 0;
+      setOrderAlertCount(pendingOrdersCount + pendingRefillsCount);
+    } catch (err) {
+      console.warn('Failed to fetch alert counts for Topbar:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAlertCount();
+    // Poll every 30 seconds
+    const interval = setInterval(fetchAlertCount, 30000);
+    
+    // Also refresh on cart refresh/update events
+    const handleRefresh = () => {
+      fetchAlertCount();
+    };
+    window.addEventListener('refresh-pharmarack-cart', handleRefresh);
+    window.addEventListener('refresh-special-orders', handleRefresh);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('refresh-pharmarack-cart', handleRefresh);
+      window.removeEventListener('refresh-special-orders', handleRefresh);
+    };
+  }, [fetchAlertCount]);
+
   useEffect(() => {
     const fetchActiveJob = async () => {
       try {
@@ -856,11 +895,16 @@ const Topbar = ({
           {/* Live Cart Add (Direct inventory replenishment) */}
           <button
             onClick={() => liveCartAddEvent.triggerOpen()}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 hover:text-white transition-all text-xs font-bold active:scale-95 group shadow-[0_0_12px_rgba(16,185,129,0.05)]"
+            className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 hover:text-white transition-all text-xs font-bold active:scale-95 group shadow-[0_0_12px_rgba(16,185,129,0.05)]"
             title="Live Cart Add / Inventory Refill (Alt + L)"
           >
             <ShoppingCart size={13} className="group-hover:scale-110 transition-transform duration-300" />
             <span>Live Cart Add</span>
+            {orderAlertCount > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-black text-black px-1 border border-black/40 animate-pulse">
+                {orderAlertCount}
+              </span>
+            )}
             <span className="hidden sm:inline text-[9px] bg-black/40 border border-white/10 text-muted px-1.5 py-0.5 rounded font-mono font-normal">Alt + L</span>
           </button>
 
@@ -1121,6 +1165,274 @@ let cachedStagedPurchasesCount: number | null = null;
 let lastStagedCountsFetchTime = 0;
 
 // ──────────────────────────────────────────────
+// Refill Control Sidebar
+// ──────────────────────────────────────────────
+import { 
+  ChevronLeft as ChevronLeftIcon, 
+  ChevronRight as ChevronRightIcon, 
+  Activity as ActivityIcon, 
+  ShieldCheck as ShieldCheckIcon, 
+  CheckSquare as CheckSquareIcon, 
+  ShoppingCart as CartIcon, 
+  Clock as ClockIcon, 
+  AlertTriangle as AlertIcon, 
+  MessageSquare as MessageSquareIcon,
+  Play as PlayIcon,
+  Pause as PauseIcon,
+  Send as SendIcon
+} from 'lucide-react';
+
+const RefillControlSidebar = ({
+  expanded,
+  setExpanded,
+  refills,
+  notifications,
+  onActionComplete,
+}: {
+  expanded: boolean;
+  setExpanded: (val: boolean) => void;
+  refills: any[];
+  notifications: any[];
+  onActionComplete: () => void;
+}) => {
+  const navigate = useNavigate();
+
+  const handleAcknowledge = async (id: number) => {
+    try {
+      await api.acknowledgeRefill(id);
+      onActionComplete();
+    } catch (e) {
+      console.error('Failed to acknowledge refill:', e);
+    }
+  };
+
+  const handleSend = async (id: number) => {
+    try {
+      await api.sendRefillNow(id);
+      onActionComplete();
+    } catch (e) {
+      console.error('Failed to send refill message:', e);
+    }
+  };
+
+  const handlePause = async (id: number) => {
+    try {
+      await api.updateRefill(id, { is_active: 0 });
+      onActionComplete();
+    } catch (e) {
+      console.error('Failed to pause refill:', e);
+    }
+  };
+
+  const handleSkip = async (id: number) => {
+    try {
+      await api.skipRefill(id);
+      onActionComplete();
+    } catch (e) {
+      console.error('Failed to skip refill:', e);
+    }
+  };
+
+  const liveOrders = refills.filter(r => r.hold_for_stock === 1 || r.is_ready === 0);
+  const stockAlerts = refills.filter(r => r.is_ready === 1);
+
+  if (!expanded) {
+    return (
+      <div className="w-12 bg-glass-bg border-l border-glass-border backdrop-blur-xl flex flex-col items-center py-4 shrink-0 transition-all duration-300">
+        <button
+          onClick={() => setExpanded(true)}
+          className="p-2 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-colors mb-4 cursor-pointer"
+          title="Expand Refill Sidebar"
+        >
+          <ChevronLeftIcon size={18} />
+        </button>
+        <div className="flex flex-col gap-4 mt-4">
+          <div className="relative" title={`${liveOrders.length} Live Order Requests`}>
+            <CartIcon size={18} className="text-sky-400" />
+            {liveOrders.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-sky-500" />
+            )}
+          </div>
+          <div className="relative" title={`${stockAlerts.length} Stock Alerts`}>
+            <AlertIcon size={18} className="text-amber-500" />
+            {stockAlerts.some(r => r.acknowledged === 0) && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+            )}
+          </div>
+          <div className="relative" title={`${notifications.length} Staged Messages`}>
+            <MessageSquareIcon size={18} className="text-purple-400" />
+            {notifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-purple-500" />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-80 bg-glass-bg border-l border-glass-border backdrop-blur-xl flex flex-col h-full shrink-0 transition-all duration-300 text-sm">
+      <div className="p-4 border-b border-glass-border flex items-center justify-between shrink-0 bg-white/[0.02]">
+        <div className="flex items-center gap-2">
+          <ActivityIcon size={16} className="text-sky-400" />
+          <span className="font-bold text-text tracking-wide uppercase text-xs">Refill Panel</span>
+        </div>
+        <button
+          onClick={() => setExpanded(false)}
+          className="p-1 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+          title="Collapse Refill Sidebar"
+        >
+          <ChevronRightIcon size={18} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5 custom-scrollbar">
+        <div>
+          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-sky-400">
+            <CartIcon size={14} />
+            <span>Live Order Requests ({liveOrders.length})</span>
+          </div>
+          {liveOrders.length === 0 ? (
+            <p className="text-xs text-muted/60 pl-2">No active auto-orders</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {liveOrders.map(r => (
+                <div key={r.id} className="p-2.5 rounded-xl bg-white/[0.02] border border-glass-border flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-text truncate max-w-[150px]">{r.medicine_name}</span>
+                    <span className="px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[9px] uppercase font-bold">Pharmarack</span>
+                  </div>
+                  <div className="text-[11px] text-muted leading-none">
+                    Patient: {r.patient_name}
+                  </div>
+                  <div className="text-[10px] text-muted/50 font-mono mt-0.5 flex items-center gap-1">
+                    <ClockIcon size={10} />
+                    Due: {r.next_refill_date ? new Date(r.next_refill_date).toLocaleDateString() : 'N/A'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-amber-500">
+            <AlertIcon size={14} />
+            <span>Stock Alerts ({stockAlerts.length})</span>
+          </div>
+          {stockAlerts.length === 0 ? (
+            <p className="text-xs text-muted/60 pl-2">No pending stock alerts</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {stockAlerts.map(r => {
+                const isBlinking = r.acknowledged === 0;
+                return (
+                  <div
+                    key={r.id}
+                    className={`
+                      p-3 rounded-xl border transition-all duration-300 flex flex-col gap-2
+                      ${isBlinking
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-200 animate-pulse'
+                        : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'}
+                    `}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-text truncate">{r.medicine_name}</div>
+                        <div className="text-[11px] text-muted/80 mt-0.5">Patient: {r.patient_name}</div>
+                      </div>
+                      {!isBlinking && (
+                        <span className="text-emerald-400 shrink-0" title="Stock Acknowledged">
+                          <ShieldCheckIcon size={16} />
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-1">
+                      {isBlinking && (
+                        <button
+                          onClick={() => handleAcknowledge(r.id)}
+                          className="flex-1 py-1 rounded bg-amber-500 hover:bg-amber-600 text-black text-[10px] font-black tracking-wide uppercase transition-colors flex items-center justify-center gap-1 shadow-sm shrink-0 cursor-pointer"
+                        >
+                          <CheckSquareIcon size={10} />
+                          Check
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          navigate(`/pos?refillPatientName=${encodeURIComponent(r.patient_name)}&refillPatientPhone=${encodeURIComponent(r.patient_phone || '')}&refillMedicineId=${r.medicine_id}&refillMedicineName=${encodeURIComponent(r.medicine_name || '')}&refillId=${r.id}&refillDays=${r.refill_interval_days || 30}`);
+                        }}
+                        className={`
+                          py-1 rounded text-[10px] font-black tracking-wide uppercase transition-all flex items-center justify-center gap-1 cursor-pointer
+                          ${isBlinking
+                            ? 'flex-1 border border-amber-500/35 hover:bg-white/5 text-amber-300'
+                            : 'w-full bg-emerald-500 hover:bg-emerald-600 text-black'}
+                        `}
+                      >
+                        <SendIcon size={10} />
+                        Checkout
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-purple-400">
+            <MessageSquareIcon size={14} />
+            <span>Staged Messages ({notifications.length})</span>
+          </div>
+          {notifications.length === 0 ? (
+            <p className="text-xs text-muted/60 pl-2">No staged messages</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {notifications.map(msg => (
+                <div key={msg.id} className="p-3 rounded-xl bg-purple-500/[0.03] border border-purple-500/20 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-text truncate max-w-[140px]">{msg.recipient_name}</span>
+                    <span className="text-[10px] text-purple-400 font-bold font-mono truncate max-w-[100px]">{msg.recipient_phone}</span>
+                  </div>
+                  <p className="text-[11px] text-muted leading-snug italic bg-black/10 p-1.5 rounded-lg border border-glass-border">
+                    "{msg.message}"
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <button
+                      onClick={() => handleSend(msg.reference_id ? Number(msg.reference_id) : msg.id)}
+                      className="flex-1 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-black tracking-wide uppercase transition-colors flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                      title="Approve and Send WhatsApp message"
+                    >
+                      <SendIcon size={10} />
+                      Send
+                    </button>
+                    <button
+                      onClick={() => handlePause(msg.reference_id ? Number(msg.reference_id) : msg.id)}
+                      className="py-1 px-2 rounded border border-glass-border hover:bg-white/5 text-muted hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
+                      title="Pause this refill reminder cycle"
+                    >
+                      <PauseIcon size={10} />
+                    </button>
+                    <button
+                      onClick={() => handleSkip(msg.reference_id ? Number(msg.reference_id) : msg.id)}
+                      className="py-1 px-2.5 rounded border border-glass-border hover:bg-white/5 text-muted hover:text-white text-[10px] font-bold uppercase transition-all cursor-pointer"
+                      title="Skip this alert for today"
+                    >
+                      Skip
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ──────────────────────────────────────────────
 // Layout (holds notification state globally)
 // ──────────────────────────────────────────────
 const Layout = ({
@@ -1172,6 +1484,44 @@ const Layout = ({
   const [pendingStagedPurchasesCount, setPendingStagedPurchasesCount] = useState(0);
   const [showQuickOrder, setShowQuickOrder] = useState(false);
   const [showLiveCartAdd, setShowLiveCartAdd] = useState(false);
+
+  const [refills, setRefills] = useState<any[]>([]);
+  const [stagedNotifications, setStagedNotifications] = useState<any[]>([]);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
+    try {
+      return localStorage.getItem('refill_sidebar_expanded') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('refill_sidebar_expanded', String(isSidebarExpanded));
+    } catch {}
+  }, [isSidebarExpanded]);
+
+  const fetchRefillData = useCallback(async () => {
+    try {
+      const data = await api.getRefills();
+      setRefills(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn('Failed to load refills in layout:', err);
+    }
+
+    try {
+      const notifications = await api.getAutomationNotifications({ status: 'staged' });
+      setStagedNotifications(Array.isArray(notifications) ? notifications : []);
+    } catch (err) {
+      console.warn('Failed to load staged notifications in layout:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRefillData();
+    const timer = setInterval(fetchRefillData, 15000);
+    return () => clearInterval(timer);
+  }, [fetchRefillData]);
 
 
   const [showBackupModal, setShowBackupModal] = useState(false);
@@ -1384,9 +1734,19 @@ const Layout = ({
           onOpenStagedReview={() => setShowStagedReview(true)}
           onOpenConnectModal={() => setShowConnectModal(true)}
         />
-        <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-3 pt-1.5 pb-3' : 'overflow-y-auto p-4 pt-3 pb-4'} relative z-10 transition-all duration-200`}>
-          {children}
-        </main>
+        <div className="flex-1 flex flex-row overflow-hidden relative z-10">
+          <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-3 pt-1.5 pb-3' : 'overflow-y-auto p-4 pt-3 pb-4'} relative z-10 transition-all duration-200`}>
+            {children}
+          </main>
+          
+          <RefillControlSidebar
+            expanded={isSidebarExpanded}
+            setExpanded={setIsSidebarExpanded}
+            refills={refills}
+            notifications={stagedNotifications}
+            onActionComplete={fetchRefillData}
+          />
+        </div>
         
         {/* Global Modals */}
         {showQuickOrder && (

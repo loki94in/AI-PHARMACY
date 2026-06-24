@@ -184,6 +184,57 @@ router.post('/:id/send', async (req, res) => {
   }
 });
 
+// Acknowledge a refill's stock alert (stop blinking)
+router.post('/:id/acknowledge', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    await db.run('UPDATE patient_refills SET acknowledged = 1 WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Refill stock alert acknowledged' });
+  } catch (err: any) {
+    console.error('Failed to acknowledge refill:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
+// Skip refill for today (advances by 1 day)
+router.post('/:id/skip', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const refill = await db.get('SELECT * FROM patient_refills WHERE id = ?', [id]);
+    if (!refill) {
+      return res.status(404).json({ error: 'Refill not found' });
+    }
+    
+    const nextDate = new Date(refill.next_refill_date || refill.last_refill_date || new Date());
+    nextDate.setDate(nextDate.getDate() + 1);
+    const nextDateStr = nextDate.toISOString().slice(0, 19).replace('T', ' ');
+
+    await db.run(
+      `UPDATE patient_refills 
+       SET next_refill_date = ?, acknowledged = 0, ordering_triggered = 0, is_ready = 0, hold_for_stock = 0 
+       WHERE id = ?`,
+      [nextDateStr, id]
+    );
+
+    // Update staged notification to skipped
+    await db.run(
+      `UPDATE automation_notifications 
+       SET lifecycle_status = 'skipped' 
+       WHERE type = 'refill_collection' AND reference_id = ? AND lifecycle_status = 'staged'`,
+      [String(id)]
+    );
+
+    res.json({ success: true, message: 'Refill skipped successfully for today' });
+  } catch (err: any) {
+    console.error('Failed to skip refill:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
 // Delete/Cancel a refill schedule
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;

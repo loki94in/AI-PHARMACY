@@ -515,6 +515,8 @@ export const api = {
   updateRefill: (id: number, data: Partial<Refill>) => apiClient.put(`/refills/${id}`, data).then(res => res.data),
   deleteRefill: (id: number) => apiClient.delete(`/refills/${id}`).then(res => res.data),
   sendRefillNow: (id: number) => apiClient.post(`/refills/${id}/send`).then(res => res.data),
+  acknowledgeRefill: (id: number) => apiClient.post(`/refills/${id}/acknowledge`).then(res => res.data),
+  skipRefill: (id: number) => apiClient.post(`/refills/${id}/skip`).then(res => res.data),
 
   // Automation / Communication logs
   getAutomationNotifications: (params?: { type?: string; status?: string; search?: string; limit?: number }) =>

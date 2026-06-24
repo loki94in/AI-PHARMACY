@@ -25,11 +25,20 @@ router.get('/timeline', async (req, res) => {
       purchaseBillNo,
       patientName,
       distributor,
+      reference,
+      party,
       type
     } = req.query;
 
-    // Fetch all sales items
-    const salesPromise = db.all(`
+    // Decide whether to apply date filtering at the database level.
+    // If we have a medicineName or batchNo filter, we want to fetch the entire history
+    // so we can compute the chronologically accurate running stock (opening/closing/medicine totals),
+    // and then filter by date in memory.
+    // If we DO NOT have medicineName or batchNo, we apply date filters directly in SQL to prevent loading too much data.
+    const hasMedicineOrBatchFilter = !!(medicineName || batchNo || q);
+    const sqlDateFilter = !hasMedicineOrBatchFilter;
+
+    let salesQuery = `
       SELECT
         'Sale' AS type,
         sinv.id AS invoice_id,
@@ -49,10 +58,11 @@ router.get('/timeline', async (req, res) => {
       JOIN inventory_master im ON si.inventory_id = im.id
       JOIN medicines m ON im.medicine_id = m.id
       LEFT JOIN customers c ON sinv.customer_id = c.id
-    `);
+      WHERE 1=1
+    `;
+    const salesParams: any[] = [];
 
-    // Fetch all purchase items
-    const purchasesPromise = db.all(`
+    let purchasesQuery = `
       SELECT
         'Purchase' AS type,
         p.id AS purchase_id,
@@ -72,10 +82,11 @@ router.get('/timeline', async (req, res) => {
       JOIN medicines m ON pi.medicine_id = m.id
       LEFT JOIN distributors d ON p.distributor_id = d.id
       LEFT JOIN inventory_master im ON im.medicine_id = pi.medicine_id AND im.batch_no = pi.batch_no
-    `);
+      WHERE 1=1
+    `;
+    const purchasesParams: any[] = [];
 
-    // Fetch all return items
-    const returnsPromise = db.all(`
+    let returnsQuery = `
       SELECT
         'Return' AS type,
         r.id AS return_id,
@@ -99,10 +110,11 @@ router.get('/timeline', async (req, res) => {
       LEFT JOIN sales_invoices si ON r.original_invoice_id = si.id
       LEFT JOIN customers c ON si.customer_id = c.id
       LEFT JOIN inventory_master im ON im.medicine_id = ri.medicine_id AND im.batch_no = ri.batch_no
-    `);
+      WHERE 1=1
+    `;
+    const returnsParams: any[] = [];
 
-    // Fetch all action logs (adjustments)
-    const logsPromise = db.all(`
+    let logsQuery = `
       SELECT
         'Adjustment' AS type,
         al.id AS log_id,
@@ -111,7 +123,100 @@ router.get('/timeline', async (req, res) => {
         al.description AS detail
       FROM action_logs al
       WHERE al.action_type IN ('INVENTORY_CORRECTION', 'SALES_BILL_CORRECTION', 'PURCHASE_BILL_CORRECTION')
-    `);
+    `;
+    const logsParams: any[] = [];
+
+    // Apply filters directly in SQL queries to minimize database transfer size
+    if (medicineName) {
+      const medFilter = `%${medicineName}%`;
+      salesQuery += ` AND m.name LIKE ?`;
+      salesParams.push(medFilter);
+      purchasesQuery += ` AND m.name LIKE ?`;
+      purchasesParams.push(medFilter);
+      returnsQuery += ` AND m.name LIKE ?`;
+      returnsParams.push(medFilter);
+      logsQuery += ` AND al.description LIKE ?`;
+      logsParams.push(medFilter);
+    }
+
+    if (batchNo) {
+      const batchFilter = `%${batchNo}%`;
+      salesQuery += ` AND si.batch_no LIKE ?`;
+      salesParams.push(batchFilter);
+      purchasesQuery += ` AND pi.batch_no LIKE ?`;
+      purchasesParams.push(batchFilter);
+      returnsQuery += ` AND ri.batch_no LIKE ?`;
+      returnsParams.push(batchFilter);
+      logsQuery += ` AND al.description LIKE ?`;
+      logsParams.push(batchFilter);
+    }
+
+    if (reference) {
+      const refFilter = `%${reference}%`;
+      salesQuery += ` AND sinv.invoice_no LIKE ?`;
+      salesParams.push(refFilter);
+      purchasesQuery += ` AND p.invoice_no LIKE ?`;
+      purchasesParams.push(refFilter);
+      returnsQuery += ` AND r.return_no LIKE ?`;
+      returnsParams.push(refFilter);
+    }
+
+    if (party) {
+      const partyFilter = `%${party}%`;
+      salesQuery += ` AND c.name LIKE ?`;
+      salesParams.push(partyFilter);
+      purchasesQuery += ` AND d.name LIKE ?`;
+      purchasesParams.push(partyFilter);
+      returnsQuery += ` AND (c.name LIKE ? OR d.name LIKE ?)`;
+      returnsParams.push(partyFilter, partyFilter);
+    }
+
+    if (q) {
+      const qFilter = `%${q}%`;
+      salesQuery += ` AND (m.name LIKE ? OR si.batch_no LIKE ? OR sinv.invoice_no LIKE ? OR c.name LIKE ?)`;
+      salesParams.push(qFilter, qFilter, qFilter, qFilter);
+      purchasesQuery += ` AND (m.name LIKE ? OR pi.batch_no LIKE ? OR p.invoice_no LIKE ? OR d.name LIKE ?)`;
+      purchasesParams.push(qFilter, qFilter, qFilter, qFilter);
+      returnsQuery += ` AND (m.name LIKE ? OR ri.batch_no LIKE ? OR r.return_no LIKE ? OR c.name LIKE ? OR d.name LIKE ?)`;
+      returnsParams.push(qFilter, qFilter, qFilter, qFilter, qFilter);
+      logsQuery += ` AND al.description LIKE ?`;
+      logsParams.push(qFilter);
+    }
+
+    if (sqlDateFilter) {
+      if (dateFrom) {
+        salesQuery += ` AND sinv.date >= ?`;
+        salesParams.push(dateFrom);
+        purchasesQuery += ` AND p.date >= ?`;
+        purchasesParams.push(dateFrom);
+        returnsQuery += ` AND r.date >= ?`;
+        returnsParams.push(dateFrom);
+        logsQuery += ` AND al.created_at >= ?`;
+        logsParams.push(dateFrom);
+      }
+      if (dateTo) {
+        const toStr = `${dateTo} 23:59:59.999`;
+        salesQuery += ` AND sinv.date <= ?`;
+        salesParams.push(toStr);
+        purchasesQuery += ` AND p.date <= ?`;
+        purchasesParams.push(toStr);
+        returnsQuery += ` AND r.date <= ?`;
+        returnsParams.push(toStr);
+        logsQuery += ` AND al.created_at <= ?`;
+        logsParams.push(toStr);
+      }
+    }
+
+    // Determine query routing based on requested transaction type filter
+    const querySales = !type || type === 'All' || type === 'Sale';
+    const queryPurchases = !type || type === 'All' || type === 'Purchase';
+    const queryReturns = !type || type === 'All' || type === 'Return';
+    const queryLogs = !type || type === 'All' || type === 'Adjustment';
+
+    const salesPromise = querySales ? db.all(salesQuery, salesParams) : Promise.resolve([]);
+    const purchasesPromise = queryPurchases ? db.all(purchasesQuery, purchasesParams) : Promise.resolve([]);
+    const returnsPromise = queryReturns ? db.all(returnsQuery, returnsParams) : Promise.resolve([]);
+    const logsPromise = queryLogs ? db.all(logsQuery, logsParams) : Promise.resolve([]);
 
     // Run queries in parallel
     const [sales, purchases, returns, logs] = await Promise.all([
@@ -346,9 +451,8 @@ router.get('/timeline', async (req, res) => {
       tx.medicine_stock_loose = newMedLoose;
     }
 
-    // Now filter allTransactions according to user queries
+    // In-memory query filter checks (secondary pass, highly performant on SQL-restricted subset)
     let filtered = allTransactions;
-
     if (q) {
       const qLower = String(q).toLowerCase();
       filtered = filtered.filter(tx => 
@@ -402,6 +506,16 @@ router.get('/timeline', async (req, res) => {
       filtered = filtered.filter(tx => tx.type === 'Purchase' && tx.party && tx.party.toLowerCase().includes(distLower));
     }
 
+    if (reference) {
+      const refLower = String(reference).toLowerCase();
+      filtered = filtered.filter(tx => tx.reference && tx.reference.toLowerCase().includes(refLower));
+    }
+
+    if (party) {
+      const partyLower = String(party).toLowerCase();
+      filtered = filtered.filter(tx => tx.party && tx.party.toLowerCase().includes(partyLower));
+    }
+
     if (type && type !== 'All') {
       filtered = filtered.filter(tx => tx.type === type);
     }
@@ -409,8 +523,20 @@ router.get('/timeline', async (req, res) => {
     // Sort descending by date/time (newest first)
     filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    // Limit to 150 items
-    res.json(filtered.slice(0, 150));
+    // Paginate results
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 100;
+    const totalItems = filtered.length;
+    const totalPages = Math.ceil(totalItems / limit);
+    const offset = (page - 1) * limit;
+    const paginated = filtered.slice(offset, offset + limit);
+
+    res.json({
+      data: paginated,
+      totalPages,
+      currentPage: page,
+      totalItems
+    });
   } catch (error) {
     const err = error as Error;
     console.error('Timeline fetch failed:', err);

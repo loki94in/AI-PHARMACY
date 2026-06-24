@@ -60,6 +60,69 @@ const POS = () => {
   const [patientId] = useState('P-' + Math.floor(100000 + Math.random() * 900000));
   const [refillEnabled, setRefillEnabled] = useState(initialActiveTab.refillEnabled || false);
   const [refillDays, setRefillDays] = useState(initialActiveTab.refillDays || 30);
+  const [activeRefillId, setActiveRefillId] = useState<number | null>(null);
+
+  // Hydrate POS cart from URL parameters for automatic refill checkouts
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refillPatientName = params.get('refillPatientName');
+    const refillPatientPhone = params.get('refillPatientPhone');
+    const refillMedicineId = params.get('refillMedicineId');
+    const refillMedicineName = params.get('refillMedicineName');
+    const refillId = params.get('refillId');
+    const refillQty = params.get('refillQty') || '10';
+    const refillDaysParam = params.get('refillDays') || '30';
+
+    if (refillPatientName && refillMedicineId && refillMedicineName && refillId) {
+      setPatientName(refillPatientName);
+      setPatientPhone(refillPatientPhone || '');
+      setRefillEnabled(true);
+      setRefillDays(Number(refillDaysParam));
+      setActiveRefillId(Number(refillId));
+
+      const fetchAndAddMedicine = async () => {
+        try {
+          const results = await api.searchMedicine(refillMedicineName);
+          if (results && results.length > 0) {
+            const matched = results[0];
+            const cartItem = {
+              id: matched.id,
+              name: matched.name,
+              batch: matched.batch_no || matched.batch_number || 'AUTO',
+              expiry: matched.expiry_date || '12/28',
+              mrp: matched.mrp || 100,
+              qty: Number(refillQty),
+              quantity: Number(refillQty),
+              unitPrice: matched.unit_price || matched.mrp || 100,
+              looseQty: 0,
+              discount: 0,
+              packSize: matched.pack_size || 10
+            };
+            setCart([cartItem]);
+          } else {
+            setCart([{
+              id: Number(refillMedicineId),
+              name: refillMedicineName,
+              batch: 'AUTO',
+              expiry: '12/28',
+              mrp: 100,
+              qty: Number(refillQty),
+              quantity: Number(refillQty),
+              unitPrice: 100,
+              looseQty: 0,
+              discount: 0,
+              packSize: 10
+            }]);
+          }
+        } catch (err) {
+          console.error('Failed to resolve refill medicine in POS:', err);
+        }
+      };
+      fetchAndAddMedicine();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [lastSavedInvoiceNo, setLastSavedInvoiceNo] = useState('');
@@ -863,7 +926,8 @@ const POS = () => {
         paymentStatus: paymentMedium === 'CREDIT' ? 'UNPAID' : 'PAID',
         sendWhatsApp: paymentMedium === 'CREDIT' ? true : sendWhatsApp,
         refillEnabled: refillEnabled,
-        refillDays: refillDays
+        refillDays: refillDays,
+        refillId: activeRefillId || undefined
       };
 
       const result = await api.createSale(payload);
@@ -883,6 +947,7 @@ const POS = () => {
       setDoctor('');
       setDiscount(0);
       setPaymentMedium('CASH');
+      setActiveRefillId(null);
       setTabs(prev => prev.map(t => {
         if (t.id === activeTabId) {
           return {

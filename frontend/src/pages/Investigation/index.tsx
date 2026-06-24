@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Search, 
-  RotateCcw, 
   Edit, 
   Clock, 
   Trash2, 
   Check, 
   AlertTriangle, 
-  ArrowRightLeft,
-  Calendar,
-  Package
+  Package,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -94,42 +95,14 @@ const getNDaysAgoString = (n: number) => {
 };
 
 const InvestigationCenter = () => {
-  const [filters, setFilters] = useState<SearchFilters>({
-    q: '',
-    patientName: '',
-    medicineName: '',
-    salesBillNo: '',
-    purchaseBillNo: '',
-    batchNo: '',
-    distributor: '',
-    dateFrom: getNDaysAgoString(15),
-    dateTo: getTodayString(),
-    type: 'All'
-  });
-
-  const [manualToDate, setManualToDate] = useState(false);
-
-  useEffect(() => {
-    if (!manualToDate) {
-      setFilters(prev => ({ ...prev, dateTo: getTodayString() }));
-    }
-  }, [manualToDate]);
-
-  const handleDateFromChange = (val: string) => {
-    if (val && val < '2020-01-01') {
-      setFilters(prev => ({ ...prev, dateFrom: '2020-01-01' }));
-    } else {
-      setFilters(prev => ({ ...prev, dateFrom: val }));
-    }
-  };
-
-  const handleDateToChange = (val: string) => {
-    if (val && val < '2020-01-01') {
-      setFilters(prev => ({ ...prev, dateTo: '2020-01-01' }));
-    } else {
-      setFilters(prev => ({ ...prev, dateTo: val }));
-    }
-  };
+  // Column-header inline filters
+  const [colFilterMedicine, setColFilterMedicine] = useState('');
+  const [colFilterBatch, setColFilterBatch] = useState('');
+  const [colFilterDateFrom, setColFilterDateFrom] = useState('');
+  const [colFilterDateTo, setColFilterDateTo] = useState('');
+  const [colFilterInvoice, setColFilterInvoice] = useState('');
+  const [colFilterParty, setColFilterParty] = useState('');
+  const [colFilterType, setColFilterType] = useState('All');
 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -137,6 +110,12 @@ const InvestigationCenter = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
+
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   // Modals / Confirmation State
   const [confirmModal, setConfirmModal] = useState<{
@@ -174,55 +153,75 @@ const InvestigationCenter = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const runSearch = async () => {
+  // Debounced filters to avoid database request saturation
+  const [debouncedFilters, setDebouncedFilters] = useState({
+    medicine: '',
+    batch: '',
+    dateFrom: '',
+    dateTo: '',
+    invoice: '',
+    party: '',
+    type: 'All'
+  });
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedFilters({
+        medicine: colFilterMedicine,
+        batch: colFilterBatch,
+        dateFrom: colFilterDateFrom,
+        dateTo: colFilterDateTo,
+        invoice: colFilterInvoice,
+        party: colFilterParty,
+        type: colFilterType
+      });
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [colFilterMedicine, colFilterBatch, colFilterDateFrom, colFilterDateTo, colFilterInvoice, colFilterParty, colFilterType]);
+
+  // Reset page to 1 when filters are updated
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedFilters]);
+
+  const runSearch = useCallback(async () => {
     setLoading(true);
     try {
-      const activeFilters = Object.fromEntries(
-        Object.entries(filters).filter(([_, val]) => val && String(val).trim() !== '')
+      const activeFilters = {
+        page: currentPage,
+        limit: pageSize,
+        dateFrom: debouncedFilters.dateFrom ? debouncedFilters.dateFrom : getNDaysAgoString(15),
+        dateTo: debouncedFilters.dateTo ? debouncedFilters.dateTo : getTodayString(),
+        type: debouncedFilters.type,
+        medicineName: debouncedFilters.medicine,
+        batchNo: debouncedFilters.batch,
+        reference: debouncedFilters.invoice,
+        party: debouncedFilters.party
+      };
+      const cleanFilters = Object.fromEntries(
+        Object.entries(activeFilters).filter(([_, val]) => val && String(val).trim() !== '')
       );
-      const data = await api.getInvestigationTimeline(activeFilters);
-      setSearchResults(data);
+      const response = await api.getInvestigationTimeline(cleanFilters);
+      if (response && response.data) {
+        setSearchResults(response.data);
+        setTotalItems(response.totalItems || 0);
+        setTotalPages(response.totalPages || 1);
+      } else {
+        const list = Array.isArray(response) ? response : [];
+        setSearchResults(list);
+        setTotalItems(list.length);
+        setTotalPages(1);
+      }
     } catch (err) {
       showToast('Search failed. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
-  };
-
-  const isMounted = useRef(false);
+  }, [currentPage, pageSize, debouncedFilters]);
 
   useEffect(() => {
-    if (!isMounted.current) {
-      isMounted.current = true;
-      return;
-    }
-    const timer = setTimeout(() => {
-      runSearch();
-    }, 300); // 300ms debounce to prevent query cascades
-
-    return () => clearTimeout(timer);
-  }, [filters.type, filters.dateFrom, filters.dateTo]);
-
-  const handleFilterChange = (key: keyof SearchFilters, val: string) => {
-    setFilters(prev => ({ ...prev, [key]: val }));
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
-      q: '',
-      patientName: '',
-      medicineName: '',
-      salesBillNo: '',
-      purchaseBillNo: '',
-      batchNo: '',
-      distributor: '',
-      dateFrom: getNDaysAgoString(15),
-      dateTo: getTodayString(),
-      type: 'All'
-    });
-    setManualToDate(false);
-    setSearchResults([]);
-  };
+    runSearch();
+  }, [runSearch]);
 
   // Direct Inventory Correction logic
   const handleAdjustStock = async (inventoryId: number) => {
@@ -486,6 +485,9 @@ const InvestigationCenter = () => {
     if (loose > 0) return `${qty || 0}::${loose}`;
     return String(qty || 0);
   };
+
+  // Already filtered on the server-side via debounced query parameters
+  const filteredResults = searchResults;
 
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden relative">
@@ -759,201 +761,98 @@ const InvestigationCenter = () => {
         /* UNIFIED LEDGER SPREADSHEET TIMELINE */
         <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden animate-in fade-in duration-300">
           
-          {/* ALWAYS VISIBLE FILTERS HEADER */}
-          <div className="p-4 border-b border-glass-border/30 bg-bg2/40 flex flex-col gap-3 shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="font-extrabold text-xs text-text flex items-center gap-2">
-                <ArrowRightLeft size={15} className="text-primary" />
-                STOCK ACTIVITY LEDGER FILTERS
+          {/* Range Selector and Pagination Header */}
+          <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
+              <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
+                <span className="text-muted">Show from row</span>
+                <input
+                  type="number"
+                  min="0"
+                  max={Math.max(0, totalItems - 1)}
+                  value={totalItems === 0 ? 0 : (currentPage - 1) * pageSize}
+                  onChange={e => {
+                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                    const newPage = Math.floor(val / pageSize) + 1;
+                    setCurrentPage(Math.min(totalPages, newPage));
+                  }}
+                  className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
+                />
+                <span className="text-muted">to</span>
+                <span className="text-text font-mono font-bold">
+                  {totalItems === 0 ? 0 : Math.min(totalItems, currentPage * pageSize)}
+                </span>
+              </div>
+              <span className="text-muted">
+                of <strong className="text-text font-bold">{totalItems.toLocaleString()}</strong> transaction entries
               </span>
             </div>
 
-            {/* Filter Fields Toolbar */}
-            <div className="flex flex-nowrap items-end gap-3 overflow-x-auto pb-2 custom-scrollbar select-none">
-              {/* Global search */}
-              <div className="flex flex-col gap-1 w-44 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Global Search</label>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 text-muted" size={13} />
-                  <input 
-                    type="text"
-                    placeholder="Global name, batch, or bill..."
-                    value={filters.q}
-                    onChange={e => handleFilterChange('q', e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && runSearch()}
-                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-text placeholder-muted focus:outline-none focus:border-primary/50"
-                  />
-                </div>
-              </div>
-
-              {/* Date From */}
-              <div className="flex flex-col gap-1 w-28 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Date From</label>
-                <div className="relative">
-                  <Calendar className="absolute left-2 top-2.5 text-muted" size={13} />
-                  <input 
-                    type="date"
-                    value={filters.dateFrom}
-                    min="2020-01-01"
-                    max={getTodayString()}
-                    onChange={e => handleDateFromChange(e.target.value)}
-                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-7 pr-1.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary/50"
-                  />
-                </div>
-              </div>
-
-              {/* Date To */}
-              <div className="flex flex-col gap-1 w-28 shrink-0">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-bold text-muted uppercase">Date To</label>
-                  <label className="text-[9px] text-muted flex items-center gap-0.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={manualToDate}
-                      onChange={e => setManualToDate(e.target.checked)}
-                      className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg w-2.5 h-2.5"
-                    />
-                    <span>Edit</span>
-                  </label>
-                </div>
-                <div className="relative">
-                  <Calendar className="absolute left-2 top-2.5 text-muted" size={13} />
-                  <input 
-                    type="date"
-                    value={filters.dateTo}
-                    min="2020-01-01"
-                    max={getTodayString()}
-                    disabled={!manualToDate}
-                    onChange={e => handleDateToChange(e.target.value)}
-                    className="w-full bg-bg3 border border-glass-border rounded-lg pl-7 pr-1.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary/50 disabled:opacity-50"
-                  />
-                </div>
-              </div>
-
-              {/* Medicine Name */}
-              <div className="flex flex-col gap-1 w-32 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Medicine Name</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. Crocin"
-                  value={filters.medicineName}
-                  onChange={e => handleFilterChange('medicineName', e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSearch()}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-                />
-              </div>
-
-              {/* Batch Number */}
-              <div className="flex flex-col gap-1 w-24 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Batch Number</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. BT998"
-                  value={filters.batchNo}
-                  onChange={e => handleFilterChange('batchNo', e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSearch()}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-                />
-              </div>
-
-              {/* Sales Bill No */}
-              <div className="flex flex-col gap-1 w-24 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Sales Bill</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. SL-501..."
-                  value={filters.salesBillNo}
-                  onChange={e => handleFilterChange('salesBillNo', e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSearch()}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-                />
-              </div>
-
-              {/* Purchase Bill No */}
-              <div className="flex flex-col gap-1 w-24 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Purchase Bill</label>
-                <input 
-                  type="text"
-                  placeholder="e.g. PR-140..."
-                  value={filters.purchaseBillNo}
-                  onChange={e => handleFilterChange('purchaseBillNo', e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSearch()}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-                />
-              </div>
-
-              {/* Patient Name */}
-              <div className="flex flex-col gap-1 w-32 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Patient Name</label>
-                <input 
-                  type="text"
-                  placeholder="Ramesh Kumar"
-                  value={filters.patientName}
-                  onChange={e => handleFilterChange('patientName', e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSearch()}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-                />
-              </div>
-
-              {/* Distributor */}
-              <div className="flex flex-col gap-1 w-32 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Distributor</label>
-                <input 
-                  type="text"
-                  placeholder="Apex Pharma"
-                  value={filters.distributor}
-                  onChange={e => handleFilterChange('distributor', e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSearch()}
-                  className="w-full bg-bg3 border border-glass-border rounded-lg px-2.5 py-1.5 text-xs text-text focus:outline-none focus:border-primary/50"
-                />
-              </div>
-
-              {/* Activity Type Pills */}
-              <div className="flex flex-col gap-1 shrink-0">
-                <label className="text-[10px] font-bold text-muted uppercase">Activity Type</label>
-                <div className="flex bg-bg3 border border-glass-border rounded-lg p-0.5">
-                  {[
-                    { value: 'All', label: 'All' },
-                    { value: 'Sale', label: 'Sales' },
-                    { value: 'Purchase', label: 'Purchases' },
-                    { value: 'Return', label: 'Returns' },
-                    { value: 'Adjustment', label: 'Adjustments' }
-                  ].map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => handleFilterChange('type', opt.value)}
-                      className={`px-2.5 py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
-                        filters.type === opt.value
-                          ? 'bg-primary text-text shadow-sm'
-                          : 'text-muted hover:text-text'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 shrink-0 pb-0.5">
-                <button 
-                  onClick={runSearch}
-                  disabled={loading}
-                  className="px-4 py-1.5 bg-primary text-white hover:bg-primary/95 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shadow-[0_0_15px_rgba(59,130,246,0.15)] h-8 cursor-pointer"
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-muted">Rows:</span>
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    const newSize = parseInt(e.target.value);
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
                 >
-                  {loading ? 'Searching...' : 'Apply'}
+                  <option value="50">50 rows</option>
+                  <option value="100">100 rows</option>
+                  <option value="250">250 rows</option>
+                  <option value="500">500 rows</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1 || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                  title="First Page"
+                >
+                  <ChevronsLeft size={14} />
                 </button>
-                <button 
-                  onClick={handleClearFilters}
-                  className="px-3 py-1.5 bg-bg3 hover:bg-bg2 text-muted hover:text-text border border-glass-border rounded-lg transition-colors text-xs font-bold flex items-center gap-1 h-8 cursor-pointer"
-                  title="Reset Filters"
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                  title="Previous Page"
                 >
-                  <RotateCcw size={13} />
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <div className="px-3 text-muted">
+                  Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                  title="Next Page"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                  title="Last Page"
+                >
+                  <ChevronsRight size={14} />
                 </button>
               </div>
             </div>
           </div>
+          
+
 
           {/* LEDGER SPREADSHEET VIEW CONTAINER */}
           <div className="flex-1 overflow-auto p-4 custom-scrollbar bg-bg2/15">
@@ -972,55 +871,188 @@ const InvestigationCenter = () => {
               </div>
             ) : (
               <div className="border border-glass-border/30 rounded-xl overflow-x-auto bg-glass-bg">
-                <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-[1300px]">
+                <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-full">
                   <thead>
-                    <tr className="bg-bg2/80 border-b border-glass-border/40 text-muted font-bold">
-                      <th className="p-2.5 border-r border-glass-border/20">Medicine</th>
-                      <th className="p-2.5 border-r border-glass-border/20">Batch</th>
-                      <th className="p-2.5 border-r border-glass-border/20">Date</th>
-                      <th className="p-2.5 border-r border-glass-border/20">Invoice</th>
-                      <th className="p-2.5 border-r border-glass-border/20">Party</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Opening Stock</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Purchase</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Sales</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Purchase Return</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Sales Return</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Adj</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Stock Audit</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">B2B Sales</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Closing Stock</th>
-                      <th className="p-2.5 border-r border-glass-border/20 text-center">Medicine Stock</th>
-                      <th className="p-2.5 text-center">Actions</th>
+                    <tr className="bg-bg2 border-b border-glass-border/30 text-muted font-bold text-[10px] align-top">
+                      {/* Medicine Header */}
+                      <th className="p-2 border-r border-glass-border/20 min-w-[150px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Medicine</span>
+                          <input
+                            type="text"
+                            placeholder="Filter medicine..."
+                            value={colFilterMedicine}
+                            onChange={e => setColFilterMedicine(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </div>
+                      </th>
+                      {/* Batch Header */}
+                      <th className="p-2 border-r border-glass-border/20 min-w-[70px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Batch</span>
+                          <input
+                            type="text"
+                            placeholder="Filter batch..."
+                            value={colFilterBatch}
+                            onChange={e => setColFilterBatch(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </div>
+                      </th>
+                      {/* Date Header */}
+                      <th className="p-2 border-r border-glass-border/20 min-w-[110px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Date</span>
+                          <input
+                            type="date"
+                            value={colFilterDateFrom}
+                            onChange={e => setColFilterDateFrom(e.target.value)}
+                            className="w-full px-1.5 py-0.5 bg-bg3 border border-glass-border rounded text-[9px] text-text font-normal focus:outline-none focus:border-primary/50"
+                            title="From Date"
+                          />
+                          <input
+                            type="date"
+                            value={colFilterDateTo}
+                            onChange={e => setColFilterDateTo(e.target.value)}
+                            className="w-full px-1.5 py-0.5 bg-bg3 border border-glass-border rounded text-[9px] text-text font-normal focus:outline-none focus:border-primary/50"
+                            title="To Date"
+                          />
+                        </div>
+                      </th>
+                      {/* Invoice Header */}
+                      <th className="p-2 border-r border-glass-border/20 min-w-[80px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Invoice</span>
+                          <input
+                            type="text"
+                            placeholder="Filter invoice..."
+                            value={colFilterInvoice}
+                            onChange={e => setColFilterInvoice(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </div>
+                      </th>
+                      {/* Party Header */}
+                      <th className="p-2 border-r border-glass-border/20 min-w-[90px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Party</span>
+                          <input
+                            type="text"
+                            placeholder="Filter party..."
+                            value={colFilterParty}
+                            onChange={e => setColFilterParty(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </div>
+                      </th>
+                      {/* Opening Stock Header (with Type Selector) */}
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[90px]">
+                        <div className="flex flex-col gap-1 items-center">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Opening Stock</span>
+                          <select
+                            value={colFilterType}
+                            onChange={e => setColFilterType(e.target.value)}
+                            className="w-full px-1.5 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal focus:outline-none focus:border-primary/50"
+                          >
+                            <option value="All">All Types</option>
+                            <option value="Purchase">Purchases</option>
+                            <option value="Sale">Sales</option>
+                            <option value="Return">Returns</option>
+                            <option value="Adjustment">Adjustments</option>
+                          </select>
+                        </div>
+                      </th>
+                      {/* Static Columns without any placeholders */}
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[60px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Purchase
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[60px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Sales
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[80px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Purchase Return
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[80px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Sales Return
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[45px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Adj
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[70px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Stock Audit
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[75px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        B2B Sales
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[80px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Closing Stock
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 text-center min-w-[85px] uppercase text-[10px] tracking-wider text-muted font-black">
+                        Medicine Stock
+                      </th>
+                      {/* Actions Header with Reset button */}
+                      <th className="p-2 text-center min-w-[70px]">
+                        <div className="flex flex-col gap-1 items-center justify-center">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Actions</span>
+                          {(colFilterMedicine || colFilterBatch || colFilterDateFrom || colFilterDateTo || colFilterInvoice || colFilterParty || colFilterType !== 'All') && (
+                            <button
+                              onClick={() => {
+                                setColFilterMedicine('');
+                                setColFilterBatch('');
+                                setColFilterDateFrom('');
+                                setColFilterDateTo('');
+                                setColFilterInvoice('');
+                                setColFilterParty('');
+                                setColFilterType('All');
+                              }}
+                              className="px-2 py-0.5 rounded bg-red/15 border border-red/30 text-red-400 hover:bg-red hover:text-white transition-all text-[9px] font-extrabold cursor-pointer"
+                              title="Clear Filters"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-glass-border/20">
-                    {searchResults.map((item, index) => (
+                    {filteredResults.length === 0 ? (
+                      <tr>
+                        <td colSpan={16} className="p-8 text-center text-muted">
+                          No matching stock activity found
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredResults.map((item, index) => (
                       <tr 
                         key={index} 
                         className="odd:bg-bg3/20 even:bg-transparent hover:bg-primary/5 transition-colors"
                       >
                         {/* Medicine */}
-                        <td className="p-2 border-r border-glass-border/20 text-text truncate max-w-[200px]" title={item.medicine_name}>
-                          {item.medicine_name || 'System Activity'}
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-text" title={item.medicine_name}>
+                          <div className="truncate max-w-[150px]">
+                            {item.medicine_name || 'System Activity'}
+                          </div>
                         </td>
                         
                         {/* Batch */}
-                        <td className="p-2 border-r border-glass-border/20 font-mono font-bold text-muted">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 font-mono font-bold text-muted">
                           {item.batch_no || 'N/A'}
                         </td>
 
                         {/* Date */}
-                        <td className="p-2 border-r border-glass-border/20 font-mono whitespace-nowrap text-muted">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 font-mono whitespace-nowrap text-muted">
                           {formatDate(item.date)}
                         </td>
 
                         {/* Invoice Link */}
-                        <td className="p-2 border-r border-glass-border/20">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20">
                           {item.invoice_id || item.purchase_id ? (
                             <button 
                               onClick={() => {
-                                if (item.type === 'Sale') handleStartSaleBillEdit(item);
-                                if (item.type === 'Purchase') handleStartPurchaseBillEdit(item);
+                                  if (item.type === 'Sale') handleStartSaleBillEdit(item);
+                                  if (item.type === 'Purchase') handleStartPurchaseBillEdit(item);
                               }}
                               className="text-primary hover:underline font-bold text-left cursor-pointer underline decoration-dotted"
                             >
@@ -1032,62 +1064,64 @@ const InvestigationCenter = () => {
                         </td>
 
                         {/* Party */}
-                        <td className="p-2 border-r border-glass-border/20 truncate max-w-[120px]">
-                          {item.party}
+                        <td className="px-2 py-1.5 border-r border-glass-border/20">
+                          <div className="truncate max-w-[120px]">
+                            {item.party}
+                          </div>
                         </td>
 
                         {/* Opening Stock */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-muted">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-muted">
                           {formatOpeningStock(item.opening_qty, item.opening_loose)}
                         </td>
 
                         {/* Purchase */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-green-400">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-green-400">
                           {item.type === 'Purchase' ? formatTxQty(item.purchase_qty, item.free_qty || 0) : '0'}
                         </td>
 
                         {/* Sales */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-sky-400">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-sky-400">
                           {item.type === 'Sale' ? formatTxQty(item.sale_qty, item.sale_loose) : '0'}
                         </td>
 
                         {/* Purchase Return */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-orange-400">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-orange-400">
                           {(item.type === 'Return' && item.return_type === 'purchase') ? formatTxQty(item.purchase_return_qty, 0) : '0'}
                         </td>
 
                         {/* Sales Return */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-purple-400">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-purple-400">
                           {(item.type === 'Return' && item.return_type === 'sale') ? formatTxQty(item.sales_return_qty, 0) : '0'}
                         </td>
 
                         {/* Adj */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-amber-500">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-amber-500">
                           {item.type === 'Adjustment' ? formatTxQty(item.adj_qty, item.adj_loose) : '0'}
                         </td>
 
                         {/* Stock Audit */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-muted/50">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-muted/50">
                           0
                         </td>
 
                         {/* B2B Sales */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono text-muted/50">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono text-muted/50">
                           0
                         </td>
 
                         {/* Closing Stock */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono font-bold text-text">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono font-bold text-text">
                           {formatTxQty(item.closing_qty, item.closing_loose)}
                         </td>
 
                         {/* Medicine Stock */}
-                        <td className="p-2 border-r border-glass-border/20 text-center font-mono font-bold text-text/80">
+                        <td className="px-2 py-1.5 border-r border-glass-border/20 text-center font-mono font-bold text-text/80">
                           {formatTxQty(item.medicine_stock_qty, item.medicine_stock_loose)}
                         </td>
 
                         {/* Actions */}
-                        <td className="p-1.5 text-center">
+                        <td className="px-1.5 py-1 text-center">
                           {item.inventory_id ? (
                             <button
                               onClick={() => handleAdjustStock(item.inventory_id)}
@@ -1101,7 +1135,7 @@ const InvestigationCenter = () => {
                           )}
                         </td>
                       </tr>
-                    ))}
+                    )))}
                   </tbody>
                 </table>
               </div>

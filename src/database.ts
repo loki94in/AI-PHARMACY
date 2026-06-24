@@ -311,6 +311,13 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE catalog_jobs ADD COLUMN newly_detected_columns TEXT DEFAULT NULL`,
     `ALTER TABLE return_items ADD COLUMN expiry_date DATETIME`,
     `ALTER TABLE emails ADD COLUMN medicine_names TEXT`,
+    // Refill automation updates
+    `ALTER TABLE patient_refills ADD COLUMN acknowledged INTEGER DEFAULT 0`,
+    `ALTER TABLE patient_refills ADD COLUMN ordering_triggered INTEGER DEFAULT 0`,
+    `ALTER TABLE patient_refills ADD COLUMN quick_bill_id INTEGER DEFAULT NULL`,
+    `ALTER TABLE special_orders ADD COLUMN source_refill_id INTEGER DEFAULT NULL`,
+    `ALTER TABLE automation_notifications ADD COLUMN needs_confirmation INTEGER DEFAULT 0`,
+    `ALTER TABLE automation_notifications ADD COLUMN lifecycle_status TEXT DEFAULT 'sent'`,
   ];
   for (const stmt of alterStatements) {
     try {

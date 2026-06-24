@@ -175,4 +175,22 @@ describe('Investigation routes', () => {
     const detailsRes = await request(app).get(`/investigation/details/${inventoryId}`);
     expect(detailsRes.body.inventory.quantity).toBe(167);
   });
+
+  test('GET /timeline with query filters returns matching results', async () => {
+    // 1. Without filters, should return at least mock sale and purchase (2 items)
+    let res = await request(app).get('/investigation/timeline');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeDefined();
+    expect(res.body.data.length).toBeGreaterThanOrEqual(2);
+
+    // 2. Filter by reference
+    res = await request(app).get('/investigation/timeline').query({ reference: 'S-999' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.every((tx: any) => tx.reference === 'S-999')).toBe(true);
+
+    // 3. Filter by party
+    res = await request(app).get('/investigation/timeline').query({ party: 'PharmaCorp' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.every((tx: any) => tx.party === 'PharmaCorp')).toBe(true);
+  });
 });

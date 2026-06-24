@@ -127,12 +127,8 @@ export default function PharmarackCart() {
     try {
       const data = await api.getOrders();
       if (Array.isArray(data)) {
-        const todayStr = new Date().toLocaleDateString('en-CA');
-        // Yesterday or older, and status is Pending or Ordered
-        const filtered = data.filter(o => 
-          (o.status === 'Pending' || o.status === 'Ordered') &&
-          o.date && o.date.substring(0, 10) < todayStr
-        );
+        // Show all pending or ordered requests (no same-day date constraint)
+        const filtered = data.filter(o => o.status === 'Pending' || o.status === 'Ordered');
         setPendingOrders(filtered);
         cachedPendingOrders = filtered;
       }

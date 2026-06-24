@@ -128,9 +128,13 @@ const Sells = () => {
   const fetchInvoices = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const targetDate = colFilterDate || getTodayString();
-      // S1+S2: Reduced from 200 to 50, default to targeted/today's date range
-      const data = await api.listSales({ limit: 50, date_from: targetDate, date_to: targetDate });
+      // ponytail: only filter by date if colFilterDate is selected. If empty, load latest invoices across all dates.
+      const params: { limit: number; date_from?: string; date_to?: string } = { limit: 50 };
+      if (colFilterDate) {
+        params.date_from = colFilterDate;
+        params.date_to = colFilterDate;
+      }
+      const data = await api.listSales(params);
       const invoicesList = Array.isArray(data) ? data : (data && Array.isArray(data.invoices) ? data.invoices : []);
       cachedInvoices = invoicesList;
       setInvoices(invoicesList);
