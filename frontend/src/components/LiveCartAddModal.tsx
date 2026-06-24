@@ -609,6 +609,17 @@ export const LiveCartAddModal: React.FC = () => {
           <X size={18} />
         </button>
 
+        {/* Refresh Button */}
+        <button 
+          type="button"
+          onClick={fetchCart}
+          disabled={cartLoading}
+          className="absolute top-4 right-4 md:right-[33.33%] md:mr-2.5 p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all flex items-center justify-center disabled:opacity-50"
+          title="Refresh Cart"
+        >
+          <RefreshCw size={14} className={cartLoading ? 'animate-spin text-emerald-400' : ''} />
+        </button>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x divide-glass-border/30 flex-1 overflow-hidden">
           
           {/* Left Column: Pending Orders */}
@@ -930,15 +941,6 @@ export const LiveCartAddModal: React.FC = () => {
                 <ShoppingCart size={16} className="text-emerald-400" />
                 <h4 className="text-xs font-bold text-text uppercase tracking-wider">Cart Preview</h4>
               </div>
-              <button
-                type="button"
-                onClick={fetchCart}
-                disabled={cartLoading}
-                className="p-1.5 rounded-lg bg-bg3 border border-border text-muted hover:text-text hover:bg-bg2 transition-all active:scale-95 flex items-center justify-center disabled:opacity-50"
-                title="Refresh Cart"
-              >
-                <RefreshCw size={12} className={cartLoading ? 'animate-spin text-emerald-400' : ''} />
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto pr-1 py-3 space-y-3 scrollbar-thin">
