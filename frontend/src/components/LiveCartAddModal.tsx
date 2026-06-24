@@ -598,7 +598,7 @@ export const LiveCartAddModal: React.FC = () => {
 
   return createPortal(
     <div className="fixed inset-0 z-global-modal flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
-      <div className="glass-panel max-w-5xl w-full max-h-[85vh] p-5 md:p-6 relative border border-glass-border shadow-[0_0_60px_rgba(59,130,246,0.25)] bg-bg2 text-text animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+      <div className="glass-panel max-w-5xl lg:max-w-6xl xl:max-w-7xl w-full max-h-[85vh] p-5 md:p-6 relative border border-glass-border shadow-[0_0_60px_rgba(59,130,246,0.25)] bg-bg2 text-text animate-in fade-in zoom-in-95 duration-200 flex flex-col">
         
         {/* Close Button */}
         <button 
@@ -699,7 +699,7 @@ export const LiveCartAddModal: React.FC = () => {
               </div>
 
               {/* Form Body */}
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form id="live-cart-add-form" onSubmit={handleSubmit} className="space-y-4">
                 
                 {/* Autocomplete Search Input */}
                 <div className="relative animate-in fade-in duration-200" ref={autocompleteRef}>
@@ -895,18 +895,19 @@ export const LiveCartAddModal: React.FC = () => {
             </div>
 
             {/* Action Row */}
-            <div className="pt-4 border-t border-glass-border flex justify-end gap-3 mt-4">
+            <div className="pt-4 border-t border-glass-border flex justify-end gap-3 mt-4 flex-row flex-nowrap shrink-0 whitespace-nowrap">
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="px-4 py-2 bg-bg3 border border-border text-muted hover:text-text text-xs font-bold rounded-xl transition-all"
+                className="px-4 py-2 bg-bg3 border border-border text-muted hover:text-text text-xs font-bold rounded-xl transition-all shrink-0 whitespace-nowrap"
               >
                 Cancel
               </button>
               <button
                 type="submit"
+                form="live-cart-add-form"
                 disabled={isSubmitting || !selectedProductId}
-                className="px-5 py-2 bg-gradient-to-r from-primary to-purple-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl shadow-[0_0_15px_rgba(59,130,246,0.2)] flex items-center gap-1.5"
+                className="px-5 py-2 bg-gradient-to-r from-primary to-purple-600 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl shadow-[0_0_15px_rgba(59,130,246,0.2)] flex items-center gap-1.5 shrink-0 whitespace-nowrap"
               >
                 {isSubmitting ? (
                   <>

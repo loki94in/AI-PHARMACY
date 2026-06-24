@@ -712,13 +712,13 @@ export default function PharmarackCart() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-center">
-                            <div className="flex items-center justify-center gap-1">
+                          <td className="px-3 py-2.5 text-center min-w-[110px] whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1 flex-nowrap shrink-0">
                               <button
                                 type="button"
                                 onClick={() => handleUpdateQty(item, item.qty - 1)}
                                 disabled={updatingItemId === item.productCode || item.qty <= 1}
-                                className="w-5 h-5 rounded bg-bg3 border border-glass-border hover:bg-bg2 hover:text-text text-muted flex items-center justify-center font-bold text-xs disabled:opacity-40 transition-all"
+                                className="w-5 h-5 rounded bg-bg3 border border-glass-border hover:bg-bg2 hover:text-text text-muted flex items-center justify-center font-bold text-xs disabled:opacity-40 transition-all shrink-0"
                               >
                                 -
                               </button>
@@ -733,13 +733,13 @@ export default function PharmarackCart() {
                                   }
                                 }}
                                 disabled={updatingItemId === item.productCode}
-                                className="w-10 text-center font-black text-text font-mono bg-bg border border-glass-border rounded py-0.5 text-xs focus:outline-none focus:border-primary disabled:opacity-50"
+                                className="w-10 text-center font-black text-text font-mono bg-bg border border-glass-border rounded py-0.5 text-xs focus:outline-none focus:border-primary disabled:opacity-50 shrink-0"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleUpdateQty(item, item.qty + 1)}
                                 disabled={updatingItemId === item.productCode}
-                                className="w-5 h-5 rounded bg-bg3 border border-glass-border hover:bg-bg2 hover:text-text text-muted flex items-center justify-center font-bold text-xs disabled:opacity-40 transition-all"
+                                className="w-5 h-5 rounded bg-bg3 border border-glass-border hover:bg-bg2 hover:text-text text-muted flex items-center justify-center font-bold text-xs disabled:opacity-40 transition-all shrink-0"
                               >
                                 +
                               </button>

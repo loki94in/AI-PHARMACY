@@ -133,6 +133,22 @@ async function fetchPharmarack(url: string, options: any = {}): Promise<Response
   return response;
 }
 
+// Helper to clean search queries by removing common dosage forms/suffixes
+function cleanSearchQuery(query: string): string {
+  const stopwords = [
+    'drop', 'drops', 'eye drop', 'eye drops', 'ear drop', 'ear drops',
+    'tab', 'tabs', 'tablet', 'tablets', 'cap', 'caps', 'capsule', 'capsules',
+    'syp', 'syrup', 'syrups', 'inj', 'injection', 'injections', 'cream', 'gel', 'ointment', 'suspension'
+  ];
+  
+  let cleaned = query;
+  for (const word of stopwords) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    cleaned = cleaned.replace(regex, '');
+  }
+  return cleaned.replace(/\s+/g, ' ').trim();
+}
+
 // Search endpoint
 router.get('/search', async (req, res) => {
   const q = (req.query.q as string || '').toLowerCase().trim();
@@ -158,9 +174,10 @@ router.get('/search', async (req, res) => {
       return res.status(401).json({ error: 'Need to login', code: 'NEED_LOGIN' });
     }
 
-    try {
+    // Helper to perform an actual Elasticsearch query on Pharmarack
+    const performSearchQuery = async (searchTerm: string) => {
       const payload: any = {
-        SearchKeyword: q,
+        SearchKeyword: searchTerm,
         StoreId: hasStoreFilter && isMapped ? [storeId] : [],
         NonMappedStoreId: hasStoreFilter && !isMapped ? [storeId] : [],
         Count: 50,
@@ -177,11 +194,11 @@ router.get('/search', async (req, res) => {
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(6000)
       });
-      
+
       if (response.ok) {
         const data: any = await response.json();
         if (data && Array.isArray(data.data)) {
-          const mappedProducts = data.data.map((p: any) => ({
+          return data.data.map((p: any) => ({
             name: p.ProductName || p.ProductFullName || '',
             packaging: p.Packing || '',
             distributor: p.StoreName || '',
@@ -195,22 +212,52 @@ router.get('/search', async (req, res) => {
             company: p.Company || '',
             storeId: p.StoreId
           }));
-          
-          // Cache successful response
-          searchCache.set(q, storeId, isMapped, mappedProducts);
-          
-          return res.json(mappedProducts);
-        } else {
-          console.error('Pharmarack search response structure unexpected:', data);
-          return res.status(503).json({ error: 'Search failed, unexpected response from server', code: 'UNEXPECTED_RESPONSE' });
         }
+      }
+      return null;
+    };
+
+    try {
+      let mappedProducts: any[] = [];
+      let searchSuccessful = false;
+
+      // Stage 1: Try search with exact user query
+      let results = await performSearchQuery(q);
+      if (results && results.length > 0) {
+        mappedProducts = results;
+        searchSuccessful = true;
       } else {
-        const status = response.status;
-        console.error(`Pharmarack search response status: ${status}`);
-        if (status === 401 || status === 403) {
-          return res.status(401).json({ error: 'Need to login', code: 'NEED_LOGIN' });
+        // Stage 2: Try search with cleaned query (dosage forms removed)
+        const cleanedQ = cleanSearchQuery(q);
+        if (cleanedQ && cleanedQ !== q) {
+          console.log(`[Pharmarack Search] No results for exact query "${q}". Trying cleaned query: "${cleanedQ}"`);
+          results = await performSearchQuery(cleanedQ);
+          if (results && results.length > 0) {
+            mappedProducts = results;
+            searchSuccessful = true;
+          }
         }
-        return res.status(503).json({ error: 'Connection error, please check internet or reconnect', code: 'CONNECTION_ERROR' });
+
+        // Stage 3: Try search with first word only (brand name) if multi-word query
+        if (!searchSuccessful && q.includes(' ')) {
+          const firstWord = q.split(' ')[0].trim();
+          if (firstWord && firstWord.length >= 3 && firstWord !== q && firstWord !== cleanedQ) {
+            console.log(`[Pharmarack Search] Still no results. Trying brand-only query: "${firstWord}"`);
+            results = await performSearchQuery(firstWord);
+            if (results && results.length > 0) {
+              mappedProducts = results;
+              searchSuccessful = true;
+            }
+          }
+        }
+      }
+
+      if (searchSuccessful) {
+        // Cache successful response (cached under original query 'q' to avoid duplicate remote lookups)
+        searchCache.set(q, storeId, isMapped, mappedProducts);
+        return res.json(mappedProducts);
+      } else {
+        return res.json([]);
       }
     } catch (err: any) {
       console.error('Pharmarack live API search failed:', err.message);

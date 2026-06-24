@@ -10,6 +10,22 @@ import { pdfInvoiceService } from '../../services/pdfInvoiceService.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper to normalize numeric search terms (e.g., stripping trailing decimal zeros like "31.00" -> "31")
+// to align with SQLite CAST(value AS TEXT) representations.
+const normalizeNumericSearch = (val: string): string => {
+  const cleaned = val.trim();
+  if (!cleaned) return '';
+  // If it's a decimal number, parse it to strip trailing zeros (e.g., 31.00 -> 31, 31.50 -> 31.5)
+  if (/^\d+\.\d+$/.test(cleaned)) {
+    return String(parseFloat(cleaned));
+  }
+  // If it ends with a dot, strip it (e.g., 31. -> 31)
+  if (/^\d+\.$/.test(cleaned)) {
+    return cleaned.slice(0, -1);
+  }
+  return cleaned;
+};
+
 const router = express.Router();
 
 // Get next sequential invoice number
@@ -31,7 +47,8 @@ router.get('/search-medicine', asyncHandler(async (req: express.Request, res: ex
   let rows = [];
   if (isNumeric) {
     const exactQuery = cleanQuery;
-    const likeQuery = `%${cleanQuery}%`;
+    const normalizedQuery = normalizeNumericSearch(cleanQuery);
+    const likeQuery = `%${normalizedQuery}%`;
     const sql = `
       SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
              m.item_code as item_code, m.manufacturer as manufacturer,

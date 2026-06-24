@@ -10,6 +10,22 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
+// Helper to normalize numeric search terms (e.g., stripping trailing decimal zeros like "31.00" -> "31")
+// to align with SQLite CAST(value AS TEXT) representations.
+const normalizeNumericSearch = (val: string): string => {
+  const cleaned = val.trim();
+  if (!cleaned) return '';
+  // If it's a decimal number, parse it to strip trailing zeros (e.g., 31.00 -> 31, 31.50 -> 31.5)
+  if (/^\d+\.\d+$/.test(cleaned)) {
+    return String(parseFloat(cleaned));
+  }
+  // If it ends with a dot, strip it (e.g., 31. -> 31)
+  if (/^\d+\.$/.test(cleaned)) {
+    return cleaned.slice(0, -1);
+  }
+  return cleaned;
+};
+
 // Configuration: tune these values for your environment
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;           // hard cap to avoid huge payloads
@@ -695,7 +711,8 @@ router.get('/search-medicine', async (req, res) => {
     if (isNumeric) {
       // Numeric query: search by item_code, MRP text cast, batch, or name prefix/infix
       const exactQuery = cleanQuery;
-      const likeQuery = `%${cleanQuery}%`;
+      const normalizedQuery = normalizeNumericSearch(cleanQuery);
+      const likeQuery = `%${normalizedQuery}%`;
       const sql = `
         SELECT 
           m.id AS medicine_id, 

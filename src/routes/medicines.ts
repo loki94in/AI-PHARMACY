@@ -3,6 +3,22 @@ import { dbManager } from '../database/connection.js';
 
 const router = express.Router();
 
+// Helper to normalize numeric search terms (e.g., stripping trailing decimal zeros like "31.00" -> "31")
+// to align with SQLite CAST(value AS TEXT) representations.
+const normalizeNumericSearch = (val: string): string => {
+  const cleaned = val.trim();
+  if (!cleaned) return '';
+  // If it's a decimal number, parse it to strip trailing zeros (e.g., 31.00 -> 31, 31.50 -> 31.5)
+  if (/^\d+\.\d+$/.test(cleaned)) {
+    return String(parseFloat(cleaned));
+  }
+  // If it ends with a dot, strip it (e.g., 31. -> 31)
+  if (/^\d+\.$/.test(cleaned)) {
+    return cleaned.slice(0, -1);
+  }
+  return cleaned;
+};
+
 router.get('/medicines', async (req, res) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
@@ -65,7 +81,7 @@ router.get('/medicines', async (req, res) => {
 
     if (mrpFilter) {
       whereClauses.push('CAST(COALESCE(mrp, 0) AS TEXT) LIKE ?');
-      params.push(`%${mrpFilter}%`);
+      params.push(`%${normalizeNumericSearch(mrpFilter)}%`);
     }
 
     if (packagingFilter) {
@@ -173,7 +189,7 @@ router.post('/medicines/bulk-delete', async (req, res) => {
       }
       if (mrpFilter) {
         whereClauses.push('CAST(COALESCE(mrp, 0) AS TEXT) LIKE ?');
-        params.push(`%${mrpFilter}%`);
+        params.push(`%${normalizeNumericSearch(mrpFilter)}%`);
       }
       if (packagingFilter) {
         whereClauses.push('(packaging LIKE ? OR strength LIKE ?)');
