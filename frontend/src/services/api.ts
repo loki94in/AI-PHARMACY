@@ -169,7 +169,18 @@ export const api = {
   dismissDashboardAlert: (id: number) => apiClient.delete(`/dashboard/alerts/${id}`).then(res => res.data),
   
   // Inventory
-  getInventory: (params?: { search?: string; limit?: number; page?: number }) => apiClient.get<InventoryItem[]>('/inventory', { params }).then(res => res.data),
+  getInventory: (params?: {
+    search?: string;
+    limit?: number;
+    page?: number;
+    medicine?: string;
+    batch?: string;
+    expiry?: string;
+    packs?: string;
+    loose?: string;
+    mrp?: string;
+    rack?: string;
+  }) => apiClient.get<any>('/inventory', { params }).then(res => res.data),
   addMedicine: (data: Partial<InventoryItem>) => apiClient.post('/inventory', data).then(res => res.data),
   updateMedicine: (id: number, data: Partial<InventoryItem>) => apiClient.put(`/inventory/${id}`, data).then(res => res.data),
   getEnrichedMedicine: (id: number) => apiClient.get(`/inventory/medicines/${id}/enriched`).then(res => res.data),

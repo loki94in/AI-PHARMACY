@@ -15,10 +15,19 @@ router.get('/', async (req, res) => {
   let db;
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string || '').trim();
-  const hasFilters = !!search;
+  
+  const medicine = (req.query.medicine as string || '').trim();
+  const batch = (req.query.batch as string || '').trim();
+  const expiry = (req.query.expiry as string || '').trim();
+  const packs = (req.query.packs as string || '').trim();
+  const loose = (req.query.loose as string || '').trim();
+  const mrp = (req.query.mrp as string || '').trim();
+  const rack = (req.query.rack as string || '').trim();
+
+  const hasFilters = !!(search || medicine || batch || expiry || packs || loose || mrp || rack);
   const limit = req.query.limit !== undefined 
     ? parseInt(req.query.limit as string) 
-    : (hasFilters ? 5000 : 50);
+    : (hasFilters ? 5000 : 100);
   
   try {
     db = await dbManager.getConnection();
@@ -34,6 +43,35 @@ router.get('/', async (req, res) => {
       baseQuery += ` AND (m.name LIKE ? OR im.batch_no LIKE ? OR m.item_code LIKE ? OR im.rack_location LIKE ? OR m.api_reference LIKE ? OR m.generic_name LIKE ?)`;
       const s = `%${search}%`;
       params.push(s, s, s, s, s, s);
+    }
+
+    if (medicine) {
+      baseQuery += ` AND m.name LIKE ?`;
+      params.push(`%${medicine}%`);
+    }
+    if (batch) {
+      baseQuery += ` AND im.batch_no LIKE ?`;
+      params.push(`%${batch}%`);
+    }
+    if (expiry) {
+      baseQuery += ` AND im.expiry_date LIKE ?`;
+      params.push(`%${expiry}%`);
+    }
+    if (packs) {
+      baseQuery += ` AND CAST(im.quantity AS TEXT) LIKE ?`;
+      params.push(`%${packs}%`);
+    }
+    if (loose) {
+      baseQuery += ` AND CAST(im.loose_quantity AS TEXT) LIKE ?`;
+      params.push(`%${loose}%`);
+    }
+    if (mrp) {
+      baseQuery += ` AND CAST(im.mrp AS TEXT) LIKE ?`;
+      params.push(`%${mrp}%`);
+    }
+    if (rack) {
+      baseQuery += ` AND im.rack_location LIKE ?`;
+      params.push(`%${rack}%`);
     }
     
     // If limit is 0, fetch all (warning: can cause frontend lag)

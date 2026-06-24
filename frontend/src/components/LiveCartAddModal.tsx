@@ -121,6 +121,7 @@ export const LiveCartAddModal: React.FC = () => {
   const [selectedProductCode, setSelectedProductCode] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedPackaging, setSelectedPackaging] = useState('');
+  const [selectedMedicineName, setSelectedMedicineName] = useState('');
 
   // Suggestions Search
   const [suggestions, setSuggestions] = useState<SuggestionMedicine[]>([]);
@@ -246,12 +247,13 @@ export const LiveCartAddModal: React.FC = () => {
       setSelectedProductCode(cheaperDistributor.productCode || '');
       setSelectedCompany(cheaperDistributor.company || '');
       setSelectedPackaging(cheaperDistributor.packaging || '');
+      setSelectedMedicineName(cheaperDistributor.medicine_name || '');
       toastEvent.trigger(`Switched to cheaper option from ${cheaperDistributor.distributor}!`, 'success');
     }
   };
 
   useEffect(() => {
-    if (selectedStoreId && selectedProductId && selectedRate !== '') {
+    if (selectedStoreId && selectedProductId && selectedRate !== '' && selectedMedicineName) {
       const currentEff = getEffectiveRate(Number(selectedRate), selectedScheme, qty);
       
       let bestOption: any = null;
@@ -260,7 +262,7 @@ export const LiveCartAddModal: React.FC = () => {
       suggestions.forEach(item => {
         if (item.storeId !== selectedStoreId && item.rate) {
           const nameClean1 = item.medicine_name.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const nameClean2 = product.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const nameClean2 = selectedMedicineName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (nameClean1 === nameClean2 && item.rate) {
             const itemEff = getEffectiveRate(item.rate, item.scheme, qty);
             if (itemEff < bestEff - 0.01) {
@@ -278,7 +280,20 @@ export const LiveCartAddModal: React.FC = () => {
     } else {
       setCheaperDistributor(null);
     }
-  }, [selectedStoreId, selectedProductId, selectedRate, selectedScheme, qty, suggestions, product]);
+  }, [selectedStoreId, selectedProductId, selectedRate, selectedScheme, qty, suggestions, selectedMedicineName]);
+
+  // Find the minimum effective rate among all suggestions to identify the best rate option
+  const minEffectiveRate = React.useMemo(() => {
+    let min = Infinity;
+    suggestions.forEach(item => {
+      if (item.isErrorMessage || !item.rate) return;
+      const eff = getEffectiveRate(item.rate, item.scheme, qty);
+      if (eff < min) {
+        min = eff;
+      }
+    });
+    return min;
+  }, [suggestions, qty]);
 
   // fetchCart logic
   const fetchCart = async () => {
@@ -460,6 +475,7 @@ export const LiveCartAddModal: React.FC = () => {
       setSelectedProductCode('');
       setSelectedCompany('');
       setSelectedPackaging('');
+      setSelectedMedicineName('');
     }
   };
 
@@ -478,6 +494,7 @@ export const LiveCartAddModal: React.FC = () => {
     setSelectedProductCode(med.productCode || '');
     setSelectedCompany(med.company || '');
     setSelectedPackaging(med.packaging || '');
+    setSelectedMedicineName(med.medicine_name || '');
 
     setShowSuggestions(false);
     setActiveSuggestionIndex(-1);
@@ -555,6 +572,7 @@ export const LiveCartAddModal: React.FC = () => {
       setSelectedProductCode('');
       setSelectedCompany('');
       setSelectedPackaging('');
+      setSelectedMedicineName('');
       
       // Focus back to search input so user can add another medicine
       setTimeout(() => {
@@ -703,7 +721,7 @@ export const LiveCartAddModal: React.FC = () => {
                   </div>
                   
                   {showSuggestions && suggestions.length > 0 && (
-                    <ul className="absolute z-[999999] left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl divide-y divide-border/30 py-1">
+                    <ul className="absolute z-[999999] left-0 right-0 mt-1 max-h-[400px] overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl divide-y divide-border/30 py-1 scrollbar-thin">
                       {suggestions.map((med, index) => (
                         <li
                           key={index}
@@ -719,6 +737,11 @@ export const LiveCartAddModal: React.FC = () => {
                           <div className="flex-1 min-w-0 pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-semibold text-text truncate text-sm">{med.medicine_name}</span>
+                              {med.rate !== undefined && med.rate !== null && !med.isErrorMessage && getEffectiveRate(med.rate, med.scheme, qty) === minEffectiveRate && (
+                                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0 select-none">
+                                  <Sparkles size={8} className="text-emerald-400 animate-pulse" /> Best Rate
+                                </span>
+                              )}
                               {med.stock !== undefined && !med.isErrorMessage && (
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${getStockStyle(med.stock)}`}>
                                   {med.stock} Stock
@@ -804,6 +827,7 @@ export const LiveCartAddModal: React.FC = () => {
                           setSelectedCompany('');
                           setSelectedPackaging('');
                           setProduct('');
+                          setSelectedMedicineName('');
                           setTimeout(() => productInputRef.current?.focus(), 50);
                         }}
                         className="p-1.5 text-muted hover:text-red hover:bg-red-500/10 rounded-xl transition-all ml-2"

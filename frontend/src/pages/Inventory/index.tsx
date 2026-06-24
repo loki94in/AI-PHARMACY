@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
-import { PackageSearch, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save } from 'lucide-react';
+import { PackageSearch, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { api, type InventoryItem } from '../../services/api';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { createPortal } from 'react-dom';
@@ -37,8 +37,8 @@ let cachedItems: any[] | null = null;
 let cachedSpecialOrders: any[] | null = null;
 
 const Inventory = () => {
-  const [items, setItems] = useState<InventoryItem[]>(cachedItems || []);
-  const [loading, setLoading] = useState(cachedItems ? false : true);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [colFilters, setColFilters] = useState({
     medicine: '', batch: '', expiry: '', packs: '', loose: '', mrp: '', rack: ''
   });
@@ -57,23 +57,60 @@ const Inventory = () => {
 
   const [specialOrders, setSpecialOrders] = useState<any[]>(cachedSpecialOrders || []);
 
+  // Pagination and Range Filter States
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Debounced column filter states
+  const [debouncedFilters, setDebouncedFilters] = useState(colFilters);
+
+  // Debounce colFilters update to avoid database request saturation
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedFilters(colFilters);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [colFilters]);
+
+  // Reset page to 1 when filters are updated
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedFilters]);
+
   const loadInventory = useCallback(() => {
-    if (!cachedItems) {
-      setLoading(true);
-    }
-    api.getInventory({ limit: 1000 })
+    setLoading(true);
+    api.getInventory({ 
+      page: currentPage, 
+      limit: pageSize,
+      medicine: debouncedFilters.medicine,
+      batch: debouncedFilters.batch,
+      expiry: debouncedFilters.expiry,
+      packs: debouncedFilters.packs,
+      loose: debouncedFilters.loose,
+      mrp: debouncedFilters.mrp,
+      rack: debouncedFilters.rack
+    })
       .then(data => {
         const fetchedItems = data && (data as any).data ? (data as any).data : data;
         const list = Array.isArray(fetchedItems) ? fetchedItems : [];
         setItems(list);
-        cachedItems = list;
+        
+        if (data && (data as any).totalItems !== undefined) {
+          setTotalItems((data as any).totalItems);
+          setTotalPages((data as any).totalPages || 1);
+        } else {
+          setTotalItems(list.length);
+          setTotalPages(1);
+        }
         setLoading(false);
       })
       .catch(err => {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [currentPage, pageSize, debouncedFilters]);
 
   useEffect(() => {
     loadInventory();
@@ -137,29 +174,103 @@ const Inventory = () => {
       });
   };
 
-  const filteredItems = items.filter(item => {
-    const itemName = item.name || '';
-    const itemBatch = item.batch_number || '';
-    const itemExpiry = item.expiry_date || '';
-    const itemRack = item.rack_location || '';
-    const itemStock = String(item.stock_quantity || 0);
-    const itemMrp = String(item.mrp || 0);
-    
-    const matchesColFilters = 
-      itemName.toLowerCase().includes(colFilters.medicine.toLowerCase()) &&
-      itemBatch.toLowerCase().includes(colFilters.batch.toLowerCase()) &&
-      itemExpiry.toLowerCase().includes(colFilters.expiry.toLowerCase()) &&
-      (!colFilters.packs || String(item.stock_quantity).includes(colFilters.packs)) &&
-      (!colFilters.loose || String(item.loose_quantity || 0).includes(colFilters.loose)) &&
-      (!colFilters.mrp || itemMrp.includes(colFilters.mrp)) &&
-      itemRack.toLowerCase().includes(colFilters.rack.toLowerCase());
-    
-    return matchesColFilters;
-  });
+  const filteredItems = items;
 
   return (
     <div className="h-full flex flex-col fade-in relative px-4 pb-4 pt-4 gap-2">
       <div className="glass-panel flex-1 flex flex-col overflow-hidden">
+        
+        {/* Range Selector and Pagination Header */}
+        <div className="p-3 border-b border-glass-border flex flex-wrap items-center justify-between bg-white/5 gap-3 shrink-0 select-none text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
+            <div className="flex items-center gap-1.5 bg-black/20 border border-glass-border rounded-lg px-2 py-1">
+              <span className="text-muted">Show from row</span>
+              <input
+                type="number"
+                min="0"
+                max={Math.max(0, totalItems - 1)}
+                value={totalItems === 0 ? 0 : (currentPage - 1) * pageSize}
+                onChange={e => {
+                  const val = Math.max(0, parseInt(e.target.value) || 0);
+                  const newPage = Math.floor(val / pageSize) + 1;
+                  setCurrentPage(Math.min(totalPages, newPage));
+                }}
+                className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0"
+              />
+              <span className="text-muted">to</span>
+              <span className="text-text font-mono font-bold">
+                {totalItems === 0 ? 0 : Math.min(totalItems, currentPage * pageSize)}
+              </span>
+            </div>
+            <span className="text-muted">
+              of <strong className="text-text font-bold">{totalItems.toLocaleString()}</strong> medicines in inventory
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-muted">Packs:</span>
+              <select
+                value={pageSize}
+                onChange={e => {
+                  const newSize = parseInt(e.target.value);
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                className="bg-black/40 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
+              >
+                <option value="50">50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="250">250 rows</option>
+                <option value="500">500 rows</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1 bg-black/20 border border-glass-border rounded-lg p-0.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1 || loading}
+                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
+                title="First Page"
+              >
+                <ChevronsLeft size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1 || loading}
+                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
+                title="Previous Page"
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <div className="px-3 text-muted">
+                Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages || loading}
+                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
+                title="Next Page"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages || loading}
+                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
+                title="Last Page"
+              >
+                <ChevronsRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-auto bg-black/20 relative">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
