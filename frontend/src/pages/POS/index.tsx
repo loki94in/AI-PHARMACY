@@ -1798,32 +1798,22 @@ const POS = () => {
               </table>
             </div>
           </div>
-        </div>
-
-        {/* RIGHT SIDEBAR (approx 25-28% width) - Houses Summary & Checkout */}
-        <div className="w-80 xl:w-96 flex flex-col gap-3 shrink-0 z-20 select-none h-full overflow-hidden justify-start">
           
           {/* Section 3: Checkout Summary & Total */}
-          <div className="glass-panel p-3.5 bg-glass-bg border-glass-border flex flex-col gap-3 shrink-0 shadow-lg">
-            <h3 className="font-bold flex items-center gap-2 text-xs text-text uppercase tracking-wider border-b border-border/40 pb-2">
-              💳 Payment & Checkout
-            </h3>
-
-            {/* Calculations Breakdown Receipt Card */}
-            <div className="bg-bg2/80 border border-border rounded-2xl p-3.5 space-y-3.5 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-green to-amber-500" />
-              <h4 className="font-bold flex items-center gap-2 text-[10px] text-muted uppercase tracking-widest">
-                🧾 Digital Invoice
-              </h4>
-
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between items-center text-muted">
-                  <span>Subtotal</span>
-                  <span className="font-mono text-text font-semibold">₹{Math.round(subtotal)}</span>
+          <div className="glass-panel p-4 bg-glass-bg border-glass-border flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 shadow-lg rounded-2xl">
+            <div className="flex items-center gap-2 text-xs text-text uppercase tracking-wider shrink-0 font-bold">
+              <span>💳</span> Payment & Checkout
+            </div>
+            
+            <div className="flex flex-1 flex-col md:flex-row items-center gap-6 justify-end w-full">
+              {/* Subtotal & Discount */}
+              <div className="flex items-center gap-4 text-xs">
+                <div className="text-muted">
+                  Subtotal: <span className="font-mono text-text font-semibold ml-1">₹{Math.round(subtotal)}</span>
                 </div>
                 
-                <div className="flex justify-between items-center text-muted">
-                  <span>Overall Discount %</span>
+                <div className="flex items-center gap-2 text-muted">
+                  <span>Discount %:</span>
                   <input 
                     type="number" 
                     className="premium-input text-xs py-0.5 px-1.5 w-14 text-center font-mono bg-bg border-border rounded-lg" 
@@ -1835,64 +1825,62 @@ const POS = () => {
                 </div>
 
                 {discountAmount > 0 && (
-                  <div className="flex justify-between items-center text-amber-500 font-bold bg-amber-500/5 px-2 py-1 rounded-lg border border-amber-500/20">
-                    <span>Discount Applied</span>
-                    <span className="font-mono">-₹{Math.round(discountAmount)}</span>
+                  <div className="text-amber-500 font-bold bg-amber-500/5 px-2.5 py-1 rounded-lg border border-amber-500/20 text-xs">
+                    Discount: -₹{Math.round(discountAmount)}
                   </div>
                 )}
+              </div>
 
-                {/* Payment selector tabs */}
-                <div className="pt-1.5">
-                  <span className="text-[9px] font-bold text-muted uppercase tracking-wider block mb-1.5">Payment Method</span>
-                  <div className="flex bg-bg3 border border-border rounded-xl p-1 w-full gap-1">
-                    {[
-                      { id: 'CASH', label: '💵 Cash', activeClass: 'bg-green/15 text-green border-green/30' },
-                      { id: 'UPI', label: '📱 UPI', activeClass: 'bg-primary/15 text-primary border-primary/30' },
-                      { id: 'CREDIT', label: '💳 Credit', activeClass: 'bg-amber-500/15 text-amber-500 border-amber-500/30' }
-                    ].map(item => (
-                      <label key={item.id} className="relative cursor-pointer flex-1 text-center select-none">
-                        <input 
-                          type="radio" 
-                          name="payment_medium" 
-                          value={item.id} 
-                          checked={paymentMedium === item.id} 
-                          onChange={e => setPaymentMedium(e.target.value)}
-                          className="sr-only peer"
-                        />
-                        <span className={`py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-wider block border transition-all ${
-                          paymentMedium === item.id 
-                            ? `${item.activeClass} border shadow-sm` 
-                            : 'border-transparent text-muted hover:text-text hover:bg-bg2/40'
-                        }`}>
-                          {item.label}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="border-t border-dashed border-border/80 my-2" />
-
-                {/* Grand Total */}
-                <div className="flex justify-between items-center py-0.5">
-                  <span className="text-sm font-extrabold text-primary uppercase tracking-wider">Grand Total</span>
-                  <span className="font-mono text-2xl font-black text-primary">₹{grandTotal}</span>
+              {/* Payment selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Method:</span>
+                <div className="flex bg-bg3 border border-border rounded-xl p-1 gap-1">
+                  {[
+                    { id: 'CASH', label: '💵 Cash', activeClass: 'bg-green/15 text-green border-green/30' },
+                    { id: 'UPI', label: '📱 UPI', activeClass: 'bg-primary/15 text-primary border-primary/30' },
+                    { id: 'CREDIT', label: '💳 Credit', activeClass: 'bg-amber-500/15 text-amber-500 border-amber-500/30' }
+                  ].map(item => (
+                    <label key={item.id} className="relative cursor-pointer select-none">
+                      <input 
+                        type="radio" 
+                        name="payment_medium" 
+                        value={item.id} 
+                        checked={paymentMedium === item.id} 
+                        onChange={e => setPaymentMedium(e.target.value)}
+                        className="sr-only peer"
+                      />
+                      <span className={`py-1 px-3.5 rounded-lg text-[10px] uppercase font-bold tracking-wider block border transition-all ${
+                        paymentMedium === item.id 
+                          ? `${item.activeClass} border shadow-sm` 
+                          : 'border-transparent text-muted hover:text-text hover:bg-bg2/40'
+                      }`}>
+                        {item.label}
+                      </span>
+                    </label>
+                  ))}
                 </div>
               </div>
-            </div>
 
-            {/* Submit Button */}
-            <button 
-              onClick={handleCompleteSale}
-              disabled={cart.length === 0}
-              className={`w-full text-text py-3 px-4 text-xs flex items-center justify-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all ${
-                cart.length === 0 
-                  ? 'bg-bg3 border border-border text-muted cursor-not-allowed' 
-                  : 'bg-green hover:bg-emerald-600 shadow-[0_4px_14px_rgba(16,185,129,0.25)] animate-pulse-subtle hover:-translate-y-0.5'
-              }`}
-            >
-              <CheckCircle size={15} /> Save Bill (Ctrl+S)
-            </button>
+              {/* Grand Total & Save Button */}
+              <div className="flex items-center gap-4 shrink-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-extrabold text-primary uppercase tracking-wider">Total:</span>
+                  <span className="font-mono text-xl font-black text-primary">₹{grandTotal}</span>
+                </div>
+
+                <button 
+                  onClick={handleCompleteSale}
+                  disabled={cart.length === 0}
+                  className={`text-text py-2 px-5 text-xs flex items-center gap-2 font-bold uppercase tracking-wider rounded-xl transition-all h-9 ${
+                    cart.length === 0 
+                      ? 'bg-bg3 border border-border text-muted cursor-not-allowed' 
+                      : 'bg-green hover:bg-emerald-600 shadow-[0_4px_14px_rgba(16,185,129,0.25)] hover:-translate-y-0.5'
+                  }`}
+                >
+                  <CheckCircle size={14} /> Save Bill (Ctrl+S)
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
