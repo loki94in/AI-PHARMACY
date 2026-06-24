@@ -324,6 +324,19 @@ const AutomationCenter = () => {
     }
   }, [fetchLogs, showToast]);
 
+  const handleCancelDispatch = useCallback(async (id: number) => {
+    try {
+      showToast('Cancelling notification...', 'info');
+      await api.cancelNotification(id);
+      showToast('Notification successfully cancelled.', 'success');
+      fetchLogs();
+    } catch (err: any) {
+      console.error('Failed to cancel:', err);
+      showToast('Cancel failed: ' + (err.response?.data?.error || err.message), 'error');
+      fetchLogs();
+    }
+  }, [fetchLogs, showToast]);
+
   const handleMarkSentManually = useCallback(async (notification: AutomationNotification) => {
     try {
       await api.manualNotification(notification.id);
@@ -685,10 +698,15 @@ const AutomationCenter = () => {
                             ? 'bg-green/10 border-green/30 text-green'
                             : log.status === 'sent_manually'
                               ? 'bg-sky-500/10 border-sky-500/30 text-sky'
-                              : 'bg-red/10 border-red/30 text-red'
+                              : log.status === 'pending'
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
+                                : log.status === 'cancelled'
+                                  ? 'bg-zinc-500/10 border-glass-border text-muted'
+                                  : 'bg-red/10 border-red/30 text-red'
                         }`}>
                           {log.status === 'sent' && <CheckCircle2 size={10} />}
                           {log.status === 'failed' && <AlertCircle size={10} />}
+                          {log.status === 'pending' && <Clock size={10} />}
                           {log.status.replace('_', ' ')}
                         </span>
                         {log.error_message && (
@@ -700,12 +718,12 @@ const AutomationCenter = () => {
                       <td className="p-4 font-mono font-medium text-text select-none">
                         {new Date(log.created_at).toLocaleDateString()}
                         <div className="text-[10px] text-muted">
-                          {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                           {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </td>
                       <td className="p-4 text-right">
-                        {log.status === 'failed' ? (
-                          <div className="flex justify-end gap-1.5">
+                        <div className="flex justify-end gap-1.5">
+                          {log.status === 'failed' && (
                             <button
                               onClick={() => handleRetryDispatch(log.id)}
                               className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 hover:bg-sky-500/20 text-sky hover:text-white transition-all text-[10px] font-bold flex items-center gap-1"
@@ -714,6 +732,18 @@ const AutomationCenter = () => {
                               <Send size={11} />
                               Retry
                             </button>
+                          )}
+                          {(log.status === 'pending' || log.status === 'failed') && (
+                            <button
+                              onClick={() => handleCancelDispatch(log.id)}
+                              className="p-1.5 rounded-lg bg-red/10 border border-red/25 hover:bg-red/20 text-red transition-all text-[10px] font-bold flex items-center gap-1"
+                              title="Cancel this notification"
+                            >
+                              <Trash2 size={11} />
+                              Cancel
+                            </button>
+                          )}
+                          {log.status === 'failed' && (
                             <button
                               onClick={() => setManualSendNotification(log)}
                               className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-500 hover:text-white transition-all text-[10px] font-bold flex items-center gap-1"
@@ -722,10 +752,11 @@ const AutomationCenter = () => {
                               <ExternalLink size={11} />
                               Send Manually
                             </button>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-muted italic select-none">No Action Required</span>
-                        )}
+                          )}
+                          {log.status !== 'pending' && log.status !== 'failed' && (
+                            <span className="text-[10px] text-muted italic select-none">No Action Required</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))

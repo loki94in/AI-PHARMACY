@@ -307,4 +307,27 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Convert special order to recurring refill
+router.post('/convert-to-refill', async (req, res) => {
+  const { orderId, refillIntervalDays } = req.body;
+  if (!orderId || !refillIntervalDays) {
+    return res.status(400).json({ error: 'orderId and refillIntervalDays are required' });
+  }
+  try {
+    const { orderFulfillmentService } = await import('../services/orderFulfillmentService.js');
+    const result = await orderFulfillmentService.convertToRecurringRefill(
+      Number(orderId),
+      Number(refillIntervalDays)
+    );
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err: any) {
+    console.error('Failed to convert order to refill:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
 export default router;

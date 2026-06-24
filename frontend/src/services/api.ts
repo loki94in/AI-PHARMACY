@@ -435,6 +435,8 @@ export const api = {
   updateOrder: (id: number, data: Partial<SpecialOrder>) => apiClient.put(`/orders/${id}`, data).then(res => res.data),
   deleteOrder: (id: number) => apiClient.delete(`/orders/${id}`).then(res => res.data),
   getUncollectedAlerts: () => apiClient.get<SpecialOrder[]>('/orders/uncollected-alerts').then(res => res.data),
+  convertToRefill: (orderId: number, refillIntervalDays: number) =>
+    apiClient.post('/orders/convert-to-refill', { orderId, refillIntervalDays }).then(res => res.data),
 
   // Expiry Monitor
   getExpiryList: (days?: number) => apiClient.get('/expiry', { params: { days } }).then(res => res.data),
@@ -508,6 +510,7 @@ export const api = {
   getAutomationNotifications: (params?: { type?: string; status?: string; search?: string; limit?: number }) =>
     apiClient.get<AutomationNotification[]>('/automation/notifications', { params }).then(res => res.data),
   retryNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/retry`).then(res => res.data),
+  cancelNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/cancel`).then(res => res.data),
   manualNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/manual`).then(res => res.data),
 
   // Investigation Center

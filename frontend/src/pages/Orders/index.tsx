@@ -333,6 +333,31 @@ const Orders = () => {
     }
   };
 
+  // Convert special order to recurring refill rule
+  const handleConvertToRefill = async (order: SpecialOrder) => {
+    const daysStr = prompt(`Enter refill frequency in days for "${order.product}" (e.g. 30):`, '30');
+    if (daysStr === null) return;
+    
+    const intervalDays = parseInt(daysStr, 10);
+    if (isNaN(intervalDays) || intervalDays <= 0) {
+      showNotification('Please enter a valid number of days.', 'error');
+      return;
+    }
+
+    try {
+      const response = await api.convertToRefill(order.id, intervalDays);
+      if (response.success) {
+        showNotification(response.message || 'Successfully converted to recurring refill!', 'success');
+        fetchOrders();
+      } else {
+        showNotification(response.error || 'Failed to convert to recurring refill.', 'error');
+      }
+    } catch (err: any) {
+      console.error('Error converting order to refill:', err);
+      showNotification('Failed to convert order to recurring refill.', 'error');
+    }
+  };
+
   // Trigger Uncollected Reminders Scan
   const handleScanUncollected = async () => {
     setRefreshing(true);
@@ -901,6 +926,15 @@ const Orders = () => {
                         >
                           <Trash2 size={13} />
                         </button>
+                        {(order.status === 'Ready' || order.status === 'Completed') && (
+                          <button
+                            onClick={() => handleConvertToRefill(order)}
+                            className="p-1.5 hover:bg-emerald-500/10 text-muted hover:text-emerald-400 rounded-lg transition-all"
+                            title="Convert to Recurring Refill"
+                          >
+                            <RefreshCw size={13} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))

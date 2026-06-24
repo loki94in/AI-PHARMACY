@@ -41,38 +41,33 @@ router.get('/notifications', async (req, res) => {
 // Retry sending a notification
 router.post('/notifications/:id/retry', async (req, res) => {
   const { id } = req.params;
-  let db;
   try {
-    db = await dbManager.getConnection();
-    const notification = await db.get('SELECT * FROM automation_notifications WHERE id = ?', [id]);
-    if (!notification) {
-      return res.status(404).json({ error: 'Notification not found' });
-    }
-
-    if (!notification.recipient_phone) {
-      return res.status(400).json({ error: 'No recipient phone number stored for this notification' });
-    }
-
-    // Try sending WhatsApp message
-    try {
-      await sendMessage(notification.recipient_phone, undefined, notification.message);
-      
-      // Update DB status to 'sent'
-      await db.run(
-        'UPDATE automation_notifications SET status = "sent", error_message = NULL WHERE id = ?',
-        [id]
-      );
-      res.json({ success: true, message: 'Message sent successfully' });
-    } catch (sendErr: any) {
-      const errMsg = sendErr.message || 'Unknown send error';
-      await db.run(
-        'UPDATE automation_notifications SET status = "failed", error_message = ? WHERE id = ?',
-        [errMsg, id]
-      );
-      res.status(500).json({ error: 'Failed to send WhatsApp message: ' + errMsg });
+    const { messagingQueue } = await import('../services/messagingQueue.js');
+    const success = await messagingQueue.retryMessage(Number(id));
+    if (success) {
+      res.json({ success: true, message: 'Notification marked for retry in background queue' });
+    } else {
+      res.status(400).json({ error: 'Failed to queue message for retry. Message might not be in failed status.' });
     }
   } catch (err: any) {
     console.error('Failed to retry notification:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
+// Cancel a notification in queue
+router.post('/notifications/:id/cancel', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { messagingQueue } = await import('../services/messagingQueue.js');
+    const success = await messagingQueue.cancelMessage(Number(id));
+    if (success) {
+      res.json({ success: true, message: 'Notification successfully cancelled' });
+    } else {
+      res.status(400).json({ error: 'Failed to cancel notification. Message might not be in pending or failed status.' });
+    }
+  } catch (err: any) {
+    console.error('Failed to cancel notification:', err);
     res.status(500).json({ error: 'Internal server error: ' + err.message });
   }
 });
@@ -94,6 +89,28 @@ router.post('/notifications/:id/manual', async (req, res) => {
   } catch (err: any) {
     console.error('Failed to mark manual status:', err);
     res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
+// Convert special order to recurring refill
+router.post('/convert-to-refill', async (req, res) => {
+  const { orderId, refillIntervalDays } = req.body;
+  if (!orderId || !refillIntervalDays) {
+    return res.status(400).json({ error: 'orderId and refillIntervalDays are required' });
+  }
+  try {
+    const { orderFulfillmentService } = await import('../services/orderFulfillmentService.js');
+    const result = await orderFulfillmentService.convertToRecurringRefill(
+      Number(orderId),
+      Number(refillIntervalDays)
+    );
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to convert to refill: ' + err.message });
   }
 });
 

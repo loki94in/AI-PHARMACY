@@ -26,7 +26,7 @@ interface SuggestionMedicine {
 }
 
 const getStockStyle = (stockStr: string | undefined): string => {
-  if (!stockStr) return 'bg-zinc-700/30 text-muted/80 border border-zinc-700/50';
+  if (!stockStr) return 'bg-bg3 text-muted border border-border';
   const stock = stockStr.trim();
   
   if (stock.toLowerCase() === 'high') {
@@ -50,7 +50,7 @@ const getStockStyle = (stockStr: string | undefined): string => {
     }
   }
   
-  return 'bg-zinc-700/30 text-muted/80 border border-zinc-700/50';
+  return 'bg-bg3 text-muted border border-border';
 };
 
 interface SchemeInfo {
@@ -389,16 +389,41 @@ export const QuickOrderModal: React.FC = () => {
 
         const mergedList: SuggestionMedicine[] = [];
 
-        // 1. Add local matches
+        // 1. Add local matches (grouped by medicine name to sum stock across batches)
         if (Array.isArray(localData)) {
+          const groupedLocal: Record<string, {
+            medicine_id?: number;
+            medicine_name: string;
+            quantity: number;
+            mrp?: number;
+          }> = {};
+
           localData.forEach((item: any) => {
+            const name = item.medicine_name || item.name || '';
+            const key = name.toLowerCase().trim();
+            const qty = Number(item.quantity) || 0;
+            
+            if (!groupedLocal[key]) {
+              groupedLocal[key] = {
+                medicine_id: item.medicine_id,
+                medicine_name: name,
+                quantity: qty,
+                mrp: item.mrp
+              };
+            } else {
+              groupedLocal[key].quantity += qty;
+              if (item.mrp && (!groupedLocal[key].mrp || item.mrp > groupedLocal[key].mrp)) {
+                groupedLocal[key].mrp = item.mrp;
+              }
+            }
+          });
+
+          Object.values(groupedLocal).forEach((med) => {
             mergedList.push({
-              inventory_id: item.inventory_id,
-              medicine_id: item.medicine_id,
-              medicine_name: item.medicine_name || item.name,
-              batch_no: item.batch_no,
-              quantity: item.quantity,
-              mrp: item.mrp,
+              medicine_id: med.medicine_id,
+              medicine_name: med.medicine_name,
+              quantity: med.quantity,
+              mrp: med.mrp,
               isPharmarack: false
             });
           });
@@ -509,6 +534,7 @@ export const QuickOrderModal: React.FC = () => {
       setSelectedCompany(med.company || '');
       setSelectedPackaging(med.packaging || '');
     } else {
+      setProduct(med.medicine_name);
       setSelectedDistributor('');
       setSelectedRate('');
       setSelectedMrp('');
@@ -667,12 +693,12 @@ export const QuickOrderModal: React.FC = () => {
 
   return createPortal(
     <div className="fixed inset-0 z-global-modal flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
-      <div className="glass-panel max-w-md md:max-w-3xl w-full p-6 relative border border-glass-border shadow-[0_0_50px_rgba(59,130,246,0.2)] bg-zinc-900/90 text-text animate-in fade-in zoom-in-95 duration-200">
+      <div className="glass-panel max-w-md md:max-w-3xl w-full p-6 relative border border-glass-border shadow-[0_0_50px_rgba(59,130,246,0.2)] bg-bg2 text-text animate-in fade-in zoom-in-95 duration-200">
         
         {/* Close Button */}
         <button 
           onClick={() => setIsOpen(false)}
-          className="absolute top-4 right-4 p-1.5 text-muted hover:text-white rounded-lg hover:bg-white/5 transition-all"
+          className="absolute top-4 right-4 p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all"
           title="Close Modal (Esc)"
         >
           <X size={18} />
@@ -684,9 +710,9 @@ export const QuickOrderModal: React.FC = () => {
             <ClipboardList size={20} />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <h3 className="text-lg font-bold text-text flex items-center gap-2">
               Quick Special Request
-              <span className="text-[10px] bg-white/5 border border-glass-border text-muted px-2 py-0.5 rounded font-mono">Alt + O</span>
+              <span className="text-[10px] bg-bg3 border border-glass-border text-muted px-2 py-0.5 rounded font-mono">Alt + O</span>
               {prMode !== 'Unknown' && (
                 <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full border leading-none bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
                   ● LIVE
@@ -731,7 +757,7 @@ export const QuickOrderModal: React.FC = () => {
                   </div>
                   
                   {showSuggestions && suggestions.length > 0 && (
-                    <ul className="absolute z-[999999] left-0 right-0 mt-1 max-h-96 overflow-y-auto bg-zinc-950/95 border border-glass-border backdrop-blur-xl rounded-xl shadow-2xl divide-y divide-glass-border/30 py-2">
+                    <ul className="absolute z-[999999] left-0 right-0 mt-1 max-h-96 overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-xl rounded-xl shadow-2xl divide-y divide-glass-border/30 py-2">
                       {suggestions.map((med, index) => {
                         const isPr = med.isPharmarack;
                         return (
@@ -742,8 +768,8 @@ export const QuickOrderModal: React.FC = () => {
                               med.isErrorMessage
                                 ? 'bg-red-500/10 text-red border-l-2 border-red cursor-default'
                                 : index === activeSuggestionIndex 
-                                ? 'bg-primary/20 text-white font-medium border-l-2 border-primary' 
-                                : 'text-muted hover:text-white hover:bg-white/5'
+                                ? 'bg-primary/20 text-text font-semibold border-l-2 border-primary' 
+                                : 'text-muted hover:text-text hover:bg-bg3'
                             }`}
                           >
                             <div className="flex-1 min-w-0 pr-2">
@@ -1003,9 +1029,9 @@ export const QuickOrderModal: React.FC = () => {
                               ? p === 'High' 
                                 ? 'bg-red-500/20 text-red border border-red-500/30 shadow-sm' 
                                 : p === 'Low'
-                                ? 'bg-zinc-700/50 text-zinc-300 border border-zinc-600/30'
+                                ? 'bg-bg3 text-text border border-border'
                                 : 'bg-primary/20 text-primary border border-primary/30 shadow-sm'
-                              : 'text-muted hover:text-text hover:bg-white/5'
+                              : 'text-muted hover:text-text hover:bg-bg3'
                           }`}
                         >
                           {p}
@@ -1090,7 +1116,7 @@ export const QuickOrderModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="flex-1 bg-white/5 hover:bg-white/10 border border-glass-border/50 premium-btn text-muted hover:text-white text-xs font-bold py-2"
+                className="flex-1 bg-bg3 hover:bg-bg2 border border-glass-border/50 premium-btn text-muted hover:text-text text-xs font-bold py-2"
               >
                 Cancel
               </button>
@@ -1126,7 +1152,7 @@ export const QuickOrderModal: React.FC = () => {
               
               <div className="text-xs space-y-3 text-text/90">
                 <p>
-                  You are staging <span className="font-bold text-white">"{pendingItemToAdd.product}"</span> (Qty: {pendingItemToAdd.qty}), which is similar to an item already in your list:
+                  You are staging <span className="font-bold text-text">"{pendingItemToAdd.product}"</span> (Qty: {pendingItemToAdd.qty}), which is similar to an item already in your list:
                 </p>
                 <div className="bg-bg3/60 border border-glass-border/30 rounded-xl p-3 space-y-1">
                   <div className="font-bold text-text truncate">"{duplicateMatch.product}"</div>
@@ -1165,7 +1191,7 @@ export const QuickOrderModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleResolveCancel}
-                  className="w-full py-2 bg-white/5 hover:bg-white/10 border border-glass-border text-muted hover:text-white text-xs font-bold rounded-xl transition-all"
+                  className="w-full py-2 bg-bg3 hover:bg-bg2 border border-glass-border text-muted hover:text-text text-xs font-bold rounded-xl transition-all"
                 >
                   Cancel / Ignore Addition
                 </button>

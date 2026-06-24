@@ -289,6 +289,20 @@ ensureSchema(DB_PATH).then(async () => {
         // 2. WhatsApp Queue Worker (started always; checks automation_enabled inside processQueue)
         whatsappQueue.startWorker();
 
+        // Start new background services for Pharmarack, messaging queue and refills
+        try {
+          const { tokenRefreshScheduler } = await import('./services/tokenRefreshScheduler.js');
+          tokenRefreshScheduler.start();
+          
+          const { messagingQueue } = await import('./services/messagingQueue.js');
+          messagingQueue.start();
+
+          const { orderFulfillmentService } = await import('./services/orderFulfillmentService.js');
+          orderFulfillmentService.start();
+        } catch (srvErr) {
+          console.error('Failed to start background services:', srvErr);
+        }
+
         // 8. Doctor WhatsApp Reporting Scheduler (started always; checks internally)
         import('./services/doctorReportingService.js')
           .then(m => m.startDoctorReportingScheduler())
@@ -373,6 +387,14 @@ ensureSchema(DB_PATH).then(async () => {
       workerSupervisor.start();
     } catch (err) {
       console.error('Failed to start worker supervisor:', err);
+    }
+
+    // Start Pharmarack background token refresh scheduler
+    try {
+      const { tokenRefreshScheduler } = await import('./services/tokenRefreshScheduler.js');
+      tokenRefreshScheduler.start();
+    } catch (err) {
+      console.error('Failed to start Pharmarack token refresh scheduler:', err);
     }
 
     // Initialize Telegram Bot Service from DB settings

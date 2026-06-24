@@ -241,3 +241,12 @@ This breaks the light mode/theme toggle.
 - **Never show a simulated or simulation Pharmarack cart ("pharmacart") in the app.**
 - **Never show any simulation or mock interface mode.** Remove all badges, labels, toggles, or options referencing "Simulation" or "Simulated" modes for the Pharmarack cart or other app components.
 - **Only display live features and live data at all times.** Do not present placeholder or mockup screens for development features in the user-facing UI; if a feature is in development, do not expose a simulated front-end for it.
+
+---
+
+## Pharmarack Session Persistence Contract
+
+To prevent daily session expiration and repetitive OTP prompts:
+1. **Background Refresh Scheduler**: Automatically checks and navigates to the Pharmarack dashboard headlessly every 20 minutes to keep the session rolling and capture refreshed API authorization tokens.
+2. **Profile Lock Resolution**: Chrome profile lock files (`SingletonLock`, `lockfile`, etc.) are cleaned dynamically before launching Puppeteer to avoid lock crashes.
+3. **Session Cookie Preservation**: When background refreshes or cart fallbacks copy the profile directory to a temporary path, the updated session data and rolling cookies must be copied back to the main profile (`data/pharmarack_profile`) on exit, ensuring the primary profile remains authenticated.
