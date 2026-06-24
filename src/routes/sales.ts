@@ -421,6 +421,121 @@ router.get('/recommend-quantity', async (req, res) => {
   }
 });
 
+// Get batch recommendations for a list of medicine names in a single query
+router.get('/recommend-quantity/batch', async (req, res) => {
+  const namesParam = req.query.medicineNames as string;
+  if (!namesParam) {
+    return res.status(400).json({ error: 'medicineNames query parameter required' });
+  }
+
+  const medicineNames = namesParam.split(',').map(n => n.trim()).filter(Boolean);
+  if (medicineNames.length === 0) {
+    return res.json({});
+  }
+
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const results: Record<string, { recommendedQty: number, type: string, message: string }> = {};
+
+    // 1. Fetch matching medicine IDs using exact IN query
+    const placeholders = medicineNames.map(() => '?').join(',');
+    const meds = await db.all(
+      `SELECT id, name FROM medicines WHERE name IN (${placeholders})`,
+      medicineNames
+    );
+
+    const medIdToName: Record<number, string> = {};
+    const medIds: number[] = [];
+    
+    meds.forEach(m => {
+      medIdToName[m.id] = m.name;
+      medIds.push(m.id);
+    });
+
+    // For any name that didn't have an exact match, try a quick LIKE query
+    const exactMatchedNames = new Set(meds.map(m => m.name.toLowerCase()));
+    for (const name of medicineNames) {
+      if (!exactMatchedNames.has(name.toLowerCase())) {
+        const partialMed = await db.get(
+          'SELECT id, name FROM medicines WHERE name LIKE ? LIMIT 1',
+          `%${name}%`
+        );
+        if (partialMed) {
+          medIds.push(partialMed.id);
+          medIdToName[partialMed.id] = name;
+        } else {
+          results[name] = { recommendedQty: 1, type: 'strip', message: 'Default: 1 strip recommended' };
+        }
+      }
+    }
+
+    if (medIds.length > 0) {
+      const idPlaceholders = medIds.map(() => '?').join(',');
+      // Query historical sales quantities for all these medicines in a single query
+      const historyRows = await db.all(
+        `SELECT im.medicine_id, si.quantity, COUNT(*) as count 
+         FROM sale_items si
+         JOIN inventory_master im ON si.inventory_id = im.id
+         WHERE im.medicine_id IN (${idPlaceholders})
+         GROUP BY im.medicine_id, si.quantity
+         ORDER BY count DESC`,
+        medIds
+      );
+
+      // Group by medicine_id to find the most frequent quantity
+      const bestMedsQty: Record<number, { quantity: number; count: number }> = {};
+      for (const row of historyRows) {
+        if (!bestMedsQty[row.medicine_id]) {
+          bestMedsQty[row.medicine_id] = { quantity: row.quantity, count: row.count };
+        }
+      }
+
+      // Map recommendations back to names
+      for (const medId of medIds) {
+        const name = medIdToName[medId];
+        const rec = bestMedsQty[medId];
+        if (rec) {
+          const qty = rec.quantity;
+          let recommendedType = 'strip';
+          let displayQty = qty;
+
+          if (qty < 10) {
+            recommendedType = 'loose';
+            displayQty = qty;
+          } else if (qty % 10 === 0) {
+            recommendedType = 'strip';
+            displayQty = qty / 10;
+          } else {
+            recommendedType = 'loose';
+            displayQty = qty;
+          }
+
+          results[name] = {
+            recommendedQty: displayQty,
+            type: recommendedType,
+            message: `Recommended: ${displayQty} ${recommendedType === 'strip' ? 'strip(s)' : 'loose unit(s)'} (based on ${rec.count} past order(s))`
+          };
+        } else {
+          results[name] = { recommendedQty: 1, type: 'strip', message: 'Default: 1 strip recommended' };
+        }
+      }
+    }
+
+    // Fill in default for any remaining queried names
+    for (const name of medicineNames) {
+      if (!results[name]) {
+        results[name] = { recommendedQty: 1, type: 'strip', message: 'Default: 1 strip recommended' };
+      }
+    }
+
+    res.json(results);
+  } catch (error) {
+    console.error('Failed to get batch recommendation:', error);
+    res.status(500).json({ error: 'Failed to analyze previous sales data' });
+  }
+});
+
 
 
 // List all sales invoices with customer info and items
@@ -573,37 +688,122 @@ router.get('/search-medicine', async (req, res) => {
   let db;
   try {
     db = await dbManager.getConnection();
-    const likeQuery = `%${query}%`;
+    const cleanQuery = query.trim();
+    const isNumeric = /^\d+(\.\d+)?$/.test(cleanQuery);
     
-    // Strictly inventory search query (only return medicines registered in inventory_master)
-    const sql = `
-      SELECT 
-        m.id AS medicine_id, 
-        m.name AS medicine_name, 
-        m.api_reference,
-        m.item_code AS item_code,
-        im.id AS inventory_id, 
-        im.batch_no, 
-        im.expiry_date, 
-        im.quantity, 
-        COALESCE(im.mrp, m.mrp, 0) AS mrp, 
-        im.unit_price, 
-        COALESCE(im.cost_price, 0) AS cost_price,
-        m.cgst, 
-        m.sgst, 
-        m.igst, 
-        m.hsn_code,
-        CASE WHEN im.quantity <= 0 THEN 1 ELSE 0 END AS is_out_of_stock
-      FROM inventory_master im
-      JOIN medicines m ON im.medicine_id = m.id
-      WHERE (m.name LIKE ? 
-         OR im.batch_no LIKE ? 
-         OR m.item_code LIKE ?
-         OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?)
-      ORDER BY m.name ASC, im.quantity DESC
-      LIMIT 30
-    `;
-    const rows = await db.all(sql, [likeQuery, likeQuery, likeQuery, likeQuery]);
+    let rows = [];
+    if (isNumeric) {
+      // Numeric query: search by item_code, MRP text cast, batch, or name prefix/infix
+      const exactQuery = cleanQuery;
+      const likeQuery = `%${cleanQuery}%`;
+      const sql = `
+        SELECT 
+          m.id AS medicine_id, 
+          m.name AS medicine_name, 
+          m.api_reference,
+          m.item_code AS item_code,
+          m.manufacturer AS manufacturer,
+          im.id AS inventory_id, 
+          im.batch_no, 
+          MIN(im.expiry_date) AS expiry_date, 
+          SUM(im.quantity) AS quantity, 
+          COALESCE(im.mrp, m.mrp, 0) AS mrp, 
+          im.unit_price, 
+          COALESCE(im.cost_price, 0) AS cost_price,
+          m.cgst, 
+          m.sgst, 
+          m.igst, 
+          m.hsn_code,
+          0 AS is_out_of_stock
+        FROM inventory_master im
+        JOIN medicines m ON im.medicine_id = m.id
+        WHERE (m.item_code = ? 
+           OR m.name LIKE ? 
+           OR CAST(COALESCE(im.mrp, 0) AS TEXT) LIKE ?
+           OR im.batch_no LIKE ?)
+          AND im.quantity > 0
+          AND date(im.expiry_date) >= date('now')
+        GROUP BY m.id, COALESCE(im.mrp, m.mrp, 0)
+        ORDER BY m.name ASC
+        LIMIT 30
+      `;
+      rows = await db.all(sql, [exactQuery, likeQuery, likeQuery, likeQuery]);
+    } else {
+      // Alphabetical query: try fast index prefix search on m.name first
+      const prefixQuery = `${cleanQuery}%`;
+      const prefixSql = `
+        SELECT 
+          m.id AS medicine_id, 
+          m.name AS medicine_name, 
+          m.api_reference,
+          m.item_code AS item_code,
+          m.manufacturer AS manufacturer,
+          im.id AS inventory_id, 
+          im.batch_no, 
+          MIN(im.expiry_date) AS expiry_date, 
+          SUM(im.quantity) AS quantity, 
+          COALESCE(im.mrp, m.mrp, 0) AS mrp, 
+          im.unit_price, 
+          COALESCE(im.cost_price, 0) AS cost_price,
+          m.cgst, 
+          m.sgst, 
+          m.igst, 
+          m.hsn_code,
+          0 AS is_out_of_stock
+        FROM inventory_master im
+        JOIN medicines m ON im.medicine_id = m.id
+        WHERE m.name LIKE ?
+          AND im.quantity > 0
+          AND date(im.expiry_date) >= date('now')
+        GROUP BY m.id, COALESCE(im.mrp, m.mrp, 0)
+        ORDER BY m.name ASC
+        LIMIT 30
+      `;
+      rows = await db.all(prefixSql, [prefixQuery]);
+
+      // Fall back to general name/item_code infix search only if we got fewer than 15 rows
+      if (rows.length < 15) {
+        const likeQuery = `%${cleanQuery}%`;
+        const fallbackSql = `
+          SELECT 
+            m.id AS medicine_id, 
+            m.name AS medicine_name, 
+            m.api_reference,
+            m.item_code AS item_code,
+            m.manufacturer AS manufacturer,
+            im.id AS inventory_id, 
+            im.batch_no, 
+            MIN(im.expiry_date) AS expiry_date, 
+            SUM(im.quantity) AS quantity, 
+            COALESCE(im.mrp, m.mrp, 0) AS mrp, 
+            im.unit_price, 
+            COALESCE(im.cost_price, 0) AS cost_price,
+            m.cgst, 
+            m.sgst, 
+            m.igst, 
+            m.hsn_code,
+            0 AS is_out_of_stock
+          FROM inventory_master im
+          JOIN medicines m ON im.medicine_id = m.id
+          WHERE (m.name LIKE ? OR m.item_code LIKE ?)
+            AND im.quantity > 0
+            AND date(im.expiry_date) >= date('now')
+          GROUP BY m.id, COALESCE(im.mrp, m.mrp, 0)
+          ORDER BY m.name ASC
+          LIMIT 30
+        `;
+        const fallbackRows = await db.all(fallbackSql, [likeQuery, likeQuery]);
+        
+        // Merge without duplicates
+        const seenIds = new Set(rows.map(r => r.inventory_id));
+        for (const row of fallbackRows) {
+          if (!seenIds.has(row.inventory_id)) {
+            rows.push(row);
+            if (rows.length >= 30) break;
+          }
+        }
+      }
+    }
     
     // Map SQLite numeric values back to boolean for is_out_of_stock compatibility
     for (const row of rows) {

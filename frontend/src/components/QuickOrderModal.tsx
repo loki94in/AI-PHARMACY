@@ -370,26 +370,24 @@ export const QuickOrderModal: React.FC = () => {
       return;
     }
 
-    if (product.trim().length < 3) {
+    const query = product.trim();
+    if (query.length < 3) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
 
+    let active = true;
+
     const delayDebounce = setTimeout(async () => {
       setSearchLoading(true);
+      let localSuggestions: SuggestionMedicine[] = [];
+
+      // 1. Run local search immediately and render results instantly
       try {
-        const [localData, prData] = await Promise.all([
-          api.searchMedicine(product).catch(() => []),
-          api.searchPharmarack(product).catch((err: any) => {
-            const errMsg = err?.response?.data?.error || 'Connection error, please check internet or reconnect';
-            return { isError: true, message: errMsg };
-          })
-        ]);
+        const localData = await api.searchMedicine(query).catch(() => []);
+        if (!active) return;
 
-        const mergedList: SuggestionMedicine[] = [];
-
-        // 1. Add local matches (grouped by medicine name to sum stock across batches)
         if (Array.isArray(localData)) {
           const groupedLocal: Record<string, {
             medicine_id?: number;
@@ -419,7 +417,7 @@ export const QuickOrderModal: React.FC = () => {
           });
 
           Object.values(groupedLocal).forEach((med) => {
-            mergedList.push({
+            localSuggestions.push({
               medicine_id: med.medicine_id,
               medicine_name: med.medicine_name,
               quantity: med.quantity,
@@ -429,15 +427,30 @@ export const QuickOrderModal: React.FC = () => {
           });
         }
 
-        // 2. Add Pharmarack matches or Error message
+        setSuggestions(localSuggestions);
+        setShowSuggestions(localSuggestions.length > 0);
+        setActiveSuggestionIndex(-1);
+      } catch (err) {
+        console.error('Error searching local medicines:', err);
+      }
+
+      // 2. Run Pharmarack search in parallel and stream results when ready
+      try {
+        const prData = await api.searchPharmarack(query).catch((err: any) => {
+          const errMsg = err?.response?.data?.error || 'Connection error, please check internet or reconnect';
+          return { isError: true, message: errMsg };
+        });
+
+        if (!active) return;
+
+        const prSuggestions: SuggestionMedicine[] = [];
         if (prData && (prData as any).isError) {
-          mergedList.push({
+          prSuggestions.push({
             medicine_name: `⚠️ ${(prData as any).message}`,
             isPharmarack: true,
             isErrorMessage: true
           });
         } else if (Array.isArray(prData)) {
-          const query = product.trim();
           const hasMapped = prData.some((item: any) => item.mapped);
           if (prData.length === 0 || !hasMapped) {
             if (query.length >= 3 && query !== lastToastedQueryRef.current) {
@@ -447,7 +460,7 @@ export const QuickOrderModal: React.FC = () => {
           }
 
           prData.forEach((item: any) => {
-            mergedList.push({
+            prSuggestions.push({
               medicine_name: item.name,
               mrp: item.mrp,
               isPharmarack: true,
@@ -465,17 +478,23 @@ export const QuickOrderModal: React.FC = () => {
           });
         }
 
-        setSuggestions(mergedList);
-        setShowSuggestions(mergedList.length > 0);
-        setActiveSuggestionIndex(-1);
+        // Merge local suggestions and new Pharmarack suggestions
+        const merged = [...localSuggestions, ...prSuggestions];
+        setSuggestions(merged);
+        setShowSuggestions(merged.length > 0);
       } catch (err) {
-        console.error('Error searching for quick order:', err);
+        console.error('Error searching Pharmarack:', err);
       } finally {
-        setSearchLoading(false);
+        if (active) {
+          setSearchLoading(false);
+        }
       }
-    }, 500);
+    }, 300); // Snape-fast 300ms debounce
 
-    return () => clearTimeout(delayDebounce);
+    return () => {
+      active = false;
+      clearTimeout(delayDebounce);
+    };
   }, [product]);
 
   // Autocomplete key navigation
@@ -808,7 +827,9 @@ export const QuickOrderModal: React.FC = () => {
                                   </span>
                                 )
                               ) : (
-                                med.batch_no && <span className="text-xs text-muted/60 block mt-1">Batch: {med.batch_no}</span>
+                                <span className="text-xs text-muted block truncate mt-1">
+                                  Company: <span className="text-text font-semibold">{med.company || med.manufacturer || 'Generic'}</span>
+                                </span>
                               )}
                             </div>
                             <div className="text-right flex-shrink-0 flex flex-col justify-center items-end">
@@ -824,11 +845,9 @@ export const QuickOrderModal: React.FC = () => {
                                   </div>
                                 )
                               ) : (
-                                med.quantity !== undefined && (
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                    med.quantity <= 0 ? 'bg-red-500/10 text-red border border-red-500/20' : 'bg-green-500/10 text-green border border-green-500/20'
-                                  }`}>
-                                    {med.quantity} in stock
+                                med.mrp !== undefined && (
+                                  <span className="text-xs font-mono font-bold text-green">
+                                    MRP: ₹{Math.round(med.mrp)}
                                   </span>
                                 )
                               )}

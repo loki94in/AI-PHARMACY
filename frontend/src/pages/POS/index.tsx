@@ -43,6 +43,9 @@ const getInitialPOSActiveTabId = (initialTabs: any[]) => {
   return initialTabs[0]?.id || 'default';
 };
 
+let cachedDoctors: any[] | null = null;
+let cachedCommonCombinations: any[] | null = null;
+
 const POS = () => {
   const initialTabs = getInitialPOSTabs();
   const initialActiveTabId = getInitialPOSActiveTabId(initialTabs);
@@ -237,7 +240,7 @@ const POS = () => {
     setPatientName(name);
   };
   
-  const [doctorsList, setDoctorsList] = useState<any[]>([]);
+  const [doctorsList, setDoctorsList] = useState<any[]>(cachedDoctors || []);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [onlineResults, setOnlineResults] = useState<any[]>([]);
   const [searchingOnline, setSearchingOnline] = useState(false);
@@ -270,6 +273,7 @@ const POS = () => {
       .then(data => {
         if (Array.isArray(data)) {
           setDoctorsList(data);
+          cachedDoctors = data;
         }
       })
       .catch(err => console.error('Error fetching doctors:', err));
@@ -294,30 +298,31 @@ const POS = () => {
             quantity: med.stock_quantity
           }));
 
-          // Batch enrich with recommended quantities from sales history
+          // Batch enrich with recommended quantities in a single backend call!
           try {
-            const enriched = await Promise.all(
-              topItems.map(async med => {
-                try {
-                  const rec = await apiClient.get('/sales/recommend-quantity', { params: { medicineName: med.name } });
-                  if (rec.data) {
-                    return {
-                      ...med,
-                      recommendedQty: rec.data.type === 'strip' ? (rec.data.recommendedQty || 1) : 0,
-                      recommendedLooseQty: rec.data.type === 'loose' ? (rec.data.recommendedQty || 1) : 0,
-                      recommendationMsg: rec.data.message || ''
-                    };
-                  }
-                } catch (e) {
-                  console.warn(`Failed to fetch recommended quantity for ${med.name}:`, e);
-                }
-                return med;
-              })
-            );
+            const medNames = topItems.map(m => m.name).join(',');
+            const response = await apiClient.get('/sales/recommend-quantity/batch', { params: { medicineNames: medNames } });
+            const recommendations = response.data || {};
+
+            const enriched = topItems.map(med => {
+              const rec = recommendations[med.name];
+              if (rec) {
+                return {
+                  ...med,
+                  recommendedQty: rec.type === 'strip' ? (rec.recommendedQty || 1) : 0,
+                  recommendedLooseQty: rec.type === 'loose' ? (rec.recommendedQty || 1) : 0,
+                  recommendationMsg: rec.message || ''
+                };
+              }
+              return med;
+            });
+
             setCommonCombinations(enriched);
+            cachedCommonCombinations = enriched;
           } catch (err) {
             console.error('Batch quantity enrichment failed:', err);
             setCommonCombinations(topItems);
+            cachedCommonCombinations = topItems;
           }
         }
       })
@@ -483,22 +488,8 @@ const POS = () => {
             }
 
             setSearchResults(data);
-            
-            const needsOnline = data.length === 0 || data.some(m => !m.api_reference || m.api_reference.trim() === '');
-            if (needsOnline) {
-              setSearchingOnline(true);
-              api.onlineSearch(searchTerm)
-                .then(online => {
-                  if (Array.isArray(online)) {
-                    setOnlineResults(online);
-                  }
-                })
-                .catch(err => console.error('Online search failed:', err))
-                .finally(() => setSearchingOnline(false));
-            } else {
-              setOnlineResults([]);
-              setSearchingOnline(false);
-            }
+            setOnlineResults([]);
+            setSearchingOnline(false);
           }
         })
         .catch(err => {
@@ -1050,11 +1041,6 @@ const POS = () => {
                     <div className="flex flex-col">
                       {searchResults.map((med) => {
                         const renderMedicineItem = (item: any, isAlt = false) => {
-                          const pendingMatches = specialOrders.filter(
-                            o => o.product.toLowerCase().trim() === item.medicine_name.toLowerCase().trim() ||
-                                 item.medicine_name.toLowerCase().includes(o.product.toLowerCase().trim())
-                          );
-                          const hasPending = pendingMatches.length > 0;
                           return (
                             <button
                               key={item.inventory_id || `item_${item.medicine_id}_${Math.random()}`}
@@ -1081,18 +1067,12 @@ const POS = () => {
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {isAlt && <span className="text-[9px] bg-sky/20 text-sky px-1.5 py-0.5 rounded font-bold mr-1">ALT</span>}
                                   <span className="font-semibold text-text group-hover:text-primary transition-all">{item.medicine_name}</span>
-                                  {hasPending && (
-                                    <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[9px] font-bold animate-pulse">
-                                      ⚠️ Request: {pendingMatches[0].requester} ({pendingMatches[0].qty})
-                                    </span>
-                                  )}
                                 </div>
-                                <span className="text-[9px] text-muted">Batch: <span className="font-mono text-text">{item.batch_no}</span> | Exp: <span className="font-mono text-text">{item.expiry_date}</span></span>
+                                <span className="text-[9px] text-muted">Company: <span className="text-text font-semibold">{item.manufacturer || 'Generic'}</span></span>
                               </div>
                               <div className="flex items-center gap-4">
                                 <div className="text-right">
                                   <div className="font-mono text-green font-bold">MRP: ₹{Math.round(item.mrp)}</div>
-                                  <div className="text-[9px] text-muted">{item.quantity} units in stock</div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <button

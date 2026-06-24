@@ -33,9 +33,12 @@ const formatExpiryToMMYY = (val: string): string => {
   return val;
 };
 
+let cachedItems: any[] | null = null;
+let cachedSpecialOrders: any[] | null = null;
+
 const Inventory = () => {
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<InventoryItem[]>(cachedItems || []);
+  const [loading, setLoading] = useState(cachedItems ? false : true);
   const [colFilters, setColFilters] = useState({
     medicine: '', batch: '', expiry: '', packs: '', loose: '', mrp: '', rack: ''
   });
@@ -52,14 +55,18 @@ const Inventory = () => {
   
   const [universalEditMedicineId, setUniversalEditMedicineId] = useState<number | null>(null);
 
-  const [specialOrders, setSpecialOrders] = useState<any[]>([]);
+  const [specialOrders, setSpecialOrders] = useState<any[]>(cachedSpecialOrders || []);
 
   const loadInventory = useCallback(() => {
-    setLoading(true);
+    if (!cachedItems) {
+      setLoading(true);
+    }
     api.getInventory({ limit: 1000 })
       .then(data => {
         const fetchedItems = data && (data as any).data ? (data as any).data : data;
-        setItems(Array.isArray(fetchedItems) ? fetchedItems : []);
+        const list = Array.isArray(fetchedItems) ? fetchedItems : [];
+        setItems(list);
+        cachedItems = list;
         setLoading(false);
       })
       .catch(err => {
@@ -76,7 +83,9 @@ const Inventory = () => {
     api.getOrders()
       .then(data => {
         if (Array.isArray(data)) {
-          setSpecialOrders(data.filter(o => o.status === 'Pending' || o.status === 'Ordered'));
+          const activeOrders = data.filter(o => o.status === 'Pending' || o.status === 'Ordered');
+          setSpecialOrders(activeOrders);
+          cachedSpecialOrders = activeOrders;
         }
       })
       .catch(err => console.error('Error loading special orders for inventory:', err));

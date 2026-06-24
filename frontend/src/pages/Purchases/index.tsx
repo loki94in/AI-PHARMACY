@@ -207,6 +207,9 @@ const formatExpiryToMMYY = (val: string): string => {
   return val;
 };
 
+let cachedDistributors: any[] | null = null;
+let cachedPurchaseHistory: any[] | null = null;
+
 const Purchases: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -218,7 +221,7 @@ const Purchases: React.FC = () => {
   const [tabs, setTabs] = useState<any[]>(initialTabs);
   const [activeTabId, setActiveTabId] = useState<string>(initialActiveTabId);
 
-  const [distributors, setDistributors] = useState<Distributor[]>([]);
+  const [distributors, setDistributors] = useState<Distributor[]>(cachedDistributors || []);
   const [selectedDistributor, setSelectedDistributor] = useState<number | null>(initialActiveTab?.selectedDistributor || null);
   const [distributorSearch, setDistributorSearch] = useState(initialActiveTab?.distributorSearch || '');
   const [showDistributorDropdown, setShowDistributorDropdown] = useState(false);
@@ -233,7 +236,7 @@ const Purchases: React.FC = () => {
   const [pendingReturns, setPendingReturns] = useState<any[]>([]);
   const [showCreditNotesPanel, setShowCreditNotesPanel] = useState(false);
   const [items, setItems] = useState<BillItem[]>(initialActiveTab?.items || []);
-  const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistory[]>([]);
+  const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistory[]>(cachedPurchaseHistory || []);
   const [sourceFilename, setSourceFilename] = useState(initialActiveTab?.sourceFilename || '');
   const [sourceFileHeaders, setSourceFileHeaders] = useState<string[]>(initialActiveTab?.sourceFileHeaders || []);
   const [mappingConfig, setMappingConfig] = useState<Record<string, string>>(initialActiveTab?.mappingConfig || {});
@@ -692,6 +695,7 @@ const Purchases: React.FC = () => {
       const response = await api.getDistributors();
       const list = Array.isArray(response) ? response : (response.data || []);
       setDistributors(list);
+      cachedDistributors = list;
     } catch (error) {
       console.error('Error fetching distributors:', error);
     }
@@ -701,7 +705,9 @@ const Purchases: React.FC = () => {
     try {
       const list = await api.getPurchases();
       // STRICT RULE: Only show last 100
-      setPurchaseHistory(Array.isArray(list) ? list.slice(0, 100) : []);
+      const historyList = Array.isArray(list) ? list.slice(0, 100) : [];
+      setPurchaseHistory(historyList);
+      cachedPurchaseHistory = historyList;
     } catch (err) {
       console.error('Error fetching purchase history:', err);
     }
