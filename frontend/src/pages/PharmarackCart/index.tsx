@@ -48,6 +48,8 @@ export default function PharmarackCart() {
   const [addingOrderId, setAddingOrderId] = useState<number | null>(null);
   const [pendingRefills, setPendingRefills] = useState<Refill[]>(() => cachedPendingRefills);
   const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
+  const [reconciliationList, setReconciliationList] = useState<any[]>([]);
+  const [addingReconKey, setAddingReconKey] = useState<string | null>(null);
 
   const fetchPendingRefills = async () => {
     try {
@@ -119,6 +121,72 @@ export default function PharmarackCart() {
       toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
     } finally {
       setAddingRefillId(null);
+    }
+  };
+
+  const fetchReconciliationList = async () => {
+    try {
+      const data = await api.getReconciliationList();
+      if (Array.isArray(data)) {
+        const missing = data.filter(o => o.status === 'Missing' && !o.is_saved);
+        setReconciliationList(missing);
+      }
+    } catch (err) {
+      console.error('Failed to fetch reconciliation list in cart:', err);
+    }
+  };
+
+  const getReconciliationItemInCart = (medName: string) => {
+    const nameNorm = medName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const dist of distributors) {
+      for (const item of dist.items) {
+        const cartNameNorm = item.productName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cartNameNorm.includes(nameNorm) || nameNorm.includes(cartNameNorm)) {
+          return item;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleAddReconciliationToCart = async (medName: string, emailUid: number, itemKey: string) => {
+    setAddingReconKey(itemKey);
+    try {
+      toastEvent.trigger(`Searching Pharmarack for "${medName}"...`, 'info');
+      const searchResults = await api.searchPharmarack(medName);
+      if (!searchResults || searchResults.length === 0) {
+        toastEvent.trigger(`No Pharmarack matches found for "${medName}"`, 'error');
+        return;
+      }
+
+      const matchedItem = searchResults[0];
+      const payload = [{
+        productId: matchedItem.productId,
+        storeId: matchedItem.storeId,
+        qty: 1,
+        productCode: matchedItem.productCode,
+        productName: matchedItem.name,
+        company: matchedItem.company,
+        packaging: matchedItem.packaging,
+        rate: matchedItem.rate || 0,
+        mrp: matchedItem.mrp || 0,
+        storeName: matchedItem.distributor,
+        mapped: matchedItem.mapped
+      }];
+
+      const res = await api.addPharmarackCart(payload);
+      if (res && res.success) {
+        toastEvent.trigger(`Added "${medName}" to Pharmarack cart!`, 'success');
+        await fetchCart();
+        await fetchReconciliationList();
+      } else {
+        toastEvent.trigger(res?.error || 'Failed to add item to cart', 'error');
+      }
+    } catch (err: any) {
+      console.error('Failed to add reconciliation item to cart:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
+    } finally {
+      setAddingReconKey(null);
     }
   };
 
@@ -387,13 +455,14 @@ export default function PharmarackCart() {
     fetchCart();
     fetchPendingOrders();
     fetchPendingRefills();
+    fetchReconciliationList();
   }, []);
 
   const totalProducts = distributors.reduce((s, d) => s + d.items.length, 0);
   const totalQty = distributors.reduce((s, d) => s + d.items.reduce((q, i) => q + i.qty, 0), 0);
   const totalAmount = distributors.reduce((s, d) => s + d.items.reduce((a, i) => a + i.amount, 0), 0);
 
-  // Map and sort special orders and refills into a unified pending list
+  // Map and sort special orders, refills, and unreconciled items into a unified pending list
   const unifiedPendingItems = [
     ...pendingOrders.map(order => ({
       key: `request-${order.id}`,
@@ -416,7 +485,23 @@ export default function PharmarackCart() {
       inCart: !!getRefillItemInCart(refill),
       onAdd: () => handleAddRefillToCart(refill),
       isAdding: addingRefillId === refill.id
-    }))
+    })),
+    ...reconciliationList.flatMap(recon => 
+      (recon.medicine_names || []).map((medName: string, idx: number) => {
+        const itemKey = `recon-${recon.email_uid}-${medName}`;
+        return {
+          key: itemKey,
+          type: 'reconcile' as const,
+          name: medName,
+          patientName: recon.extracted_distributor || 'Unknown Distributor',
+          qty: null,
+          date: recon.date,
+          inCart: !!getReconciliationItemInCart(medName),
+          onAdd: () => handleAddReconciliationToCart(medName, recon.email_uid, itemKey),
+          isAdding: addingReconKey === itemKey
+        };
+      })
+    )
   ].sort((a, b) => {
     // Sort items not in cart to the top
     if (a.inCart !== b.inCart) {
@@ -499,7 +584,9 @@ export default function PharmarackCart() {
                         ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400' 
                         : item.type === 'request'
                           ? 'bg-red/10 border-red/20 text-red'
-                          : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                          : item.type === 'refill'
+                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                            : 'bg-sky-500/10 border-sky-500/20 text-sky-400'
                     }`}
                   >
                     <div className="flex justify-between items-start">
@@ -510,9 +597,11 @@ export default function PharmarackCart() {
                               ? 'bg-emerald-500/25 border-emerald-500/20 text-emerald-400'
                               : item.type === 'request'
                                 ? 'bg-red/25 border-red/20 text-red'
-                                : 'bg-amber-500/25 border-amber-500/20 text-amber-400'
+                                : item.type === 'refill'
+                                  ? 'bg-amber-500/25 border-amber-500/20 text-amber-400'
+                                  : 'bg-sky-500/25 border-sky-500/20 text-sky-400'
                           }`}>
-                            {item.type}
+                            {item.type === 'request' ? 'Request' : item.type === 'refill' ? 'Refill' : 'Reconcile'}
                           </span>
                         </div>
 
@@ -520,7 +609,7 @@ export default function PharmarackCart() {
                           {item.name}
                         </span>
                         <span className="text-[9px] text-muted mt-0.5 truncate">
-                          {item.type === 'request' ? 'Customer' : 'Patient'}: {item.patientName} {item.qty !== null ? `(Qty: ${item.qty})` : ''}
+                          {item.type === 'request' ? 'Customer' : item.type === 'refill' ? 'Patient' : 'Missing from'}: {item.patientName} {item.qty !== null ? `(Qty: ${item.qty})` : ''}
                         </span>
                         <span className="text-[8px] text-muted/80 font-mono mt-0.2">
                           {item.type === 'request' ? 'Request Date' : 'Due Date'}: {new Date(item.date).toLocaleDateString('en-IN')}
@@ -537,7 +626,9 @@ export default function PharmarackCart() {
                           className={`shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 font-sans border ${
                             item.type === 'request'
                               ? 'bg-red/20 hover:bg-red/35 border-red/30 text-red'
-                              : 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-500/30 text-amber-500'
+                              : item.type === 'refill'
+                                ? 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-500/30 text-amber-500'
+                                : 'bg-sky-500/20 hover:bg-sky-500/35 border-sky-500/30 text-sky-400'
                           }`}
                         >
                           {item.isAdding ? 'Adding...' : 'Add'}

@@ -144,6 +144,11 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [cartLoading, setCartLoading] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
 
+  // Reconciliation States
+  const [reconciliationList, setReconciliationList] = useState<any[]>([]);
+  const [distributorPickerReconId, setDistributorPickerReconId] = useState<string | null>(null);
+  const [addingReconKey, setAddingReconKey] = useState<string | null>(null);
+
   // Pending Orders States and Functions
   const [pendingOrders, setPendingOrders] = useState<SpecialOrder[]>([]);
   const [addingOrderId, setAddingOrderId] = useState<number | null>(null);
@@ -184,6 +189,102 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       }
     } catch (err) {
       console.error('Failed to fetch pending refills in modal:', err);
+    }
+  };
+
+  const fetchReconciliationList = async () => {
+    try {
+      const data = await api.getReconciliationList();
+      if (Array.isArray(data)) {
+        const missing = data.filter(o => o.status === 'Missing' && !o.is_saved);
+        setReconciliationList(missing);
+      }
+    } catch (err) {
+      console.error('Failed to fetch reconciliation list in modal:', err);
+    }
+  };
+
+  const getReconciliationItemInCart = (medName: string) => {
+    const nameNorm = medName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const dist of cartDistributors) {
+      for (const item of dist.items) {
+        const cartNameNorm = item.productName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cartNameNorm.includes(nameNorm) || nameNorm.includes(cartNameNorm)) {
+          return item;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleSearchDistributorsForRecon = async (medName: string, itemKey: string) => {
+    setDistributorPickerReconId(itemKey);
+    setDistributorPickerResults([]);
+    setDistributorPickerLoading(true);
+    try {
+      const searchResults = await api.searchPharmarack(medName);
+      if (!searchResults || searchResults.length === 0) {
+        toastEvent.trigger(`No Pharmarack matches found for "${medName}"`, 'error');
+        setDistributorPickerReconId(null);
+        return;
+      }
+      const mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
+        medicine_name: item.name,
+        mrp: item.mrp,
+        isPharmarack: true,
+        distributor: item.distributor,
+        rate: item.rate,
+        mapped: item.mapped,
+        packaging: item.packaging,
+        stock: item.stock,
+        scheme: item.scheme,
+        productId: item.productId,
+        storeId: item.storeId,
+        productCode: item.productCode,
+        company: item.company
+      }));
+      setDistributorPickerResults(mapped);
+    } catch (err: any) {
+      console.error('Failed to search distributors for reconciliation item:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to search distributors', 'error');
+      setDistributorPickerReconId(null);
+    } finally {
+      setDistributorPickerLoading(false);
+    }
+  };
+
+  const handleConfirmReconDistributor = async (medName: string, emailUid: number, itemKey: string, picked: SuggestionMedicine) => {
+    setAddingReconKey(itemKey);
+    try {
+      const payload = [{
+        productId: picked.productId,
+        storeId: picked.storeId,
+        qty: 1,
+        productCode: picked.productCode,
+        productName: picked.medicine_name,
+        company: picked.company,
+        packaging: picked.packaging,
+        rate: picked.rate || 0,
+        mrp: picked.mrp || 0,
+        storeName: picked.distributor,
+        mapped: picked.mapped
+      }];
+      const res = await api.addPharmarackCart(payload);
+      if (res && res.success) {
+        toastEvent.trigger(`Added "${picked.medicine_name}" to Pharmarack cart!`, 'success');
+        setDistributorPickerReconId(null);
+        setDistributorPickerResults([]);
+        await fetchCart();
+        await fetchReconciliationList();
+        window.dispatchEvent(new CustomEvent('refresh-pharmarack-cart'));
+      } else {
+        toastEvent.trigger(res?.error || 'Failed to add item to cart', 'error');
+      }
+    } catch (err: any) {
+      console.error('Failed to add reconciliation item to cart:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
+    } finally {
+      setAddingReconKey(null);
     }
   };
 
@@ -449,6 +550,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       fetchCart();
       fetchPendingOrders();
       fetchPendingRefills();
+      fetchReconciliationList();
     }
   }, [isOpen]);
 
@@ -458,6 +560,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
         fetchCart();
         fetchPendingOrders();
         fetchPendingRefills();
+        fetchReconciliationList();
       }
     };
     window.addEventListener('refresh-pharmarack-cart', handleRefresh);
@@ -716,6 +819,68 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const totalQty = cartDistributors.reduce((s, d) => s + d.items.reduce((q, i) => q + i.qty, 0), 0);
   const totalAmount = cartDistributors.reduce((s, d) => s + d.items.reduce((a, i) => a + i.amount, 0), 0);
 
+  // Map and sort special orders, refills, and reconciliation orders into a single list
+  const unifiedPendingActions = [
+    ...pendingOrders.map(order => ({
+      key: `order-${order.id}`,
+      type: 'order' as const,
+      name: order.product,
+      patientName: order.requester,
+      qty: order.qty,
+      date: order.date,
+      inCart: !!getOrderItemInCart(order),
+      isPicking: distributorPickerOrderId === order.id,
+      onStartPicking: () => handleSearchDistributorsForOrder(order),
+      onCancelPicking: () => { setDistributorPickerOrderId(null); setDistributorPickerResults([]); },
+      onConfirmPick: (picked: SuggestionMedicine) => handleConfirmOrderDistributor(order, picked),
+      isAdding: addingOrderId === order.id,
+      qtyToOrder: order.qty,
+      orderRef: order
+    })),
+    ...pendingRefills.map(refill => ({
+      key: `refill-${refill.id}`,
+      type: 'refill' as const,
+      name: refill.medicine_name || `Medicine ID: ${refill.medicine_id}`,
+      patientName: refill.patient_name,
+      qty: null,
+      date: refill.next_refill_date,
+      inCart: !!getRefillItemInCart(refill),
+      isPicking: distributorPickerRefillId === refill.id,
+      onStartPicking: () => handleSearchDistributorsForRefill(refill),
+      onCancelPicking: () => { setDistributorPickerRefillId(null); setDistributorPickerResults([]); },
+      onConfirmPick: (picked: SuggestionMedicine) => handleConfirmRefillDistributor(refill, picked),
+      isAdding: addingRefillId === refill.id,
+      qtyToOrder: 1,
+      orderRef: refill
+    })),
+    ...reconciliationList.flatMap(recon => 
+      (recon.medicine_names || []).map((medName: string, idx: number) => {
+        const itemKey = `recon-${recon.email_uid}-${medName}`;
+        return {
+          key: itemKey,
+          type: 'reconcile' as const,
+          name: medName,
+          patientName: recon.extracted_distributor || 'Unknown Distributor',
+          qty: null,
+          date: recon.date,
+          inCart: !!getReconciliationItemInCart(medName),
+          isPicking: distributorPickerReconId === itemKey,
+          onStartPicking: () => handleSearchDistributorsForRecon(medName, itemKey),
+          onCancelPicking: () => { setDistributorPickerReconId(null); setDistributorPickerResults([]); },
+          onConfirmPick: (picked: SuggestionMedicine) => handleConfirmReconDistributor(medName, recon.email_uid, itemKey, picked),
+          isAdding: addingReconKey === itemKey,
+          qtyToOrder: 1,
+          orderRef: recon
+        };
+      })
+    )
+  ].sort((a, b) => {
+    if (a.inCart !== b.inCart) {
+      return a.inCart ? 1 : -1;
+    }
+    return new Date(a.date).getTime() - new Date(b.date).getTime();
+  });
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -745,253 +910,170 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x divide-glass-border/30 flex-1 overflow-hidden">
           
-          {/* Left Column: Pending Orders & Refills */}
+          {/* Left Column: Pending Orders, Refills & Unreconciled Items */}
           <div className="flex flex-col h-full overflow-hidden pr-3">
             <div className="flex items-center gap-2 border-b border-glass-border/30 pb-2.5 shrink-0">
                <h3 className="flex-1 pb-1.5 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-primary text-text">
-                 Pending Action ({pendingOrders.length + pendingRefills.length})
+                 Pending Action ({unifiedPendingActions.length})
                </h3>
             </div>
 
             <div className="flex-1 overflow-y-auto py-3 space-y-2.5 scrollbar-thin">
-              {pendingOrders.length === 0 && pendingRefills.length === 0 && (
+              {unifiedPendingActions.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-8 text-center text-muted">
                     <Clock size={28} className="opacity-20 mb-2" />
                     <p className="text-xs font-bold">No Pending Action</p>
-                    <p className="text-[11px] max-w-[180px] mx-auto mt-0.5">No pending special orders or out-of-stock refills found.</p>
+                    <p className="text-[11px] max-w-[180px] mx-auto mt-0.5">No pending special orders, out-of-stock refills, or unreconciled orders found.</p>
                   </div>
-              )}
-              {pendingOrders.length > 0 && (
-                  pendingOrders.map(order => {
-                    const inCart = getOrderItemInCart(order);
-                    const isPickingForOrder = distributorPickerOrderId === order.id;
-                    const pickerMinRate = isPickingForOrder && distributorPickerResults.length > 0
-                      ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, order.qty)))
-                      : Infinity;
-                    return (
-                      <div 
-                        key={order.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm ${
-                          inCart 
-                             ? 'bg-emerald-500/5 border-emerald-500/20'
-                             : isPickingForOrder
-                             ? 'bg-blue-500/5 border-blue-500/20'
-                             : 'bg-red-500/5 border-red-500/10'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="flex flex-col min-w-0">
-                            <span className={`text-xs font-semibold truncate ${inCart ? 'line-through opacity-60 text-emerald-400' : 'text-text'}`} title={order.product}>
-                              {order.product}
-                            </span>
-                            <span className="text-[11px] text-muted mt-0.5 truncate">
-                              Customer: {order.requester} (Qty: {order.qty})
-                            </span>
-                            <span className="text-[9px] text-muted/70 font-mono mt-0.5">
-                              Date: {new Date(order.date).toLocaleDateString('en-IN')}
-                            </span>
-                          </div>
-                          {inCart ? (
-                            <span className="shrink-0 text-[8px] font-bold uppercase bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/20 text-emerald-400 select-none">
-                              ✓ Added
-                            </span>
-                          ) : isPickingForOrder ? (
-                            <button
-                              type="button"
-                              onClick={() => { setDistributorPickerOrderId(null); setDistributorPickerResults([]); }}
-                              className="shrink-0 text-[9px] font-semibold bg-bg3 hover:bg-bg3/80 border border-border px-2 py-1 rounded transition-all active:scale-95 text-muted font-sans"
-                            >
-                              Cancel
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSearchDistributorsForOrder(order)}
-                              disabled={addingOrderId === order.id || distributorPickerLoading}
-                              className="shrink-0 text-[9px] font-semibold bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-2 py-1 rounded transition-all active:scale-95 text-red disabled:opacity-50 font-sans"
-                            >
-                              {addingOrderId === order.id ? 'Adding...' : 'Add'}
-                            </button>
-                          )}
-                        </div>
+              ) : (
+                unifiedPendingActions.map(item => {
+                  const pickerMinRate = item.isPicking && distributorPickerResults.length > 0
+                    ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, item.qtyToOrder)))
+                    : Infinity;
 
-                        {/* Inline Distributor Picker for this Order */}
-                        {isPickingForOrder && (
-                          <div className="mt-1 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-blue-500/20 pt-2">
-                            {distributorPickerLoading ? (
-                              <div className="flex items-center gap-2 py-1.5 text-[11px] text-muted">
-                                <Loader2 size={12} className="animate-spin text-primary" />
-                                <span>Searching distributors...</span>
-                              </div>
-                            ) : distributorPickerResults.length === 0 ? (
-                              <p className="text-[11px] text-muted py-1">No distributors found.</p>
-                            ) : (
-                              <div className="space-y-1">
-                                <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider mb-1.5">Select a Distributor:</p>
-                                {distributorPickerResults.map((dist, idx) => {
-                                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, order.qty) : null;
-                                  const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
-                                  return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => handleConfirmOrderDistributor(order, dist)}
-                                      disabled={addingOrderId === order.id}
-                                      className="w-full text-left p-2 rounded-lg bg-bg3/50 hover:bg-primary/10 border border-border hover:border-primary/40 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-between gap-2 group"
-                                    >
-                                      <div className="flex flex-col min-w-0 flex-1">
-                                        <div className="flex items-center gap-1 flex-wrap">
-                                          <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">{dist.distributor || 'Unknown'}</span>
-                                          {isBest && (
-                                            <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0">
-                                              <Sparkles size={7} /> Best
-                                            </span>
-                                          )}
-                                          {dist.stock && (
-                                            <span className={`text-[8px] px-1 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>{dist.stock}</span>
-                                          )}
-                                        </div>
-                                        {dist.scheme && (
-                                          <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
-                                        )}
-                                        {dist.packaging && (
-                                          <span className="text-[9px] text-muted">{dist.packaging}</span>
-                                        )}
-                                      </div>
-                                      <div className="text-right shrink-0">
-                                        {dist.rate !== undefined && dist.rate !== null && (
-                                          <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
-                                        )}
-                                        {dist.mrp !== undefined && dist.mrp !== null && (
-                                          <span className="text-[9px] text-muted font-mono block">MRP ₹{dist.mrp}</span>
-                                        )}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                  return (
+                    <div 
+                      key={item.key} 
+                      className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm ${
+                        item.inCart 
+                           ? 'bg-emerald-500/5 border-emerald-500/20'
+                           : item.isPicking
+                           ? 'bg-blue-500/5 border-blue-500/20'
+                           : item.type === 'order'
+                             ? 'bg-red-500/5 border-red-500/10'
+                             : item.type === 'refill'
+                               ? 'bg-amber-500/5 border-amber-500/10'
+                               : 'bg-sky-500/5 border-sky-500/10'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex flex-col min-w-0">
+                          {/* Badge row */}
+                          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                            <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded border select-none ${
+                              item.inCart
+                                ? 'bg-emerald-500/15 border-emerald-500/20 text-emerald-400'
+                                : item.type === 'order'
+                                  ? 'bg-red-500/15 border-red-500/20 text-red'
+                                  : item.type === 'refill'
+                                    ? 'bg-amber-500/15 border-amber-500/20 text-amber-400'
+                                    : 'bg-sky-500/15 border-sky-500/20 text-sky-400'
+                            }`}>
+                              {item.type === 'order' ? 'Request' : item.type === 'refill' ? 'Refill' : 'Reconcile'}
+                            </span>
                           </div>
+
+                          <span className={`text-xs font-semibold truncate ${item.inCart ? 'line-through opacity-60 text-emerald-400' : 'text-text'}`} title={item.name}>
+                            {item.name}
+                          </span>
+                          <span className="text-[11px] text-muted mt-0.5 truncate">
+                            {item.type === 'order' 
+                              ? `Customer: ${item.patientName} (Qty: ${item.qty})` 
+                              : item.type === 'refill'
+                                ? `Patient: ${item.patientName}`
+                                : `Missing from: ${item.patientName}`
+                            }
+                          </span>
+                          <span className="text-[9px] text-muted/70 font-mono mt-0.5">
+                            {item.type === 'order'
+                              ? `Date: ${new Date(item.date).toLocaleDateString('en-IN')}`
+                              : item.type === 'refill'
+                                ? `Next Due: ${new Date(item.date).toLocaleDateString('en-IN')}`
+                                : `Order Date: ${new Date(item.date).toLocaleDateString('en-IN')}`
+                            }
+                          </span>
+                        </div>
+                        {item.inCart ? (
+                          <span className="shrink-0 text-[8px] font-bold uppercase bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/20 text-emerald-400 select-none">
+                            ✓ Added
+                          </span>
+                        ) : item.isPicking ? (
+                          <button
+                            type="button"
+                            onClick={item.onCancelPicking}
+                            className="shrink-0 text-[9px] font-semibold bg-bg3 hover:bg-bg3/80 border border-border px-2 py-1 rounded transition-all active:scale-95 text-muted font-sans"
+                          >
+                            Cancel
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={item.onStartPicking}
+                            disabled={item.isAdding || distributorPickerLoading}
+                            className={`shrink-0 text-[9px] font-semibold px-2 py-1 rounded transition-all active:scale-95 disabled:opacity-50 font-sans border ${
+                              item.type === 'order'
+                                ? 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red'
+                                : item.type === 'refill'
+                                  ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-500'
+                                  : 'bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20 text-sky-400'
+                            }`}
+                          >
+                            {item.isAdding ? 'Adding...' : 'Add'}
+                          </button>
                         )}
                       </div>
-                    );
-                  })
-              )}
-              {pendingRefills.length > 0 && (
-                  pendingRefills.map(refill => {
-                    const inCart = getRefillItemInCart(refill);
-                    const isPickingForRefill = distributorPickerRefillId === refill.id;
-                    const pickerMinRateRefill = isPickingForRefill && distributorPickerResults.length > 0
-                      ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, 1)))
-                      : Infinity;
-                    return (
-                      <div 
-                        key={refill.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm ${
-                          inCart 
-                             ? 'bg-emerald-500/5 border-emerald-500/20'
-                             : isPickingForRefill
-                             ? 'bg-blue-500/5 border-blue-500/20'
-                             : 'bg-red-500/5 border-red-500/10'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="flex flex-col min-w-0">
-                            <span className={`text-xs font-semibold truncate ${inCart ? 'line-through opacity-60 text-emerald-400' : 'text-text'}`} title={refill.medicine_name}>
-                              {refill.medicine_name}
-                            </span>
-                            <span className="text-[11px] text-muted mt-0.5 truncate">
-                              Patient: {refill.patient_name}
-                            </span>
-                            <span className="text-[9px] text-muted/70 font-mono mt-0.5">
-                              Next Due: {new Date(refill.next_refill_date).toLocaleDateString('en-IN')}
-                            </span>
-                          </div>
-                          {inCart ? (
-                            <span className="shrink-0 text-[8px] font-bold uppercase bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/20 text-emerald-400 select-none">
-                              ✓ Added
-                            </span>
-                          ) : isPickingForRefill ? (
-                            <button
-                              type="button"
-                              onClick={() => { setDistributorPickerRefillId(null); setDistributorPickerResults([]); }}
-                              className="shrink-0 text-[9px] font-semibold bg-bg3 hover:bg-bg3/80 border border-border px-2 py-1 rounded transition-all active:scale-95 text-muted font-sans"
-                            >
-                              Cancel
-                            </button>
+
+                      {/* Inline Distributor Picker for this Item */}
+                      {item.isPicking && (
+                        <div className="mt-1 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-blue-500/20 pt-2">
+                          {distributorPickerLoading ? (
+                            <div className="flex items-center gap-2 py-1.5 text-[11px] text-muted">
+                              <Loader2 size={12} className="animate-spin text-primary" />
+                              <span>Searching distributors...</span>
+                            </div>
+                          ) : distributorPickerResults.length === 0 ? (
+                            <p className="text-[11px] text-muted py-1">No distributors found.</p>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSearchDistributorsForRefill(refill)}
-                              disabled={addingRefillId === refill.id || distributorPickerLoading}
-                              className="shrink-0 text-[9px] font-semibold bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-2 py-1 rounded transition-all active:scale-95 text-red disabled:opacity-50 font-sans"
-                            >
-                              {addingRefillId === refill.id ? 'Adding...' : 'Add'}
-                            </button>
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider mb-1.5">Select a Distributor:</p>
+                              {distributorPickerResults.map((dist, idx) => {
+                                const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, item.qtyToOrder) : null;
+                                const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => item.onConfirmPick(dist)}
+                                    disabled={item.isAdding}
+                                    className="w-full text-left p-2 rounded-lg bg-bg3/50 hover:bg-primary/10 border border-border hover:border-primary/40 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-between gap-2 group"
+                                  >
+                                    <div className="flex flex-col min-w-0 flex-1">
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">{dist.distributor || 'Unknown'}</span>
+                                        {isBest && (
+                                          <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0">
+                                            <Sparkles size={7} /> Best
+                                          </span>
+                                        )}
+                                        {dist.stock && (
+                                          <span className={`text-[8px] px-1 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>{dist.stock}</span>
+                                        )}
+                                      </div>
+                                      {dist.scheme && (
+                                        <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
+                                      )}
+                                      {dist.packaging && (
+                                        <span className="text-[9px] text-muted">{dist.packaging}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      {dist.rate !== undefined && dist.rate !== null && (
+                                        <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
+                                      )}
+                                      {dist.mrp !== undefined && dist.mrp !== null && (
+                                        <span className="text-[9px] text-muted font-mono block">MRP ₹{dist.mrp}</span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           )}
                         </div>
-
-                        {/* Inline Distributor Picker for this Refill */}
-                        {isPickingForRefill && (
-                          <div className="mt-1 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-blue-500/20 pt-2">
-                            {distributorPickerLoading ? (
-                              <div className="flex items-center gap-2 py-1.5 text-[11px] text-muted">
-                                <Loader2 size={12} className="animate-spin text-primary" />
-                                <span>Searching distributors...</span>
-                              </div>
-                            ) : distributorPickerResults.length === 0 ? (
-                              <p className="text-[11px] text-muted py-1">No distributors found.</p>
-                            ) : (
-                              <div className="space-y-1">
-                                <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider mb-1.5">Select a Distributor:</p>
-                                {distributorPickerResults.map((dist, idx) => {
-                                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, 1) : null;
-                                  const isBest = effRate !== null && Math.abs(effRate - pickerMinRateRefill) < 0.01;
-                                  return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => handleConfirmRefillDistributor(refill, dist)}
-                                      disabled={addingRefillId === refill.id}
-                                      className="w-full text-left p-2 rounded-lg bg-bg3/50 hover:bg-primary/10 border border-border hover:border-primary/40 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-between gap-2 group"
-                                    >
-                                      <div className="flex flex-col min-w-0 flex-1">
-                                        <div className="flex items-center gap-1 flex-wrap">
-                                          <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">{dist.distributor || 'Unknown'}</span>
-                                          {isBest && (
-                                            <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0">
-                                              <Sparkles size={7} /> Best
-                                            </span>
-                                          )}
-                                          {dist.stock && (
-                                            <span className={`text-[8px] px-1 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>{dist.stock}</span>
-                                          )}
-                                        </div>
-                                        {dist.scheme && (
-                                          <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
-                                        )}
-                                        {dist.packaging && (
-                                          <span className="text-[9px] text-muted">{dist.packaging}</span>
-                                        )}
-                                      </div>
-                                      <div className="text-right shrink-0">
-                                        {dist.rate !== undefined && dist.rate !== null && (
-                                          <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
-                                        )}
-                                        {dist.mrp !== undefined && dist.mrp !== null && (
-                                          <span className="text-[9px] text-muted font-mono block">MRP ₹{dist.mrp}</span>
-                                        )}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
