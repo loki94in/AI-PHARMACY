@@ -49,6 +49,26 @@ const getStockStyle = (stockStr: string | undefined): string => {
   return 'bg-bg3 text-muted border border-border';
 };
 
+const getStockScore = (stockStr: string | undefined): number => {
+  if (!stockStr) return 0;
+  const stock = stockStr.trim().toLowerCase();
+  
+  if (stock === 'high') return 3;
+  if (stock === 'medium') return 2;
+  if (stock === 'low') return 1;
+  if (stock === 'out of stock' || stock === 'no stock' || stock === '0') return -1;
+  
+  const num = parseInt(stock);
+  if (!isNaN(num)) {
+    if (num >= 50) return 3;
+    if (num >= 15) return 2;
+    if (num > 0) return 1;
+    return -1;
+  }
+  
+  return 0;
+};
+
 interface CartLineItem {
   productId: number | null;
   storeId: number;
@@ -104,52 +124,70 @@ const getEffectiveRate = (rate: number, schemeStr: string | undefined, qty: numb
 };
 
 const getDosageType = (name: string): 'liquid' | 'solid' | 'other' => {
-  const nameLower = name.toLowerCase();
-  if (
-    nameLower.includes('syrup') || 
-    nameLower.includes(' syp') || 
-    nameLower.includes('suspension') || 
-    nameLower.includes(' susp') || 
-    nameLower.includes('liquid') || 
-    nameLower.includes(' drop') || 
-    nameLower.includes(' drops') || 
-    nameLower.includes(' syp ') ||
-    nameLower.includes(' susp ') ||
-    nameLower.includes(' syp.') ||
-    nameLower.includes(' susp.') ||
-    nameLower.includes('solution') ||
-    nameLower.includes('emulsion') ||
-    nameLower.includes('elixir')
-  ) {
+  const n = name.toLowerCase();
+  if (/\b(syrup|syp|syp\.|suspension|susp|susp\.|liquid|drop|drops|solution|emulsion|elixir)\b/i.test(n)) {
     return 'liquid';
   }
-  if (
-    nameLower.includes('tablet') || 
-    nameLower.includes(' tab') || 
-    nameLower.includes('capsule') || 
-    nameLower.includes(' cap') || 
-    nameLower.includes(' tab ') ||
-    nameLower.includes(' cap ') ||
-    nameLower.includes(' tabs') ||
-    nameLower.includes(' caps') ||
-    nameLower.includes(' tab.') ||
-    nameLower.includes(' cap.')
-  ) {
+  if (/\b(tablet|tab|tabs|tab\.|capsule|cap|caps|cap\.)\b/i.test(n)) {
     return 'solid';
   }
   return 'other';
 };
 
+const getDosageSubtype = (name: string): string => {
+  const n = name.toLowerCase();
+  if (/\b(syrup|syp|syp\.|bottle syp)\b/i.test(n)) {
+    return 'syrup';
+  }
+  if (/\b(drop|drops|oral drop|oral drops)\b/i.test(n)) {
+    return 'drops';
+  }
+  if (/\b(suspension|susp|susp\.)\b/i.test(n)) {
+    return 'suspension';
+  }
+  if (/\b(tablet|tab|tabs|tab\.|sr|xr|tablet\s+sr)\b/i.test(n)) {
+    return 'tablet';
+  }
+  if (/\b(capsule|cap|caps|cap\.)\b/i.test(n)) {
+    return 'capsule';
+  }
+  if (/\b(injection|inj|inj\.)\b/i.test(n)) {
+    return 'injection';
+  }
+  if (/\b(cream|gel|ointment|oint|oint\.)\b/i.test(n)) {
+    return 'topical';
+  }
+  return 'other';
+};
+
 const isMatchDosage = (targetName: string, itemName: string, itemPackaging: string): boolean => {
-  const targetType = getDosageType(targetName);
-  const itemType = getDosageType(itemName + ' ' + (itemPackaging || ''));
-  if (targetType === 'liquid') {
-    return itemType !== 'solid';
+  const targetText = targetName.toLowerCase();
+  const itemText = (itemName + ' ' + (itemPackaging || '')).toLowerCase();
+
+  const targetType = getDosageType(targetText);
+  const itemType = getDosageType(itemText);
+
+  // Enforce general liquid vs solid mismatch
+  if (targetType === 'liquid' && itemType === 'solid') return false;
+  if (targetType === 'solid' && itemType === 'liquid') return false;
+
+  // Enforce fine-grained subtype match if both specify a subtype
+  const targetSubtype = getDosageSubtype(targetText);
+  const itemSubtype = getDosageSubtype(itemText);
+
+  if (targetSubtype !== 'other' && itemSubtype !== 'other') {
+    return targetSubtype === itemSubtype;
   }
-  if (targetType === 'solid') {
-    return itemType !== 'liquid';
-  }
+
   return true;
+};
+
+const cleanQueryForSearch = (query: string): string => {
+  const cleaned = query
+    .replace(/\b(syrup|syp|suspension|susp|tablet|tab|tablets|tabs|capsule|cap|capsules|caps|injection|inj|drops|drop|solution)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length >= 3 ? cleaned : query;
 };
 
 export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -163,7 +201,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   // Input fields
   const [product, setProduct] = useState('');
   const [qty, setQty] = useState<number | ''>(1);
-  const [pickerQty, setPickerQty] = useState<number>(1);
   
   // Selected Pharmarack Metadata
   const [selectedDistributor, setSelectedDistributor] = useState('');
@@ -185,7 +222,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [searchLoading, setSearchLoading] = useState(false);
   // Portal position for the dropdown (avoids overflow:auto clipping)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [pickerPos, setPickerPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [linkedPendingItem, setLinkedPendingItem] = useState<any | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prMode, setPrMode] = useState<'Live' | 'Unknown'>('Unknown');
@@ -197,8 +234,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
   // Reconciliation States
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
-  const [distributorPickerReconId, setDistributorPickerReconId] = useState<string | null>(null);
-  const [addingReconKey, setAddingReconKey] = useState<string | null>(null);
 
   // Investigation Modal States & Actions
   const [resolvingUid, setResolvingUid] = useState<number | null>(null);
@@ -219,17 +254,9 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
   // Pending Orders States and Functions
   const [pendingOrders, setPendingOrders] = useState<SpecialOrder[]>([]);
-  const [addingOrderId, setAddingOrderId] = useState<number | null>(null);
 
   // Pending Refills States and Functions
   const [pendingRefills, setPendingRefills] = useState<Refill[]>([]);
-  const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
-
-  // Distributor Picker States (for Orders & Refills)
-  const [distributorPickerOrderId, setDistributorPickerOrderId] = useState<number | null>(null);
-  const [distributorPickerRefillId, setDistributorPickerRefillId] = useState<number | null>(null);
-  const [distributorPickerResults, setDistributorPickerResults] = useState<SuggestionMedicine[]>([]);
-  const [distributorPickerLoading, setDistributorPickerLoading] = useState(false);
 
   const fetchPendingOrders = async () => {
     try {
@@ -285,94 +312,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     return null;
   };
 
-  const handleSearchDistributorsForRecon = async (medName: string, itemKey: string, targetMrp?: number) => {
-    setDistributorPickerReconId(itemKey);
-    setDistributorPickerResults([]);
-    setDistributorPickerLoading(true);
-    try {
-      const searchResults = await api.searchPharmarack(medName);
-      if (!searchResults || searchResults.length === 0) {
-        toastEvent.trigger(`No Pharmarack matches found for "${medName}"`, 'error');
-        setDistributorPickerReconId(null);
-        return;
-      }
-      let mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
-        medicine_name: item.name,
-        mrp: item.mrp,
-        isPharmarack: true,
-        distributor: item.distributor,
-        rate: item.rate,
-        mapped: item.mapped,
-        packaging: item.packaging,
-        stock: item.stock,
-        scheme: item.scheme,
-        productId: item.productId,
-        storeId: item.storeId,
-        productCode: item.productCode,
-        company: item.company
-      }));
 
-      // Apply dosage filtering: if target is liquid, filter out solid suggestions; if target is solid, filter out liquid suggestions.
-      const dosageFiltered = mapped.filter(item => isMatchDosage(medName, item.medicine_name || '', item.packaging || ''));
-      if (dosageFiltered.length > 0) {
-        mapped = dosageFiltered;
-      }
-
-      // Apply MRP filtering: +/- 10 Rs range of the target MRP
-      if (targetMrp && targetMrp > 0) {
-        const mrpFiltered = mapped.filter(item => {
-          const itemMrp = item.mrp || item.rate || 0;
-          return Math.abs(itemMrp - targetMrp) <= 10;
-        });
-        if (mrpFiltered.length > 0) {
-          mapped = mrpFiltered;
-        }
-      }
-
-      setDistributorPickerResults(mapped);
-    } catch (err: any) {
-      console.error('Failed to search distributors for reconciliation item:', err);
-      toastEvent.trigger(err?.response?.data?.error || 'Failed to search distributors', 'error');
-      setDistributorPickerReconId(null);
-    } finally {
-      setDistributorPickerLoading(false);
-    }
-  };
-
-  const handleConfirmReconDistributor = async (medName: string, emailUid: number, itemKey: string, picked: SuggestionMedicine, customQty: number = 1) => {
-    setAddingReconKey(itemKey);
-    try {
-      const payload = [{
-        productId: picked.productId!,
-        storeId: picked.storeId!,
-        qty: customQty,
-        productCode: picked.productCode,
-        productName: picked.medicine_name,
-        company: picked.company,
-        packaging: picked.packaging,
-        rate: picked.rate || 0,
-        mrp: picked.mrp || 0,
-        storeName: picked.distributor,
-        mapped: picked.mapped
-      }];
-      const res = await api.addPharmarackCart(payload);
-      if (res && res.success) {
-        toastEvent.trigger(`Added "${picked.medicine_name}" to Pharmarack cart!`, 'success');
-        setDistributorPickerReconId(null);
-        setDistributorPickerResults([]);
-        await fetchCart();
-        await fetchReconciliationList();
-        window.dispatchEvent(new CustomEvent('refresh-pharmarack-cart'));
-      } else {
-        toastEvent.trigger(res?.error || 'Failed to add item to cart', 'error');
-      }
-    } catch (err: any) {
-      console.error('Failed to add reconciliation item to cart:', err);
-      toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
-    } finally {
-      setAddingReconKey(null);
-    }
-  };
 
   const getRefillItemInCart = (refill: Refill) => {
     const refillNameNorm = (refill.medicine_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -387,77 +327,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     return null;
   };
 
-  const handleSearchDistributorsForRefill = async (refill: Refill) => {
-    setDistributorPickerRefillId(refill.id);
-    setDistributorPickerResults([]);
-    setDistributorPickerLoading(true);
-    try {
-      const medName = refill.medicine_name || `Medicine ${refill.medicine_id}`;
-      const searchResults = await api.searchPharmarack(medName);
-      if (!searchResults || searchResults.length === 0) {
-        toastEvent.trigger(`No Pharmarack matches found for "${medName}"`, 'error');
-        setDistributorPickerRefillId(null);
-        return;
-      }
-      const mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
-        medicine_name: item.name,
-        mrp: item.mrp,
-        isPharmarack: true,
-        distributor: item.distributor,
-        rate: item.rate,
-        mapped: item.mapped,
-        packaging: item.packaging,
-        stock: item.stock,
-        scheme: item.scheme,
-        productId: item.productId,
-        storeId: item.storeId,
-        productCode: item.productCode,
-        company: item.company
-      }));
-      setDistributorPickerResults(mapped);
-    } catch (err: any) {
-      console.error('Failed to search distributors for refill:', err);
-      toastEvent.trigger(err?.response?.data?.error || 'Failed to search distributors', 'error');
-      setDistributorPickerRefillId(null);
-    } finally {
-      setDistributorPickerLoading(false);
-    }
-  };
 
-  const handleConfirmRefillDistributor = async (refill: Refill, picked: SuggestionMedicine, customQty: number = 1) => {
-    setAddingRefillId(refill.id);
-    try {
-      const payload = [{
-        productId: picked.productId!,
-        storeId: picked.storeId!,
-        qty: customQty,
-        productCode: picked.productCode,
-        productName: picked.medicine_name,
-        company: picked.company,
-        packaging: picked.packaging,
-        rate: picked.rate || 0,
-        mrp: picked.mrp || 0,
-        storeName: picked.distributor,
-        mapped: picked.mapped
-      }];
-      const res = await api.addPharmarackCart(payload);
-      if (res && res.success) {
-        toastEvent.trigger(`Added "${refill.medicine_name}" to Pharmarack cart!`, 'success');
-        setDistributorPickerRefillId(null);
-        setDistributorPickerResults([]);
-        await fetchCart();
-        await fetchPendingRefills();
-        window.dispatchEvent(new CustomEvent('refresh-pharmarack-cart'));
-      } else {
-        toastEvent.trigger(res?.error || 'Failed to add item to cart', 'error');
-      }
-    } catch (err: any) {
-      console.error('Failed to add refill to cart:', err);
-      toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
-    } finally {
-      setAddingRefillId(null);
-    }
-  };
 
   const getOrderItemInCart = (order: SpecialOrder) => {
     const orderNameNorm = order.product.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -472,77 +342,31 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     return null;
   };
 
-  const handleSearchDistributorsForOrder = async (order: SpecialOrder) => {
-    setDistributorPickerOrderId(order.id);
-    setDistributorPickerResults([]);
-    setDistributorPickerLoading(true);
-    try {
-      const searchResults = await api.searchPharmarack(order.product);
-      if (!searchResults || searchResults.length === 0) {
-        toastEvent.trigger(`No Pharmarack matches found for "${order.product}"`, 'error');
-        setDistributorPickerOrderId(null);
-        return;
-      }
-      const mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
-        medicine_name: item.name,
-        mrp: item.mrp,
-        isPharmarack: true,
-        distributor: item.distributor,
-        rate: item.rate,
-        mapped: item.mapped,
-        packaging: item.packaging,
-        stock: item.stock,
-        scheme: item.scheme,
-        productId: item.productId,
-        storeId: item.storeId,
-        productCode: item.productCode,
-        company: item.company
-      }));
-      setDistributorPickerResults(mapped);
-    } catch (err: any) {
-      console.error('Failed to search distributors for order:', err);
-      toastEvent.trigger(err?.response?.data?.error || 'Failed to search distributors', 'error');
-      setDistributorPickerOrderId(null);
-    } finally {
-      setDistributorPickerLoading(false);
-    }
+  const handleStartPickingForForm = (item: any) => {
+    setProduct(item.name);
+    setQty(item.qtyToOrder || 1);
+    setLinkedPendingItem(item);
+    
+    // Reset selected product/distributor states
+    setSelectedDistributor('');
+    setSelectedRate('');
+    setSelectedMrp('');
+    setSelectedMapped(null);
+    setSelectedScheme('');
+    setSelectedProductId('');
+    setSelectedStoreId('');
+    setSelectedProductCode('');
+    setSelectedCompany('');
+    setSelectedPackaging('');
+    setSelectedMedicineName('');
+
+    setTimeout(() => {
+      productInputRef.current?.focus();
+      productInputRef.current?.select();
+    }, 50);
   };
 
-  const handleConfirmOrderDistributor = async (order: SpecialOrder, picked: SuggestionMedicine, customQty?: number) => {
-    setAddingOrderId(order.id);
-    try {
-      const payload = [{
-        productId: picked.productId!,
-        storeId: picked.storeId!,
-        qty: customQty !== undefined ? customQty : order.qty,
-        productCode: picked.productCode,
-        productName: picked.medicine_name,
-        company: picked.company,
-        packaging: picked.packaging,
-        rate: order.pharmarack_rate || picked.rate || 0,
-        mrp: order.pharmarack_mrp || picked.mrp || 0,
-        storeName: picked.distributor,
-        mapped: picked.mapped
-      }];
-      const res = await api.addPharmarackCart(payload);
-      if (res && res.success) {
-        toastEvent.trigger(`Added "${order.product}" to Pharmarack cart!`, 'success');
-        await api.updateOrder(order.id, { status: 'Ordered' });
-        setDistributorPickerOrderId(null);
-        setDistributorPickerResults([]);
-        await fetchCart();
-        await fetchPendingOrders();
-        window.dispatchEvent(new CustomEvent('refresh-pharmarack-cart'));
-      } else {
-        toastEvent.trigger(res?.error || 'Failed to add item to cart', 'error');
-      }
-    } catch (err: any) {
-      console.error('Failed to add pending order to cart:', err);
-      toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
-    } finally {
-      setAddingOrderId(null);
-    }
-  };
+
 
   // Cheaper option state
   const [cheaperDistributor, setCheaperDistributor] = useState<any | null>(null);
@@ -552,7 +376,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const ignoreNextSearchRef = useRef(false);
   const dropdownRef = useRef<HTMLUListElement>(null);
-  const distributorPickerRef = useRef<HTMLDivElement>(null);
 
   const handleSwitchToCheaper = () => {
     if (cheaperDistributor) {
@@ -721,7 +544,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     const delayDebounce = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const prData = await api.searchPharmarack(product).catch((err: any) => {
+        const cleanedProduct = cleanQueryForSearch(product);
+        const prData = await api.searchPharmarack(cleanedProduct).catch((err: any) => {
           const errMsg = err?.response?.data?.error || 'Connection error, please check internet or reconnect';
           return { isError: true, message: errMsg };
         });
@@ -738,22 +562,66 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           if (prData.length === 0) {
             toastEvent.trigger('No matching distributor offers found.', 'info');
           }
+          
+          const targetDosageName = linkedPendingItem ? linkedPendingItem.name : product;
           prData.forEach((item: any) => {
-            mergedList.push({
-              medicine_name: item.name,
-              mrp: item.mrp,
-              isPharmarack: true,
-              distributor: item.distributor,
-              rate: item.rate,
-              mapped: item.mapped,
-              packaging: item.packaging,
-              stock: item.stock,
-              scheme: item.scheme,
-              productId: item.productId,
-              storeId: item.storeId,
-              productCode: item.productCode,
-              company: item.company
-            });
+            if (isMatchDosage(targetDosageName, item.name, item.packaging)) {
+              // Hide item if stock is 0 (out of stock, no stock, etc.)
+              if (getStockScore(item.stock) !== -1) {
+                mergedList.push({
+                  medicine_name: item.name,
+                  mrp: item.mrp,
+                  isPharmarack: true,
+                  distributor: item.distributor,
+                  rate: item.rate,
+                  mapped: item.mapped,
+                  packaging: item.packaging,
+                  stock: item.stock,
+                  scheme: item.scheme,
+                  productId: item.productId,
+                  storeId: item.storeId,
+                  productCode: item.productCode,
+                  company: item.company
+                });
+              }
+            }
+          });
+
+          // Sort suggestions based on priority:
+          // 1. Linked distributor match (if active and specified)
+          // 2. Mapped distributors (mapped === true)
+          // 3. Stock availability (higher stockScore first)
+          // 4. Rate (cheaper PTR first)
+          mergedList.sort((a, b) => {
+            // 1. Linked distributor match
+            if (linkedPendingItem && linkedPendingItem.patientName && !linkedPendingItem.patientName.toLowerCase().includes('unknown')) {
+              const distName = linkedPendingItem.patientName.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const aDist = (a.distributor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              const bDist = (b.distributor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              const aMatch = aDist.includes(distName) || distName.includes(aDist);
+              const bMatch = bDist.includes(distName) || distName.includes(bDist);
+              if (aMatch && !bMatch) return -1;
+              if (!aMatch && bMatch) return 1;
+            }
+
+            // 2. Mapped distributors first
+            const aMapped = a.mapped ? 1 : 0;
+            const bMapped = b.mapped ? 1 : 0;
+            if (aMapped !== bMapped) {
+              return bMapped - aMapped;
+            }
+
+            // 3. Stock priority
+            const aStock = getStockScore(a.stock);
+            const bStock = getStockScore(b.stock);
+            if (aStock !== bStock) {
+              return bStock - aStock;
+            }
+
+            // 4. Rate priority
+            const aRate = a.rate || Infinity;
+            const bRate = b.rate || Infinity;
+            return aRate - bRate;
           });
         }
 
@@ -888,6 +756,22 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
       toastEvent.trigger(`Added "${product}" directly to live Pharmarack cart!`, 'success');
       
+      if (linkedPendingItem) {
+        try {
+          if (linkedPendingItem.type === 'order') {
+            await api.updateOrder(linkedPendingItem.orderRef.id, { status: 'Ordered' });
+            await fetchPendingOrders();
+          } else if (linkedPendingItem.type === 'refill') {
+            await fetchPendingRefills();
+          } else if (linkedPendingItem.type === 'reconcile') {
+            await fetchReconciliationList();
+          }
+        } catch (err) {
+          console.error('Failed to update status of linked pending item:', err);
+        }
+        setLinkedPendingItem(null);
+      }
+
       // Reset form and keep open
       setProduct('');
       setQty(1);
@@ -933,11 +817,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       qty: order.qty,
       date: order.date,
       inCart: !!getOrderItemInCart(order),
-      isPicking: distributorPickerOrderId === order.id,
-      onStartPicking: () => handleSearchDistributorsForOrder(order),
-      onCancelPicking: () => { setDistributorPickerOrderId(null); setDistributorPickerResults([]); },
-      onConfirmPick: (picked: SuggestionMedicine, customQty?: number) => handleConfirmOrderDistributor(order, picked, customQty),
-      isAdding: addingOrderId === order.id,
       qtyToOrder: order.qty,
       orderRef: order,
       targetMrp: null
@@ -950,11 +829,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       qty: null,
       date: refill.next_refill_date,
       inCart: !!getRefillItemInCart(refill),
-      isPicking: distributorPickerRefillId === refill.id,
-      onStartPicking: () => handleSearchDistributorsForRefill(refill),
-      onCancelPicking: () => { setDistributorPickerRefillId(null); setDistributorPickerResults([]); },
-      onConfirmPick: (picked: SuggestionMedicine, customQty?: number) => handleConfirmRefillDistributor(refill, picked, customQty),
-      isAdding: addingRefillId === refill.id,
       qtyToOrder: 1,
       orderRef: refill,
       targetMrp: null
@@ -971,11 +845,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           qty: null,
           date: recon.date,
           inCart: !!getReconciliationItemInCart(medName),
-          isPicking: distributorPickerReconId === itemKey,
-          onStartPicking: () => handleSearchDistributorsForRecon(medName, itemKey, targetMrp),
-          onCancelPicking: () => { setDistributorPickerReconId(null); setDistributorPickerResults([]); },
-          onConfirmPick: (picked: SuggestionMedicine, customQty?: number) => handleConfirmReconDistributor(medName, recon.email_uid, itemKey, picked, customQty),
-          isAdding: addingReconKey === itemKey,
           qtyToOrder: 1,
           orderRef: recon,
           targetMrp: targetMrp
@@ -988,58 +857,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     }
     return new Date(a.date).getTime() - new Date(b.date).getTime();
   });
-
-  const isPickerActive = distributorPickerOrderId !== null || distributorPickerRefillId !== null || distributorPickerReconId !== null;
-  const activePickingItem = unifiedPendingActions.find(item => item.isPicking);
-
-  const clearPicker = () => {
-    setDistributorPickerOrderId(null);
-    setDistributorPickerRefillId(null);
-    setDistributorPickerReconId(null);
-    setDistributorPickerResults([]);
-    setPickerPos(null);
-  };
-
-  // Scroll listener to update distributor picker position
-  useEffect(() => {
-    const handleScroll = () => {
-      if (isPickerActive && activePickingItem) {
-        const cardEl = document.querySelector(`[data-picker-key="${activePickingItem.key}"]`);
-        if (cardEl) {
-          const cardRect = cardEl.getBoundingClientRect();
-          setPickerPos({
-            top: cardRect.bottom + 4,
-            left: cardRect.left,
-            width: cardRect.width
-          });
-        }
-      }
-    };
-
-    if (isPickerActive) {
-      window.addEventListener('scroll', handleScroll, true);
-    }
-    return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [isPickerActive, activePickingItem]);
-
-  // Click-outside listener for distributor picker
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        isPickerActive &&
-        distributorPickerRef.current &&
-        !distributorPickerRef.current.contains(target) &&
-        !(target instanceof Element && target.closest('.btn-start-picking'))
-      ) {
-        clearPicker();
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isPickerActive]);
 
   if (!isOpen) return null;
 
@@ -1087,10 +904,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                   </div>
               ) : (
                 unifiedPendingActions.map(item => {
-                  const pickerMinRate = item.isPicking && distributorPickerResults.length > 0
-                    ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, item.qtyToOrder)))
-                    : Infinity;
-
                   return (
                     <div 
                       key={item.key} 
@@ -1098,8 +911,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                       className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm ${
                         item.inCart 
                            ? 'bg-emerald-500/5 border-emerald-500/20'
-                           : item.isPicking
-                           ? 'bg-blue-500/5 border-blue-500/20'
+                           : linkedPendingItem?.key === item.key
+                           ? 'bg-blue-500/10 border-blue-500/30 ring-1 ring-blue-500/30'
                            : item.type === 'order'
                              ? 'bg-red-500/5 border-red-500/10'
                              : item.type === 'refill'
@@ -1148,10 +961,14 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                           <span className="shrink-0 text-[8px] font-bold uppercase bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/20 text-emerald-400 select-none">
                             ✓ Added
                           </span>
-                        ) : item.isPicking ? (
+                        ) : linkedPendingItem?.key === item.key ? (
                           <button
                             type="button"
-                            onClick={item.onCancelPicking}
+                            onClick={() => {
+                              setLinkedPendingItem(null);
+                              setProduct('');
+                              setQty(1);
+                            }}
                             className="shrink-0 text-[9px] font-semibold bg-bg3 hover:bg-bg3/80 border border-border px-2 py-1 rounded transition-all active:scale-95 text-muted font-sans"
                           >
                             Cancel
@@ -1173,20 +990,9 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const cardEl = e.currentTarget.closest('[data-picker-key]');
-                                if (cardEl) {
-                                  const cardRect = cardEl.getBoundingClientRect();
-                                  setPickerPos({
-                                    top: cardRect.bottom + 4,
-                                    left: cardRect.left,
-                                    width: cardRect.width
-                                  });
-                                }
-                                setPickerQty(item.qtyToOrder || 1);
-                                item.onStartPicking();
+                                handleStartPickingForForm(item);
                               }}
-                              disabled={item.isAdding || distributorPickerLoading}
-                              className={`btn-start-picking text-[9px] font-semibold px-2 py-1 rounded transition-all active:scale-95 disabled:opacity-50 font-sans border ${
+                              className={`btn-start-picking text-[9px] font-semibold px-2 py-1 rounded transition-all active:scale-95 font-sans border ${
                                 item.type === 'order'
                                   ? 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red'
                                   : item.type === 'refill'
@@ -1194,7 +1000,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                                     : 'bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20 text-sky-400'
                               }`}
                             >
-                              {item.isAdding ? 'Adding...' : 'Add'}
+                              Add
                             </button>
                           </div>
                         )}
@@ -1231,6 +1037,36 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
               {/* Form Body */}
               <form id="live-cart-add-form" onSubmit={handleSubmit} className="space-y-4">
                 
+                {linkedPendingItem && (
+                  <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-text flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="truncate pr-2">
+                      <div className="font-bold text-blue-400 text-[9px] uppercase tracking-wider mb-1">
+                        {linkedPendingItem.type === 'order' ? 'Linked Customer Request' : linkedPendingItem.type === 'refill' ? 'Linked Patient Refill' : 'Linked Reconcile Item'}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-text font-semibold truncate text-xs">{linkedPendingItem.name}</span>
+                        {linkedPendingItem.patientName && (
+                          <span className="text-[10px] text-muted">
+                            ({linkedPendingItem.type === 'reconcile' ? 'Distributor' : 'Patient'}: {linkedPendingItem.patientName})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLinkedPendingItem(null);
+                        setProduct('');
+                        setQty(1);
+                      }}
+                      className="p-1 text-muted hover:text-red hover:bg-red-500/10 rounded-xl transition-all ml-2"
+                      title="Clear pending item link"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
                 {/* Autocomplete Search Input */}
                 <div className="relative animate-in fade-in duration-200" ref={autocompleteRef}>
                   <label className="block text-[11px] font-bold text-muted uppercase tracking-wider mb-1.5">Medicine Search</label>
@@ -1577,115 +1413,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
         </div>
       </div>
 
-      {/* Floating Distributor Picker Dropdown */}
-      {isPickerActive && activePickingItem && pickerPos && createPortal(
-        <div
-          ref={distributorPickerRef}
-          className="fixed z-[9999999] max-h-[320px] overflow-hidden flex flex-col bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl p-1"
-          style={{ top: pickerPos.top, left: pickerPos.left, width: pickerPos.width }}
-        >
-          {distributorPickerLoading ? (
-            <div className="flex items-center gap-2 p-3 text-[11px] text-muted">
-              <Loader2 size={12} className="animate-spin text-primary" />
-              <span>Searching distributors...</span>
-            </div>
-          ) : distributorPickerResults.length === 0 ? (
-            <p className="text-[11px] text-muted p-3">No distributors found.</p>
-          ) : (
-            <div className="flex flex-col overflow-hidden max-h-[310px]">
-              <div className="flex justify-between items-center px-2.5 py-1.5 bg-bg3/30 border-b border-border/30 gap-2 flex-wrap shrink-0">
-                <span className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider">Select a Distributor:</span>
-                
-                {/* Quantity Selector */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-muted font-bold uppercase">Qty:</span>
-                  <div className="flex items-center bg-bg3 border border-border rounded-lg h-6 px-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setPickerQty(prev => Math.max(1, prev - 1))}
-                      className="w-4 h-4 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center"
-                    >
-                      <Minus size={8} />
-                    </button>
-                    <input
-                      type="number"
-                      value={pickerQty}
-                      onChange={(e) => setPickerQty(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-8 bg-transparent text-center text-[11px] font-bold outline-none text-text focus:ring-0 border-0 p-0"
-                      min="1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPickerQty(prev => prev + 1)}
-                      className="w-4 h-4 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center"
-                    >
-                      <Plus size={8} />
-                    </button>
-                  </div>
-                </div>
-
-                {activePickingItem.targetMrp !== undefined && activePickingItem.targetMrp !== null && (
-                  <span className="text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
-                    Expected MRP: ₹{activePickingItem.targetMrp.toFixed(2)}
-                  </span>
-                )}
-              </div>
-              <div className="divide-y divide-border/30 overflow-y-auto scrollbar-thin flex-1">
-                {distributorPickerResults.map((dist, idx) => {
-                  const pickerMinRate = distributorPickerResults.length > 0
-                    ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, pickerQty)))
-                    : Infinity;
-                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, pickerQty) : null;
-                  const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => activePickingItem.onConfirmPick(dist, pickerQty)}
-                      disabled={activePickingItem.isAdding}
-                      className="w-full text-left p-2.5 hover:bg-primary/10 transition-all disabled:opacity-50 flex items-center justify-between gap-2 group border-b border-border/30 last:border-b-0"
-                      style={{ borderBottomWidth: idx === distributorPickerResults.length - 1 ? 0 : 1 }}
-                    >
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">
-                            {dist.distributor || 'Unknown'}
-                          </span>
-                          {isBest && (
-                            <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0 select-none">
-                              <Sparkles size={8} className="text-emerald-400 animate-pulse" /> Best
-                            </span>
-                          )}
-                          {dist.stock && (
-                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>
-                              {dist.stock}
-                            </span>
-                          )}
-                        </div>
-                        {dist.scheme && (
-                          <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
-                        )}
-                        {dist.packaging && (
-                          <span className="text-[9px] text-muted mt-0.5">{dist.packaging}</span>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0 flex flex-col items-end justify-center">
-                        {dist.rate !== undefined && dist.rate !== null && (
-                          <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
-                        )}
-                        {dist.mrp !== undefined && dist.mrp !== null && (
-                          <span className="text-[9px] text-muted font-mono block mt-0.5">MRP ₹{dist.mrp}</span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>,
-        document.body
-      )}
 
     </div>,
     document.body
