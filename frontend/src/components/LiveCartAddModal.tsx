@@ -151,6 +151,12 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
   const [leftSidebarTab, setLeftSidebarTab] = useState<'orders' | 'refills'>('orders');
 
+  // Distributor Picker States (for Orders & Refills)
+  const [distributorPickerOrderId, setDistributorPickerOrderId] = useState<number | null>(null);
+  const [distributorPickerRefillId, setDistributorPickerRefillId] = useState<number | null>(null);
+  const [distributorPickerResults, setDistributorPickerResults] = useState<SuggestionMedicine[]>([]);
+  const [distributorPickerLoading, setDistributorPickerLoading] = useState(false);
+
   const fetchPendingOrders = async () => {
     try {
       const data = await api.getOrders();
@@ -193,36 +199,64 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     return null;
   };
 
-  const handleAddRefillToCart = async (refill: Refill) => {
-    setAddingRefillId(refill.id);
+  const handleSearchDistributorsForRefill = async (refill: Refill) => {
+    setDistributorPickerRefillId(refill.id);
+    setDistributorPickerResults([]);
+    setDistributorPickerLoading(true);
     try {
       const medName = refill.medicine_name || `Medicine ${refill.medicine_id}`;
-      toastEvent.trigger(`Searching Pharmarack for "${medName}"...`, 'info');
       const searchResults = await api.searchPharmarack(medName);
       if (!searchResults || searchResults.length === 0) {
         toastEvent.trigger(`No Pharmarack matches found for "${medName}"`, 'error');
+        setDistributorPickerRefillId(null);
         return;
       }
+      const mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
+        medicine_name: item.name,
+        mrp: item.mrp,
+        isPharmarack: true,
+        distributor: item.distributor,
+        rate: item.rate,
+        mapped: item.mapped,
+        packaging: item.packaging,
+        stock: item.stock,
+        scheme: item.scheme,
+        productId: item.productId,
+        storeId: item.storeId,
+        productCode: item.productCode,
+        company: item.company
+      }));
+      setDistributorPickerResults(mapped);
+    } catch (err: any) {
+      console.error('Failed to search distributors for refill:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to search distributors', 'error');
+      setDistributorPickerRefillId(null);
+    } finally {
+      setDistributorPickerLoading(false);
+    }
+  };
 
-      // Add the first matching item to Pharmarack cart
-      const matchedItem = searchResults[0];
+  const handleConfirmRefillDistributor = async (refill: Refill, picked: SuggestionMedicine) => {
+    setAddingRefillId(refill.id);
+    try {
       const payload = [{
-        productId: matchedItem.productId,
-        storeId: matchedItem.storeId,
-        qty: 1, // Default to 1 pack for refill replenishment
-        productCode: matchedItem.productCode,
-        productName: matchedItem.name,
-        company: matchedItem.company,
-        packaging: matchedItem.packaging,
-        rate: matchedItem.rate || 0,
-        mrp: matchedItem.mrp || 0,
-        storeName: matchedItem.distributor,
-        mapped: matchedItem.mapped
+        productId: picked.productId,
+        storeId: picked.storeId,
+        qty: 1,
+        productCode: picked.productCode,
+        productName: picked.medicine_name,
+        company: picked.company,
+        packaging: picked.packaging,
+        rate: picked.rate || 0,
+        mrp: picked.mrp || 0,
+        storeName: picked.distributor,
+        mapped: picked.mapped
       }];
-
       const res = await api.addPharmarackCart(payload);
       if (res && res.success) {
-        toastEvent.trigger(`Added "${medName}" to Pharmarack cart!`, 'success');
+        toastEvent.trigger(`Added "${refill.medicine_name}" to Pharmarack cart!`, 'success');
+        setDistributorPickerRefillId(null);
+        setDistributorPickerResults([]);
         await fetchCart();
         await fetchPendingRefills();
         window.dispatchEvent(new CustomEvent('refresh-pharmarack-cart'));
@@ -250,48 +284,64 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     return null;
   };
 
-  const handleAddPendingToCart = async (order: SpecialOrder) => {
-    setAddingOrderId(order.id);
+  const handleSearchDistributorsForOrder = async (order: SpecialOrder) => {
+    setDistributorPickerOrderId(order.id);
+    setDistributorPickerResults([]);
+    setDistributorPickerLoading(true);
     try {
-      toastEvent.trigger(`Searching Pharmarack for "${order.product}"...`, 'info');
       const searchResults = await api.searchPharmarack(order.product);
       if (!searchResults || searchResults.length === 0) {
         toastEvent.trigger(`No Pharmarack matches found for "${order.product}"`, 'error');
+        setDistributorPickerOrderId(null);
         return;
       }
+      const mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
+        medicine_name: item.name,
+        mrp: item.mrp,
+        isPharmarack: true,
+        distributor: item.distributor,
+        rate: item.rate,
+        mapped: item.mapped,
+        packaging: item.packaging,
+        stock: item.stock,
+        scheme: item.scheme,
+        productId: item.productId,
+        storeId: item.storeId,
+        productCode: item.productCode,
+        company: item.company
+      }));
+      setDistributorPickerResults(mapped);
+    } catch (err: any) {
+      console.error('Failed to search distributors for order:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to search distributors', 'error');
+      setDistributorPickerOrderId(null);
+    } finally {
+      setDistributorPickerLoading(false);
+    }
+  };
 
-      // Try to find the item from the same distributor if specified
-      let matchedItem = searchResults[0];
-      if (order.pharmarack_distributor) {
-        const exactDist = searchResults.find((r: any) => 
-          r.distributor.toLowerCase().trim() === order.pharmarack_distributor!.toLowerCase().trim()
-        );
-        if (exactDist) {
-          matchedItem = exactDist;
-        }
-      }
-
-      // Add to Pharmarack cart
+  const handleConfirmOrderDistributor = async (order: SpecialOrder, picked: SuggestionMedicine) => {
+    setAddingOrderId(order.id);
+    try {
       const payload = [{
-        productId: matchedItem.productId,
-        storeId: matchedItem.storeId,
+        productId: picked.productId,
+        storeId: picked.storeId,
         qty: order.qty,
-        productCode: matchedItem.productCode,
-        productName: matchedItem.name,
-        company: matchedItem.company,
-        packaging: matchedItem.packaging,
-        rate: order.pharmarack_rate || matchedItem.rate || 0,
-        mrp: order.pharmarack_mrp || matchedItem.mrp || 0,
-        storeName: matchedItem.distributor,
-        mapped: matchedItem.mapped
+        productCode: picked.productCode,
+        productName: picked.medicine_name,
+        company: picked.company,
+        packaging: picked.packaging,
+        rate: order.pharmarack_rate || picked.rate || 0,
+        mrp: order.pharmarack_mrp || picked.mrp || 0,
+        storeName: picked.distributor,
+        mapped: picked.mapped
       }];
-
       const res = await api.addPharmarackCart(payload);
       if (res && res.success) {
         toastEvent.trigger(`Added "${order.product}" to Pharmarack cart!`, 'success');
-        // Update order status to 'Ordered'
         await api.updateOrder(order.id, { status: 'Ordered' });
-        // Refresh cart & pending list
+        setDistributorPickerOrderId(null);
+        setDistributorPickerResults([]);
         await fetchCart();
         await fetchPendingOrders();
         window.dispatchEvent(new CustomEvent('refresh-pharmarack-cart'));
@@ -722,13 +772,19 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                 ) : (
                   pendingOrders.map(order => {
                     const inCart = getOrderItemInCart(order);
+                    const isPickingForOrder = distributorPickerOrderId === order.id;
+                    const pickerMinRate = isPickingForOrder && distributorPickerResults.length > 0
+                      ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, order.qty)))
+                      : Infinity;
                     return (
                       <div 
                         key={order.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm hover:scale-[1.01] hover:shadow-md ${
+                        className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm ${
                           inCart 
-                             ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' 
-                             : 'bg-red-500/5 border-red-500/10 text-red'
+                             ? 'bg-emerald-500/5 border-emerald-500/20'
+                             : isPickingForOrder
+                             ? 'bg-blue-500/5 border-blue-500/20'
+                             : 'bg-red-500/5 border-red-500/10'
                         }`}
                       >
                         <div className="flex justify-between items-start gap-2">
@@ -745,19 +801,86 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                           </div>
                           {inCart ? (
                             <span className="shrink-0 text-[8px] font-bold uppercase bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/20 text-emerald-400 select-none">
-                              Added
+                              ✓ Added
                             </span>
+                          ) : isPickingForOrder ? (
+                            <button
+                              type="button"
+                              onClick={() => { setDistributorPickerOrderId(null); setDistributorPickerResults([]); }}
+                              className="shrink-0 text-[9px] font-semibold bg-bg3 hover:bg-bg3/80 border border-border px-2 py-1 rounded transition-all active:scale-95 text-muted font-sans"
+                            >
+                              Cancel
+                            </button>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleAddPendingToCart(order)}
-                              disabled={addingOrderId === order.id}
+                              onClick={() => handleSearchDistributorsForOrder(order)}
+                              disabled={addingOrderId === order.id || distributorPickerLoading}
                               className="shrink-0 text-[9px] font-semibold bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-2 py-1 rounded transition-all active:scale-95 text-red disabled:opacity-50 font-sans"
                             >
                               {addingOrderId === order.id ? 'Adding...' : 'Add'}
                             </button>
                           )}
                         </div>
+
+                        {/* Inline Distributor Picker for this Order */}
+                        {isPickingForOrder && (
+                          <div className="mt-1 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-blue-500/20 pt-2">
+                            {distributorPickerLoading ? (
+                              <div className="flex items-center gap-2 py-1.5 text-[11px] text-muted">
+                                <Loader2 size={12} className="animate-spin text-primary" />
+                                <span>Searching distributors...</span>
+                              </div>
+                            ) : distributorPickerResults.length === 0 ? (
+                              <p className="text-[11px] text-muted py-1">No distributors found.</p>
+                            ) : (
+                              <div className="space-y-1">
+                                <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider mb-1.5">Select a Distributor:</p>
+                                {distributorPickerResults.map((dist, idx) => {
+                                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, order.qty) : null;
+                                  const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => handleConfirmOrderDistributor(order, dist)}
+                                      disabled={addingOrderId === order.id}
+                                      className="w-full text-left p-2 rounded-lg bg-bg3/50 hover:bg-primary/10 border border-border hover:border-primary/40 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-between gap-2 group"
+                                    >
+                                      <div className="flex flex-col min-w-0 flex-1">
+                                        <div className="flex items-center gap-1 flex-wrap">
+                                          <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">{dist.distributor || 'Unknown'}</span>
+                                          {isBest && (
+                                            <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0">
+                                              <Sparkles size={7} /> Best
+                                            </span>
+                                          )}
+                                          {dist.stock && (
+                                            <span className={`text-[8px] px-1 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>{dist.stock}</span>
+                                          )}
+                                        </div>
+                                        {dist.scheme && (
+                                          <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
+                                        )}
+                                        {dist.packaging && (
+                                          <span className="text-[9px] text-muted">{dist.packaging}</span>
+                                        )}
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        {dist.rate !== undefined && dist.rate !== null && (
+                                          <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
+                                        )}
+                                        {dist.mrp !== undefined && dist.mrp !== null && (
+                                          <span className="text-[9px] text-muted font-mono block">MRP ₹{dist.mrp}</span>
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -772,13 +895,19 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                 ) : (
                   pendingRefills.map(refill => {
                     const inCart = getRefillItemInCart(refill);
+                    const isPickingForRefill = distributorPickerRefillId === refill.id;
+                    const pickerMinRateRefill = isPickingForRefill && distributorPickerResults.length > 0
+                      ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, 1)))
+                      : Infinity;
                     return (
                       <div 
                         key={refill.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm hover:scale-[1.01] hover:shadow-md ${
+                        className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm ${
                           inCart 
-                             ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' 
-                             : 'bg-red-500/5 border-red-500/10 text-red'
+                             ? 'bg-emerald-500/5 border-emerald-500/20'
+                             : isPickingForRefill
+                             ? 'bg-blue-500/5 border-blue-500/20'
+                             : 'bg-red-500/5 border-red-500/10'
                         }`}
                       >
                         <div className="flex justify-between items-start gap-2">
@@ -795,19 +924,86 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                           </div>
                           {inCart ? (
                             <span className="shrink-0 text-[8px] font-bold uppercase bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/20 text-emerald-400 select-none">
-                              Added
+                              ✓ Added
                             </span>
+                          ) : isPickingForRefill ? (
+                            <button
+                              type="button"
+                              onClick={() => { setDistributorPickerRefillId(null); setDistributorPickerResults([]); }}
+                              className="shrink-0 text-[9px] font-semibold bg-bg3 hover:bg-bg3/80 border border-border px-2 py-1 rounded transition-all active:scale-95 text-muted font-sans"
+                            >
+                              Cancel
+                            </button>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleAddRefillToCart(refill)}
-                              disabled={addingRefillId === refill.id}
+                              onClick={() => handleSearchDistributorsForRefill(refill)}
+                              disabled={addingRefillId === refill.id || distributorPickerLoading}
                               className="shrink-0 text-[9px] font-semibold bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-2 py-1 rounded transition-all active:scale-95 text-red disabled:opacity-50 font-sans"
                             >
                               {addingRefillId === refill.id ? 'Adding...' : 'Add'}
                             </button>
                           )}
                         </div>
+
+                        {/* Inline Distributor Picker for this Refill */}
+                        {isPickingForRefill && (
+                          <div className="mt-1 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-blue-500/20 pt-2">
+                            {distributorPickerLoading ? (
+                              <div className="flex items-center gap-2 py-1.5 text-[11px] text-muted">
+                                <Loader2 size={12} className="animate-spin text-primary" />
+                                <span>Searching distributors...</span>
+                              </div>
+                            ) : distributorPickerResults.length === 0 ? (
+                              <p className="text-[11px] text-muted py-1">No distributors found.</p>
+                            ) : (
+                              <div className="space-y-1">
+                                <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider mb-1.5">Select a Distributor:</p>
+                                {distributorPickerResults.map((dist, idx) => {
+                                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, 1) : null;
+                                  const isBest = effRate !== null && Math.abs(effRate - pickerMinRateRefill) < 0.01;
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => handleConfirmRefillDistributor(refill, dist)}
+                                      disabled={addingRefillId === refill.id}
+                                      className="w-full text-left p-2 rounded-lg bg-bg3/50 hover:bg-primary/10 border border-border hover:border-primary/40 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-between gap-2 group"
+                                    >
+                                      <div className="flex flex-col min-w-0 flex-1">
+                                        <div className="flex items-center gap-1 flex-wrap">
+                                          <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">{dist.distributor || 'Unknown'}</span>
+                                          {isBest && (
+                                            <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0">
+                                              <Sparkles size={7} /> Best
+                                            </span>
+                                          )}
+                                          {dist.stock && (
+                                            <span className={`text-[8px] px-1 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>{dist.stock}</span>
+                                          )}
+                                        </div>
+                                        {dist.scheme && (
+                                          <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
+                                        )}
+                                        {dist.packaging && (
+                                          <span className="text-[9px] text-muted">{dist.packaging}</span>
+                                        )}
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        {dist.rate !== undefined && dist.rate !== null && (
+                                          <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
+                                        )}
+                                        {dist.mrp !== undefined && dist.mrp !== null && (
+                                          <span className="text-[9px] text-muted font-mono block">MRP ₹{dist.mrp}</span>
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })
