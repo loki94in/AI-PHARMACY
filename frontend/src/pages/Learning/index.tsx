@@ -1760,6 +1760,38 @@ const Learning: React.FC = () => {
                 )}
               </div>
             ) : null}
+
+            {settingsData && (
+              <div className="bg-bg3 border border-glass-border rounded-xl p-5 space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-text flex items-center gap-2">
+                    <Mail size={14} className="text-red" />
+                    Ignored Senders Blocklist
+                  </h4>
+                  <p className="text-[10px] text-muted">
+                    Enter email addresses (comma-separated) to ignore. The system will skip downloading emails from these addresses, never extract data from them, and automatically delete all matching historical emails and their attachments.
+                  </p>
+                </div>
+                <div className="space-y-2 pt-3 border-t border-glass-border">
+                  <textarea
+                    rows={3}
+                    className="premium-input w-full text-xs font-mono"
+                    placeholder="info@pharmarack.com, junk@supplier.com"
+                    value={settingsData.ignored_emails || ''}
+                    onChange={(e) => setSettingsData({ ...settingsData, ignored_emails: e.target.value })}
+                  />
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] text-muted">Separate multiple email addresses with commas.</span>
+                    <button
+                      onClick={() => handleSaveConfig()}
+                      className="text-[10px] font-bold bg-green/20 hover:bg-green/35 text-green px-4 py-1.5 rounded-lg transition-all"
+                    >
+                      Save Ignore List & Clean DB
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -877,6 +877,41 @@ export async function ensureSchema(dbPath: string) {
         const { default: sqlite3 } = await import('sqlite3');
         const backgroundDb = await open({ filename: dbPathLocal, driver: sqlite3.Database });
         try {
+          const { emailService } = await import('./services/emailService.js');
+          
+          // Ensure default value for ignored_emails is populated with 'info@pharmarack'
+          const existingIgnored = await backgroundDb.get("SELECT value FROM app_settings WHERE key = 'ignored_emails'");
+          if (!existingIgnored) {
+            await backgroundDb.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('ignored_emails', 'info@pharmarack')");
+            console.log("[Database Migration] Initialized default ignored_emails setting with 'info@pharmarack'.");
+          }
+
+          // Clean up existing emails based on the ignore list setting
+          await emailService.cleanupIgnoredEmailsInDb(backgroundDb);
+          
+          // Retroactively clean existing emails with junk/non-medicine names
+          const populated = await backgroundDb.all('SELECT uid, medicine_names FROM emails WHERE is_order = 1 AND medicine_names IS NOT NULL');
+          let cleanCount = 0;
+          for (const email of populated) {
+            try {
+              if (email.medicine_names) {
+                const medNames = JSON.parse(email.medicine_names);
+                if (Array.isArray(medNames)) {
+                  const cleaned = medNames.filter(name => emailService.isRealMedicineName(name));
+                  if (cleaned.length !== medNames.length) {
+                    await backgroundDb.run('UPDATE emails SET medicine_names = ? WHERE uid = ?', [JSON.stringify(cleaned), email.uid]);
+                    cleanCount++;
+                  }
+                }
+              }
+            } catch (err) {
+              // ignore
+            }
+          }
+          if (cleanCount > 0) {
+            console.log(`[Database Migration] Cleaned up junk medicine names for ${cleanCount} emails.`);
+          }
+
           const unpopulated = await backgroundDb.all('SELECT uid, subject, body, from_addr FROM emails WHERE is_order = 1 AND medicine_names IS NULL');
           if (unpopulated.length > 0) {
             console.log(`[Database Migration] Populating medicine names for ${unpopulated.length} emails in background...`);

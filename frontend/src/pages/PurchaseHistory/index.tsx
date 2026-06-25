@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../services/api';
 import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 
@@ -132,7 +132,9 @@ const PurchaseHistory = () => {
   };
 
   // Reconciliation States
-  const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>('history');
+  const location = useLocation();
+  const initialActiveTab = location.state?.activeTab || 'history';
+  const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>(initialActiveTab);
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
   const [loadingRecon, setLoadingRecon] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);

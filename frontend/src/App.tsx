@@ -1179,7 +1179,8 @@ import {
   MessageSquare as MessageSquareIcon,
   Play as PlayIcon,
   Pause as PauseIcon,
-  Send as SendIcon
+  Send as SendIcon,
+  Building2 as BuildingIcon
 } from 'lucide-react';
 
 const RefillControlSidebar = ({
@@ -1187,12 +1188,14 @@ const RefillControlSidebar = ({
   setExpanded,
   refills,
   notifications,
+  reconciliationList,
   onActionComplete,
 }: {
   expanded: boolean;
   setExpanded: (val: boolean) => void;
   refills: any[];
   notifications: any[];
+  reconciliationList: any[];
   onActionComplete: () => void;
 }) => {
   const navigate = useNavigate();
@@ -1235,6 +1238,7 @@ const RefillControlSidebar = ({
 
   const liveOrders = refills.filter(r => r.hold_for_stock === 1 || r.is_ready === 0);
   const stockAlerts = refills.filter(r => r.is_ready === 1);
+  const unreconciledOrders = (reconciliationList || []).filter((o: any) => o.status === 'Missing' && !o.is_saved);
 
   if (!expanded) {
     return (
@@ -1247,22 +1251,28 @@ const RefillControlSidebar = ({
           <ChevronLeftIcon size={18} />
         </button>
         <div className="flex flex-col gap-4 mt-4">
-          <div className="relative" title={`${liveOrders.length} Live Order Requests`}>
+          <div className="relative cursor-pointer" title={`${liveOrders.length} Live Order Requests`} onClick={() => setExpanded(true)}>
             <CartIcon size={18} className="text-sky-400" />
             {liveOrders.length > 0 && (
               <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-sky-500" />
             )}
           </div>
-          <div className="relative" title={`${stockAlerts.length} Stock Alerts`}>
+          <div className="relative cursor-pointer" title={`${stockAlerts.length} Stock Alerts`} onClick={() => setExpanded(true)}>
             <AlertIcon size={18} className="text-amber-500" />
             {stockAlerts.some(r => r.acknowledged === 0) && (
               <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
             )}
           </div>
-          <div className="relative" title={`${notifications.length} Staged Messages`}>
+          <div className="relative cursor-pointer" title={`${notifications.length} Staged Messages`} onClick={() => setExpanded(true)}>
             <MessageSquareIcon size={18} className="text-purple-400" />
             {notifications.length > 0 && (
               <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-purple-500" />
+            )}
+          </div>
+          <div className="relative cursor-pointer" title={`${unreconciledOrders.length} Missing Distributor Invoices`} onClick={() => setExpanded(true)}>
+            <BuildingIcon size={18} className="text-rose-400" />
+            {unreconciledOrders.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
             )}
           </div>
         </div>
@@ -1427,6 +1437,53 @@ const RefillControlSidebar = ({
             </div>
           )}
         </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-rose-400">
+            <BuildingIcon size={14} />
+            <span>Missing Invoice Orders ({unreconciledOrders.length})</span>
+          </div>
+          {unreconciledOrders.length === 0 ? (
+            <p className="text-xs text-muted/60 pl-2">No missing distributor orders</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {unreconciledOrders.map(order => (
+                <div key={order.email_uid} className="p-3 rounded-xl bg-rose-500/[0.03] border border-rose-500/20 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-1">
+                    <div>
+                      <span className="font-semibold text-text truncate block max-w-[200px]" title={order.extracted_distributor}>
+                        {order.extracted_distributor || 'Unknown Distributor'}
+                      </span>
+                      <span className="text-[10px] text-muted/50 font-mono mt-0.5 block">
+                        Received: {order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                  {order.medicine_names && order.medicine_names.length > 0 ? (
+                    <div className="bg-black/10 p-2 rounded-lg border border-glass-border">
+                      <p className="text-[10px] uppercase font-bold text-muted/70 tracking-wider mb-1">Medicines Ordered</p>
+                      <ul className="text-[11px] text-muted space-y-0.5 list-disc list-inside">
+                        {order.medicine_names.map((name: string, idx: number) => (
+                          <li key={idx} className="truncate" title={name}>{name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted/40 italic pl-1">No medicines detected</p>
+                  )}
+                  <button
+                    onClick={() => {
+                      navigate('/purchase-history', { state: { activeTab: 'reconciliation' } });
+                    }}
+                    className="w-full mt-1 py-1 rounded bg-rose-500 hover:bg-rose-600 text-white font-bold text-[10px] tracking-wide uppercase transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    Reconcile Order
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1487,6 +1544,7 @@ const Layout = ({
 
   const [refills, setRefills] = useState<any[]>([]);
   const [stagedNotifications, setStagedNotifications] = useState<any[]>([]);
+  const [reconciliationList, setReconciliationList] = useState<any[]>([]);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
     try {
       return localStorage.getItem('refill_sidebar_expanded') !== 'false';
@@ -1514,6 +1572,13 @@ const Layout = ({
       setStagedNotifications(Array.isArray(notifications) ? notifications : []);
     } catch (err) {
       console.warn('Failed to load staged notifications in layout:', err);
+    }
+
+    try {
+      const reconData = await api.getReconciliationList();
+      setReconciliationList(Array.isArray(reconData) ? reconData : []);
+    } catch (err) {
+      console.warn('Failed to load reconciliation list in layout:', err);
     }
   }, []);
 
@@ -1744,6 +1809,7 @@ const Layout = ({
             setExpanded={setIsSidebarExpanded}
             refills={refills}
             notifications={stagedNotifications}
+            reconciliationList={reconciliationList}
             onActionComplete={fetchRefillData}
           />
         </div>
