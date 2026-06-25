@@ -151,7 +151,8 @@ function cleanSearchQuery(query: string): string {
 
 // Search endpoint
 router.get('/search', async (req, res) => {
-  const q = (req.query.q as string || '').toLowerCase().trim();
+  const rawQ = (req.query.q as string || '').trim();
+  const q = rawQ.toLowerCase(); // lowercase only for cache key, NOT for ES query
   if (!q) {
     return res.json([]);
   }
@@ -177,15 +178,15 @@ router.get('/search', async (req, res) => {
     // Helper to perform an actual Elasticsearch query on Pharmarack
     const performSearchQuery = async (searchTerm: string) => {
       const payload: any = {
-        SearchKeyword: searchTerm,
+        SearchKeyword: searchTerm, // send original case — ES relevance scoring is case-sensitive
         StoreId: hasStoreFilter && isMapped ? [storeId] : [],
         NonMappedStoreId: hasStoreFilter && !isMapped ? [storeId] : [],
-        Count: 50,
+        Count: 100,  // match website (was 50, caused missing items)
         SkipCount: 0,
         isMappedSearch: hasStoreFilter ? isMapped : null,
         IsStock: 2,
         IsScheme: 2,
-        IsSort: 1,
+        // IsSort omitted — let Elasticsearch use its natural relevance ranking (matches website behaviour)
         CartSource: 'MOVP'
       };
 
@@ -198,7 +199,7 @@ router.get('/search', async (req, res) => {
       if (response.ok) {
         const data: any = await response.json();
         if (data && Array.isArray(data.data)) {
-          return data.data.map((p: any) => ({
+          const rawItems = data.data.map((p: any) => ({
             name: p.ProductName || p.ProductFullName || '',
             packaging: p.Packing || '',
             distributor: p.StoreName || '',
@@ -212,6 +213,37 @@ router.get('/search', async (req, res) => {
             company: p.Company || '',
             storeId: p.StoreId
           }));
+
+          // Deduplicate: same distributor + same product name can appear multiple times
+          // (different branch StoreIds of the same chain). Keep the best stock entry.
+          const parseStock = (s: string): number => {
+            if (!s) return -1;
+            const lower = s.toLowerCase();
+            if (lower === 'high') return 9999;
+            if (lower === 'medium') return 50;
+            if (lower === 'low') return 1;
+            if (lower === 'out of stock' || lower === 'no stock' || lower === '0') return 0;
+            const n = parseInt(s);
+            return isNaN(n) ? -1 : n;
+          };
+
+          const bestByKey = new Map<string, any>();
+          for (const item of rawItems) {
+            const key = `${item.distributor.toLowerCase()}||${item.name.toLowerCase()}||${item.packaging.toLowerCase()}`;
+            const existing = bestByKey.get(key);
+            if (!existing) {
+              bestByKey.set(key, item);
+            } else {
+              const existStock = parseStock(existing.stock);
+              const newStock = parseStock(item.stock);
+              // Prefer higher stock; on tie prefer lower PTR
+              if (newStock > existStock || (newStock === existStock && (item.rate || 0) < (existing.rate || 0))) {
+                bestByKey.set(key, item);
+              }
+            }
+          }
+
+          return Array.from(bestByKey.values());
         }
       }
       return null;
@@ -221,16 +253,16 @@ router.get('/search', async (req, res) => {
       let mappedProducts: any[] = [];
       let searchSuccessful = false;
 
-      // Stage 1: Try search with exact user query
-      let results = await performSearchQuery(q);
+      // Stage 1: Try search with original query (preserves case for ES relevance)
+      let results = await performSearchQuery(rawQ);
       if (results && results.length > 0) {
         mappedProducts = results;
         searchSuccessful = true;
       } else {
         // Stage 2: Try search with cleaned query (dosage forms removed)
-        const cleanedQ = cleanSearchQuery(q);
-        if (cleanedQ && cleanedQ !== q) {
-          console.log(`[Pharmarack Search] No results for exact query "${q}". Trying cleaned query: "${cleanedQ}"`);
+        const cleanedQ = cleanSearchQuery(rawQ);
+        if (cleanedQ && cleanedQ.toLowerCase() !== q) {
+          console.log(`[Pharmarack Search] No results for exact query "${rawQ}". Trying cleaned query: "${cleanedQ}"`);
           results = await performSearchQuery(cleanedQ);
           if (results && results.length > 0) {
             mappedProducts = results;
@@ -239,9 +271,9 @@ router.get('/search', async (req, res) => {
         }
 
         // Stage 3: Try search with first word only (brand name) if multi-word query
-        if (!searchSuccessful && q.includes(' ')) {
-          const firstWord = q.split(' ')[0].trim();
-          if (firstWord && firstWord.length >= 3 && firstWord !== q && firstWord !== cleanedQ) {
+        if (!searchSuccessful && rawQ.includes(' ')) {
+          const firstWord = rawQ.split(' ')[0].trim();
+          if (firstWord && firstWord.length >= 3 && firstWord.toLowerCase() !== q && firstWord.toLowerCase() !== cleanSearchQuery(rawQ).toLowerCase()) {
             console.log(`[Pharmarack Search] Still no results. Trying brand-only query: "${firstWord}"`);
             results = await performSearchQuery(firstWord);
             if (results && results.length > 0) {
