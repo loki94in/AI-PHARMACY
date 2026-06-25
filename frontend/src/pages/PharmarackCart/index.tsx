@@ -46,7 +46,6 @@ export default function PharmarackCart() {
   const [sendingNotifId, setSendingNotifId] = useState<number | null>(null);
   const [pendingOrders, setPendingOrders] = useState<SpecialOrder[]>(() => cachedPendingOrders);
   const [addingOrderId, setAddingOrderId] = useState<number | null>(null);
-  const [sidebarTab, setSidebarTab] = useState<'requests' | 'refills'>('requests');
   const [pendingRefills, setPendingRefills] = useState<Refill[]>(() => cachedPendingRefills);
   const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
 
@@ -394,6 +393,39 @@ export default function PharmarackCart() {
   const totalQty = distributors.reduce((s, d) => s + d.items.reduce((q, i) => q + i.qty, 0), 0);
   const totalAmount = distributors.reduce((s, d) => s + d.items.reduce((a, i) => a + i.amount, 0), 0);
 
+  // Map and sort special orders and refills into a unified pending list
+  const unifiedPendingItems = [
+    ...pendingOrders.map(order => ({
+      key: `request-${order.id}`,
+      type: 'request' as const,
+      name: order.product,
+      patientName: order.requester,
+      qty: order.qty,
+      date: order.date,
+      inCart: !!getOrderItemInCart(order),
+      onAdd: () => handleAddPendingToCart(order),
+      isAdding: addingOrderId === order.id
+    })),
+    ...pendingRefills.map(refill => ({
+      key: `refill-${refill.id}`,
+      type: 'refill' as const,
+      name: refill.medicine_name || `Medicine ID: ${refill.medicine_id}`,
+      patientName: refill.patient_name,
+      qty: null,
+      date: refill.next_refill_date,
+      inCart: !!getRefillItemInCart(refill),
+      onAdd: () => handleAddRefillToCart(refill),
+      isAdding: addingRefillId === refill.id
+    }))
+  ].sort((a, b) => {
+    // Sort items not in cart to the top
+    if (a.inCart !== b.inCart) {
+      return a.inCart ? 1 : -1;
+    }
+    // Then sort by date ascending (oldest first)
+    return new Date(a.date).getTime() - new Date(b.date).getTime();
+  });
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg text-text">
       {/* ── Top Header ── */}
@@ -445,128 +477,75 @@ export default function PharmarackCart() {
         {/* Left Sidebar: Add Pending Order panel */}
         {!loading && !error && (
           <div className="w-80 border-r border-glass-border/40 bg-bg2/25 flex flex-col shrink-0 overflow-hidden">
-            {/* Sidebar Tabs */}
-            <div className="flex border-b border-glass-border/40 bg-bg3/10 shrink-0 select-none">
-              <button
-                onClick={() => setSidebarTab('requests')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 transition-all flex items-center justify-center gap-1.5 ${
-                  sidebarTab === 'requests'
-                    ? 'border-primary text-primary bg-primary/5'
-                    : 'border-transparent text-muted hover:text-text hover:bg-white/5'
-                }`}
-              >
-                <Clock size={12} />
-                Requests ({pendingOrders.length})
-              </button>
-              <button
-                onClick={() => setSidebarTab('refills')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 transition-all flex items-center justify-center gap-1.5 ${
-                  sidebarTab === 'refills'
-                    ? 'border-primary text-primary bg-primary/5'
-                    : 'border-transparent text-muted hover:text-text hover:bg-white/5'
-                }`}
-              >
-                <ShoppingCart size={12} />
-                Refills ({pendingRefills.length})
-              </button>
+            {/* Sidebar Header */}
+            <div className="px-4 py-3 border-b border-glass-border/40 bg-bg3/10 shrink-0 select-none flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-text flex items-center gap-1.5">
+                <Clock size={12} className="text-primary" />
+                Pending Items ({unifiedPendingItems.length})
+              </span>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {sidebarTab === 'requests' ? (
-                pendingOrders.length === 0 ? (
-                  <div className="text-center py-8 text-[11px] text-muted italic select-none">
-                    No pending special requests from yesterday or older.
-                  </div>
-                ) : (
-                  pendingOrders.map(order => {
-                    const inCart = getOrderItemInCart(order);
-                    return (
-                      <div 
-                        key={order.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-2 transition-all shadow-sm ${
-                          inCart 
-                            ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400' 
-                            : 'bg-red/10 border-red/20 text-red'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col min-w-0">
-                            <span className={`text-[11px] font-bold truncate ${inCart ? 'line-through opacity-65 text-emerald-400' : 'text-text'}`} title={order.product}>
-                              {order.product}
-                            </span>
-                            <span className="text-[9px] text-muted mt-0.5 truncate">
-                              Customer: {order.requester} (Qty: {order.qty})
-                            </span>
-                            <span className="text-[8px] text-muted/80 font-mono mt-0.2">
-                              Date: {new Date(order.date).toLocaleDateString('en-IN')}
-                            </span>
-                          </div>
-                          {inCart ? (
-                            <span className="shrink-0 text-[8px] font-extrabold uppercase bg-emerald-500/25 px-1.5 py-0.5 rounded-md border border-emerald-500/20 text-emerald-400 select-none">
-                              Added
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleAddPendingToCart(order)}
-                              disabled={addingOrderId === order.id}
-                              className="shrink-0 text-[9px] font-bold bg-red/20 hover:bg-red/35 border border-red/30 px-2 py-0.5 rounded-md transition-all active:scale-95 text-red disabled:opacity-50 font-sans"
-                            >
-                              {addingOrderId === order.id ? 'Adding...' : 'Add'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )
+              {unifiedPendingItems.length === 0 ? (
+                <div className="text-center py-8 text-[11px] text-muted italic select-none">
+                  No pending special requests or refill medicines.
+                </div>
               ) : (
-                pendingRefills.length === 0 ? (
-                  <div className="text-center py-8 text-[11px] text-muted italic select-none">
-                    No pending out-of-stock refill medicines due.
-                  </div>
-                ) : (
-                  pendingRefills.map(refill => {
-                    const inCart = getRefillItemInCart(refill);
-                    const medName = refill.medicine_name || `Medicine ID: ${refill.medicine_id}`;
-                    return (
-                      <div 
-                        key={refill.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-2 transition-all shadow-sm ${
-                          inCart 
-                            ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400' 
-                            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col min-w-0">
-                            <span className={`text-[11px] font-bold truncate ${inCart ? 'line-through opacity-65 text-emerald-400' : 'text-text'}`} title={medName}>
-                              {medName}
-                            </span>
-                            <span className="text-[9px] text-muted mt-0.5 truncate">
-                              Patient: {refill.patient_name}
-                            </span>
-                            <span className="text-[8px] text-muted/80 font-mono mt-0.2">
-                              Due Date: {new Date(refill.next_refill_date).toLocaleDateString('en-IN')}
-                            </span>
-                          </div>
-                          {inCart ? (
-                            <span className="shrink-0 text-[8px] font-extrabold uppercase bg-emerald-500/25 px-1.5 py-0.5 rounded-md border border-emerald-500/20 text-emerald-400 select-none">
-                              Added
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleAddRefillToCart(refill)}
-                              disabled={addingRefillId === refill.id}
-                              className="shrink-0 text-[9px] font-bold bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/30 px-2 py-0.5 rounded-md transition-all active:scale-95 text-amber-500 disabled:opacity-50 font-sans"
-                            >
-                              {addingRefillId === refill.id ? 'Adding...' : 'Add'}
-                            </button>
-                          )}
+                unifiedPendingItems.map(item => (
+                  <div 
+                    key={item.key} 
+                    className={`p-3 rounded-xl border flex flex-col gap-2 transition-all shadow-sm ${
+                      item.inCart 
+                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400' 
+                        : item.type === 'request'
+                          ? 'bg-red/10 border-red/20 text-red'
+                          : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                          <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-md border select-none ${
+                            item.inCart
+                              ? 'bg-emerald-500/25 border-emerald-500/20 text-emerald-400'
+                              : item.type === 'request'
+                                ? 'bg-red/25 border-red/20 text-red'
+                                : 'bg-amber-500/25 border-amber-500/20 text-amber-400'
+                          }`}>
+                            {item.type}
+                          </span>
                         </div>
+
+                        <span className={`text-[11px] font-bold truncate ${item.inCart ? 'line-through opacity-65 text-emerald-400' : 'text-text'}`} title={item.name}>
+                          {item.name}
+                        </span>
+                        <span className="text-[9px] text-muted mt-0.5 truncate">
+                          {item.type === 'request' ? 'Customer' : 'Patient'}: {item.patientName} {item.qty !== null ? `(Qty: ${item.qty})` : ''}
+                        </span>
+                        <span className="text-[8px] text-muted/80 font-mono mt-0.2">
+                          {item.type === 'request' ? 'Request Date' : 'Due Date'}: {new Date(item.date).toLocaleDateString('en-IN')}
+                        </span>
                       </div>
-                    );
-                  })
-                )
+                      {item.inCart ? (
+                        <span className="shrink-0 text-[8px] font-extrabold uppercase bg-emerald-500/25 px-1.5 py-0.5 rounded-md border border-emerald-500/20 text-emerald-400 select-none">
+                          Added
+                        </span>
+                      ) : (
+                        <button
+                          onClick={item.onAdd}
+                          disabled={item.isAdding}
+                          className={`shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 font-sans border ${
+                            item.type === 'request'
+                              ? 'bg-red/20 hover:bg-red/35 border-red/30 text-red'
+                              : 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-500/30 text-amber-500'
+                          }`}
+                        >
+                          {item.isAdding ? 'Adding...' : 'Add'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>

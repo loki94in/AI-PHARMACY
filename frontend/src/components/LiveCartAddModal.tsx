@@ -151,7 +151,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   // Pending Refills States and Functions
   const [pendingRefills, setPendingRefills] = useState<Refill[]>([]);
   const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
-  const [leftSidebarTab, setLeftSidebarTab] = useState<'orders' | 'refills'>('orders');
 
   // Distributor Picker States (for Orders & Refills)
   const [distributorPickerOrderId, setDistributorPickerOrderId] = useState<number | null>(null);
@@ -746,42 +745,23 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x divide-glass-border/30 flex-1 overflow-hidden">
           
-          {/* Left Column: Pending Tabs */}
+          {/* Left Column: Pending Orders & Refills */}
           <div className="flex flex-col h-full overflow-hidden pr-3">
             <div className="flex items-center gap-2 border-b border-glass-border/30 pb-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setLeftSidebarTab('orders')}
-                className={`flex-1 pb-1.5 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
-                  leftSidebarTab === 'orders'
-                    ? 'border-primary text-text'
-                    : 'border-transparent text-muted hover:text-text'
-                }`}
-              >
-                Orders ({pendingOrders.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLeftSidebarTab('refills')}
-                className={`flex-1 pb-1.5 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${
-                  leftSidebarTab === 'refills'
-                    ? 'border-primary text-text'
-                    : 'border-transparent text-muted hover:text-text'
-                }`}
-              >
-                Refills ({pendingRefills.length})
-              </button>
+               <h3 className="flex-1 pb-1.5 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-primary text-text">
+                 Pending Action ({pendingOrders.length + pendingRefills.length})
+               </h3>
             </div>
 
             <div className="flex-1 overflow-y-auto py-3 space-y-2.5 scrollbar-thin">
-              {leftSidebarTab === 'orders' ? (
-                pendingOrders.length === 0 ? (
+              {pendingOrders.length === 0 && pendingRefills.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full py-8 text-center text-muted">
                     <Clock size={28} className="opacity-20 mb-2" />
-                    <p className="text-xs font-bold">No Pending Orders</p>
-                    <p className="text-[11px] max-w-[180px] mx-auto mt-0.5">No pending special requests found.</p>
+                    <p className="text-xs font-bold">No Pending Action</p>
+                    <p className="text-[11px] max-w-[180px] mx-auto mt-0.5">No pending special orders or out-of-stock refills found.</p>
                   </div>
-                ) : (
+              )}
+              {pendingOrders.length > 0 && (
                   pendingOrders.map(order => {
                     const inCart = getOrderItemInCart(order);
                     const isPickingForOrder = distributorPickerOrderId === order.id;
@@ -896,15 +876,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                       </div>
                     );
                   })
-                )
-              ) : (
-                pendingRefills.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full py-8 text-center text-muted">
-                    <Clock size={28} className="opacity-20 mb-2" />
-                    <p className="text-xs font-bold">No Pending Refills</p>
-                    <p className="text-[11px] max-w-[180px] mx-auto mt-0.5">No upcoming refills currently out of stock.</p>
-                  </div>
-                ) : (
+              )}
+              {pendingRefills.length > 0 && (
                   pendingRefills.map(refill => {
                     const inCart = getRefillItemInCart(refill);
                     const isPickingForRefill = distributorPickerRefillId === refill.id;
@@ -1019,7 +992,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                       </div>
                     );
                   })
-                )
               )}
             </div>
           </div>
