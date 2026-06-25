@@ -463,6 +463,110 @@ const PurchaseHistory = () => {
                 className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded-xl text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-inner"
               />
             </div>
+            
+            <div className="flex items-center gap-3 relative shrink-0">
+              <button 
+                onClick={() => setShowFilters(!showFilters)}
+                className={`relative flex items-center gap-2 px-5 py-3 rounded-xl text-text font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-glass-border bg-bg hover:bg-bg2`}
+              >
+                <Filter size={18} />
+                Filter
+                {(supplierFilter !== 'All' || 
+                  dateRange.start !== (getNDaysAgoString(15) < earliestDate ? earliestDate : getNDaysAgoString(15)) || 
+                  dateRange.end !== getTodayString()) && (
+                  <span className="w-2 h-2 rounded-full bg-primary absolute top-1 right-1 animate-pulse"></span>
+                )}
+              </button>
+
+              <button 
+                onClick={exportToCSV}
+                className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-600 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] px-5 py-3 rounded-xl text-white font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-white/10"
+              >
+                <Download size={18} />
+                Export CSV
+              </button>
+
+              {/* Dropdown Filter Menu */}
+              {showFilters && (
+                <div className="absolute top-full right-0 mt-2 bg-bg2 border border-glass-border rounded-2xl p-5 shadow-2xl z-50 flex flex-col gap-4 min-w-[320px] animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex justify-between items-center mb-1">
+                    <h3 className="text-text font-semibold flex items-center gap-2">
+                      <Filter size={16} className="text-primary" />
+                      Filter Records
+                    </h3>
+                    <button onClick={() => setShowFilters(false)} className="text-muted hover:text-text transition-colors">
+                      <XCircle size={18} />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-muted text-xs font-semibold uppercase tracking-wider">Distributor Name</label>
+                    <div className="bg-bg3 border border-glass-border rounded-xl p-2.5">
+                      <select 
+                        value={supplierFilter}
+                        onChange={(e) => setSupplierFilter(e.target.value)}
+                        className="w-full bg-transparent text-text text-sm focus:outline-none"
+                      >
+                        <option value="All" className="bg-bg3">All Distributors</option>
+                        {uniqueSuppliers.map(sup => (
+                          <option key={sup} value={sup} className="bg-bg3">{sup}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-muted text-xs font-semibold uppercase tracking-wider">Date Range</label>
+                      <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={manualToDate}
+                          onChange={e => setManualToDate(e.target.checked)}
+                          className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg3"
+                        />
+                        Edit
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2 bg-bg3 border border-glass-border rounded-xl p-2.5">
+                      <input
+                        type="date"
+                        value={dateRange.start}
+                        min={earliestDate}
+                        max={getTodayString()}
+                        onChange={(e) => handleDateFromChange(e.target.value)}
+                        className="w-full bg-transparent text-text text-sm focus:outline-none"
+                      />
+                      <span className="text-muted text-xs">to</span>
+                      <input
+                        type="date"
+                        value={dateRange.end}
+                        min={earliestDate}
+                        max={getTodayString()}
+                        disabled={!manualToDate}
+                        onChange={(e) => handleDateToChange(e.target.value)}
+                        className="w-full bg-transparent text-text text-sm focus:outline-none disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => { 
+                      setSupplierFilter('All'); 
+                      const defaultStart = getNDaysAgoString(15);
+                      setDateRange({
+                        start: defaultStart < earliestDate ? earliestDate : defaultStart, 
+                        end: getTodayString()
+                      }); 
+                      setManualToDate(false); 
+                    }}
+                    className="w-full mt-2 py-2.5 bg-bg3 hover:bg-white/10 text-text rounded-xl text-sm font-semibold transition-colors border border-glass-border"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Table */}
@@ -835,9 +939,6 @@ const PurchaseHistory = () => {
                   <AlertCircle size={20} className="text-primary" />
                   Investigate Distributor Order
                 </h3>
-                <p className="text-xs text-gray-400 mt-1">
-                  Email UID: #{selectedOrder.email_uid} &middot; Received {new Date(selectedOrder.date).toLocaleString()}
-                </p>
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
@@ -851,21 +952,12 @@ const PurchaseHistory = () => {
               {/* Metadata Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-black/20 p-4 rounded-xl border border-glass-border/20">
                 <div>
-                  <span className="text-xs text-gray-400 block mb-1">From (Distributor)</span>
-                  <strong className="text-white text-base">{selectedOrder.extracted_distributor}</strong>
-                  <span className="text-[10px] text-gray-500 block font-mono mt-0.5">{selectedOrder.from}</span>
+                  <span className="text-xs text-gray-400 block mb-1">Distributor</span>
+                  <strong className="text-white text-base">{selectedOrder.extracted_distributor || 'N/A'}</strong>
                 </div>
                 <div>
-                  <span className="text-xs text-gray-400 block mb-1">Extracted Invoice No.</span>
+                  <span className="text-xs text-gray-400 block mb-1">Bill Number</span>
                   <strong className="text-white text-base">{selectedOrder.extracted_invoice_no || 'N/A'}</strong>
-                </div>
-              </div>
-
-              {/* Email Subject Line */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-sky uppercase tracking-wide">Subject Line</h4>
-                <div className="bg-black/30 p-3 rounded-lg border border-glass-border/10 font-medium text-white">
-                  {selectedOrder.subject}
                 </div>
               </div>
 
@@ -883,39 +975,6 @@ const PurchaseHistory = () => {
                 ) : (
                   <div className="text-gray-500 text-xs italic bg-white/5 p-3 rounded-xl border border-glass-border/20">
                     No medicines detected in this order
-                  </div>
-                )}
-              </div>
-
-              {/* Reconciliation Analysis Card */}
-              <div>
-                <h4 className="text-xs font-bold text-sky uppercase tracking-wide mb-2">Reconciliation Analysis</h4>
-                {selectedOrder.is_saved ? (
-                  <div className="bg-green-500/10 border border-green-500/20 p-4 rounded-xl text-green-400 flex items-start gap-3">
-                    <CheckCircle size={18} className="mt-0.5 flex-shrink-0" />
-                    <div>
-                      <strong className="block text-white text-xs">Successfully Reconciled</strong>
-                      <span className="text-xs block mt-0.5">This order is already recorded in the purchase history. No further action is required.</span>
-                    </div>
-                  </div>
-                ) : selectedOrder.status === 'Matched' ? (
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-xl text-yellow-400 flex items-start gap-3">
-                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                    <div>
-                      <strong className="block text-white text-xs">Matched in Purchase History</strong>
-                      <span className="text-xs block mt-0.5">An invoice with number <strong>{selectedOrder.extracted_invoice_no}</strong> already exists in the database, but this specific email was not marked as saved. You can mark it as resolved manually.</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-red-400 flex items-start gap-3">
-                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                    <div>
-                      <strong className="block text-white text-xs">Missing Order - Action Required</strong>
-                      <span className="text-xs block mt-0.5">This order exists as a distributor email receipt, but is <strong>NOT</strong> recorded in the purchase history and items have <strong>NOT</strong> been delivered to inventory.</span>
-                      <span className="text-xs block mt-1 text-red-300 font-semibold">
-                        💡 Reissuing this order will automatically update inventory and trigger any pending patient refills for these medicines, generating pre-filled checkout bills!
-                      </span>
-                    </div>
                   </div>
                 )}
               </div>
@@ -1085,114 +1144,7 @@ const PurchaseHistory = () => {
         document.body
       )}
     {/* Edit Purchase Modal */}
-      {/* Floating Action Buttons */}
-      {activeTab === 'history' && (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
-          {/* Drop-up Filter Menu */}
-          {showFilters && (
-            <div className="bg-[#18181b]/95 backdrop-blur-xl border border-glass-border rounded-2xl p-5 shadow-2xl animate-in slide-in-from-bottom-4 flex flex-col gap-4 min-w-[320px]">
-              <div className="flex justify-between items-center mb-1">
-                <h3 className="text-white font-semibold flex items-center gap-2">
-                  <Filter size={16} className="text-primary" />
-                  Filter Records
-                </h3>
-                <button onClick={() => setShowFilters(false)} className="text-gray-400 hover:text-white transition-colors">
-                  <XCircle size={18} />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <label className="text-gray-400 text-sm">Distributor Name</label>
-                <div className="bg-black/40 border border-glass-border rounded-xl p-2.5">
-                  <select 
-                    value={supplierFilter}
-                    onChange={(e) => setSupplierFilter(e.target.value)}
-                    className="w-full bg-transparent text-white text-sm focus:outline-none"
-                  >
-                    <option value="All" className="bg-gray-900">All Distributors</option>
-                    {uniqueSuppliers.map(sup => (
-                      <option key={sup} value={sup} className="bg-gray-900">{sup}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-gray-400 text-sm">Date Range</label>
-                  <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={manualToDate}
-                      onChange={e => setManualToDate(e.target.checked)}
-                      className="rounded border-glass-border text-primary focus:ring-primary/20 bg-black/20"
-                    />
-                    Edit
-                  </label>
-                </div>
-                <div className="flex items-center gap-2 bg-black/40 border border-glass-border rounded-xl p-2.5">
-                  <input
-                    type="date"
-                    value={dateRange.start}
-                    min={earliestDate}
-                    max={getTodayString()}
-                    onChange={(e) => handleDateFromChange(e.target.value)}
-                    className="w-full bg-transparent text-white text-sm focus:outline-none"
-                  />
-                  <span className="text-gray-500">to</span>
-                  <input
-                    type="date"
-                    value={dateRange.end}
-                    min={earliestDate}
-                    max={getTodayString()}
-                    disabled={!manualToDate}
-                    onChange={(e) => handleDateToChange(e.target.value)}
-                    className="w-full bg-transparent text-white text-sm focus:outline-none disabled:opacity-50"
-                  />
-                </div>
-              </div>
-
-              <button 
-                onClick={() => { 
-                  setSupplierFilter('All'); 
-                  const defaultStart = getNDaysAgoString(15);
-                  setDateRange({
-                    start: defaultStart < earliestDate ? earliestDate : defaultStart, 
-                    end: getTodayString()
-                  }); 
-                  setManualToDate(false); 
-                }}
-                className="w-full mt-2 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-semibold transition-colors border border-white/10"
-              >
-                Clear Filters
-              </button>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3 relative">
-            <button 
-              onClick={() => setShowFilters(!showFilters)}
-              className={`relative flex items-center gap-2 px-5 py-3 rounded-full text-white font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-white/10 ${showFilters ? 'bg-white/20' : 'bg-glass-panel hover:bg-white/10'}`}
-            >
-              <Filter size={18} />
-              Filter
-              {(supplierFilter !== 'All' || 
-                dateRange.start !== (getNDaysAgoString(15) < earliestDate ? earliestDate : getNDaysAgoString(15)) || 
-                dateRange.end !== getTodayString()) && (
-                <span className="w-2 h-2 rounded-full bg-primary absolute top-0 right-0 animate-pulse"></span>
-              )}
-            </button>
-
-            <button 
-              onClick={exportToCSV}
-              className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-600 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] px-5 py-3 rounded-full text-white font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-white/10"
-            >
-              <Download size={18} />
-              Export CSV
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Floating Action Buttons (Removed floating buttons, now rendered inline in search toolbar to avoid overlaying/stacking issues) */}
     </div>
   );
 };

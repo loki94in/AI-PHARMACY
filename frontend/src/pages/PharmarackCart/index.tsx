@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock, Send } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock, Send, Eye } from 'lucide-react';
 import { api, type SpecialOrder, type Refill } from '../../services/api';
 import { toastEvent } from '../../services/events';
 
@@ -50,6 +51,23 @@ export default function PharmarackCart() {
   const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
   const [addingReconKey, setAddingReconKey] = useState<string | null>(null);
+
+  // Investigation Modal States & Actions
+  const [resolvingUid, setResolvingUid] = useState<number | null>(null);
+
+  const handleResolveManually = async (uid: number) => {
+    try {
+      setResolvingUid(uid);
+      const result = await api.resolveOrderManually(uid);
+      toastEvent.trigger('Order successfully ignored/resolved.', 'success');
+      await fetchReconciliationList();
+    } catch (err: any) {
+      console.error('Resolve manually error:', err);
+      toastEvent.trigger('Failed to resolve order: ' + (err.response?.data?.error || err.message), 'error');
+    } finally {
+      setResolvingUid(null);
+    }
+  };
 
   const fetchPendingRefills = async () => {
     try {
@@ -498,7 +516,8 @@ export default function PharmarackCart() {
           date: recon.date,
           inCart: !!getReconciliationItemInCart(medName),
           onAdd: () => handleAddReconciliationToCart(medName, recon.email_uid, itemKey),
-          isAdding: addingReconKey === itemKey
+          isAdding: addingReconKey === itemKey,
+          orderRef: recon
         };
       })
     )
@@ -620,19 +639,32 @@ export default function PharmarackCart() {
                           Added
                         </span>
                       ) : (
-                        <button
-                          onClick={item.onAdd}
-                          disabled={item.isAdding}
-                          className={`shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 font-sans border ${
-                            item.type === 'request'
-                              ? 'bg-red/20 hover:bg-red/35 border-red/30 text-red'
-                              : item.type === 'refill'
-                                ? 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-500/30 text-amber-500'
-                                : 'bg-sky-500/20 hover:bg-sky-500/35 border-sky-500/30 text-sky-400'
-                          }`}
-                        >
-                          {item.isAdding ? 'Adding...' : 'Add'}
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {item.type === 'reconcile' && (
+                            <button
+                              type="button"
+                              onClick={() => handleResolveManually(item.orderRef.email_uid)}
+                              disabled={resolvingUid !== null}
+                              className="text-muted hover:text-red bg-bg3 hover:bg-red/10 border border-glass-border p-1 rounded-md transition-all active:scale-95 flex items-center justify-center disabled:opacity-50"
+                              title="Ignore this order (Manually Resolve)"
+                            >
+                              <Eye size={12} />
+                            </button>
+                          )}
+                          <button
+                            onClick={item.onAdd}
+                            disabled={item.isAdding}
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 font-sans border ${
+                              item.type === 'request'
+                                ? 'bg-red/20 hover:bg-red/35 border-red/30 text-red'
+                                : item.type === 'refill'
+                                  ? 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-500/30 text-amber-500'
+                                  : 'bg-sky-500/20 hover:bg-sky-500/35 border-sky-500/30 text-sky-400'
+                            }`}
+                          >
+                            {item.isAdding ? 'Adding...' : 'Add'}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

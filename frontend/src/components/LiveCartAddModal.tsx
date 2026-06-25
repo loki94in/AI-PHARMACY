@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Search, Plus, Minus, Sparkles, Loader2, ShoppingCart, RefreshCw, Clock } from 'lucide-react';
+import { X, Search, Plus, Minus, Sparkles, Loader2, ShoppingCart, RefreshCw, Clock, Eye } from 'lucide-react';
 import { api, type SpecialOrder, type Refill } from '../services/api';
 import { toastEvent, liveCartAddEvent } from '../services/events';
 
@@ -148,6 +148,23 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
   const [distributorPickerReconId, setDistributorPickerReconId] = useState<string | null>(null);
   const [addingReconKey, setAddingReconKey] = useState<string | null>(null);
+
+  // Investigation Modal States & Actions
+  const [resolvingUid, setResolvingUid] = useState<number | null>(null);
+
+  const handleResolveManually = async (uid: number) => {
+    try {
+      setResolvingUid(uid);
+      const result = await api.resolveOrderManually(uid);
+      toastEvent.trigger('Order successfully ignored/resolved.', 'success');
+      await fetchReconciliationList();
+    } catch (err: any) {
+      console.error('Resolve manually error:', err);
+      toastEvent.trigger('Failed to resolve order: ' + (err.response?.data?.error || err.message), 'error');
+    } finally {
+      setResolvingUid(null);
+    }
+  };
 
   // Pending Orders States and Functions
   const [pendingOrders, setPendingOrders] = useState<SpecialOrder[]>([]);
@@ -996,20 +1013,33 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                             Cancel
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={item.onStartPicking}
-                            disabled={item.isAdding || distributorPickerLoading}
-                            className={`shrink-0 text-[9px] font-semibold px-2 py-1 rounded transition-all active:scale-95 disabled:opacity-50 font-sans border ${
-                              item.type === 'order'
-                                ? 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red'
-                                : item.type === 'refill'
-                                  ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-500'
-                                  : 'bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20 text-sky-400'
-                            }`}
-                          >
-                            {item.isAdding ? 'Adding...' : 'Add'}
-                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {item.type === 'reconcile' && (
+                              <button
+                                type="button"
+                                onClick={() => handleResolveManually(item.orderRef.email_uid)}
+                                disabled={resolvingUid !== null}
+                                className="text-muted hover:text-red bg-bg3 hover:bg-red/10 border border-glass-border p-1.5 rounded-lg transition-all active:scale-95 flex items-center justify-center disabled:opacity-50"
+                                title="Ignore this order (Manually Resolve)"
+                              >
+                                <Eye size={12} />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={item.onStartPicking}
+                              disabled={item.isAdding || distributorPickerLoading}
+                              className={`text-[9px] font-semibold px-2 py-1 rounded transition-all active:scale-95 disabled:opacity-50 font-sans border ${
+                                item.type === 'order'
+                                  ? 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red'
+                                  : item.type === 'refill'
+                                    ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-500'
+                                    : 'bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20 text-sky-400'
+                              }`}
+                            >
+                              {item.isAdding ? 'Adding...' : 'Add'}
+                            </button>
+                          </div>
                         )}
                       </div>
 
@@ -1434,6 +1464,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           <span>[Enter] Add to Cart</span>
         </div>
       </div>
+
     </div>,
     document.body
   );
