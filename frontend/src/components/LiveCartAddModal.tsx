@@ -133,6 +133,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [searchLoading, setSearchLoading] = useState(false);
+  // Portal position for the dropdown (avoids overflow:auto clipping)
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prMode, setPrMode] = useState<'Live' | 'Unknown'>('Unknown');
@@ -572,6 +574,16 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
     return () => clearTimeout(delayDebounce);
   }, [product]);
+
+  // Keep the dropdown positioned correctly under the input even when the modal scrolls
+  useEffect(() => {
+    if (showSuggestions && suggestions.length > 0 && productInputRef.current) {
+      const rect = productInputRef.current.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    } else {
+      setDropdownPos(null);
+    }
+  }, [showSuggestions, suggestions]);
 
   const handleProductChange = (val: string) => {
     setProduct(val);
@@ -1056,8 +1068,11 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                     />
                   </div>
                   
-                  {showSuggestions && suggestions.length > 0 && (
-                    <ul className="absolute z-[999999] left-0 right-0 mt-1 max-h-[400px] overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl divide-y divide-border/30 py-1 scrollbar-thin">
+                  {showSuggestions && suggestions.length > 0 && dropdownPos && createPortal(
+                    <ul
+                      className="fixed z-[9999999] max-h-[420px] overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl divide-y divide-border/30 py-1 scrollbar-thin"
+                      style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+                    >
                       {suggestions.map((med, index) => (
                         <li
                           key={index}
@@ -1119,7 +1134,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                           </div>
                         </li>
                       ))}
-                    </ul>
+                    </ul>,
+                    document.body
                   )}
                 </div>
 

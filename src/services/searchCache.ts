@@ -49,6 +49,14 @@ export class SearchCache {
     }
 
     if (bestPrefixKey) {
+      // Guard: if the gap between the cached prefix and the current query is too large,
+      // local filtering becomes unreliable. Force a fresh API call instead.
+      // Example: cached "flu" (3 chars) serving "flubigat" (8 chars) → gap of 5 → bad.
+      if (q.length - bestPrefixLen > 3) {
+        console.log(`[SearchCache] Prefix gap too large (${bestPrefixLen} → ${q.length}). Bypassing cache for fresh API call.`);
+        return null;
+      }
+
       const entry = this.cache.get(bestPrefixKey);
       if (entry) {
         // Filter the cached items locally
@@ -64,6 +72,12 @@ export class SearchCache {
             const distributor = (p.distributor || '').toLowerCase();
             return name.includes(part) || company.includes(part) || distributor.includes(part);
           });
+        }
+
+        // If local filtering leaves too few results, skip cache and go to API
+        if (filteredData.length < 2) {
+          console.log(`[SearchCache] Prefix match for "${bestPrefixKey}" filtered to ${filteredData.length} items — too few, bypassing cache.`);
+          return null;
         }
         
         console.log(`[SearchCache] Prefix match found: "${bestPrefixKey}" for query "${q}". Filtered down to ${filteredData.length} items.`);

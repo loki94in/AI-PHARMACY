@@ -243,7 +243,23 @@ router.get('/search', async (req, res) => {
             }
           }
 
-          return Array.from(bestByKey.values());
+          const deduped = Array.from(bestByKey.values());
+
+          // Filter out junk entries where both PTR and MRP are 0 (incomplete API data)
+          const filtered = deduped.filter(item => !(item.rate === 0 && item.mrp === 0));
+
+          // Sort: Mapped first, then by stock score desc, then by rate asc (cheapest wins)
+          filtered.sort((a, b) => {
+            // 1. Mapped before non-mapped
+            if (a.mapped !== b.mapped) return a.mapped ? -1 : 1;
+            // 2. Higher stock first (green > blue > red > 0)
+            const stockDiff = parseStock(b.stock) - parseStock(a.stock);
+            if (stockDiff !== 0) return stockDiff;
+            // 3. Lower PTR first as tiebreaker
+            return (a.rate || 0) - (b.rate || 0);
+          });
+
+          return filtered;
         }
       }
       return null;
