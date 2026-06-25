@@ -23,6 +23,7 @@ interface SuggestionMedicine {
   storeId?: string | number;
   productCode?: string;
   company?: string;
+  manufacturer?: string;
 }
 
 const getStockStyle = (stockStr: string | undefined): string => {

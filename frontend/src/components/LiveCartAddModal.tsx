@@ -184,6 +184,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [searchLoading, setSearchLoading] = useState(false);
   // Portal position for the dropdown (avoids overflow:auto clipping)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number; width: number } | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prMode, setPrMode] = useState<'Live' | 'Unknown'>('Unknown');
@@ -341,8 +342,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     setAddingReconKey(itemKey);
     try {
       const payload = [{
-        productId: picked.productId,
-        storeId: picked.storeId,
+        productId: picked.productId!,
+        storeId: picked.storeId!,
         qty: 1,
         productCode: picked.productCode,
         productName: picked.medicine_name,
@@ -426,8 +427,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     setAddingRefillId(refill.id);
     try {
       const payload = [{
-        productId: picked.productId,
-        storeId: picked.storeId,
+        productId: picked.productId!,
+        storeId: picked.storeId!,
         qty: 1,
         productCode: picked.productCode,
         productName: picked.medicine_name,
@@ -510,8 +511,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     setAddingOrderId(order.id);
     try {
       const payload = [{
-        productId: picked.productId,
-        storeId: picked.storeId,
+        productId: picked.productId!,
+        storeId: picked.storeId!,
         qty: order.qty,
         productCode: picked.productCode,
         productName: picked.medicine_name,
@@ -550,6 +551,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const ignoreNextSearchRef = useRef(false);
   const dropdownRef = useRef<HTMLUListElement>(null);
+  const distributorPickerRef = useRef<HTMLDivElement>(null);
 
   const handleSwitchToCheaper = () => {
     if (cheaperDistributor) {
@@ -975,6 +977,58 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     return new Date(a.date).getTime() - new Date(b.date).getTime();
   });
 
+  const isPickerActive = distributorPickerOrderId !== null || distributorPickerRefillId !== null || distributorPickerReconId !== null;
+  const activePickingItem = unifiedPendingActions.find(item => item.isPicking);
+
+  const clearPicker = () => {
+    setDistributorPickerOrderId(null);
+    setDistributorPickerRefillId(null);
+    setDistributorPickerReconId(null);
+    setDistributorPickerResults([]);
+    setPickerPos(null);
+  };
+
+  // Scroll listener to update distributor picker position
+  useEffect(() => {
+    const handleScroll = () => {
+      if (isPickerActive && activePickingItem) {
+        const cardEl = document.querySelector(`[data-picker-key="${activePickingItem.key}"]`);
+        if (cardEl) {
+          const cardRect = cardEl.getBoundingClientRect();
+          setPickerPos({
+            top: cardRect.bottom + 4,
+            left: cardRect.left,
+            width: cardRect.width
+          });
+        }
+      }
+    };
+
+    if (isPickerActive) {
+      window.addEventListener('scroll', handleScroll, true);
+    }
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [isPickerActive, activePickingItem]);
+
+  // Click-outside listener for distributor picker
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        isPickerActive &&
+        distributorPickerRef.current &&
+        !distributorPickerRef.current.contains(target) &&
+        !(target instanceof Element && target.closest('.btn-start-picking'))
+      ) {
+        clearPicker();
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isPickerActive]);
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -1028,6 +1082,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                   return (
                     <div 
                       key={item.key} 
+                      data-picker-key={item.key}
                       className={`p-3 rounded-xl border flex flex-col gap-1.5 transition-all shadow-sm ${
                         item.inCart 
                            ? 'bg-emerald-500/5 border-emerald-500/20'
@@ -1104,9 +1159,21 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                             )}
                             <button
                               type="button"
-                              onClick={item.onStartPicking}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const cardEl = e.currentTarget.closest('[data-picker-key]');
+                                if (cardEl) {
+                                  const cardRect = cardEl.getBoundingClientRect();
+                                  setPickerPos({
+                                    top: cardRect.bottom + 4,
+                                    left: cardRect.left,
+                                    width: cardRect.width
+                                  });
+                                }
+                                item.onStartPicking();
+                              }}
                               disabled={item.isAdding || distributorPickerLoading}
-                              className={`text-[9px] font-semibold px-2 py-1 rounded transition-all active:scale-95 disabled:opacity-50 font-sans border ${
+                              className={`btn-start-picking text-[9px] font-semibold px-2 py-1 rounded transition-all active:scale-95 disabled:opacity-50 font-sans border ${
                                 item.type === 'order'
                                   ? 'bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red'
                                   : item.type === 'refill'
@@ -1119,72 +1186,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                           </div>
                         )}
                       </div>
-
-                      {/* Inline Distributor Picker for this Item */}
-                      {item.isPicking && (
-                        <div className="mt-1 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-blue-500/20 pt-2">
-                          {distributorPickerLoading ? (
-                            <div className="flex items-center gap-2 py-1.5 text-[11px] text-muted">
-                              <Loader2 size={12} className="animate-spin text-primary" />
-                              <span>Searching distributors...</span>
-                            </div>
-                          ) : distributorPickerResults.length === 0 ? (
-                            <p className="text-[11px] text-muted py-1">No distributors found.</p>
-                          ) : (
-                            <div className="space-y-1">
-                              <div className="flex justify-between items-center mb-1.5 flex-row flex-nowrap">
-                                <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider">Select a Distributor:</p>
-                                {item.targetMrp !== undefined && item.targetMrp !== null && (
-                                  <span className="text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
-                                    Expected MRP: ₹{item.targetMrp.toFixed(2)}
-                                  </span>
-                                )}
-                              </div>
-                              {distributorPickerResults.map((dist, idx) => {
-                                const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, item.qtyToOrder) : null;
-                                const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
-                                return (
-                                  <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => item.onConfirmPick(dist)}
-                                    disabled={item.isAdding}
-                                    className="w-full text-left p-2 rounded-lg bg-bg3/50 hover:bg-primary/10 border border-border hover:border-primary/40 transition-all active:scale-[0.99] disabled:opacity-50 flex items-center justify-between gap-2 group"
-                                  >
-                                    <div className="flex flex-col min-w-0 flex-1">
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">{dist.distributor || 'Unknown'}</span>
-                                        {isBest && (
-                                          <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0">
-                                            <Sparkles size={7} /> Best
-                                          </span>
-                                        )}
-                                        {dist.stock && (
-                                          <span className={`text-[8px] px-1 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>{dist.stock}</span>
-                                        )}
-                                      </div>
-                                      {dist.scheme && (
-                                        <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
-                                      )}
-                                      {dist.packaging && (
-                                        <span className="text-[9px] text-muted">{dist.packaging}</span>
-                                      )}
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                      {dist.rate !== undefined && dist.rate !== null && (
-                                        <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
-                                      )}
-                                      {dist.mrp !== undefined && dist.mrp !== null && (
-                                        <span className="text-[9px] text-muted font-mono block">MRP ₹{dist.mrp}</span>
-                                      )}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   );
                 })
@@ -1549,6 +1550,86 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           <span>[Enter] Add to Cart</span>
         </div>
       </div>
+
+      {/* Floating Distributor Picker Dropdown */}
+      {isPickerActive && activePickingItem && pickerPos && createPortal(
+        <div
+          ref={distributorPickerRef}
+          className="fixed z-[9999999] max-h-[320px] overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl divide-y divide-border/30 scrollbar-thin p-1"
+          style={{ top: pickerPos.top, left: pickerPos.left, width: pickerPos.width }}
+        >
+          {distributorPickerLoading ? (
+            <div className="flex items-center gap-2 p-3 text-[11px] text-muted">
+              <Loader2 size={12} className="animate-spin text-primary" />
+              <span>Searching distributors...</span>
+            </div>
+          ) : distributorPickerResults.length === 0 ? (
+            <p className="text-[11px] text-muted p-3">No distributors found.</p>
+          ) : (
+            <div className="flex flex-col">
+              <div className="flex justify-between items-center px-2.5 py-1.5 bg-bg3/30 border-b border-border/30">
+                <span className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider">Select a Distributor:</span>
+                {activePickingItem.targetMrp !== undefined && activePickingItem.targetMrp !== null && (
+                  <span className="text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
+                    Expected MRP: ₹{activePickingItem.targetMrp.toFixed(2)}
+                  </span>
+                )}
+              </div>
+              <div className="divide-y divide-border/30">
+                {distributorPickerResults.map((dist, idx) => {
+                  const pickerMinRate = distributorPickerResults.length > 0
+                    ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, activePickingItem.qtyToOrder)))
+                    : Infinity;
+                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, activePickingItem.qtyToOrder) : null;
+                  const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => activePickingItem.onConfirmPick(dist)}
+                      disabled={activePickingItem.isAdding}
+                      className="w-full text-left p-2.5 hover:bg-primary/10 transition-all disabled:opacity-50 flex items-center justify-between gap-2 group"
+                    >
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[11px] font-semibold text-text truncate group-hover:text-primary transition-colors">
+                            {dist.distributor || 'Unknown'}
+                          </span>
+                          {isBest && (
+                            <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0 select-none">
+                              <Sparkles size={8} className="text-emerald-400 animate-pulse" /> Best
+                            </span>
+                          )}
+                          {dist.stock && (
+                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 ${getStockStyle(dist.stock)}`}>
+                              {dist.stock}
+                            </span>
+                          )}
+                        </div>
+                        {dist.scheme && (
+                          <span className="text-[9px] text-amber-400 font-bold mt-0.5">{dist.scheme} scheme</span>
+                        )}
+                        {dist.packaging && (
+                          <span className="text-[9px] text-muted mt-0.5">{dist.packaging}</span>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0 flex flex-col items-end justify-center">
+                        {dist.rate !== undefined && dist.rate !== null && (
+                          <span className="text-[12px] font-bold text-emerald-400 font-mono">₹{dist.rate}</span>
+                        )}
+                        {dist.mrp !== undefined && dist.mrp !== null && (
+                          <span className="text-[9px] text-muted font-mono block mt-0.5">MRP ₹{dist.mrp}</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
 
     </div>,
     document.body
