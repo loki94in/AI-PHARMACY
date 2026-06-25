@@ -820,7 +820,6 @@ const PurchaseHistory = () => {
                   <tr className="bg-black/40 border-b border-glass-border/50 text-sm font-semibold text-gray-300">
                     <th className="px-6 py-4 whitespace-nowrap">Received Date</th>
                     <th className="px-6 py-4 whitespace-nowrap">Distributor / Sender</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Subject Line</th>
                     <th className="px-6 py-4 whitespace-nowrap">Extracted Invoice No.</th>
                     <th className="px-6 py-4 whitespace-nowrap">Medicines</th>
                     <th className="px-6 py-4 whitespace-nowrap text-center">Status</th>
@@ -830,7 +829,7 @@ const PurchaseHistory = () => {
                 <tbody className="divide-y divide-glass-border/30 text-sm">
                   {loadingRecon ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-gray-400">
+                      <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
                         <div className="flex justify-center items-center gap-2">
                           <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                           Analyzing email receipts...
@@ -839,7 +838,7 @@ const PurchaseHistory = () => {
                     </tr>
                   ) : reconciliationList.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
                         <div className="flex flex-col items-center justify-center">
                           <CheckCircle size={48} className="text-green-500 mb-4 opacity-40" />
                           <p className="text-base font-bold text-white">All Clear!</p>
@@ -856,9 +855,6 @@ const PurchaseHistory = () => {
                         <td className="px-6 py-4 text-white font-medium">
                           {recon.extracted_distributor}
                           <div className="text-xs text-gray-500 font-normal mt-0.5 truncate max-w-[200px]">{recon.from}</div>
-                        </td>
-                        <td className="px-6 py-4 text-gray-300 max-w-xs truncate">
-                          {recon.subject}
                         </td>
                         <td className="px-6 py-4 font-mono text-white text-xs">
                           {recon.extracted_invoice_no || 'N/A'}

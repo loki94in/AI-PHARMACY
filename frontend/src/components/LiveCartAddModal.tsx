@@ -103,6 +103,55 @@ const getEffectiveRate = (rate: number, schemeStr: string | undefined, qty: numb
   return (qty * rate) / totalItems;
 };
 
+const getDosageType = (name: string): 'liquid' | 'solid' | 'other' => {
+  const nameLower = name.toLowerCase();
+  if (
+    nameLower.includes('syrup') || 
+    nameLower.includes(' syp') || 
+    nameLower.includes('suspension') || 
+    nameLower.includes(' susp') || 
+    nameLower.includes('liquid') || 
+    nameLower.includes(' drop') || 
+    nameLower.includes(' drops') || 
+    nameLower.includes(' syp ') ||
+    nameLower.includes(' susp ') ||
+    nameLower.includes(' syp.') ||
+    nameLower.includes(' susp.') ||
+    nameLower.includes('solution') ||
+    nameLower.includes('emulsion') ||
+    nameLower.includes('elixir')
+  ) {
+    return 'liquid';
+  }
+  if (
+    nameLower.includes('tablet') || 
+    nameLower.includes(' tab') || 
+    nameLower.includes('capsule') || 
+    nameLower.includes(' cap') || 
+    nameLower.includes(' tab ') ||
+    nameLower.includes(' cap ') ||
+    nameLower.includes(' tabs') ||
+    nameLower.includes(' caps') ||
+    nameLower.includes(' tab.') ||
+    nameLower.includes(' cap.')
+  ) {
+    return 'solid';
+  }
+  return 'other';
+};
+
+const isMatchDosage = (targetName: string, itemName: string, itemPackaging: string): boolean => {
+  const targetType = getDosageType(targetName);
+  const itemType = getDosageType(itemName + ' ' + (itemPackaging || ''));
+  if (targetType === 'liquid') {
+    return itemType !== 'solid';
+  }
+  if (targetType === 'solid') {
+    return itemType !== 'liquid';
+  }
+  return true;
+};
+
 export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [isOpen, setIsOpen] = useState(true);
   
@@ -234,7 +283,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     return null;
   };
 
-  const handleSearchDistributorsForRecon = async (medName: string, itemKey: string) => {
+  const handleSearchDistributorsForRecon = async (medName: string, itemKey: string, targetMrp?: number) => {
     setDistributorPickerReconId(itemKey);
     setDistributorPickerResults([]);
     setDistributorPickerLoading(true);
@@ -245,7 +294,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
         setDistributorPickerReconId(null);
         return;
       }
-      const mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
+      let mapped: SuggestionMedicine[] = (searchResults as any[]).map((item) => ({
         medicine_name: item.name,
         mrp: item.mrp,
         isPharmarack: true,
@@ -260,6 +309,24 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
         productCode: item.productCode,
         company: item.company
       }));
+
+      // Apply dosage filtering: if target is liquid, filter out solid suggestions; if target is solid, filter out liquid suggestions.
+      const dosageFiltered = mapped.filter(item => isMatchDosage(medName, item.medicine_name || '', item.packaging || ''));
+      if (dosageFiltered.length > 0) {
+        mapped = dosageFiltered;
+      }
+
+      // Apply MRP filtering: +/- 10 Rs range of the target MRP
+      if (targetMrp && targetMrp > 0) {
+        const mrpFiltered = mapped.filter(item => {
+          const itemMrp = item.mrp || item.rate || 0;
+          return Math.abs(itemMrp - targetMrp) <= 10;
+        });
+        if (mrpFiltered.length > 0) {
+          mapped = mrpFiltered;
+        }
+      }
+
       setDistributorPickerResults(mapped);
     } catch (err: any) {
       console.error('Failed to search distributors for reconciliation item:', err);
@@ -858,7 +925,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       onConfirmPick: (picked: SuggestionMedicine) => handleConfirmOrderDistributor(order, picked),
       isAdding: addingOrderId === order.id,
       qtyToOrder: order.qty,
-      orderRef: order
+      orderRef: order,
+      targetMrp: null
     })),
     ...pendingRefills.map(refill => ({
       key: `refill-${refill.id}`,
@@ -874,11 +942,13 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       onConfirmPick: (picked: SuggestionMedicine) => handleConfirmRefillDistributor(refill, picked),
       isAdding: addingRefillId === refill.id,
       qtyToOrder: 1,
-      orderRef: refill
+      orderRef: refill,
+      targetMrp: null
     })),
     ...reconciliationList.flatMap(recon => 
       (recon.medicine_names || []).map((medName: string, idx: number) => {
         const itemKey = `recon-${recon.email_uid}-${medName}`;
+        const targetMrp = recon.medicine_details?.[medName]?.mrp;
         return {
           key: itemKey,
           type: 'reconcile' as const,
@@ -888,12 +958,13 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           date: recon.date,
           inCart: !!getReconciliationItemInCart(medName),
           isPicking: distributorPickerReconId === itemKey,
-          onStartPicking: () => handleSearchDistributorsForRecon(medName, itemKey),
+          onStartPicking: () => handleSearchDistributorsForRecon(medName, itemKey, targetMrp),
           onCancelPicking: () => { setDistributorPickerReconId(null); setDistributorPickerResults([]); },
           onConfirmPick: (picked: SuggestionMedicine) => handleConfirmReconDistributor(medName, recon.email_uid, itemKey, picked),
           isAdding: addingReconKey === itemKey,
           qtyToOrder: 1,
-          orderRef: recon
+          orderRef: recon,
+          targetMrp: targetMrp
         };
       })
     )
@@ -1061,7 +1132,14 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                             <p className="text-[11px] text-muted py-1">No distributors found.</p>
                           ) : (
                             <div className="space-y-1">
-                              <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider mb-1.5">Select a Distributor:</p>
+                              <div className="flex justify-between items-center mb-1.5 flex-row flex-nowrap">
+                                <p className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider">Select a Distributor:</p>
+                                {item.targetMrp !== undefined && item.targetMrp !== null && (
+                                  <span className="text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
+                                    Expected MRP: ₹{item.targetMrp.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
                               {distributorPickerResults.map((dist, idx) => {
                                 const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, item.qtyToOrder) : null;
                                 const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
