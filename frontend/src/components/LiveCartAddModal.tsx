@@ -162,7 +162,8 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   
   // Input fields
   const [product, setProduct] = useState('');
-  const [qty, setQty] = useState(1);
+  const [qty, setQty] = useState<number | ''>(1);
+  const [pickerQty, setPickerQty] = useState<number>(1);
   
   // Selected Pharmarack Metadata
   const [selectedDistributor, setSelectedDistributor] = useState('');
@@ -338,13 +339,13 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     }
   };
 
-  const handleConfirmReconDistributor = async (medName: string, emailUid: number, itemKey: string, picked: SuggestionMedicine) => {
+  const handleConfirmReconDistributor = async (medName: string, emailUid: number, itemKey: string, picked: SuggestionMedicine, customQty: number = 1) => {
     setAddingReconKey(itemKey);
     try {
       const payload = [{
         productId: picked.productId!,
         storeId: picked.storeId!,
-        qty: 1,
+        qty: customQty,
         productCode: picked.productCode,
         productName: picked.medicine_name,
         company: picked.company,
@@ -423,13 +424,13 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     }
   };
 
-  const handleConfirmRefillDistributor = async (refill: Refill, picked: SuggestionMedicine) => {
+  const handleConfirmRefillDistributor = async (refill: Refill, picked: SuggestionMedicine, customQty: number = 1) => {
     setAddingRefillId(refill.id);
     try {
       const payload = [{
         productId: picked.productId!,
         storeId: picked.storeId!,
-        qty: 1,
+        qty: customQty,
         productCode: picked.productCode,
         productName: picked.medicine_name,
         company: picked.company,
@@ -507,13 +508,13 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     }
   };
 
-  const handleConfirmOrderDistributor = async (order: SpecialOrder, picked: SuggestionMedicine) => {
+  const handleConfirmOrderDistributor = async (order: SpecialOrder, picked: SuggestionMedicine, customQty?: number) => {
     setAddingOrderId(order.id);
     try {
       const payload = [{
         productId: picked.productId!,
         storeId: picked.storeId!,
-        qty: order.qty,
+        qty: customQty !== undefined ? customQty : order.qty,
         productCode: picked.productCode,
         productName: picked.medicine_name,
         company: picked.company,
@@ -572,7 +573,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
   useEffect(() => {
     if (selectedStoreId && selectedProductId && selectedRate !== '' && selectedMedicineName) {
-      const currentEff = getEffectiveRate(Number(selectedRate), selectedScheme, qty);
+      const currentEff = getEffectiveRate(Number(selectedRate), selectedScheme, Number(qty) || 1);
       
       let bestOption: any = null;
       let bestEff = currentEff;
@@ -582,7 +583,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           const nameClean1 = item.medicine_name.toLowerCase().replace(/[^a-z0-9]/g, '');
           const nameClean2 = selectedMedicineName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (nameClean1 === nameClean2 && item.rate) {
-            const itemEff = getEffectiveRate(item.rate, item.scheme, qty);
+            const itemEff = getEffectiveRate(item.rate, item.scheme, Number(qty) || 1);
             if (itemEff < bestEff - 0.01) {
               bestEff = itemEff;
               bestOption = {
@@ -605,7 +606,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     let min = Infinity;
     suggestions.forEach(item => {
       if (item.isErrorMessage || !item.rate) return;
-      const eff = getEffectiveRate(item.rate, item.scheme, qty);
+      const eff = getEffectiveRate(item.rate, item.scheme, Number(qty) || 1);
       if (eff < min) {
         min = eff;
       }
@@ -771,12 +772,23 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
   // Keep the dropdown positioned correctly under the input even when the modal scrolls
   useEffect(() => {
-    if (showSuggestions && suggestions.length > 0 && productInputRef.current) {
-      const rect = productInputRef.current.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-    } else {
-      setDropdownPos(null);
+    const updatePosition = () => {
+      if (showSuggestions && suggestions.length > 0 && productInputRef.current) {
+        const rect = productInputRef.current.getBoundingClientRect();
+        setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      } else {
+        setDropdownPos(null);
+      }
+    };
+
+    updatePosition();
+
+    if (showSuggestions && suggestions.length > 0) {
+      window.addEventListener('scroll', updatePosition, true);
     }
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+    };
   }, [showSuggestions, suggestions]);
 
   const handleProductChange = (val: string) => {
@@ -853,7 +865,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       return;
     }
 
-    if (qty < 1) {
+    if (!qty || Number(qty) < 1) {
       toastEvent.trigger('Quantity must be at least 1.', 'error');
       return;
     }
@@ -863,7 +875,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       await api.addPharmarackCart([{
         productId: selectedProductId,
         storeId: selectedStoreId,
-        qty,
+        qty: Number(qty) || 1,
         rate: selectedRate !== '' ? Number(selectedRate) : undefined,
         scheme: selectedScheme || undefined,
         productCode: selectedProductCode,
@@ -924,7 +936,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       isPicking: distributorPickerOrderId === order.id,
       onStartPicking: () => handleSearchDistributorsForOrder(order),
       onCancelPicking: () => { setDistributorPickerOrderId(null); setDistributorPickerResults([]); },
-      onConfirmPick: (picked: SuggestionMedicine) => handleConfirmOrderDistributor(order, picked),
+      onConfirmPick: (picked: SuggestionMedicine, customQty?: number) => handleConfirmOrderDistributor(order, picked, customQty),
       isAdding: addingOrderId === order.id,
       qtyToOrder: order.qty,
       orderRef: order,
@@ -941,7 +953,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       isPicking: distributorPickerRefillId === refill.id,
       onStartPicking: () => handleSearchDistributorsForRefill(refill),
       onCancelPicking: () => { setDistributorPickerRefillId(null); setDistributorPickerResults([]); },
-      onConfirmPick: (picked: SuggestionMedicine) => handleConfirmRefillDistributor(refill, picked),
+      onConfirmPick: (picked: SuggestionMedicine, customQty?: number) => handleConfirmRefillDistributor(refill, picked, customQty),
       isAdding: addingRefillId === refill.id,
       qtyToOrder: 1,
       orderRef: refill,
@@ -962,7 +974,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           isPicking: distributorPickerReconId === itemKey,
           onStartPicking: () => handleSearchDistributorsForRecon(medName, itemKey, targetMrp),
           onCancelPicking: () => { setDistributorPickerReconId(null); setDistributorPickerResults([]); },
-          onConfirmPick: (picked: SuggestionMedicine) => handleConfirmReconDistributor(medName, recon.email_uid, itemKey, picked),
+          onConfirmPick: (picked: SuggestionMedicine, customQty?: number) => handleConfirmReconDistributor(medName, recon.email_uid, itemKey, picked, customQty),
           isAdding: addingReconKey === itemKey,
           qtyToOrder: 1,
           orderRef: recon,
@@ -1170,6 +1182,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                                     width: cardRect.width
                                   });
                                 }
+                                setPickerQty(item.qtyToOrder || 1);
                                 item.onStartPicking();
                               }}
                               disabled={item.isAdding || distributorPickerLoading}
@@ -1258,7 +1271,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                           <div className="flex-1 min-w-0 pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-semibold text-text truncate text-sm">{med.medicine_name}</span>
-                              {med.rate !== undefined && med.rate !== null && !med.isErrorMessage && getEffectiveRate(med.rate, med.scheme, qty) === minEffectiveRate && (
+                              {med.rate !== undefined && med.rate !== null && !med.isErrorMessage && getEffectiveRate(med.rate, med.scheme, Number(qty) || 1) === minEffectiveRate && (
                                 <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 shrink-0 select-none">
                                   <Sparkles size={8} className="text-emerald-400 animate-pulse" /> Best Rate
                                 </span>
@@ -1390,7 +1403,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                   <div className="flex items-center justify-between bg-bg3 border border-border rounded-xl h-9 px-1.5 max-w-[150px]">
                     <button
                       type="button"
-                      onClick={() => setQty(prev => Math.max(1, prev - 1))}
+                      onClick={() => setQty(prev => Math.max(1, (Number(prev) || 1) - 1))}
                       className="w-7.5 h-7.5 rounded-lg hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center"
                     >
                       <Minus size={14} />
@@ -1399,14 +1412,27 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                       ref={qtyInputRef}
                       type="number"
                       value={qty}
-                      onChange={(e) => setQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setQty('');
+                        } else {
+                          const parsed = parseInt(val);
+                          setQty(isNaN(parsed) ? '' : parsed);
+                        }
+                      }}
+                      onBlur={() => {
+                        if (qty === '' || qty < 1) {
+                          setQty(1);
+                        }
+                      }}
                       className="w-full bg-transparent text-center text-sm font-bold outline-none text-text focus:ring-0 border-0 p-0"
                       min="1"
                       required
                     />
                     <button
                       type="button"
-                      onClick={() => setQty(prev => prev + 1)}
+                      onClick={() => setQty(prev => (Number(prev) || 1) + 1)}
                       className="w-7.5 h-7.5 rounded-lg hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center"
                     >
                       <Plus size={14} />
@@ -1555,7 +1581,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       {isPickerActive && activePickingItem && pickerPos && createPortal(
         <div
           ref={distributorPickerRef}
-          className="fixed z-[9999999] max-h-[320px] overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl divide-y divide-border/30 scrollbar-thin p-1"
+          className="fixed z-[9999999] max-h-[320px] overflow-hidden flex flex-col bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl p-1"
           style={{ top: pickerPos.top, left: pickerPos.left, width: pickerPos.width }}
         >
           {distributorPickerLoading ? (
@@ -1566,29 +1592,59 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           ) : distributorPickerResults.length === 0 ? (
             <p className="text-[11px] text-muted p-3">No distributors found.</p>
           ) : (
-            <div className="flex flex-col">
-              <div className="flex justify-between items-center px-2.5 py-1.5 bg-bg3/30 border-b border-border/30">
+            <div className="flex flex-col overflow-hidden max-h-[310px]">
+              <div className="flex justify-between items-center px-2.5 py-1.5 bg-bg3/30 border-b border-border/30 gap-2 flex-wrap shrink-0">
                 <span className="text-[9px] font-bold text-blue-400/80 uppercase tracking-wider">Select a Distributor:</span>
+                
+                {/* Quantity Selector */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-muted font-bold uppercase">Qty:</span>
+                  <div className="flex items-center bg-bg3 border border-border rounded-lg h-6 px-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setPickerQty(prev => Math.max(1, prev - 1))}
+                      className="w-4 h-4 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center"
+                    >
+                      <Minus size={8} />
+                    </button>
+                    <input
+                      type="number"
+                      value={pickerQty}
+                      onChange={(e) => setPickerQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-8 bg-transparent text-center text-[11px] font-bold outline-none text-text focus:ring-0 border-0 p-0"
+                      min="1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPickerQty(prev => prev + 1)}
+                      className="w-4 h-4 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center"
+                    >
+                      <Plus size={8} />
+                    </button>
+                  </div>
+                </div>
+
                 {activePickingItem.targetMrp !== undefined && activePickingItem.targetMrp !== null && (
                   <span className="text-[9px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
                     Expected MRP: ₹{activePickingItem.targetMrp.toFixed(2)}
                   </span>
                 )}
               </div>
-              <div className="divide-y divide-border/30">
+              <div className="divide-y divide-border/30 overflow-y-auto scrollbar-thin flex-1">
                 {distributorPickerResults.map((dist, idx) => {
                   const pickerMinRate = distributorPickerResults.length > 0
-                    ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, activePickingItem.qtyToOrder)))
+                    ? Math.min(...distributorPickerResults.filter(d => d.rate).map(d => getEffectiveRate(d.rate!, d.scheme, pickerQty)))
                     : Infinity;
-                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, activePickingItem.qtyToOrder) : null;
+                  const effRate = dist.rate ? getEffectiveRate(dist.rate, dist.scheme, pickerQty) : null;
                   const isBest = effRate !== null && Math.abs(effRate - pickerMinRate) < 0.01;
                   return (
                     <button
                       key={idx}
                       type="button"
-                      onClick={() => activePickingItem.onConfirmPick(dist)}
+                      onClick={() => activePickingItem.onConfirmPick(dist, pickerQty)}
                       disabled={activePickingItem.isAdding}
-                      className="w-full text-left p-2.5 hover:bg-primary/10 transition-all disabled:opacity-50 flex items-center justify-between gap-2 group"
+                      className="w-full text-left p-2.5 hover:bg-primary/10 transition-all disabled:opacity-50 flex items-center justify-between gap-2 group border-b border-border/30 last:border-b-0"
+                      style={{ borderBottomWidth: idx === distributorPickerResults.length - 1 ? 0 : 1 }}
                     >
                       <div className="flex flex-col min-w-0 flex-1">
                         <div className="flex items-center gap-1 flex-wrap">
