@@ -482,6 +482,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const productInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const ignoreNextSearchRef = useRef(false);
+  const dropdownRef = useRef<HTMLUListElement>(null);
 
   const handleSwitchToCheaper = () => {
     if (cheaperDistributor) {
@@ -621,7 +622,12 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   // Handle clicking outside to dismiss search results
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
-      if (autocompleteRef.current && !autocompleteRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        autocompleteRef.current && 
+        !autocompleteRef.current.contains(target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(target))
+      ) {
         setShowSuggestions(false);
       }
     };
@@ -793,7 +799,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
         scheme: selectedScheme || undefined,
         productCode: selectedProductCode,
         company: selectedCompany,
-        productName: product.trim(),
+        productName: selectedMedicineName || product.trim(),
         storeName: selectedDistributor,
         packaging: selectedPackaging,
         mapped: selectedMapped === false ? false : true
@@ -1154,6 +1160,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                   
                   {showSuggestions && suggestions.length > 0 && dropdownPos && createPortal(
                     <ul
+                      ref={dropdownRef}
                       className="fixed z-[9999999] max-h-[420px] overflow-y-auto bg-bg2 border border-glass-border backdrop-blur-2xl rounded-xl shadow-2xl divide-y divide-border/30 py-1 scrollbar-thin"
                       style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
                     >

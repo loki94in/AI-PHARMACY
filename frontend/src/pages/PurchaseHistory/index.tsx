@@ -363,6 +363,7 @@ const PurchaseHistory = () => {
   const totalAmount = filteredData.reduce((sum, t) => sum + (t.total_amount || 0), 0);
   const paidAmount = totalAmount; // Cash workflow, all are paid
 
+
   // Export Logic
   const exportToCSV = () => {
     if (filteredData.length === 0) {
@@ -370,7 +371,7 @@ const PurchaseHistory = () => {
       return;
     }
 
-    const headers = ['Purchase ID', 'Invoice No', 'Distributor', 'Date', 'Qty', 'Amount'];
+    const headers = ['Purchase ID', 'Invoice No', 'Distributor', 'Date', 'Amount'];
     const csvRows = [headers.join(',')];
 
     filteredData.forEach(tx => {
@@ -379,7 +380,6 @@ const PurchaseHistory = () => {
         `"${tx.invoice_no || ''}"`,
         `"${tx.distributor_name || ''}"`,
         `"${new Date(tx.date).toLocaleDateString()}"`,
-        tx.total_qty || 0,
         tx.total_amount || 0
       ];
       csvRows.push(row.join(','));
@@ -579,36 +579,35 @@ const PurchaseHistory = () => {
                     <th className="px-6 py-4 whitespace-nowrap">Distributor Name</th>
                     <th className="px-6 py-4 whitespace-nowrap">Invoice No.</th>
                     <th className="px-6 py-4 whitespace-nowrap">Date</th>
-                    <th className="px-6 py-4 whitespace-nowrap text-right">Qty</th>
                     <th className="px-6 py-4 whitespace-nowrap text-right">Amount</th>
                     <th className="px-6 py-4 whitespace-nowrap text-center">Action</th>
                   </tr>
-                  <tr className="bg-bg2 border-b border-glass-border/30">
+                  <tr className="bg-primary/5 border-b-2 border-primary/20">
                     <td className="p-2">
                       <input
                         type="text"
-                        placeholder="Search ID..."
+                        placeholder="🔍 ID..."
                         value={colFilterId}
                         onChange={e => setColFilterId(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
                       />
                     </td>
                     <td className="p-2">
                       <input
                         type="text"
-                        placeholder="Search distributor..."
+                        placeholder="🔍 Distributor..."
                         value={colFilterDistributor}
                         onChange={e => setColFilterDistributor(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
                       />
                     </td>
                     <td className="p-2">
                       <input
                         type="text"
-                        placeholder="Search Invoice..."
+                        placeholder="🔍 Invoice..."
                         value={colFilterInvoiceNo}
                         onChange={e => setColFilterInvoiceNo(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
                       />
                     </td>
                     <td className="p-2">
@@ -616,24 +615,23 @@ const PurchaseHistory = () => {
                         type="date"
                         value={colFilterDate}
                         onChange={e => setColFilterDate(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
                       />
                     </td>
-                    <td className="p-2"></td>
                     <td className="p-2 flex gap-1">
                       <input
                         type="number"
                         placeholder="Min"
                         value={colFilterMinAmount}
                         onChange={e => setColFilterMinAmount(e.target.value)}
-                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                        className="w-1/2 px-1.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
                       />
                       <input
                         type="number"
                         placeholder="Max"
                         value={colFilterMaxAmount}
                         onChange={e => setColFilterMaxAmount(e.target.value)}
-                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                        className="w-1/2 px-1.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
                       />
                     </td>
                     <td className="p-2 text-center">
@@ -647,7 +645,7 @@ const PurchaseHistory = () => {
                             setColFilterMinAmount('');
                             setColFilterMaxAmount('');
                           }}
-                          className="text-xs text-red hover:underline font-bold"
+                          className="text-xs text-red-400 hover:text-red-300 hover:underline font-bold px-2 py-1 rounded bg-red-500/10 border border-red-500/20"
                         >
                           Clear
                         </button>
@@ -658,7 +656,7 @@ const PurchaseHistory = () => {
                 <tbody className="divide-y divide-glass-border/30 text-sm">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-gray-400">
+                      <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
                         <div className="flex justify-center items-center gap-2">
                           <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                           Loading history...
@@ -667,7 +665,7 @@ const PurchaseHistory = () => {
                     </tr>
                   ) : filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
+                      <td colSpan={6} className="px-6 py-12 text-center">
                         <div className="flex flex-col items-center justify-center text-gray-400">
                           <AlertCircle size={48} className="mb-4 opacity-20" />
                           <p className="text-lg">No transactions found</p>
@@ -689,12 +687,6 @@ const PurchaseHistory = () => {
                         </td>
                         <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
                           {new Date(tx.date).toLocaleDateString()}
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-right text-gray-300 font-medium">
-                          {tx.total_qty || 0}
                         </td>
                         <td className="px-6 py-4 text-right whitespace-nowrap">
                           {tx.cn_amount && tx.cn_amount > 0 ? (
@@ -872,14 +864,29 @@ const PurchaseHistory = () => {
                           {recon.extracted_invoice_no || 'N/A'}
                         </td>
                         <td className="px-6 py-4">
-                          {recon.medicine_names && recon.medicine_names.length > 0 ? (
-                            <div className="text-gray-300 max-w-xs truncate" title={recon.medicine_names.join(', ')}>
-                              {recon.medicine_names.slice(0, 3).join(', ')}
-                              {recon.medicine_names.length > 3 && ` +${recon.medicine_names.length - 3} more`}
-                            </div>
-                          ) : (
-                            <span className="text-gray-500 text-xs italic">No medicines detected</span>
-                          )}
+                          {(() => {
+                            // Filter out entries that look like IDs, bill numbers, or invoice numbers (purely numeric or short numeric codes)
+                            const validNames = (recon.medicine_names || []).filter((name: string) => {
+                              if (!name || typeof name !== 'string') return false;
+                              const trimmed = name.trim();
+                              // Exclude purely numeric strings (IDs, bill numbers)
+                              if (/^\d+$/.test(trimmed)) return false;
+                              // Exclude common invoice/bill patterns like "INV-123", "BILL-456", "#12345"
+                              if (/^(inv|bill|invoice|id|order|ref|no)[\s\-:#]?\d+$/i.test(trimmed)) return false;
+                              if (/^#\d+$/.test(trimmed)) return false;
+                              // Exclude very short strings (likely codes, not medicine names)
+                              if (trimmed.length < 3) return false;
+                              return true;
+                            });
+                            return validNames.length > 0 ? (
+                              <div className="text-gray-300 max-w-xs truncate" title={validNames.join(', ')}>
+                                {validNames.slice(0, 3).join(', ')}
+                                {validNames.length > 3 && ` +${validNames.length - 3} more`}
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 text-xs italic">No medicines detected</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-center">
                           {recon.is_saved ? (
