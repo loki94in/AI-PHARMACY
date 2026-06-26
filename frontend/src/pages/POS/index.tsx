@@ -44,6 +44,85 @@ const getInitialPOSActiveTabId = (initialTabs: any[]) => {
   return initialTabs[0]?.id || 'default';
 };
 
+function isValidMedicineNameCandidate(line: string): boolean {
+  if (!line) return false;
+
+  const trimmed = line.trim();
+  if (trimmed.length < 2) return false;
+
+  if (/^[^a-zA-Z]*$/.test(trimmed)) return false;
+
+  const noisePatterns = [
+    /\b(?:invoice|bill|memo|receipt|challan|estimate|cash\s*memo|tax\s*invoice|credit\s*memo|debit\s*memo)\b/i,
+    /\b(?:inv|invoice|bill|challan|receipt|memo|ref|doc|s\.?)\s*(?:no\.?|number|#|id)\b/i,
+    /\b(?:dl|d\.?l\.?|lic|license|licence|lic\.?\s*no\.?)(?:\s*(?:no\.?|number|#))?\b/i,
+    /\bdrug\s*lic/i,
+    /\b(?:phone|tel|tele|telephone|mobile|mob|contact|fax|ph)(?:\s*(?:no\.?|number|#))?\b/i,
+    /@/i,
+    /\b(?:email|e-mail|www|http|https|website|web|internet)\b/i,
+    /\b(?:gst|gstin|fssai|cin|uid|uidai|aadhaar|adhaar)(?:\s*(?:no\.?|number|#|:))?\b/i,
+    /\b(?:pan|tin|tan|hsn|sac)(?:\s*(?:no\.?|number|#|code|:)|:)/i,
+    /\btax\s*(?:invoice|rate|amount|value|id|no\.?|number|:)\b/i,
+    /\b(?:date|time|dt|d\.o\.b|dob)\b/i,
+    /\b(?:road|street|st\.|lane|nagar|colony|building|bldg|floor|dist(?:\.?|rict)|state|pin(?:\s*code)?|zip|address|addr)\b/i,
+    /\b(?:pharmacy|chemist|medical(?:\s*store)?|druggist|medical\s*hall|healthcare|hospital|clinic)\b/i,
+    /\b(?:doctor|patient|customer|cust|patient\s*name|dr\s*name|patient\s*id|customer\s*id)\b/i,
+    /\b(?:dr|m[rs]|m\/s)\b\.?/i,
+    /\b(?:total|subtotal|sub\s*total|qty|quantity|mrp|discount|disc|rate|amount|price|rs\.?|₹|balance|paid|due|change)\b/i,
+    /\b(?:exp|expiry|exp\.?\s*date|expiry\.?\s*date|batch|lot|batch\.?\s*no|b\.?\s*no|lot\.?\s*no)\b/i,
+  ];
+
+  for (const pattern of noisePatterns) {
+    if (pattern.test(trimmed)) {
+      return false;
+    }
+  }
+
+  const digitCount = (trimmed.match(/\d/g) || []).length;
+  const letterCount = (trimmed.match(/[a-zA-Z]/g) || []).length;
+
+  if (digitCount > letterCount) return false;
+
+  return true;
+}
+
+function cleanMedicineNameLine(line: string): string {
+  if (!line) return '';
+  let cleaned = line.trim();
+
+  cleaned = cleaned.replace(/^\s*\d+\s*[\.\)\-\/\:]\s*/, '');
+  cleaned = cleaned.replace(/^[\s\-\*\•\+\=\#\.\,\:\;]+/g, '');
+
+  return cleaned.trim();
+}
+
+function extractMedicineNameFromText(text: string): string {
+  if (!text) return '';
+
+  const lines = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+
+  for (const line of lines) {
+    const cleaned = cleanMedicineNameLine(line);
+    if (isValidMedicineNameCandidate(cleaned)) {
+      return cleaned;
+    }
+  }
+
+  for (const line of lines) {
+    const cleaned = cleanMedicineNameLine(line);
+    if (cleaned.length > 0) {
+      if (/[a-zA-Z]/.test(cleaned)) {
+        return cleaned;
+      }
+    }
+  }
+
+  return lines.length > 0 ? cleanMedicineNameLine(lines[0]) : '';
+}
+
 let cachedDoctors: any[] | null = null;
 let cachedCommonCombinations: any[] | null = null;
 let cachedSpecialOrders: any[] | null = null;
@@ -1028,7 +1107,7 @@ const POS = () => {
 
     const info = result.medicineInfo || {};
     const batchQuery = info.batchNumber;
-    const nameQuery = info.potentialName || (result.text ? result.text.split('\n')[0] : '');
+    const nameQuery = info.potentialName || extractMedicineNameFromText(result.text || '');
     const mrpQuery = info.mrp ? String(info.mrp) : '';
 
     // Helper to perform the search chain

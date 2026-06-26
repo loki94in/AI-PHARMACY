@@ -5,6 +5,7 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'url';
 import { aiCameraService } from '../services/aiCameraService.js';
+import { extractMedicineNameFromText } from '../utils/ocrCleaner.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -465,11 +466,8 @@ router.post('/export-pdf-report', async (req, res) => {
 function extractMedicineInfo(text: string) {
   const info: any = {};
 
-  // Common patterns for medicine labels
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
-  // Look for medicine name (usually the largest/most prominent text)
-  info.potentialName = lines.length > 0 ? lines[0] : '';
+  // Look for medicine name (usually the largest/most prominent text, filtered for noise)
+  info.potentialName = extractMedicineNameFromText(text);
 
   // Look for strength/dosage patterns (e.g., "500mg", "10 mg")
   const strengthMatch = text.match(/\d+\s*(?:mg|g|ml|μg|iu)/i);

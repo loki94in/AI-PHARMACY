@@ -5,6 +5,7 @@ import { productNameFilterService } from './productNameFilterService.js';
 import { onnxOcrService } from './onnxOcrService.js';
 import { onlineDataEnricher } from './onlineDataEnricher.js';
 import { dbManager } from '../database/connection.js';
+import { extractMedicineNameFromText } from '../utils/ocrCleaner.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -169,8 +170,7 @@ class AICameraService {
     // Construct final medicineInfo structure for the routes
     const finalInfo: any = {};
     // Use OCR extraction matching
-    const lines = localOcrResult.text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    finalInfo.potentialName = matches.length > 0 ? matches[0] : (lines.length > 0 ? lines[0] : '');
+    finalInfo.potentialName = matches.length > 0 ? matches[0] : extractMedicineNameFromText(localOcrResult.text);
 
     const strengthMatch = localOcrResult.text.match(/\d+\s*(?:mg|g|ml|μg|iu)/i);
     if (strengthMatch) finalInfo.strength = strengthMatch[0];
