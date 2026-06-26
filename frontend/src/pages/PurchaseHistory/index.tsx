@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
-import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
+import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 interface PurchaseTransaction {
   id: number;
@@ -51,14 +51,68 @@ const PurchaseHistory = () => {
   const [colFilterMinAmount, setColFilterMinAmount] = useState('');
   const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
 
+  // Debounced filters to avoid database/CPU saturation
+  const [debouncedFilters, setDebouncedFilters] = useState({
+    id: '',
+    distributor: '',
+    invoiceNo: '',
+    date: '',
+    minAmount: '',
+    maxAmount: ''
+  });
+
+  useEffect(() => {
+    // Update date immediately to ensure instant filtering and UI response
+    setDebouncedFilters(prev => {
+      if (prev.date !== colFilterDate) {
+        return {
+          ...prev,
+          date: colFilterDate
+        };
+      }
+      return prev;
+    });
+
+    // Debounce text and amount inputs by 2 seconds to prevent rapid changes while typing
+    const handler = setTimeout(() => {
+      setDebouncedFilters(prev => {
+        const nextId = (colFilterId.length === 0 || colFilterId.length >= 3) ? colFilterId : prev.id;
+        const nextDistributor = (colFilterDistributor.length === 0 || colFilterDistributor.length >= 3) ? colFilterDistributor : prev.distributor;
+        const nextInvoiceNo = (colFilterInvoiceNo.length === 0 || colFilterInvoiceNo.length >= 3) ? colFilterInvoiceNo : prev.invoiceNo;
+        const nextMinAmount = colFilterMinAmount;
+        const nextMaxAmount = colFilterMaxAmount;
+
+        if (
+          prev.id !== nextId ||
+          prev.distributor !== nextDistributor ||
+          prev.invoiceNo !== nextInvoiceNo ||
+          prev.minAmount !== nextMinAmount ||
+          prev.maxAmount !== nextMaxAmount
+        ) {
+          return {
+            ...prev,
+            id: nextId,
+            distributor: nextDistributor,
+            invoiceNo: nextInvoiceNo,
+            minAmount: nextMinAmount,
+            maxAmount: nextMaxAmount
+          };
+        }
+        return prev;
+      });
+    }, 2000);
+
+    return () => clearTimeout(handler);
+  }, [colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = useState(100);
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
+  }, [debouncedFilters]);
 
   // Reconciliation States
   const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>('history');
@@ -221,23 +275,23 @@ const PurchaseHistory = () => {
 
   // Filter Logic
   const filteredData = transactions.filter(t => {
-    // Column header filters
-    if (colFilterId && !t.id.toString().includes(colFilterId)) {
+    // Column header filters using debounced values
+    if (debouncedFilters.id && !t.id.toString().includes(debouncedFilters.id)) {
       return false;
     }
-    if (colFilterDistributor && !(t.distributor_name || '').toLowerCase().includes(colFilterDistributor.toLowerCase())) {
+    if (debouncedFilters.distributor && !(t.distributor_name || '').toLowerCase().includes(debouncedFilters.distributor.toLowerCase())) {
       return false;
     }
-    if (colFilterInvoiceNo && !(t.invoice_no || '').toLowerCase().includes(colFilterInvoiceNo.toLowerCase())) {
+    if (debouncedFilters.invoiceNo && !(t.invoice_no || '').toLowerCase().includes(debouncedFilters.invoiceNo.toLowerCase())) {
       return false;
     }
-    if (colFilterDate) {
+    if (debouncedFilters.date) {
       const pDate = t.date ? t.date.substring(0, 10) : '';
-      if (pDate !== colFilterDate) return false;
+      if (pDate !== debouncedFilters.date) return false;
     }
     const amountVal = t.total_amount || 0;
-    const minVal = colFilterMinAmount ? Number(colFilterMinAmount) : 0;
-    const maxVal = colFilterMaxAmount ? Number(colFilterMaxAmount) : 100000000;
+    const minVal = debouncedFilters.minAmount ? Number(debouncedFilters.minAmount) : 0;
+    const maxVal = debouncedFilters.maxAmount ? Number(debouncedFilters.maxAmount) : 100000000;
     if (amountVal < minVal || amountVal > maxVal) {
       return false;
     }
@@ -245,8 +299,9 @@ const PurchaseHistory = () => {
     return true;
   });
 
+  const isDateFiltered = !!(colFilterDate || debouncedFilters.date);
   const totalPages = Math.ceil(filteredData.length / pageSize);
-  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedData = isDateFiltered ? filteredData : filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Purchase Analytics
   const totalPurchases = filteredData.length;
@@ -293,7 +348,7 @@ const PurchaseHistory = () => {
   };
 
   return (
-    <div className="h-full flex flex-col pt-1 px-4 gap-0 pb-4 animate-in fade-in duration-500">
+    <div className="h-full flex flex-col gap-4 overflow-hidden relative">
       {/* Tabs with Actions */}
       <div className="flex justify-between items-center border-b border-glass-border/30 mb-0">
         <div className="flex">
@@ -339,100 +394,230 @@ const PurchaseHistory = () => {
         <>
           {/* Purchase History Tab */}
           {/* Purchase Analytics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 bg-white/10 backdrop-blur-lg border border-white/20 border-b-0 rounded-t-xl z-30 relative">
-            <div className="p-5 border-r border-white/10">
-              <p className="text-gray-400 text-sm mb-1">Total Purchases</p>
-              <p className="text-2xl font-bold text-white">{totalPurchases}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 bg-bg2/40 border border-glass-border rounded-2xl z-30 relative select-none">
+            <div className="p-5 border-r border-glass-border/30">
+              <p className="text-muted text-sm mb-1">Total Purchases</p>
+              <p className="text-2xl font-bold text-text">{totalPurchases}</p>
             </div>
-            <div className="p-5 border-r border-white/10">
-              <p className="text-gray-400 text-sm mb-1">Total Value</p>
+            <div className="p-5 border-r border-glass-border/30">
+              <p className="text-muted text-sm mb-1">Total Value</p>
               <p className="text-2xl font-bold text-primary">₹{totalAmount.toFixed(2)}</p>
             </div>
             <div className="p-5">
-              <p className="text-gray-400 text-sm mb-1">Total Paid</p>
-              <p className="text-2xl font-bold text-green-400">₹{paidAmount.toFixed(2)}</p>
+              <p className="text-muted text-sm mb-1">Total Paid</p>
+              <p className="text-2xl font-bold text-green">₹{paidAmount.toFixed(2)}</p>
             </div>
           </div>
 
           {/* Table */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-b-xl border border-white/20 flex-1 flex flex-col min-h-0 relative z-10 overflow-hidden shadow-2xl">
-            <div className="flex-1 overflow-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-20 bg-[#18181b]/95 backdrop-blur-sm shadow-sm">
-                  <tr className="bg-black/40 border-b border-glass-border/50 text-xs font-semibold text-gray-300">
-                    <th className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex flex-col gap-1.5">
-                        <span>Purchase ID</span>
-                        <input
-                          type="text"
-                          placeholder="🔍 ID..."
-                          value={colFilterId}
-                          onChange={e => setColFilterId(e.target.value)}
-                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all"
-                        />
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex flex-col gap-1.5">
-                        <span>Distributor Name</span>
-                        <input
-                          type="text"
-                          placeholder="🔍 Distributor..."
-                          value={colFilterDistributor}
-                          onChange={e => setColFilterDistributor(e.target.value)}
-                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all"
-                        />
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex flex-col gap-1.5">
-                        <span>Invoice No.</span>
-                        <input
-                          type="text"
-                          placeholder="🔍 Invoice..."
-                          value={colFilterInvoiceNo}
-                          onChange={e => setColFilterInvoiceNo(e.target.value)}
-                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all"
-                        />
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex flex-col gap-1.5">
-                        <span>Date</span>
-                        <input
-                          type="date"
-                          value={colFilterDate}
-                          onChange={e => setColFilterDate(e.target.value)}
-                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal focus:outline-none focus:border-primary transition-all"
-                        />
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 whitespace-nowrap text-right">
-                      <div className="flex flex-col gap-1.5 items-end">
-                        <span>Amount</span>
-                        <div className="flex gap-1 w-full max-w-[150px]">
+          <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative z-10 shadow-2xl animate-in fade-in duration-300">
+            
+            {/* Range Selector and Pagination Header */}
+            <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
+                {!isDateFiltered ? (
+                  <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
+                    <span className="text-muted">Show from row</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={Math.max(0, filteredData.length - 1)}
+                      value={filteredData.length === 0 ? 0 : (currentPage - 1) * pageSize}
+                      onChange={e => {
+                        const val = Math.max(0, parseInt(e.target.value) || 0);
+                        const newPage = Math.floor(val / pageSize) + 1;
+                        setCurrentPage(Math.min(totalPages, newPage));
+                      }}
+                      className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
+                    />
+                    <span className="text-muted">to</span>
+                    <span className="text-text font-mono font-bold">
+                      {filteredData.length === 0 ? 0 : Math.min(filteredData.length, currentPage * pageSize)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
+                    <span className="text-muted">Showing all</span>
+                    <span className="text-text font-mono font-bold">
+                      {filteredData.length}
+                    </span>
+                  </div>
+                )}
+                <span className="text-muted">
+                  of <strong className="text-text font-bold">{filteredData.length.toLocaleString()}</strong> transactions
+                </span>
+              </div>
+
+              {!isDateFiltered && (
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted">Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={e => {
+                        const newSize = parseInt(e.target.value);
+                        setPageSize(newSize);
+                        setCurrentPage(1);
+                      }}
+                      className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
+                    >
+                      <option value="15">15 rows</option>
+                      <option value="50">50 rows</option>
+                      <option value="100">100 rows</option>
+                      <option value="250">250 rows</option>
+                      <option value="500">500 rows</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1 || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                      title="First Page"
+                    >
+                      <ChevronsLeft size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1 || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                      title="Previous Page"
+                    >
+                      <ChevronLeft size={14} /> Prev
+                    </button>
+                    <div className="px-3 text-muted">
+                      Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                      title="Next Page"
+                    >
+                      Next <ChevronRight size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                      title="Last Page"
+                    >
+                      <ChevronsRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15">
+              {loading ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+                  <div className="animate-pulse">Loading purchase history...</div>
+                </div>
+              ) : filteredData.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+                  <Database size={40} className="mx-auto mb-3 opacity-30" />
+                  <p className="font-semibold">No transactions found</p>
+                  <p className="text-xs mt-1">Try adjusting your search or filters</p>
+                </div>
+              ) : (
+                <div className="flex-1 border border-glass-border/30 rounded-xl overflow-auto bg-glass-bg custom-scrollbar min-h-0 relative">
+                  <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-full">
+                    <thead className="sticky top-0 z-20 bg-bg2 shadow-sm">
+                      <tr className="bg-bg2 border-b border-glass-border/30 text-muted font-bold text-[10px] align-top">
+                        <th className="p-2 border-r border-glass-border/20 min-w-[100px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Purchase ID</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[180px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Distributor Name</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[120px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Invoice No.</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[120px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Date</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[150px] text-right">
+                          <div className="flex flex-col gap-1 items-end">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Amount</span>
+                          </div>
+                        </th>
+                        <th className="p-2 text-center min-w-[100px]">
+                          <div className="flex flex-col gap-1 items-center justify-center">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Actions</span>
+                          </div>
+                        </th>
+                      </tr>
+                      <tr className="bg-bg2 border-b border-glass-border/30">
+                        <td className="p-2 border-r border-glass-border/20">
                           <input
-                            type="number"
-                            placeholder="Min"
-                            value={colFilterMinAmount}
-                            onChange={e => setColFilterMinAmount(e.target.value)}
-                            className="w-1/2 px-1.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all text-right"
+                            type="text"
+                            placeholder="Search ID..."
+                            value={colFilterId}
+                            onChange={e => setColFilterId(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                           />
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
                           <input
-                            type="number"
-                            placeholder="Max"
-                            value={colFilterMaxAmount}
-                            onChange={e => setColFilterMaxAmount(e.target.value)}
-                            className="w-1/2 px-1.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all text-right"
+                            type="text"
+                            placeholder="Search distributor..."
+                            value={colFilterDistributor}
+                            onChange={e => setColFilterDistributor(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                           />
-                        </div>
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 whitespace-nowrap text-center">
-                      <div className="flex flex-col gap-1.5 items-center justify-end h-full">
-                        <span>Action</span>
-                        <div className="h-[26px] flex items-center">
-                          {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) ? (
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
+                          <input
+                            type="text"
+                            placeholder="Search invoice..."
+                            value={colFilterInvoiceNo}
+                            onChange={e => setColFilterInvoiceNo(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
+                          <input
+                            type="date"
+                            value={colFilterDate}
+                            onChange={e => setColFilterDate(e.target.value)}
+                            className="w-full px-1.5 py-0.5 bg-bg3 border border-glass-border rounded text-[9px] text-text font-normal focus:outline-none focus:border-primary/50"
+                          />
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              placeholder="Min"
+                              value={colFilterMinAmount}
+                              onChange={e => setColFilterMinAmount(e.target.value)}
+                              className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Max"
+                              value={colFilterMaxAmount}
+                              onChange={e => setColFilterMaxAmount(e.target.value)}
+                              className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                            />
+                          </div>
+                        </td>
+                        <td className="p-2 text-center flex items-center justify-center">
+                          {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) && (
                             <button
                               onClick={() => {
                                 setColFilterId('');
@@ -442,157 +627,58 @@ const PurchaseHistory = () => {
                                 setColFilterMinAmount('');
                                 setColFilterMaxAmount('');
                               }}
-                              className="text-[10px] text-red-400 hover:text-red-300 hover:underline font-bold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20"
+                              className="px-2 py-0.5 rounded bg-red/15 border border-red/30 text-red-400 hover:bg-red hover:text-white transition-all text-[9px] font-extrabold cursor-pointer"
+                              title="Clear Filters"
                             >
-                              Clear
+                              Reset
                             </button>
-                          ) : (
-                            <span className="text-[10px] text-gray-500 select-none font-normal">No Filter</span>
                           )}
-                        </div>
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-glass-border/30 text-sm">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
-                        <div className="flex justify-center items-center gap-2">
-                          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                          Loading history...
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredData.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center">
-                        <div className="flex flex-col items-center justify-center text-gray-400">
-                          <AlertCircle size={48} className="mb-4 opacity-20" />
-                          <p className="text-lg">No transactions found</p>
-                          <p className="text-sm opacity-70">Try adjusting your search or filters</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedData.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="px-4 py-3 text-gray-300 font-mono">
-                          #{tx.id.toString().padStart(6, '0')}
-                        </td>
-                        <td className="px-4 py-3 text-white font-medium">
-                          {tx.distributor_name || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-300 font-mono text-xs">
-                          {tx.invoice_no || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
-                          {new Date(tx.date).toLocaleDateString()}
-                        </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          {tx.cn_amount && tx.cn_amount > 0 ? (
-                            <div className="flex flex-col items-end">
-                              <div className="flex items-center gap-1.5 justify-end">
-                                <span className="text-xs text-gray-500 line-through">
-                                  ₹{(tx.original_amount || (tx.total_amount + tx.cn_amount)).toFixed(2)}
-                                </span>
-                                <span className="text-white font-medium">
-                                  ₹{tx.total_amount?.toFixed(2) || '0.00'}
-                                </span>
-                              </div>
-                              <span className="text-[10px] text-sky-400 font-semibold px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 mt-1 transition-all hover:bg-sky-500/25">
-                                CN Applied: -₹{tx.cn_amount.toFixed(2)}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-white font-medium">
-                              ₹{tx.total_amount?.toFixed(2) || '0.00'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => openView(tx.id)} className="text-gray-400 hover:text-primary transition-colors p-1 rounded hover:bg-primary/10" title="View Details">
-                              <Eye size={16} />
-                            </button>
-                            <button onClick={() => openEdit(tx.id)} className="text-gray-400 hover:text-blue-400 transition-colors p-1 rounded hover:bg-blue-400/10" title="Edit Purchase">
-                              <Edit size={16} />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                if(window.confirm('Are you sure you want to delete this purchase? This will reduce the stock in inventory.')) {
-                                  api.deletePurchase(tx.id).then(() => {
-                                    alert('Purchase deleted and stock reverted');
-                                    fetchHistory();
-                                  }).catch((err) => {
-                                    alert('Failed to delete purchase: ' + (err.response?.data?.error || err.message));
-                                  });
-                                }
-                              }}
-                              className="text-gray-400 hover:text-red-400 transition-colors p-1 rounded hover:bg-red-400/10" title="Delete Purchase"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-glass-border/30 text-[11px]">
+                      {paginatedData.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-muted">No purchase transactions matching the filters.</td>
+                        </tr>
+                      ) : (
+                        paginatedData.map((tx) => (
+                          <tr key={tx.id} className="hover:bg-white/10 transition-all duration-300 group hover:shadow-lg hover:-translate-y-0.5 border-b border-glass-border/30">
+                            <td className="p-4 relative">
+                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-blue-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>
+                              <span className="font-mono text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-md border border-primary/20 shadow-sm">#{tx.id}</span>
+                            </td>
+                            <td className="p-4 text-sm font-bold text-text group-hover:text-primary transition-colors">
+                              {tx.distributor_name}
+                            </td>
+                            <td className="p-4 font-mono text-sm text-text">
+                              {tx.invoice_no || 'N/A'}
+                            </td>
+                            <td className="p-4 text-sm text-muted">
+                              {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="p-4 text-right">
+                              <span className="text-sm font-bold text-green">₹{(tx.total_amount || 0).toFixed(2)}</span>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <button
+                                  onClick={() => openView(tx.id)}
+                                  className="p-2 rounded-lg bg-white/5 hover:bg-sky-500 hover:text-white border border-glass-border hover:border-sky-500 shadow-sm hover:shadow-[0_0_15px_rgba(14,165,233,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
+                                  title="View Details"
+                                >
+                                  <Eye size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="px-6 py-3 bg-[#18181b]/60 backdrop-blur-sm border-t border-glass-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text select-none">
-                <div className="text-muted text-gray-400">
-                  Showing <span className="font-semibold text-white">{Math.min(filteredData.length, (currentPage - 1) * pageSize + 1)}</span> to{' '}
-                  <span className="font-semibold text-white">{Math.min(filteredData.length, currentPage * pageSize)}</span> of{' '}
-                  <span className="font-semibold text-white">{filteredData.length}</span> transactions
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  
-                  {/* Page numbers */}
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                      .map((p, idx, arr) => {
-                        const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
-                        return (
-                          <React.Fragment key={p}>
-                            {showEllipsisBefore && <span className="px-1 text-muted text-gray-500">...</span>}
-                            <button
-                              onClick={() => setCurrentPage(p)}
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border transition-all ${
-                                currentPage === p
-                                  ? 'bg-primary/20 text-primary border-primary/40'
-                                  : 'bg-bg3 hover:bg-white/10 text-text border-glass-border'
-                              }`}
-                            >
-                              {p}
-                            </button>
-                          </React.Fragment>
-                        );
-                      })}
-                  </div>
-
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </>
       ) : (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
-import { PackageSearch, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { PackageSearch, Package, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { api, type InventoryItem } from '../../services/api';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { createPortal } from 'react-dom';
@@ -70,8 +70,38 @@ const Inventory = () => {
   // Debounce colFilters update to avoid database request saturation
   useEffect(() => {
     const handler = setTimeout(() => {
-      setDebouncedFilters(colFilters);
-    }, 300);
+      setDebouncedFilters(prev => {
+        const nextMedicine = (colFilters.medicine.length === 0 || colFilters.medicine.length >= 3) ? colFilters.medicine : prev.medicine;
+        const nextBatch = (colFilters.batch.length === 0 || colFilters.batch.length >= 3) ? colFilters.batch : prev.batch;
+        const nextExpiry = (colFilters.expiry.length === 0 || colFilters.expiry.length >= 3) ? colFilters.expiry : prev.expiry;
+        const nextRack = (colFilters.rack.length === 0 || colFilters.rack.length >= 3) ? colFilters.rack : prev.rack;
+        
+        const nextPacks = colFilters.packs;
+        const nextLoose = colFilters.loose;
+        const nextMrp = colFilters.mrp;
+
+        if (
+          prev.medicine !== nextMedicine ||
+          prev.batch !== nextBatch ||
+          prev.expiry !== nextExpiry ||
+          prev.rack !== nextRack ||
+          prev.packs !== nextPacks ||
+          prev.loose !== nextLoose ||
+          prev.mrp !== nextMrp
+        ) {
+          return {
+            medicine: nextMedicine,
+            batch: nextBatch,
+            expiry: nextExpiry,
+            rack: nextRack,
+            packs: nextPacks,
+            loose: nextLoose,
+            mrp: nextMrp
+          };
+        }
+        return prev;
+      });
+    }, 2000);
     return () => clearTimeout(handler);
   }, [colFilters]);
 
@@ -179,14 +209,14 @@ const Inventory = () => {
   const filteredItems = items;
 
   return (
-    <div className="h-full flex flex-col fade-in relative px-4 pb-4 pt-4 gap-2">
-      <div className="glass-panel flex-1 flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col gap-4 overflow-hidden relative">
+      <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative animate-in fade-in duration-300">
         
         {/* Range Selector and Pagination Header */}
-        <div className="p-3 border-b border-glass-border flex flex-wrap items-center justify-between bg-white/5 gap-3 shrink-0 select-none text-xs">
+        <div className="p-3 border-b border-glass-border flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
           <div className="flex items-center gap-2.5">
             <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
-            <div className="flex items-center gap-1.5 bg-black/20 border border-glass-border rounded-lg px-2 py-1">
+            <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
               <span className="text-muted">Show from row</span>
               <input
                 type="number"
@@ -198,7 +228,7 @@ const Inventory = () => {
                   const newPage = Math.floor(val / pageSize) + 1;
                   setCurrentPage(Math.min(totalPages, newPage));
                 }}
-                className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0"
+                className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
               />
               <span className="text-muted">to</span>
               <span className="text-text font-mono font-bold">
@@ -220,7 +250,7 @@ const Inventory = () => {
                   setPageSize(newSize);
                   setCurrentPage(1);
                 }}
-                className="bg-black/40 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
+                className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
               >
                 <option value="50">50 rows</option>
                 <option value="100">100 rows</option>
@@ -229,12 +259,12 @@ const Inventory = () => {
               </select>
             </div>
 
-            <div className="flex items-center gap-1 bg-black/20 border border-glass-border rounded-lg p-0.5">
+            <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
               <button
                 type="button"
                 onClick={() => setCurrentPage(1)}
                 disabled={currentPage === 1 || loading}
-                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
+                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
                 title="First Page"
               >
                 <ChevronsLeft size={14} />
@@ -243,7 +273,7 @@ const Inventory = () => {
                 type="button"
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1 || loading}
-                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
+                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
                 title="Previous Page"
               >
                 <ChevronLeft size={14} /> Prev
@@ -255,7 +285,7 @@ const Inventory = () => {
                 type="button"
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages || loading}
-                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
+                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
                 title="Next Page"
               >
                 Next <ChevronRight size={14} />
@@ -264,7 +294,7 @@ const Inventory = () => {
                 type="button"
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages || loading}
-                className="p-1.5 rounded-md hover:bg-white/5 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
+                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
                 title="Last Page"
               >
                 <ChevronsRight size={14} />
@@ -273,101 +303,206 @@ const Inventory = () => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto bg-black/20 relative">
-          <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10">
-              <tr>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle w-16">ID</th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
-                  <div className="flex items-center">
-                    <input type="text" placeholder="Medicine Name..." value={colFilters.medicine} onChange={e => setColFilters({...colFilters, medicine: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-36" />
-                  </div>
-                </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
-                  <div className="flex items-center">
-                    <input type="text" placeholder="Batch..." value={colFilters.batch} onChange={e => setColFilters({...colFilters, batch: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-24" />
-                  </div>
-                </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
-                  <div className="flex items-center">
-                    <input type="text" placeholder="Expiry..." value={colFilters.expiry} onChange={e => setColFilters({...colFilters, expiry: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-20" />
-                  </div>
-                </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
-                  <div className="flex items-center">
-                    <input type="text" placeholder="Packs..." value={colFilters.packs} onChange={e => setColFilters({...colFilters, packs: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-16" />
-                  </div>
-                </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
-                  <div className="flex items-center">
-                    <input type="text" placeholder="Loose..." value={colFilters.loose} onChange={e => setColFilters({...colFilters, loose: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-16" />
-                  </div>
-                </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
-                  <div className="flex items-center">
-                    <input type="text" placeholder="MRP (₹)..." value={colFilters.mrp} onChange={e => setColFilters({...colFilters, mrp: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-20" />
-                  </div>
-                </th>
-                <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border align-middle">
-                  <div className="flex items-center">
-                    <input type="text" placeholder="Rack..." value={colFilters.rack} onChange={e => setColFilters({...colFilters, rack: e.target.value})} className="px-2 py-1 bg-black/20 border border-glass-border rounded text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-primary/50 w-16" />
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={8} className="p-8 text-center text-muted">Loading inventory...</td></tr>
-              ) : filteredItems.length === 0 ? (
-                <tr><td colSpan={8} className="p-8 text-center text-muted">No medicines found.</td></tr>
-              ) : (
-                filteredItems.map(item => {
-                  const pendingMatches = specialOrders.filter(
-                    o => o.product.toLowerCase().trim() === item.name.toLowerCase().trim() ||
-                         item.name.toLowerCase().includes(o.product.toLowerCase().trim())
-                  );
-                  const hasPending = pendingMatches.length > 0;
-                  return (
-                    <tr 
-                      key={item.id} 
-                      className="hover:bg-white/5 cursor-pointer transition-colors border-b border-glass-border"
-                      onClick={() => handleRowClick(item)}
-                    >
-                      <td className="p-4 text-sm text-muted">{item.id}</td>
-                      <td className="p-4 text-sm font-semibold flex items-center gap-2">
-                        {item.name}
-                        {hasPending && (
-                          <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse">
-                            ⚠️ Requested ({pendingMatches[0].qty})
-                          </span>
-                        )}
-                      </td>
-                    <td className="p-4 text-sm">{item.batch_number || 'B-NEW'}</td>
-                    <td className="p-4 text-sm">{item.expiry_date || '12/2028'}</td>
-                    <td className="p-4 text-sm">
-                      <div className="flex items-center gap-1.5" title="Full Packs Available">
-                        <span className={`px-2 py-1 rounded-md border text-xs font-bold shadow-sm ${item.stock_quantity <= 0 ? 'bg-red/10 border-red/20 text-red' : item.stock_quantity < 20 ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-green/10 border-green/20 text-green'}`}>
-                          {item.stock_quantity || 0}
-                        </span>
-                        <span className="text-[10px] text-muted font-semibold">Packs</span>
+        <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15">
+          {loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+              <div className="animate-pulse">Loading inventory...</div>
+            </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+              <Package size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="font-semibold">No medicines found</p>
+              <p className="text-xs mt-1">Try adjusting your search or filters</p>
+            </div>
+          ) : (
+            <div className="flex-1 border border-glass-border/30 rounded-xl overflow-auto bg-glass-bg custom-scrollbar min-h-0 relative">
+              <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-full">
+                <thead className="sticky top-0 z-20 bg-bg2 shadow-sm">
+                  <tr className="bg-bg2 border-b border-glass-border/30 text-muted font-bold text-[10px] align-top">
+                    <th className="p-2 border-r border-glass-border/20 w-16">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">ID</span>
                       </div>
-                    </td>
-                    <td className="p-4 text-sm">
-                      <div className="flex items-center gap-1.5" title="Loose Units Available">
-                        <span className={`px-2 py-1 rounded-md border text-xs font-bold shadow-sm ${!item.loose_quantity || item.loose_quantity <= 0 ? 'bg-white/5 border-glass-border text-muted opacity-50' : 'bg-primary/10 border-primary/20 text-primary'}`}>
-                          {item.loose_quantity || 0}
-                        </span>
-                        <span className="text-[10px] text-muted font-semibold">Units</span>
+                    </th>
+                    <th className="p-2 border-r border-glass-border/20 min-w-[160px]">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">Medicine Name</span>
                       </div>
+                    </th>
+                    <th className="p-2 border-r border-glass-border/20 min-w-[100px]">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">Batch</span>
+                      </div>
+                    </th>
+                    <th className="p-2 border-r border-glass-border/20 min-w-[90px]">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">Expiry</span>
+                      </div>
+                    </th>
+                    <th className="p-2 border-r border-glass-border/20 min-w-[80px]">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">Packs</span>
+                      </div>
+                    </th>
+                    <th className="p-2 border-r border-glass-border/20 min-w-[80px]">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">Loose</span>
+                      </div>
+                    </th>
+                    <th className="p-2 border-r border-glass-border/20 min-w-[100px]">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">MRP (₹)</span>
+                      </div>
+                    </th>
+                    <th className="p-2 border-r border-glass-border/20 min-w-[80px]">
+                      <div className="flex flex-col gap-1">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">Rack</span>
+                      </div>
+                    </th>
+                    <th className="p-2 text-center min-w-[80px]">
+                      <div className="flex flex-col gap-1 items-center justify-center">
+                        <span className="uppercase text-[10px] tracking-wider text-muted font-black">Actions</span>
+                      </div>
+                    </th>
+                  </tr>
+                  <tr className="bg-bg2 border-b border-glass-border/30">
+                    <td className="p-2 border-r border-glass-border/20"></td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter medicine..."
+                        value={colFilters.medicine}
+                        onChange={e => setColFilters({...colFilters, medicine: e.target.value})}
+                        className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
                     </td>
-                    <td className="p-4 text-sm">₹{item.mrp?.toFixed(2) || '0.00'}</td>
-                    <td className="p-4 text-sm text-muted">{item.rack_location || '-'}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter batch..."
+                        value={colFilters.batch}
+                        onChange={e => setColFilters({...colFilters, batch: e.target.value})}
+                        className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter expiry..."
+                        value={colFilters.expiry}
+                        onChange={e => setColFilters({...colFilters, expiry: e.target.value})}
+                        className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter packs..."
+                        value={colFilters.packs}
+                        onChange={e => setColFilters({...colFilters, packs: e.target.value})}
+                        className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter loose..."
+                        value={colFilters.loose}
+                        onChange={e => setColFilters({...colFilters, loose: e.target.value})}
+                        className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter MRP..."
+                        value={colFilters.mrp}
+                        onChange={e => setColFilters({...colFilters, mrp: e.target.value})}
+                        className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter rack..."
+                        value={colFilters.rack}
+                        onChange={e => setColFilters({...colFilters, rack: e.target.value})}
+                        className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                      />
+                    </td>
+                    <td className="p-2 text-center flex items-center justify-center">
+                      {(colFilters.medicine || colFilters.batch || colFilters.expiry || colFilters.packs || colFilters.loose || colFilters.mrp || colFilters.rack) && (
+                        <button
+                          onClick={() => {
+                            setColFilters({
+                              medicine: '',
+                              batch: '',
+                              expiry: '',
+                              packs: '',
+                              loose: '',
+                              mrp: '',
+                              rack: ''
+                            });
+                          }}
+                          className="px-2 py-0.5 rounded bg-red/15 border border-red/30 text-red-400 hover:bg-red hover:text-white transition-all text-[9px] font-extrabold cursor-pointer"
+                          title="Clear Filters"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map(item => {
+                    const pendingMatches = specialOrders.filter(
+                      o => o.product.toLowerCase().trim() === item.name.toLowerCase().trim() ||
+                           item.name.toLowerCase().includes(o.product.toLowerCase().trim())
+                    );
+                    const hasPending = pendingMatches.length > 0;
+                    return (
+                      <tr 
+                        key={item.id} 
+                        className="hover:bg-white/5 cursor-pointer transition-colors border-b border-glass-border"
+                        onClick={() => handleRowClick(item)}
+                      >
+                        <td className="p-4 text-sm text-muted">{item.id}</td>
+                        <td className="p-4 text-sm font-semibold flex items-center gap-2">
+                          {item.name}
+                          {hasPending && (
+                            <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse">
+                              ⚠️ Requested ({pendingMatches[0].qty})
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-sm">{item.batch_number || 'B-NEW'}</td>
+                        <td className="p-4 text-sm">{item.expiry_date || '12/2028'}</td>
+                        <td className="p-4 text-sm">
+                          <div className="flex items-center gap-1.5" title="Full Packs Available">
+                            <span className={`px-2 py-1 rounded-md border text-xs font-bold shadow-sm ${item.stock_quantity <= 0 ? 'bg-red/10 border-red/20 text-red' : item.stock_quantity < 20 ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-green/10 border-green/20 text-green'}`}>
+                              {item.stock_quantity || 0}
+                            </span>
+                            <span className="text-[10px] text-muted font-semibold">Packs</span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-sm">
+                          <div className="flex items-center gap-1.5" title="Loose Units Available">
+                            <span className={`px-2 py-1 rounded-md border text-xs font-bold shadow-sm ${!item.loose_quantity || item.loose_quantity <= 0 ? 'bg-white/5 border-glass-border text-muted opacity-50' : 'bg-primary/10 border-primary/20 text-primary'}`}>
+                              {item.loose_quantity || 0}
+                            </span>
+                            <span className="text-[10px] text-muted font-semibold">Units</span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-sm">₹{item.mrp?.toFixed(2) || '0.00'}</td>
+                        <td className="p-4 text-sm text-muted">{item.rack_location || '-'}</td>
+                        <td className="p-4 text-sm"></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 

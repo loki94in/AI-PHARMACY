@@ -403,7 +403,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       let bestEff = currentEff;
 
       suggestions.forEach(item => {
-        if (item.storeId !== selectedStoreId && item.rate) {
+        if (item.storeId !== selectedStoreId && item.rate && item.mapped) {
           const nameClean1 = item.medicine_name.toLowerCase().replace(/[^a-z0-9]/g, '');
           const nameClean2 = selectedMedicineName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (nameClean1 === nameClean2 && item.rate) {

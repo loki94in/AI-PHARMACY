@@ -830,6 +830,7 @@ const POS = () => {
         discount: med.discount !== undefined ? med.discount : 0,
         packSize: med.packSize || 10,
         mrp: med.mrp, 
+        unitPrice: med.unitPrice || med.unit_price || med.mrp,
         costPrice: med.costPrice || (med.mrp * 0.7),
         availableStock: med.quantity !== undefined ? med.quantity : (med.availableStock !== undefined ? med.availableStock : 0)
       }];
@@ -952,6 +953,7 @@ const POS = () => {
         batch: med.batch_no,
         expiry: med.expiry_date,
         mrp: med.mrp,
+        unitPrice: med.unit_price || med.mrp,
         costPrice: med.cost_price,
         salts: med.salts || med.hsn_code || 'Generic',
         packSize: med.pack_size || 10,
@@ -968,6 +970,10 @@ const POS = () => {
       if (item.id !== id) return item;
       
       let updatedItem = { ...item, [field]: value };
+      
+      if (field === 'mrp') {
+        updatedItem.unitPrice = Number(value);
+      }
       
       if (field === 'looseQty') {
         const looseVal = Math.max(0, Number(value));
@@ -1102,8 +1108,9 @@ const POS = () => {
   
   // Calculations
   const subtotal = cart.reduce((sum, item) => {
-    const unitRate = item.packSize > 0 ? item.mrp / item.packSize : item.mrp;
-    const itemTotalBeforeDiscount = (item.mrp * item.qty) + (unitRate * (item.looseQty || 0));
+    const price = item.unitPrice || item.mrp || 0;
+    const unitRate = item.packSize > 0 ? price / item.packSize : price;
+    const itemTotalBeforeDiscount = (price * item.qty) + (unitRate * (item.looseQty || 0));
     return sum + itemTotalBeforeDiscount * (1 - (item.discount || 0) / 100);
   }, 0);
   
@@ -1111,7 +1118,8 @@ const POS = () => {
   const grandTotal = Math.round(subtotal - discountAmount);
 
   const totalCost = cart.reduce((sum, item) => {
-    const itemCost = item.costPrice != null ? item.costPrice : (item.mrp * 0.7);
+    const price = item.unitPrice || item.mrp || 0;
+    const itemCost = item.costPrice != null ? item.costPrice : (price * 0.7);
     const unitCostRate = item.packSize > 0 ? itemCost / item.packSize : itemCost;
     return sum + (itemCost * item.qty) + (unitCostRate * (item.looseQty || 0));
   }, 0);
@@ -1906,8 +1914,9 @@ const POS = () => {
                 </thead>
                 <tbody>
                   {cart.map(item => {
-                    const unitRate = item.packSize > 0 ? item.mrp / item.packSize : item.mrp;
-                    const itemTotal = ((item.mrp * item.qty) + (unitRate * (item.looseQty || 0))) * (1 - (item.discount || 0) / 100);
+                    const price = item.unitPrice || item.mrp || 0;
+                    const unitRate = item.packSize > 0 ? price / item.packSize : price;
+                    const itemTotal = ((price * item.qty) + (unitRate * (item.looseQty || 0))) * (1 - (item.discount || 0) / 100);
                     
                     // Near expiry highlight
                     let expBadgeClass = "bg-bg3 border border-border text-text";

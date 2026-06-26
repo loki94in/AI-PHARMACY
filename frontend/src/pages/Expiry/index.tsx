@@ -9,7 +9,12 @@ import {
   AlertTriangle, 
   RefreshCw, 
   CheckCircle2,
-  RotateCcw
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Package
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { toastEvent } from '../../services/events';
@@ -57,6 +62,10 @@ const Expiry = () => {
   const [sendingAlerts, setSendingAlerts] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  
   // Custom Filters (Column filters)
   const [colFilterId, setColFilterId] = useState('');
   const [colFilterMedName, setColFilterMedName] = useState('');
@@ -67,6 +76,77 @@ const Expiry = () => {
   const [colFilterMinMrp, setColFilterMinMrp] = useState('');
   const [colFilterMaxMrp, setColFilterMaxMrp] = useState('');
   const [colFilterLocation, setColFilterLocation] = useState('');
+
+  // Debounced filters to avoid CPU/re-render saturation
+  const [debouncedFilters, setDebouncedFilters] = useState({
+    id: '',
+    medicineName: '',
+    batchNo: '',
+    date: '',
+    minQty: '',
+    maxQty: '',
+    minMrp: '',
+    maxMrp: '',
+    location: ''
+  });
+
+  useEffect(() => {
+    // Update date immediately to ensure instant filtering and UI response
+    setDebouncedFilters(prev => {
+      if (prev.date !== colFilterDate) {
+        return {
+          ...prev,
+          date: colFilterDate
+        };
+      }
+      return prev;
+    });
+
+    // Debounce text and numeric range inputs by 2 seconds to prevent rapid updates
+    const handler = setTimeout(() => {
+      setDebouncedFilters(prev => {
+        const nextId = (colFilterId.length === 0 || colFilterId.length >= 3) ? colFilterId : prev.id;
+        const nextMedName = (colFilterMedName.length === 0 || colFilterMedName.length >= 3) ? colFilterMedName : prev.medicineName;
+        const nextBatchNo = (colFilterBatchNo.length === 0 || colFilterBatchNo.length >= 3) ? colFilterBatchNo : prev.batchNo;
+        const nextLocation = (colFilterLocation.length === 0 || colFilterLocation.length >= 3) ? colFilterLocation : prev.location;
+        const nextMinQty = colFilterMinQty;
+        const nextMaxQty = colFilterMaxQty;
+        const nextMinMrp = colFilterMinMrp;
+        const nextMaxMrp = colFilterMaxMrp;
+
+        if (
+          prev.id !== nextId ||
+          prev.medicineName !== nextMedName ||
+          prev.batchNo !== nextBatchNo ||
+          prev.location !== nextLocation ||
+          prev.minQty !== nextMinQty ||
+          prev.maxQty !== nextMaxQty ||
+          prev.minMrp !== nextMinMrp ||
+          prev.maxMrp !== nextMaxMrp
+        ) {
+          return {
+            ...prev,
+            id: nextId,
+            medicineName: nextMedName,
+            batchNo: nextBatchNo,
+            location: nextLocation,
+            minQty: nextMinQty,
+            maxQty: nextMaxQty,
+            minMrp: nextMinMrp,
+            maxMrp: nextMaxMrp
+          };
+        }
+        return prev;
+      });
+    }, 2000);
+
+    return () => clearTimeout(handler);
+  }, [colFilterId, colFilterMedName, colFilterBatchNo, colFilterDate, colFilterMinQty, colFilterMaxQty, colFilterMinMrp, colFilterMaxMrp, colFilterLocation]);
+
+  // Reset pagination when filters or scope days change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedFilters, daysFilter]);
 
   const fetchExpiryItems = async (days = 180, showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -199,36 +279,40 @@ const Expiry = () => {
       return false;
     }
 
-    // Column-specific header filters
-    if (colFilterId && !item.id.toString().includes(colFilterId)) {
+    // Column-specific header filters using debounced values
+    if (debouncedFilters.id && !item.id.toString().includes(debouncedFilters.id)) {
       return false;
     }
-    if (colFilterMedName && !item.medicine_name.toLowerCase().includes(colFilterMedName.toLowerCase())) {
+    if (debouncedFilters.medicineName && !item.medicine_name.toLowerCase().includes(debouncedFilters.medicineName.toLowerCase())) {
       return false;
     }
-    if (colFilterBatchNo && !item.batch_no.toLowerCase().includes(colFilterBatchNo.toLowerCase())) {
+    if (debouncedFilters.batchNo && !item.batch_no.toLowerCase().includes(debouncedFilters.batchNo.toLowerCase())) {
       return false;
     }
-    if (colFilterDate) {
+    if (debouncedFilters.date) {
       const itemDate = item.expiry_date ? item.expiry_date.substring(0, 10) : '';
-      if (itemDate !== colFilterDate) return false;
+      if (itemDate !== debouncedFilters.date) return false;
     }
     const qtyVal = item.quantity || 0;
-    const minQ = colFilterMinQty ? Number(colFilterMinQty) : 0;
-    const maxQ = colFilterMaxQty ? Number(colFilterMaxQty) : 100000000;
+    const minQ = debouncedFilters.minQty ? Number(debouncedFilters.minQty) : 0;
+    const maxQ = debouncedFilters.maxQty ? Number(debouncedFilters.maxQty) : 100000000;
     if (qtyVal < minQ || qtyVal > maxQ) return false;
 
     const mrpVal = item.mrp || 0;
-    const minM = colFilterMinMrp ? Number(colFilterMinMrp) : 0;
-    const maxM = colFilterMaxMrp ? Number(colFilterMaxMrp) : 100000000;
+    const minM = debouncedFilters.minMrp ? Number(debouncedFilters.minMrp) : 0;
+    const maxM = debouncedFilters.maxMrp ? Number(debouncedFilters.maxMrp) : 100000000;
     if (mrpVal < minM || mrpVal > maxM) return false;
 
-    if (colFilterLocation && !(item.rack_location || '').toLowerCase().includes(colFilterLocation.toLowerCase())) {
+    if (debouncedFilters.location && !(item.rack_location || '').toLowerCase().includes(debouncedFilters.location.toLowerCase())) {
       return false;
     }
 
     return true;
   });
+
+  const isDateFiltered = !!(colFilterDate || debouncedFilters.date);
+  const totalPages = Math.ceil(filteredItems.length / pageSize);
+  const paginatedItems = isDateFiltered ? filteredItems : filteredItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="h-full flex flex-col fade-in space-y-6">
@@ -381,204 +465,339 @@ const Expiry = () => {
         </div>
 
         {/* RIGHT COLUMN: Table Directory of Nearing Expiry */}
-        <div className="xl:col-span-3 glass-panel flex flex-col overflow-hidden bg-white/5 border-glass-border">
+        <div className="xl:col-span-3 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative shadow-2xl animate-in fade-in duration-300">
+          
+          {/* Range Selector and Pagination Header */}
+          <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
+              {!isDateFiltered ? (
+                <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
+                  <span className="text-muted">Show from row</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={Math.max(0, filteredItems.length - 1)}
+                    value={filteredItems.length === 0 ? 0 : (currentPage - 1) * pageSize}
+                    onChange={e => {
+                      const val = Math.max(0, parseInt(e.target.value) || 0);
+                      const newPage = Math.floor(val / pageSize) + 1;
+                      setCurrentPage(Math.min(totalPages, newPage));
+                    }}
+                    className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
+                  />
+                  <span className="text-muted">to</span>
+                  <span className="text-text font-mono font-bold">
+                    {filteredItems.length === 0 ? 0 : Math.min(filteredItems.length, currentPage * pageSize)}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
+                  <span className="text-muted">Showing all</span>
+                  <span className="text-text font-mono font-bold">
+                    {filteredItems.length}
+                  </span>
+                </div>
+              )}
+              <span className="text-muted">
+                of <strong className="text-text font-bold">{filteredItems.length.toLocaleString()}</strong> expiring items
+              </span>
+            </div>
 
-          {/* Table Container */}
-          <div className="flex-1 overflow-auto bg-black/20">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 bg-[#18181b]/95 backdrop-blur z-10 select-none">
-                <tr>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 w-8">
-                    <input type="checkbox" className="rounded" onChange={e => {
-                      if (e.target.checked) setSelectedIds(new Set(filteredItems.map(i => i.id)));
-                      else setSelectedIds(new Set());
-                    }} checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} readOnly />
-                  </th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">ID</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">Medicine Name</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">Batch Number</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 text-center">Expiry Date</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 text-center">Remaining Time</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 text-center">Stock Qty</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60 text-right">MRP Price</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border/60">Rack Location</th>
-                </tr>
-                <tr className="bg-bg2 border-b border-glass-border/30">
-                  <td className="p-2"></td>
-                  <td className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Search ID..."
-                      value={colFilterId}
-                      onChange={e => setColFilterId(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Search name..."
-                      value={colFilterMedName}
-                      onChange={e => setColFilterMedName(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Search batch..."
-                      value={colFilterBatchNo}
-                      onChange={e => setColFilterBatchNo(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="date"
-                      value={colFilterDate}
-                      onChange={e => setColFilterDate(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
-                    />
-                  </td>
-                  <td className="p-2"></td>
-                  <td className="p-2 flex gap-1">
-                    <input
-                      type="number"
-                      placeholder="Min"
-                      value={colFilterMinQty}
-                      onChange={e => setColFilterMinQty(e.target.value)}
-                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Max"
-                      value={colFilterMaxQty}
-                      onChange={e => setColFilterMaxQty(e.target.value)}
-                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <div className="flex gap-1">
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        value={colFilterMinMrp}
-                        onChange={e => setColFilterMinMrp(e.target.value)}
-                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        value={colFilterMaxMrp}
-                        onChange={e => setColFilterMaxMrp(e.target.value)}
-                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                      />
-                    </div>
-                  </td>
-                  <td className="p-2">
-                    <div className="flex items-center justify-between gap-1">
-                      <input
-                        type="text"
-                        placeholder="Search location..."
-                        value={colFilterLocation}
-                        onChange={e => setColFilterLocation(e.target.value)}
-                        className="flex-1 px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 animate-in fade-in"
-                      />
-                      {(colFilterId || colFilterMedName || colFilterBatchNo || colFilterDate || colFilterMinQty || colFilterMaxQty || colFilterMinMrp || colFilterMaxMrp || colFilterLocation) && (
-                        <button
-                          onClick={() => {
-                            setColFilterId('');
-                            setColFilterMedName('');
-                            setColFilterBatchNo('');
-                            setColFilterDate('');
-                            setColFilterMinQty('');
-                            setColFilterMaxQty('');
-                            setColFilterMinMrp('');
-                            setColFilterMaxMrp('');
-                            setColFilterLocation('');
-                          }}
-                          className="text-[10px] text-red hover:underline font-bold px-1"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={8} className="p-12 text-center text-muted font-semibold">
-                      <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-primary opacity-60" />
-                      Loading expiry register...
-                    </td>
-                  </tr>
-                ) : filteredItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="p-16 text-center text-muted font-semibold">
-                      <CheckCircle2 size={36} className="mx-auto mb-3 text-muted/30" />
-                      No items matching expiry thresholds in inventory.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredItems.map(item => {
-                    const daysDiff = getExpiryDaysDiff(item.expiry_date);
-                    const details = getExpiryStatusDetails(daysDiff);
-                    const isSelected = selectedIds.has(item.id);
-                    return (
-                      <tr 
-                        key={item.id} 
-                        className={`hover:bg-white/5 border-b border-glass-border/20 transition-all ${details.rowClass} ${isSelected ? 'bg-red-500/10' : ''}`}
-                      >
-                        <td className="p-4">
+            {!isDateFiltered && (
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted">Rows:</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => {
+                      const newSize = parseInt(e.target.value);
+                      setPageSize(newSize);
+                      setCurrentPage(1);
+                    }}
+                    className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
+                  >
+                    <option value="15">15 rows</option>
+                    <option value="50">50 rows</option>
+                    <option value="100">100 rows</option>
+                    <option value="250">250 rows</option>
+                    <option value="500">500 rows</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1 || loading}
+                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                    title="First Page"
+                  >
+                    <ChevronsLeft size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1 || loading}
+                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft size={14} /> Prev
+                  </button>
+                  <div className="px-3 text-muted">
+                    Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages || loading}
+                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                    title="Next Page"
+                  >
+                    Next <ChevronRight size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages || loading}
+                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                    title="Last Page"
+                  >
+                    <ChevronsRight size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15">
+            {loading ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted font-semibold">
+                <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-primary opacity-60" />
+                Loading expiry register...
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-16 text-center text-muted font-semibold">
+                <CheckCircle2 size={36} className="mx-auto mb-3 text-muted/30" />
+                No items matching expiry thresholds in inventory.
+              </div>
+            ) : (
+              <div className="flex-1 border border-glass-border/30 rounded-xl overflow-auto bg-glass-bg custom-scrollbar min-h-0 relative">
+                <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-full">
+                  <thead className="sticky top-0 z-20 bg-bg2 shadow-sm">
+                    <tr className="bg-bg2 border-b border-glass-border/30 text-muted font-bold text-[10px] align-top">
+                      <th className="p-2 border-r border-glass-border/20 w-8">
+                        <input type="checkbox" className="rounded animate-in fade-in cursor-pointer" onChange={e => {
+                          if (e.target.checked) setSelectedIds(new Set(filteredItems.map(i => i.id)));
+                          else setSelectedIds(new Set());
+                        }} checked={selectedIds.size === filteredItems.length && filteredItems.length > 0} readOnly />
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 min-w-[50px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">ID</span>
+                        </div>
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 min-w-[150px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Medicine Name</span>
+                        </div>
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 min-w-[100px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Batch Number</span>
+                        </div>
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 min-w-[100px] text-center">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Expiry Date</span>
+                        </div>
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 min-w-[100px] text-center">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Remaining Time</span>
+                        </div>
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 min-w-[90px] text-center">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Stock Qty</span>
+                        </div>
+                      </th>
+                      <th className="p-2 border-r border-glass-border/20 min-w-[110px] text-right">
+                        <div className="flex flex-col gap-1 items-end">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">MRP Price</span>
+                        </div>
+                      </th>
+                      <th className="p-2 min-w-[130px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="uppercase text-[10px] tracking-wider text-muted font-black">Rack Location</span>
+                        </div>
+                      </th>
+                    </tr>
+                    <tr className="bg-bg2 border-b border-glass-border/30">
+                      <td className="p-2 border-r border-glass-border/20"></td>
+                      <td className="p-2 border-r border-glass-border/20">
+                        <input
+                          type="text"
+                          placeholder="Filter ID..."
+                          value={colFilterId}
+                          onChange={e => setColFilterId(e.target.value)}
+                          className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                        />
+                      </td>
+                      <td className="p-2 border-r border-glass-border/20">
+                        <input
+                          type="text"
+                          placeholder="Filter name..."
+                          value={colFilterMedName}
+                          onChange={e => setColFilterMedName(e.target.value)}
+                          className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                        />
+                      </td>
+                      <td className="p-2 border-r border-glass-border/20">
+                        <input
+                          type="text"
+                          placeholder="Filter batch..."
+                          value={colFilterBatchNo}
+                          onChange={e => setColFilterBatchNo(e.target.value)}
+                          className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                        />
+                      </td>
+                      <td className="p-2 border-r border-glass-border/20">
+                        <input
+                          type="date"
+                          value={colFilterDate}
+                          onChange={e => setColFilterDate(e.target.value)}
+                          className="w-full px-1.5 py-0.5 bg-bg3 border border-glass-border rounded text-[9px] text-text font-normal focus:outline-none focus:border-primary/50"
+                        />
+                      </td>
+                      <td className="p-2 border-r border-glass-border/20"></td>
+                      <td className="p-2 border-r border-glass-border/20">
+                        <div className="flex gap-1">
                           <input
-                            type="checkbox"
-                            className="rounded cursor-pointer"
-                            checked={isSelected}
-                            onChange={() => toggleSelect(item.id)}
+                            type="number"
+                            placeholder="Min"
+                            value={colFilterMinQty}
+                            onChange={e => setColFilterMinQty(e.target.value)}
+                            className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
                           />
-                        </td>
-                        <td className="p-4 text-muted font-mono select-none">
-                          {item.id}
-                        </td>
-                        <td className="p-4 font-semibold text-text">
-                          {item.medicine_name}
-                        </td>
-                        <td className="p-4 select-none">
-                          <span className="font-mono bg-white/5 border border-glass-border/30 rounded px-2 py-0.5 font-semibold text-text">
-                            {item.batch_no}
-                          </span>
-                        </td>
-                        <td className="p-4 text-center font-mono select-none">
-                          {(() => {
-                            const d = parseDateRobust(item.expiry_date);
-                            return isNaN(d.getTime()) ? item.expiry_date : d.toLocaleDateString([], { month: '2-digit', year: '2-digit' });
-                          })()}
-                        </td>
-                        <td className="p-4 text-center font-semibold select-none">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${details.colorClass}`}>
-                              {details.label}
+                          <input
+                            type="number"
+                            placeholder="Max"
+                            value={colFilterMaxQty}
+                            onChange={e => setColFilterMaxQty(e.target.value)}
+                            className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                          />
+                        </div>
+                      </td>
+                      <td className="p-2 border-r border-glass-border/20">
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            placeholder="Min"
+                            value={colFilterMinMrp}
+                            onChange={e => setColFilterMinMrp(e.target.value)}
+                            className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 text-right"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Max"
+                            value={colFilterMaxMrp}
+                            onChange={e => setColFilterMaxMrp(e.target.value)}
+                            className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 text-right"
+                          />
+                        </div>
+                      </td>
+                      <td className="p-2">
+                        <div className="flex items-center justify-between gap-1">
+                          <input
+                            type="text"
+                            placeholder="Filter location..."
+                            value={colFilterLocation}
+                            onChange={e => setColFilterLocation(e.target.value)}
+                            className="flex-1 px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                          {(colFilterId || colFilterMedName || colFilterBatchNo || colFilterDate || colFilterMinQty || colFilterMaxQty || colFilterMinMrp || colFilterMaxMrp || colFilterLocation) && (
+                            <button
+                              onClick={() => {
+                                setColFilterId('');
+                                setColFilterMedName('');
+                                setColFilterBatchNo('');
+                                setColFilterDate('');
+                                setColFilterMinQty('');
+                                setColFilterMaxQty('');
+                                setColFilterMinMrp('');
+                                setColFilterMaxMrp('');
+                                setColFilterLocation('');
+                              }}
+                              className="px-2 py-0.5 rounded bg-red/15 border border-red/30 text-red-400 hover:bg-red hover:text-white transition-all text-[9px] font-extrabold cursor-pointer whitespace-nowrap ml-1"
+                              title="Clear Filters"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map(item => {
+                      const daysDiff = getExpiryDaysDiff(item.expiry_date);
+                      const details = getExpiryStatusDetails(daysDiff);
+                      const isSelected = selectedIds.has(item.id);
+                      return (
+                        <tr 
+                          key={item.id} 
+                          className={`hover:bg-white/5 border-b border-glass-border/20 transition-all ${details.rowClass} ${isSelected ? 'bg-red-500/10' : ''}`}
+                        >
+                          <td className="p-4">
+                            <input
+                              type="checkbox"
+                              className="rounded cursor-pointer"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(item.id)}
+                            />
+                          </td>
+                          <td className="p-4 text-muted font-mono select-none">
+                            {item.id}
+                          </td>
+                          <td className="p-4 font-semibold text-text">
+                            {item.medicine_name}
+                          </td>
+                          <td className="p-4 select-none">
+                            <span className="font-mono bg-white/5 border border-glass-border/30 rounded px-2 py-0.5 font-semibold text-text">
+                              {item.batch_no}
                             </span>
-                            <span className="text-[10px] text-muted font-medium">{details.daysText}</span>
-                          </div>
-                        </td>
-                        <td className="p-4 text-center font-bold font-mono">
-                          {item.quantity}
-                        </td>
-                        <td className="p-4 text-right font-mono font-bold text-sky">
-                          ₹{item.mrp?.toFixed(2) || '0.00'}
-                        </td>
-                        <td className="p-4 text-muted select-none">
-                          {item.rack_location || '-'}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                          </td>
+                          <td className="p-4 text-center font-mono select-none">
+                            {(() => {
+                              const d = parseDateRobust(item.expiry_date);
+                              return isNaN(d.getTime()) ? item.expiry_date : d.toLocaleDateString([], { month: '2-digit', year: '2-digit' });
+                            })()}
+                          </td>
+                          <td className="p-4 text-center font-semibold select-none">
+                            <div className="flex flex-col items-center gap-1">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${details.colorClass}`}>
+                                {details.label}
+                              </span>
+                              <span className="text-[10px] text-muted font-medium">{details.daysText}</span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-center font-bold font-mono">
+                            {item.quantity}
+                          </td>
+                          <td className="p-4 text-right font-mono font-bold text-sky">
+                            ₹{item.mrp?.toFixed(2) || '0.00'}
+                          </td>
+                          <td className="p-4 text-muted select-none">
+                            {item.rack_location || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Table Footer */}

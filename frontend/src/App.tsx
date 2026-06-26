@@ -1247,24 +1247,36 @@ const RefillControlSidebar = ({
           <ChevronLeftIcon size={18} />
         </button>
         <div className="flex flex-col gap-4 mt-4">
-          <div className="relative" title={`${liveOrders.length} Live Order Requests`}>
+          <button
+            onClick={() => setExpanded(true)}
+            className="relative p-1.5 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer focus:outline-none"
+            title={`${liveOrders.length} Live Order Requests`}
+          >
             <CartIcon size={18} className="text-sky-400" />
             {liveOrders.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-sky-500" />
+              <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-sky-500" />
             )}
-          </div>
-          <div className="relative" title={`${stockAlerts.length} Stock Alerts`}>
+          </button>
+          <button
+            onClick={() => setExpanded(true)}
+            className="relative p-1.5 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer focus:outline-none"
+            title={`${stockAlerts.length} Stock Alerts`}
+          >
             <AlertIcon size={18} className="text-amber-500" />
             {stockAlerts.some(r => r.acknowledged === 0) && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+              <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
             )}
-          </div>
-          <div className="relative" title={`${notifications.length} Staged Messages`}>
+          </button>
+          <button
+            onClick={() => setExpanded(true)}
+            className="relative p-1.5 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer focus:outline-none"
+            title={`${notifications.length} Staged Messages`}
+          >
             <MessageSquareIcon size={18} className="text-purple-400" />
             {notifications.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-purple-500" />
+              <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-purple-500" />
             )}
-          </div>
+          </button>
         </div>
       </div>
     );

@@ -538,7 +538,7 @@ export const api = {
 
   // Investigation Center
   searchInvestigation: (params: any) => apiClient.get('/investigation/search', { params }).then(res => res.data),
-  getInvestigationTimeline: (params: any) => apiClient.get('/investigation/timeline', { params }).then(res => res.data),
+  getInvestigationTimeline: (params: any, config?: any) => apiClient.get('/investigation/timeline', { params, ...config }).then(res => res.data),
   getInvestigationDetails: (inventoryId: number) => apiClient.get(`/investigation/details/${inventoryId}`).then(res => res.data),
   updateInvestigationInventory: (inventoryId: number, data: any) => apiClient.put(`/investigation/inventory/${inventoryId}`, data).then(res => res.data),
   updateInvestigationSaleBill: (invoiceId: number, data: any) => apiClient.put(`/investigation/sales/${invoiceId}`, data).then(res => res.data),
