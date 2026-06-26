@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
   Bell, 
   Plus, 
@@ -20,6 +21,7 @@ import {
   Mail,
   Settings,
   Copy,
+  Receipt,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { Refill, AutomationNotification } from '../../services/api';
@@ -31,6 +33,7 @@ let cachedRefills: Refill[] = [];
 let cachedLogs: AutomationNotification[] = [];
 
 const AutomationCenter = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'reminders' | 'logs'>('reminders');
 
   // Reminders States
@@ -67,6 +70,7 @@ const AutomationCenter = () => {
     return refills.filter(r =>
       r.patient_name.toLowerCase().includes(term) ||
       r.patient_phone.includes(term) ||
+      (r.items && r.items.some(it => (it.medicine_name || it.name || '').toLowerCase().includes(term))) ||
       (r.medicine_name && r.medicine_name.toLowerCase().includes(term))
     );
   }, [refills, refillSearch]);
@@ -187,33 +191,34 @@ const AutomationCenter = () => {
     if (!patientPhone.trim()) return showToast('Phone number is required.', 'error');
     if (patientPhone.replace(/\D/g, '').length < 10) return showToast('Please enter a valid 10-digit phone number.', 'error');
     if (selectedMedicines.length === 0) return showToast('Please select at least one medicine from inventory.', 'error');
-    if (refillInterval < 0 || refillInterval > 120) return showToast('Refill interval must be 0 to 120 days.', 'error');
+    if (refillInterval < 0 || refillInterval > 180) return showToast('Refill interval must be 0 to 180 days.', 'error');
 
     setModalSubmitting(true);
     const cleanPhone = patientPhone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
+    const items = selectedMedicines.map(med => ({
+      medicine_id: med.id,
+      qty: med.qty || 10
+    }));
+
     try {
       if (editingRefillId) {
-        // For editing, just update the first medicine (backward compatibility)
         await api.updateRefill(editingRefillId, {
           patient_name: patientName.trim(),
           patient_phone: formattedPhone,
-          medicine_id: selectedMedicines[0].id,
           refill_interval_days: refillInterval,
+          items
         });
         showToast('Prescription refill reminder updated.', 'success');
       } else {
-        // Create multiple refill entries (one for each medicine)
-        for (const medicine of selectedMedicines) {
-          await api.createRefill({
-            patient_name: patientName.trim(),
-            patient_phone: formattedPhone,
-            medicine_id: medicine.id,
-            refill_interval_days: refillInterval,
-          });
-        }
-        showToast(`Refill reminders created for ${selectedMedicines.length} medicine${selectedMedicines.length > 1 ? 's' : ''}.`, 'success');
+        await api.createRefill({
+          patient_name: patientName.trim(),
+          patient_phone: formattedPhone,
+          refill_interval_days: refillInterval,
+          items
+        });
+        showToast('Refill reminder profile created successfully.', 'success');
       }
 
       setShowReminderModal(false);
@@ -260,8 +265,19 @@ const AutomationCenter = () => {
     setPatientName(refill.patient_name);
     setPatientPhone(refill.patient_phone);
     setRefillInterval(refill.refill_interval_days);
-    // For edit mode, pre-select the current medicine
-    setSelectedMedicines([{ id: refill.medicine_id, name: refill.medicine_name || `Medicine ${refill.medicine_id}` }]);
+    if (refill.items && refill.items.length > 0) {
+      setSelectedMedicines(refill.items.map(it => ({
+        id: it.medicine_id,
+        name: it.medicine_name || it.name || `Medicine ${it.medicine_id}`,
+        qty: it.qty || 10
+      })));
+    } else {
+      setSelectedMedicines([{
+        id: refill.medicine_id,
+        name: refill.medicine_name || `Medicine ${refill.medicine_id}`,
+        qty: refill.last_qty_dispensed || 10
+      }]);
+    }
     setMedicineQuery('');
     setShowReminderModal(true);
   }, []);
@@ -295,7 +311,7 @@ const AutomationCenter = () => {
   }, [activeTab, fetchRefills, fetchLogs, showToast]);
 
   const handleSaveIntervalInline = useCallback(async (id: number, interval: number) => {
-    if (interval < 0 || interval > 120) return showToast('Interval must be 0 to 120 days.', 'error');
+    if (interval < 0 || interval > 180) return showToast('Interval must be 0 to 180 days.', 'error');
     try {
       await api.updateRefill(id, { refill_interval_days: interval });
       showToast('Refill interval updated.', 'success');
@@ -481,46 +497,58 @@ const AutomationCenter = () => {
               <thead className="sticky top-0 bg-bg2/95 backdrop-blur z-10">
                 <tr>
                   <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Patient Info</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Medicine</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Refill Cycle (Days)</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Next Due Date</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Automation Status</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Refill Status</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Medicines</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Refill Cycles</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Next Due</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Status</th>
                   <th className="p-4 text-xs font-bold text-muted border-b border-glass-border text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingRefills ? (
                   <tr>
-                    <td colSpan={7} className="p-12 text-center text-muted">
+                    <td colSpan={6} className="p-12 text-center text-muted">
                       <RefreshCw size={24} className="animate-spin mx-auto mb-3 text-sky opacity-60" />
                       Loading patient refills...
                     </td>
                   </tr>
                 ) : filteredRefills.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-16 text-center text-muted font-medium">
+                    <td colSpan={6} className="p-16 text-center text-muted font-medium">
                       <Clock size={36} className="mx-auto mb-3 text-muted/40 animate-pulse-slow" />
                       No active refill reminder schedules found.
                     </td>
                   </tr>
                 ) : (
                   filteredRefills.map(refill => (
-                    <tr key={refill.id} className="hover:bg-white/5 border-b border-glass-border/30 transition-all">
+                    <tr key={refill.id} className="hover:bg-white/5 border-b border-glass-border/30 transition-all align-top">
                       <td className="p-4">
                         <div className="font-bold text-text">{refill.patient_name}</div>
                         <div className="text-[10px] text-muted font-mono mt-0.5">{refill.patient_phone}</div>
+                        <div className="text-[10px] text-muted mt-1">{(refill.items || []).length} medicine{(refill.items || []).length !== 1 ? 's' : ''}</div>
                       </td>
-                      <td className="p-4 font-semibold text-text max-w-[200px] truncate">
-                        {refill.medicine_name || `Medicine ID: ${refill.medicine_id}`}
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1.5">
+                          {(refill.items || []).map((item, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${refill.is_active === 1 ? 'bg-green' : 'bg-zinc-500'}`} />
+                              <div className="min-w-0">
+                                <span className="font-semibold text-text truncate max-w-[180px] block" title={item.medicine_name || item.name || `Medicine ID: ${item.medicine_id}`}>
+                                  {item.medicine_name || item.name || `Medicine ID: ${item.medicine_id}`}
+                                </span>
+                                <span className="text-[10px] text-muted">qty: {item.qty || 10} units</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </td>
                       <td className="p-4 text-center">
                         <input
                           type="number"
                           min="0"
-                          max="120"
-                          defaultValue={refill.refill_interval_days}
-                          onBlur={e => handleSaveIntervalInline(refill.id, parseInt(e.target.value) || 30)}
+                          max="180"
+                          value={refill.refill_interval_days}
+                          onChange={e => handleSaveIntervalInline(refill.id, parseInt(e.target.value) || 30)}
                           onKeyDown={e => {
                             if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                           }}
@@ -529,60 +557,50 @@ const AutomationCenter = () => {
                       </td>
                       <td className="p-4 font-mono font-medium text-text select-none">
                         {refill.next_refill_date ? new Date(refill.next_refill_date).toLocaleDateString() : 'N/A'}
-                        <div className="text-[10px] text-muted">
-                          {refill.next_refill_date ? new Date(refill.next_refill_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </div>
                       </td>
                       <td className="p-4 text-center">
                         <button
                           onClick={() => handleToggleActive(refill)}
-                          className={`px-3 py-1 rounded-xl text-[10px] font-bold border flex items-center justify-center gap-1 mx-auto transition-all ${
+                          className={`px-2.5 py-0.5 rounded-xl text-[10px] font-bold border inline-flex items-center justify-center gap-1 transition-all ${
                             refill.is_active === 1
                               ? 'bg-green/10 border-green/30 text-green hover:bg-green/20'
                               : 'bg-zinc-500/10 border-glass-border text-muted hover:bg-white/5'
                           }`}
                         >
-                          {refill.is_active === 1 ? <Play size={10} /> : <Pause size={10} />}
-                          {refill.is_active === 1 ? 'Active / Resumed' : 'Paused'}
+                          {refill.is_active === 1 ? <Play size={9} /> : <Pause size={9} />}
+                          {refill.is_active === 1 ? 'Active' : 'Paused'}
                         </button>
                       </td>
-                      <td className="p-4 text-center select-none">
-                        {refill.status === 'pending' && refill.is_ready === 1 ? (
-                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-green/15 text-green border border-green/30 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.15)]">
-                            Ready (Manual Send)
-                          </span>
-                        ) : (
-                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                            refill.status === 'notified'
-                              ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
-                              : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                          }`}>
-                            {refill.status}
-                          </span>
-                        )}
-                      </td>
                       <td className="p-4 text-right">
-                        <div className="flex justify-end gap-1.5">
+                        <div className="flex gap-1 justify-end">
+                          <button
+                            onClick={() => {
+                              navigate(`/pos?refillId=${refill.id}`);
+                            }}
+                            className="p-1.5 rounded-lg bg-green/10 border border-green/30 text-green hover:bg-green/20 transition-all flex items-center gap-1"
+                            title="Bill Refill"
+                          >
+                            <Receipt size={12} />
+                          </button>
                           <button
                             onClick={() => handleSendNow(refill.id)}
                             disabled={refill.is_active !== 1}
                             className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky hover:bg-sky-500/20 disabled:opacity-40 transition-all flex items-center gap-1"
-                            title="Send WhatsApp reminder notification immediately"
+                            title="Send WhatsApp now"
                           >
                             <Send size={12} />
-                            <span className="text-[10px] font-bold">Send Now</span>
                           </button>
                           <button
                             onClick={() => handleEditReminderClick(refill)}
                             className="p-1.5 rounded-lg bg-white/5 border border-glass-border hover:bg-white/10 text-muted hover:text-text transition-all"
-                            title="Edit reminder configuration"
+                            title="Edit reminder"
                           >
                             <Settings size={12} />
                           </button>
                           <button
                             onClick={() => handleDeleteReminder(refill.id)}
                             className="p-1.5 rounded-lg bg-red/10 border border-red/20 hover:bg-red/20 text-red transition-all"
-                            title="Cancel schedule"
+                            title="Delete"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -837,21 +855,34 @@ const AutomationCenter = () => {
                   </div>
                 )}
                 {selectedMedicines.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-3 space-y-2 max-h-48 overflow-y-auto pr-1">
                     {selectedMedicines.map(med => (
                       <div
                         key={med.id}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 border border-primary/40 rounded-lg text-[11px] font-bold text-primary"
+                        className="flex items-center justify-between p-2 bg-white/[0.03] border border-glass-border rounded-xl text-xs gap-2"
                       >
-                        <span>{med.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMedicine(med.id)}
-                          className="hover:text-primary/70 transition-colors"
-                          title="Remove medicine"
-                        >
-                          ×
-                        </button>
+                        <span className="font-bold text-text truncate flex-1">{med.name}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-muted font-bold">QTY:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={med.qty || 10}
+                            onChange={e => {
+                              const val = Math.max(1, parseInt(e.target.value) || 1);
+                              setSelectedMedicines(prev => prev.map(m => m.id === med.id ? { ...m, qty: val } : m));
+                            }}
+                            className="w-16 px-1.5 py-0.5 bg-black/40 border border-glass-border rounded font-mono text-center font-bold text-text focus:outline-none focus:border-primary/50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMedicine(med.id)}
+                            className="p-1 rounded bg-red/10 border border-red/20 text-red hover:bg-red/20 transition-all ml-1"
+                            title="Remove medicine"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -859,14 +890,14 @@ const AutomationCenter = () => {
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-black text-muted uppercase tracking-wider">Refill Cycle Interval (0 - 120 Days) *</label>
+                  <label className="text-[10px] font-black text-muted uppercase tracking-wider">Refill Cycle Interval (0 - 180 Days) *</label>
                   <span className="text-xs font-bold text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">{refillInterval} days</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <input
                     type="range"
                     min="0"
-                    max="120"
+                    max="180"
                     value={refillInterval}
                     onChange={e => setRefillInterval(parseInt(e.target.value) || 0)}
                     className="flex-1 accent-primary h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
@@ -875,9 +906,9 @@ const AutomationCenter = () => {
                     type="number"
                     required
                     value={refillInterval}
-                    onChange={e => setRefillInterval(Math.max(0, Math.min(120, parseInt(e.target.value) || 0)))}
+                    onChange={e => setRefillInterval(Math.max(0, Math.min(180, parseInt(e.target.value) || 0)))}
                     min="0"
-                    max="120"
+                    max="180"
                     className="premium-input w-20 text-center font-mono font-semibold"
                   />
                 </div>

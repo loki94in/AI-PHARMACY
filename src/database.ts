@@ -318,6 +318,8 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE special_orders ADD COLUMN source_refill_id INTEGER DEFAULT NULL`,
     `ALTER TABLE automation_notifications ADD COLUMN needs_confirmation INTEGER DEFAULT 0`,
     `ALTER TABLE automation_notifications ADD COLUMN lifecycle_status TEXT DEFAULT 'sent'`,
+    `ALTER TABLE patient_refills ADD COLUMN last_qty_dispensed INTEGER DEFAULT 0`,
+    `ALTER TABLE patient_refills ADD COLUMN items_json TEXT DEFAULT NULL`,
   ];
   for (const stmt of alterStatements) {
     try {
@@ -926,6 +928,62 @@ export async function ensureSchema(dbPath: string) {
     } catch (err) {
       console.warn('[Database Migration] Failed to initialize background runner:', err);
     }
+  }
+
+  // Consolidation migration for patient refills: group legacy separate records of the same patient
+  try {
+    const refills = await db.all('SELECT * FROM patient_refills');
+    const groups: { [key: string]: any[] } = {};
+    for (const r of refills) {
+      const name = (r.patient_name || '').trim().toLowerCase();
+      const phone = (r.patient_phone || '').trim();
+      const key = `${name}|||${phone}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
+    }
+
+    for (const key of Object.keys(groups)) {
+      const rows = groups[key];
+      // If there are duplicate records OR the record does not have items_json populated yet
+      if (rows.length > 1 || !rows[0].items_json) {
+        const items: any[] = [];
+        const seenMeds = new Set();
+        for (const row of rows) {
+          if (row.items_json) {
+            try {
+              const parsed = JSON.parse(row.items_json);
+              for (const it of parsed) {
+                if (!seenMeds.has(it.medicine_id)) {
+                  seenMeds.add(it.medicine_id);
+                  items.push(it);
+                }
+              }
+            } catch (_) {}
+          } else if (row.medicine_id) {
+            if (!seenMeds.has(row.medicine_id)) {
+              seenMeds.add(row.medicine_id);
+              items.push({
+                medicine_id: row.medicine_id,
+                qty: row.last_qty_dispensed || 10
+              });
+            }
+          }
+        }
+
+        const firstRow = rows[0];
+        await db.run(
+          'UPDATE patient_refills SET items_json = ?, medicine_id = ? WHERE id = ?',
+          [JSON.stringify(items), items[0]?.medicine_id || firstRow.medicine_id || 0, firstRow.id]
+        );
+
+        if (rows.length > 1) {
+          const idsToDelete = rows.slice(1).map(r => r.id);
+          await db.run(`DELETE FROM patient_refills WHERE id IN (${idsToDelete.join(',')})`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Database Migration] Failed to consolidate duplicate patient refills:', err);
   }
 
   await db.close();

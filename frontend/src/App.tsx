@@ -1338,7 +1338,9 @@ const RefillControlSidebar = ({
                   >
                     <div className="flex items-start justify-between gap-1">
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-text truncate">{r.medicine_name}</div>
+                        <div className="font-semibold text-text truncate" title={r.items ? r.items.map((it: any) => it.medicine_name || it.name).join(', ') : r.medicine_name}>
+                          {r.items ? r.items.map((it: any) => it.medicine_name || it.name).join(', ') : r.medicine_name}
+                        </div>
                         <div className="text-[11px] text-muted/80 mt-0.5">Patient: {r.patient_name}</div>
                       </div>
                       {!isBlinking && (
@@ -1360,7 +1362,7 @@ const RefillControlSidebar = ({
                       )}
                       <button
                         onClick={() => {
-                          navigate(`/pos?refillPatientName=${encodeURIComponent(r.patient_name)}&refillPatientPhone=${encodeURIComponent(r.patient_phone || '')}&refillMedicineId=${r.medicine_id}&refillMedicineName=${encodeURIComponent(r.medicine_name || '')}&refillId=${r.id}&refillDays=${r.refill_interval_days || 30}`);
+                          navigate(`/pos?refillId=${r.id}`);
                         }}
                         className={`
                           py-1 rounded text-[10px] font-black tracking-wide uppercase transition-all flex items-center justify-center gap-1 cursor-pointer

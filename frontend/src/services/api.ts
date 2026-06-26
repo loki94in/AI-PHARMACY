@@ -133,6 +133,7 @@ export interface SpecialOrder {
   pharmarack_mapped?: number;
   pharmarack_scheme?: string;
   advance_payment?: number;
+  source?: string;
 }
 
 export interface Refill {
@@ -148,6 +149,15 @@ export interface Refill {
   hold_for_stock?: number;
   is_active: number;
   is_ready?: number;
+  last_qty_dispensed?: number;
+  items_json?: string;
+  items?: Array<{
+    medicine_id: number;
+    name: string;
+    qty: number;
+    mrp?: number;
+    medicine_name?: string;
+  }>;
 }
 
 export interface AutomationNotification {
@@ -511,6 +521,7 @@ export const api = {
 
   // Refills
   getRefills: () => apiClient.get<Refill[]>('/refills').then(res => res.data),
+  getRefill: (id: number) => apiClient.get<Refill>(`/refills/${id}`).then(res => res.data),
   createRefill: (data: Partial<Refill>) => apiClient.post('/refills', data).then(res => res.data),
   updateRefill: (id: number, data: Partial<Refill>) => apiClient.put(`/refills/${id}`, data).then(res => res.data),
   deleteRefill: (id: number) => apiClient.delete(`/refills/${id}`).then(res => res.data),

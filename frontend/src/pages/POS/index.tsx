@@ -6,6 +6,7 @@ import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Cale
 import AICamera from '../../components/AICamera';
 import BrandBanner from '../../components/POS/BrandBanner';
 import { api, apiClient } from '../../services/api';
+import { clearExpiryCache } from '../Expiry';
 
 // We will fetch common combinations dynamically instead of using hardcoded constants
 
@@ -47,6 +48,125 @@ let cachedDoctors: any[] | null = null;
 let cachedCommonCombinations: any[] | null = null;
 let cachedSpecialOrders: any[] | null = null;
 
+const getPackSizeFromPackaging = (packaging?: string): number => {
+  if (!packaging) return 10;
+  const match = packaging.match(/(\d+)\s*(?:'s|s|tab|tabs|cap|caps|units|pcs|tablets|capsules|strip|strips)?/i);
+  if (match) {
+    const val = parseInt(match[1], 10);
+    if (val > 0) return val;
+  }
+  return 10;
+};
+
+const consolidateSearchResults = (rawResults: any[]): any[] => {
+  const consolidatedMap = new Map<number, any>();
+
+  for (const item of rawResults) {
+    const medId = item.medicine_id;
+    if (item.is_out_of_stock) {
+      if (!consolidatedMap.has(medId)) {
+        consolidatedMap.set(medId, {
+          ...item,
+          total_quantity: 0,
+          total_loose_quantity: 0,
+          batches: [],
+          alternatives: item.alternatives || []
+        });
+      } else {
+        const existing = consolidatedMap.get(medId);
+        const altIds = new Set(existing.alternatives.map((a: any) => a.medicine_id));
+        for (const alt of (item.alternatives || [])) {
+          if (!altIds.has(alt.medicine_id)) {
+            existing.alternatives.push(alt);
+            altIds.add(alt.medicine_id);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (!consolidatedMap.has(medId)) {
+      consolidatedMap.set(medId, {
+        medicine_id: item.medicine_id,
+        medicine_name: item.medicine_name,
+        api_reference: item.api_reference,
+        item_code: item.item_code,
+        manufacturer: item.manufacturer,
+        packaging: item.packaging,
+        pack_unit: item.pack_unit,
+        is_out_of_stock: false,
+        
+        total_quantity: item.quantity || 0,
+        total_loose_quantity: item.loose_quantity || 0,
+        
+        inventory_id: item.inventory_id,
+        batch_no: item.batch_no,
+        expiry_date: item.expiry_date,
+        mrp: item.mrp,
+        cost_price: item.cost_price,
+        unit_price: item.unit_price,
+        cgst: item.cgst,
+        sgst: item.sgst,
+        igst: item.igst,
+        hsn_code: item.hsn_code,
+        
+        batches: [{
+          inventory_id: item.inventory_id,
+          batch_no: item.batch_no,
+          expiry_date: item.expiry_date,
+          quantity: item.quantity || 0,
+          loose_quantity: item.loose_quantity || 0,
+          mrp: item.mrp,
+          cost_price: item.cost_price,
+          unit_price: item.unit_price,
+        }],
+        
+        alternatives: item.alternatives || []
+      });
+    } else {
+      const existing = consolidatedMap.get(medId);
+      existing.total_quantity += (item.quantity || 0);
+      existing.total_loose_quantity += (item.loose_quantity || 0);
+      
+      existing.batches.push({
+        inventory_id: item.inventory_id,
+        batch_no: item.batch_no,
+        expiry_date: item.expiry_date,
+        quantity: item.quantity || 0,
+        loose_quantity: item.loose_quantity || 0,
+        mrp: item.mrp,
+        cost_price: item.cost_price,
+        unit_price: item.unit_price,
+      });
+
+      // Update primary batch if the current batch has a closer expiry date
+      if (item.expiry_date && existing.expiry_date) {
+        const currentExp = new Date(existing.expiry_date);
+        const itemExp = new Date(item.expiry_date);
+        if (itemExp < currentExp) {
+          existing.inventory_id = item.inventory_id;
+          existing.batch_no = item.batch_no;
+          existing.expiry_date = item.expiry_date;
+          existing.mrp = item.mrp;
+          existing.cost_price = item.cost_price;
+          existing.unit_price = item.unit_price;
+        }
+      }
+
+      // Merge alternatives without duplicates
+      const altIds = new Set(existing.alternatives.map((a: any) => a.medicine_id));
+      for (const alt of (item.alternatives || [])) {
+        if (!altIds.has(alt.medicine_id)) {
+          existing.alternatives.push(alt);
+          altIds.add(alt.medicine_id);
+        }
+      }
+    }
+  }
+
+  return Array.from(consolidatedMap.values());
+};
+
 const POS = () => {
   const initialTabs = getInitialPOSTabs();
   const initialActiveTabId = getInitialPOSActiveTabId(initialTabs);
@@ -61,24 +181,103 @@ const POS = () => {
   const [refillEnabled, setRefillEnabled] = useState(initialActiveTab.refillEnabled || false);
   const [refillDays, setRefillDays] = useState(initialActiveTab.refillDays || 30);
   const [activeRefillId, setActiveRefillId] = useState<number | null>(null);
+  const [patientRefills, setPatientRefills] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!patientName.trim()) {
+      setPatientRefills([]);
+      return;
+    }
+    api.getRefills()
+      .then(data => {
+        if (Array.isArray(data)) {
+          const matched = data.filter(r => 
+            (patientPhone && r.patient_phone === patientPhone) || 
+            (r.patient_name.toLowerCase().trim() === patientName.toLowerCase().trim())
+          );
+          setPatientRefills(matched);
+        }
+      })
+      .catch(err => console.error('Error fetching refills for patient:', err));
+  }, [patientName, patientPhone]);
 
   // Hydrate POS cart from URL parameters for automatic refill checkouts
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const refillId = params.get('refillId');
     const refillPatientName = params.get('refillPatientName');
     const refillPatientPhone = params.get('refillPatientPhone');
     const refillMedicineId = params.get('refillMedicineId');
     const refillMedicineName = params.get('refillMedicineName');
-    const refillId = params.get('refillId');
     const refillQty = params.get('refillQty') || '10';
     const refillDaysParam = params.get('refillDays') || '30';
 
-    if (refillPatientName && refillMedicineId && refillMedicineName && refillId) {
+    if (refillId) {
+      const fetchRefillData = async () => {
+        try {
+          const refill = await api.getRefill(Number(refillId));
+          if (refill) {
+            setPatientName(refill.patient_name);
+            setPatientPhone(refill.patient_phone || '');
+            setRefillEnabled(true);
+            setRefillDays(Number(refill.refill_interval_days || 30));
+            setActiveRefillId(Number(refillId));
+
+            const cartItems = [];
+            const itemsToLoad = refill.items || [];
+            
+            for (const item of itemsToLoad) {
+              try {
+                const results = await api.searchMedicine(item.medicine_name || item.name);
+                if (results && results.length > 0) {
+                  const matched = results[0];
+                  cartItems.push({
+                    id: matched.id,
+                    name: matched.name,
+                    batch: matched.batch_no || matched.batch_number || 'AUTO',
+                    expiry: matched.expiry_date || '12/28',
+                    mrp: matched.mrp || item.mrp || 100,
+                    qty: Number(item.qty || 10),
+                    quantity: Number(item.qty || 10),
+                    unitPrice: matched.unit_price || matched.mrp || item.mrp || 100,
+                    looseQty: 0,
+                    discount: 0,
+                    packSize: matched.pack_size || 10
+                  });
+                } else {
+                  cartItems.push({
+                    id: item.medicine_id,
+                    name: item.medicine_name || item.name || 'Unknown Medicine',
+                    batch: 'AUTO',
+                    expiry: '12/28',
+                    mrp: item.mrp || 100,
+                    qty: Number(item.qty || 10),
+                    quantity: Number(item.qty || 10),
+                    unitPrice: item.mrp || 100,
+                    looseQty: 0,
+                    discount: 0,
+                    packSize: 10
+                  });
+                }
+              } catch (err) {
+                console.error('Failed to search medicine in POS hydrate:', err);
+              }
+            }
+            if (cartItems.length > 0) {
+              setCart(cartItems);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to resolve refill in POS:', err);
+        }
+      };
+      fetchRefillData();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (refillPatientName && refillMedicineId && refillMedicineName) {
       setPatientName(refillPatientName);
       setPatientPhone(refillPatientPhone || '');
       setRefillEnabled(true);
       setRefillDays(Number(refillDaysParam));
-      setActiveRefillId(Number(refillId));
 
       const fetchAndAddMedicine = async () => {
         try {
@@ -555,7 +754,7 @@ const POS = () => {
               }
             }
 
-            setSearchResults(data);
+            setSearchResults(consolidateSearchResults(data));
             setOnlineResults([]);
             setSearchingOnline(false);
           }
@@ -632,10 +831,73 @@ const POS = () => {
         packSize: med.packSize || 10,
         mrp: med.mrp, 
         costPrice: med.costPrice || (med.mrp * 0.7),
-        salts: med.salts || '',
         availableStock: med.quantity !== undefined ? med.quantity : (med.availableStock !== undefined ? med.availableStock : 0)
       }];
     });
+  };
+
+  const handleAddSpecialOrder = async (medName: string) => {
+    try {
+      await api.createOrder({
+        product: medName,
+        requester: patientName.trim() || 'POS Quick Add',
+        phone: patientPhone.trim() || '',
+        qty: 10,
+        priority: 'High',
+        status: 'Pending',
+        source: 'pos_low_stock'
+      });
+      alert(`✅ Added "${medName}" to Pending Action / Special Orders reorder list!`);
+      const data = await api.getOrders();
+      if (Array.isArray(data)) {
+        const active = data.filter(o => o.status === 'Pending' || o.status === 'Ordered');
+        setSpecialOrders(active);
+      }
+    } catch (e: any) {
+      console.error('Failed to add special order:', e);
+      alert('❌ Failed to create special order: ' + e.message);
+    }
+  };
+
+  const handleAddRefill = async (medName: string, medId: number) => {
+    try {
+      if (patientRefills.length > 0) {
+        const firstRefill = patientRefills[0];
+        const updatedItems = [...(firstRefill.items || [])];
+        if (!updatedItems.some((item: any) => item.medicine_id === medId)) {
+          updatedItems.push({ medicine_id: medId, name: medName, qty: 10 });
+        }
+        await api.updateRefill(firstRefill.id, {
+          ...firstRefill,
+          items: updatedItems
+        });
+        alert(`✅ Added "${medName}" to patient's refill reminder!`);
+      } else {
+        if (!patientName.trim()) {
+          alert('⚠️ Please specify a Patient Name first to create a refill reminder profile!');
+          return;
+        }
+        await api.createRefill({
+          patient_name: patientName.trim(),
+          patient_phone: patientPhone.trim(),
+          items: [{ medicine_id: medId, name: medName, qty: 10 }],
+          refill_interval_days: 30,
+          next_refill_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        });
+        alert(`✅ Created new refill reminder profile for "${patientName.trim()}" with "${medName}"!`);
+      }
+      const data = await api.getRefills();
+      if (Array.isArray(data)) {
+        const matched = data.filter(r => 
+          (patientPhone && r.patient_phone === patientPhone) || 
+          (r.patient_name.toLowerCase().trim() === patientName.toLowerCase().trim())
+        );
+        setPatientRefills(matched);
+      }
+    } catch (e: any) {
+      console.error('Failed to add refill:', e);
+      alert('❌ Failed to add to refills: ' + e.message);
+    }
   };
 
   const handleSelectOnlineSuggestion = async (sug: any) => {
@@ -931,6 +1193,7 @@ const POS = () => {
       };
 
       const result = await api.createSale(payload);
+      clearExpiryCache();
       const invoiceNo = result.invoice_no || result.invoiceNo || 'SAVED';
       
       setLastSavedInvoiceNo(invoiceNo);
@@ -1305,6 +1568,22 @@ const POS = () => {
                     <div className="flex flex-col">
                       {searchResults.map((med) => {
                         const renderMedicineItem = (item: any, isAlt = false) => {
+                          const packSize = getPackSizeFromPackaging(item.packaging);
+                          const strips = item.total_quantity !== undefined ? item.total_quantity : (item.quantity || 0);
+                          const loose = item.total_loose_quantity !== undefined ? item.total_loose_quantity : (item.loose_quantity || 0);
+                          const isLowStock = !isAlt && (strips < 2);
+                          
+                          const isAlreadyInRefills = patientRefills.some(refill => {
+                            if (refill.items && Array.isArray(refill.items)) {
+                              return refill.items.some((refItem: any) => 
+                                refItem.medicine_id === item.medicine_id || 
+                                refItem.medicine_name?.toLowerCase().trim() === item.medicine_name.toLowerCase().trim()
+                              );
+                            }
+                            return refill.medicine_id === item.medicine_id || 
+                                   refill.medicine_name?.toLowerCase().trim() === item.medicine_name.toLowerCase().trim();
+                          });
+
                           return (
                             <button
                               key={item.inventory_id || `item_${item.medicine_id}_${Math.random()}`}
@@ -1319,22 +1598,70 @@ const POS = () => {
                                   mrp: item.mrp,
                                   costPrice: item.cost_price,
                                   salts: item.salts || item.hsn_code || 'Generic',
-                                  packSize: item.pack_size || 10,
-                                  quantity: item.quantity
+                                  packSize: packSize,
+                                  quantity: strips
                                 });
                                 setSearchTerm('');
                                 setSearchResults([]);
                               }}
                               className={`flex items-center justify-between p-3.5 hover:bg-bg3 border-b border-border/10 text-left transition-all text-xs w-full group ${isAlt ? 'pl-8 bg-sky/5' : ''}`}
                             >
-                              <div className="flex flex-col gap-1">
+                              <div className="flex flex-col gap-1.5 flex-1 min-w-0 pr-4">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {isAlt && <span className="text-[9px] bg-sky/20 text-sky px-1.5 py-0.5 rounded font-bold mr-1">ALT</span>}
                                   <span className="font-semibold text-text group-hover:text-primary transition-all">{item.medicine_name}</span>
+                                  
+                                  <span className="text-[10px] font-mono font-bold bg-bg border border-border px-2 py-0.5 rounded-md text-muted select-none">
+                                    📦 {strips} Str, {loose} Tab
+                                  </span>
+
+                                  {isLowStock && (
+                                    <span className="text-[9px] bg-amber-500/10 border border-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded font-bold">
+                                      ⚠️ Low Stock
+                                    </span>
+                                  )}
                                 </div>
-                                <span className="text-[9px] text-muted">Company: <span className="text-text font-semibold">{item.manufacturer || 'Generic'}</span></span>
+                                <div className="flex items-center gap-2 text-[9px] text-muted flex-wrap">
+                                  <span>Company: <span className="text-text font-semibold">{item.manufacturer || 'Generic'}</span></span>
+                                  {item.packaging && <span>| Pkg: <span className="text-text font-semibold">{item.packaging}</span></span>}
+                                </div>
+
+                                {!isAlt && (isLowStock || patientName.trim()) && (
+                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    {isLowStock && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAddSpecialOrder(item.medicine_name);
+                                        }}
+                                        className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-bold hover:bg-amber-500/25 transition-all flex items-center gap-1"
+                                      >
+                                        📋 Add to Pending Action
+                                      </button>
+                                    )}
+                                    {patientName.trim() && (
+                                      isAlreadyInRefills ? (
+                                        <span className="px-2 py-0.5 rounded bg-green/10 border border-green/20 text-green text-[10px] font-bold flex items-center gap-1 select-none">
+                                          🔄 Refill Active
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleAddRefill(item.medicine_name, item.medicine_id);
+                                          }}
+                                          className="px-2 py-0.5 rounded bg-sky/10 border border-sky/20 text-sky text-[10px] font-bold hover:bg-sky/25 transition-all"
+                                        >
+                                          ➕ Link to Refills
+                                        </button>
+                                      )
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                              <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-4 shrink-0">
                                 <div className="text-right">
                                   <div className="font-mono text-green font-bold">MRP: ₹{Math.round(item.mrp)}</div>
                                 </div>
@@ -1358,17 +1685,60 @@ const POS = () => {
                         };
 
                         if (med.is_out_of_stock) {
+                          const isAlreadyInRefills = patientRefills.some(refill => {
+                            if (refill.items && Array.isArray(refill.items)) {
+                              return refill.items.some((refItem: any) => 
+                                refItem.medicine_id === med.medicine_id || 
+                                refItem.medicine_name?.toLowerCase().trim() === med.medicine_name.toLowerCase().trim()
+                              );
+                            }
+                            return refill.medicine_id === med.medicine_id || 
+                                   refill.medicine_name?.toLowerCase().trim() === med.medicine_name.toLowerCase().trim();
+                          });
+
                           return (
                             <div key={`oos_${med.medicine_id}`} className="flex flex-col border-b border-border/10">
-                              <div className="p-3 bg-red-500/5 text-xs w-full flex flex-col gap-1 border-l-2 border-red-500">
-                                 <div className="flex items-center justify-between">
-                                   <div>
-                                     <span className="font-bold text-red-400 line-through mr-2">{med.medicine_name}</span>
+                              <div className="p-3 bg-red-500/5 text-xs w-full flex flex-col gap-2 border-l-2 border-red-500">
+                                 <div className="flex items-center justify-between flex-wrap gap-2">
+                                   <div className="flex items-center gap-2 flex-wrap">
+                                     <span className="font-bold text-red-400 line-through">{med.medicine_name}</span>
                                      <span className="text-[9px] text-red-400 font-bold uppercase border border-red-500/20 px-1.5 py-0.5 rounded bg-red-500/10">Out of Stock</span>
+                                   </div>
+                                   
+                                   <div className="flex items-center gap-2">
+                                     <button
+                                       type="button"
+                                       onClick={(e) => {
+                                         e.stopPropagation();
+                                         handleAddSpecialOrder(med.medicine_name);
+                                       }}
+                                       className="px-2 py-0.5 rounded bg-red-500/15 border border-red-500/25 text-red-400 text-[10px] font-bold hover:bg-red-500/25 transition-all flex items-center gap-1"
+                                     >
+                                       📋 Add to Pending Action
+                                     </button>
+
+                                     {patientName.trim() && (
+                                       isAlreadyInRefills ? (
+                                         <span className="px-2 py-0.5 rounded bg-green/10 border border-green/20 text-green text-[10px] font-bold flex items-center gap-1 select-none">
+                                           🔄 Refill Active
+                                         </span>
+                                       ) : (
+                                         <button
+                                           type="button"
+                                           onClick={(e) => {
+                                             e.stopPropagation();
+                                             handleAddRefill(med.medicine_name, med.medicine_id);
+                                           }}
+                                           className="px-2 py-0.5 rounded bg-sky/10 border border-sky/20 text-sky text-[10px] font-bold hover:bg-sky/25 transition-all"
+                                         >
+                                           ➕ Link to Refills
+                                         </button>
+                                       )
+                                     )}
                                    </div>
                                  </div>
                                  {med.alternatives && med.alternatives.length > 0 && (
-                                   <div className="text-[10px] text-sky font-bold flex items-center gap-1.5 mt-1">
+                                   <div className="text-[10px] text-sky font-bold flex items-center gap-1.5 mt-1 border-t border-border/5 pt-1">
                                      <span className="h-1.5 w-1.5 bg-sky rounded-full animate-ping"></span> 
                                      Alternatives in stock (same composition):
                                    </div>
@@ -1380,7 +1750,7 @@ const POS = () => {
                         }
 
                         return (
-                          <div key={`in_stock_${med.inventory_id}`} className="flex flex-col">
+                          <div key={`in_stock_${med.medicine_id}`} className="flex flex-col">
                             {renderMedicineItem(med, false)}
                             {med.alternatives && med.alternatives.length > 0 && (
                               <div className="flex flex-col border-l-2 border-sky/30 ml-2 bg-bg3/30">

@@ -4,6 +4,7 @@ import { PackageSearch, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, B
 import { api, type InventoryItem } from '../../services/api';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { createPortal } from 'react-dom';
+import { clearExpiryCache } from '../Expiry';
 
 const formatExpiryToMMYY = (val: string): string => {
   if (!val) return '';
@@ -163,6 +164,7 @@ const Inventory = () => {
     setIsSaving(true);
     api.updateMedicine(selectedItem.id, editForm)
       .then(() => {
+        clearExpiryCache();
         setIsSaving(false);
         setIsEditing(false);
         setSelectedItem({ ...selectedItem, ...editForm } as InventoryItem);

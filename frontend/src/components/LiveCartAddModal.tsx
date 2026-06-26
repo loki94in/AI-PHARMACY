@@ -236,20 +236,21 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
 
   // Investigation Modal States & Actions
-  const [resolvingUid, setResolvingUid] = useState<number | null>(null);
+  const handleResolveManually = (uid: number) => {
+    // Optimistic Update: Immediately remove the item from local state list
+    setReconciliationList(prev => prev.filter(recon => recon.email_uid !== uid));
 
-  const handleResolveManually = async (uid: number) => {
-    try {
-      setResolvingUid(uid);
-      const result = await api.resolveOrderManually(uid);
-      toastEvent.trigger('Order successfully ignored/resolved.', 'success');
-      await fetchReconciliationList();
-    } catch (err: any) {
-      console.error('Resolve manually error:', err);
-      toastEvent.trigger('Failed to resolve order: ' + (err.response?.data?.error || err.message), 'error');
-    } finally {
-      setResolvingUid(null);
-    }
+    // Run API call in the background
+    api.resolveOrderManually(uid)
+      .then(() => {
+        toastEvent.trigger('Order successfully ignored/resolved.', 'success');
+        fetchReconciliationList();
+      })
+      .catch((err: any) => {
+        console.error('Resolve manually error:', err);
+        toastEvent.trigger('Failed to resolve order: ' + (err.response?.data?.error || err.message), 'error');
+        fetchReconciliationList();
+      });
   };
 
   // Pending Orders States and Functions
@@ -979,8 +980,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                               <button
                                 type="button"
                                 onClick={() => handleResolveManually(item.orderRef.email_uid)}
-                                disabled={resolvingUid !== null}
-                                className="text-muted hover:text-red bg-bg3 hover:bg-red/10 border border-glass-border p-1.5 rounded-lg transition-all active:scale-95 flex items-center justify-center disabled:opacity-50"
+                                className="text-muted hover:text-red bg-bg3 hover:bg-red/10 border border-glass-border p-1.5 rounded-lg transition-all active:scale-95 flex items-center justify-center"
                                 title="Ignore this order (Manually Resolve)"
                               >
                                 <Eye size={12} />

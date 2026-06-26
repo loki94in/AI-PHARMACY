@@ -44,14 +44,6 @@ const PurchaseHistory = () => {
   const [transactions, setTransactions] = useState<PurchaseTransaction[]>(cachedTransactions || []);
   const [loading, setLoading] = useState(!cachedTransactions);
   
-  const [searchQuery, setSearchQuery] = useState('');
-  const [earliestDate, setEarliestDate] = useState<string>(getTodayString());
-  const [dateRange, setDateRange] = useState({ start: getNDaysAgoString(15), end: getTodayString() });
-  const [manualToDate, setManualToDate] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [supplierFilter, setSupplierFilter] = useState('All');
-  const [productFilter, setProductFilter] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   const [colFilterId, setColFilterId] = useState('');
   const [colFilterDistributor, setColFilterDistributor] = useState('');
   const [colFilterInvoiceNo, setColFilterInvoiceNo] = useState('');
@@ -66,70 +58,7 @@ const PurchaseHistory = () => {
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, supplierFilter, dateRange.start, dateRange.end, productFilter, colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
-
-  // Fetch the date of the earliest transaction on mount
-  useEffect(() => {
-    api.getEarliestPurchaseDate()
-      .then((res) => {
-        const defaultBoundary = getTodayString();
-        if (res && res.earliest) {
-          const formatted = res.earliest.substring(0, 10);
-          setEarliestDate(formatted);
-          setDateRange(prev => {
-            if (prev.start < formatted) {
-              return { ...prev, start: formatted };
-            }
-            return prev;
-          });
-        } else {
-          setEarliestDate(defaultBoundary);
-          setDateRange(prev => {
-            if (prev.start < defaultBoundary) {
-              return { ...prev, start: defaultBoundary };
-            }
-            return prev;
-          });
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch earliest transaction date:', err);
-        const defaultBoundary = getTodayString();
-        setEarliestDate(defaultBoundary);
-        setDateRange(prev => {
-          if (prev.start < defaultBoundary) {
-            return { ...prev, start: defaultBoundary };
-          }
-          return prev;
-        });
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!manualToDate) {
-      setDateRange(prev => ({ ...prev, end: getTodayString() }));
-    }
-  }, [manualToDate]);
-
-  const handleDateFromChange = (val: string) => {
-    if (!val) {
-      setDateRange(prev => ({ ...prev, start: earliestDate }));
-    } else if (val < earliestDate) {
-      setDateRange(prev => ({ ...prev, start: earliestDate }));
-    } else {
-      setDateRange(prev => ({ ...prev, start: val }));
-    }
-  };
-
-  const handleDateToChange = (val: string) => {
-    if (!val) {
-      setDateRange(prev => ({ ...prev, end: getTodayString() }));
-    } else if (val < earliestDate) {
-      setDateRange(prev => ({ ...prev, end: earliestDate }));
-    } else {
-      setDateRange(prev => ({ ...prev, end: val }));
-    }
-  };
+  }, [colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
 
   // Reconciliation States
   const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>('history');
@@ -140,13 +69,11 @@ const PurchaseHistory = () => {
   const [resolvingUid, setResolvingUid] = useState<number | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
 
-  const fetchHistory = async (search = searchQuery, start = dateRange.start, end = dateRange.end) => {
+  const fetchHistory = async () => {
     try {
       setLoading(true);
       const data = await api.getPurchases({
-        search: search || undefined,
-        start: start || undefined,
-        end: end || undefined
+        limit: 5000 // Fetch a large history so local column filtering works over all recent items
       });
       setTransactions(Array.isArray(data) ? data : []);
       cachedTransactions = Array.isArray(data) ? data : [];
@@ -158,12 +85,8 @@ const PurchaseHistory = () => {
   };
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchHistory(searchQuery, dateRange.start, dateRange.end);
-    }, 300);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, dateRange.start, dateRange.end]);
+    fetchHistory();
+  }, []);
 
   useEffect(() => {
     fetchReconciliation();
@@ -298,36 +221,6 @@ const PurchaseHistory = () => {
 
   // Filter Logic
   const filteredData = transactions.filter(t => {
-    // Search
-    const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = 
-      t.invoice_no?.toLowerCase().includes(searchLower) ||
-      t.id.toString().includes(searchLower) ||
-      t.distributor_name?.toLowerCase().includes(searchLower) ||
-      t.plan?.toLowerCase().includes(searchLower);
-
-    // Status removed for cash workflow
-    const matchesStatus = true;
-    
-    // Supplier
-    const matchesSupplier = supplierFilter === 'All' || t.distributor_name === supplierFilter;
-
-    // Date
-    let matchesDate = true;
-    if (dateRange.start && t.date) {
-      matchesDate = matchesDate && t.date.substring(0, 10) >= dateRange.start;
-    }
-    if (dateRange.end && t.date) {
-      matchesDate = matchesDate && t.date.substring(0, 10) <= dateRange.end;
-    }
-
-    // Product/Plan Filter
-    const matchesProduct = !productFilter || t.plan?.toLowerCase().includes(productFilter.toLowerCase());
-
-    if (!(matchesSearch && matchesStatus && matchesSupplier && matchesDate && matchesProduct)) {
-      return false;
-    }
-
     // Column header filters
     if (colFilterId && !t.id.toString().includes(colFilterId)) {
       return false;
@@ -354,9 +247,6 @@ const PurchaseHistory = () => {
 
   const totalPages = Math.ceil(filteredData.length / pageSize);
   const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  // Extract unique suppliers for the filter dropdown
-  const uniqueSuppliers = Array.from(new Set(transactions.map(t => t.distributor_name).filter(Boolean)));
 
   // Purchase Analytics
   const totalPurchases = filteredData.length;
@@ -404,33 +294,45 @@ const PurchaseHistory = () => {
 
   return (
     <div className="h-full flex flex-col pt-1 px-4 gap-0 pb-4 animate-in fade-in duration-500">
-      {/* Tabs */}
-      <div className="flex border-b border-glass-border/30 mb-0">
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${
-            activeTab === 'history'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-gray-400 hover:text-white'
-          }`}
-        >
-          Purchase History
-        </button>
-        <button
-          onClick={() => setActiveTab('reconciliation')}
-          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === 'reconciliation'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-gray-400 hover:text-white'
-          }`}
-        >
-          Reconcile Distributor Orders
-          {getUnreconciledCount() > 0 && (
-            <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">
-              {getUnreconciledCount()} Missing
-            </span>
-          )}
-        </button>
+      {/* Tabs with Actions */}
+      <div className="flex justify-between items-center border-b border-glass-border/30 mb-0">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'history'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            Purchase History
+          </button>
+          <button
+            onClick={() => setActiveTab('reconciliation')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === 'reconciliation'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            Reconcile Distributor Orders
+            {getUnreconciledCount() > 0 && (
+              <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">
+                {getUnreconciledCount()} Missing
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'history' && (
+          <button 
+            onClick={exportToCSV}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-primary to-blue-600 hover:shadow-[0_0_15px_rgba(37,99,235,0.3)] px-4 py-1.5 rounded-lg text-white text-xs font-bold transition-all hover:scale-105 active:scale-95 border border-white/10 mb-1"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
+        )}
       </div>
 
       {activeTab === 'history' ? (
@@ -452,205 +354,104 @@ const PurchaseHistory = () => {
             </div>
           </div>
 
-          {/* Filters & Search */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-none p-5 border border-white/20 border-b-0 relative z-20 flex flex-col md:flex-row gap-4 items-center">
-            <div className="flex-1 w-full relative">
-              <input
-                type="text"
-                placeholder="Search by order ID, invoice number, or product name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded-xl text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-inner"
-              />
-            </div>
-            
-            <div className="flex items-center gap-3 relative shrink-0">
-              <button 
-                onClick={() => setShowFilters(!showFilters)}
-                className={`relative flex items-center gap-2 px-5 py-3 rounded-xl text-text font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-glass-border bg-bg hover:bg-bg2`}
-              >
-                <Filter size={18} />
-                Filter
-                {(supplierFilter !== 'All' || 
-                  dateRange.start !== (getNDaysAgoString(15) < earliestDate ? earliestDate : getNDaysAgoString(15)) || 
-                  dateRange.end !== getTodayString()) && (
-                  <span className="w-2 h-2 rounded-full bg-primary absolute top-1 right-1 animate-pulse"></span>
-                )}
-              </button>
-
-              <button 
-                onClick={exportToCSV}
-                className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-600 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] px-5 py-3 rounded-xl text-white font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-white/10"
-              >
-                <Download size={18} />
-                Export CSV
-              </button>
-
-              {/* Dropdown Filter Menu */}
-              {showFilters && (
-                <div className="absolute top-full right-0 mt-2 bg-bg2 border border-glass-border rounded-2xl p-5 shadow-2xl z-50 flex flex-col gap-4 min-w-[320px] animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="flex justify-between items-center mb-1">
-                    <h3 className="text-text font-semibold flex items-center gap-2">
-                      <Filter size={16} className="text-primary" />
-                      Filter Records
-                    </h3>
-                    <button onClick={() => setShowFilters(false)} className="text-muted hover:text-text transition-colors">
-                      <XCircle size={18} />
-                    </button>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-muted text-xs font-semibold uppercase tracking-wider">Distributor Name</label>
-                    <div className="bg-bg3 border border-glass-border rounded-xl p-2.5">
-                      <select 
-                        value={supplierFilter}
-                        onChange={(e) => setSupplierFilter(e.target.value)}
-                        className="w-full bg-transparent text-text text-sm focus:outline-none"
-                      >
-                        <option value="All" className="bg-bg3">All Distributors</option>
-                        {uniqueSuppliers.map(sup => (
-                          <option key={sup} value={sup} className="bg-bg3">{sup}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <div className="flex justify-between items-center">
-                      <label className="text-muted text-xs font-semibold uppercase tracking-wider">Date Range</label>
-                      <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={manualToDate}
-                          onChange={e => setManualToDate(e.target.checked)}
-                          className="rounded border-glass-border text-primary focus:ring-primary/20 bg-bg3"
-                        />
-                        Edit
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2 bg-bg3 border border-glass-border rounded-xl p-2.5">
-                      <input
-                        type="date"
-                        value={dateRange.start}
-                        min={earliestDate}
-                        max={getTodayString()}
-                        onChange={(e) => handleDateFromChange(e.target.value)}
-                        className="w-full bg-transparent text-text text-sm focus:outline-none"
-                      />
-                      <span className="text-muted text-xs">to</span>
-                      <input
-                        type="date"
-                        value={dateRange.end}
-                        min={earliestDate}
-                        max={getTodayString()}
-                        disabled={!manualToDate}
-                        onChange={(e) => handleDateToChange(e.target.value)}
-                        className="w-full bg-transparent text-text text-sm focus:outline-none disabled:opacity-50"
-                      />
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={() => { 
-                      setSupplierFilter('All'); 
-                      const defaultStart = getNDaysAgoString(15);
-                      setDateRange({
-                        start: defaultStart < earliestDate ? earliestDate : defaultStart, 
-                        end: getTodayString()
-                      }); 
-                      setManualToDate(false); 
-                    }}
-                    className="w-full mt-2 py-2.5 bg-bg3 hover:bg-white/10 text-text rounded-xl text-sm font-semibold transition-colors border border-glass-border"
-                  >
-                    Clear Filters
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Table */}
           <div className="bg-white/10 backdrop-blur-lg rounded-b-xl border border-white/20 flex-1 flex flex-col min-h-0 relative z-10 overflow-hidden shadow-2xl">
             <div className="flex-1 overflow-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 z-20 bg-[#18181b]/95 backdrop-blur-sm shadow-sm">
-                  <tr className="bg-black/40 border-b border-glass-border/50 text-sm font-semibold text-gray-300">
-                    <th className="px-6 py-4 whitespace-nowrap">Purchase ID</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Distributor Name</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Invoice No.</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Date</th>
-                    <th className="px-6 py-4 whitespace-nowrap text-right">Amount</th>
-                    <th className="px-6 py-4 whitespace-nowrap text-center">Action</th>
-                  </tr>
-                  <tr className="bg-primary/5 border-b-2 border-primary/20">
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        placeholder="🔍 ID..."
-                        value={colFilterId}
-                        onChange={e => setColFilterId(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        placeholder="🔍 Distributor..."
-                        value={colFilterDistributor}
-                        onChange={e => setColFilterDistributor(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        placeholder="🔍 Invoice..."
-                        value={colFilterInvoiceNo}
-                        onChange={e => setColFilterInvoiceNo(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="date"
-                        value={colFilterDate}
-                        onChange={e => setColFilterDate(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
-                      />
-                    </td>
-                    <td className="p-2 flex gap-1">
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        value={colFilterMinAmount}
-                        onChange={e => setColFilterMinAmount(e.target.value)}
-                        className="w-1/2 px-1.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        value={colFilterMaxAmount}
-                        onChange={e => setColFilterMaxAmount(e.target.value)}
-                        className="w-1/2 px-1.5 py-1.5 bg-black/30 border-2 border-primary/30 rounded-lg text-xs text-white placeholder:text-gray-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 transition-all"
-                      />
-                    </td>
-                    <td className="p-2 text-center">
-                      {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) && (
-                        <button
-                          onClick={() => {
-                            setColFilterId('');
-                            setColFilterDistributor('');
-                            setColFilterInvoiceNo('');
-                            setColFilterDate('');
-                            setColFilterMinAmount('');
-                            setColFilterMaxAmount('');
-                          }}
-                          className="text-xs text-red-400 hover:text-red-300 hover:underline font-bold px-2 py-1 rounded bg-red-500/10 border border-red-500/20"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </td>
+                  <tr className="bg-black/40 border-b border-glass-border/50 text-xs font-semibold text-gray-300">
+                    <th className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex flex-col gap-1.5">
+                        <span>Purchase ID</span>
+                        <input
+                          type="text"
+                          placeholder="🔍 ID..."
+                          value={colFilterId}
+                          onChange={e => setColFilterId(e.target.value)}
+                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex flex-col gap-1.5">
+                        <span>Distributor Name</span>
+                        <input
+                          type="text"
+                          placeholder="🔍 Distributor..."
+                          value={colFilterDistributor}
+                          onChange={e => setColFilterDistributor(e.target.value)}
+                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex flex-col gap-1.5">
+                        <span>Invoice No.</span>
+                        <input
+                          type="text"
+                          placeholder="🔍 Invoice..."
+                          value={colFilterInvoiceNo}
+                          onChange={e => setColFilterInvoiceNo(e.target.value)}
+                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex flex-col gap-1.5">
+                        <span>Date</span>
+                        <input
+                          type="date"
+                          value={colFilterDate}
+                          onChange={e => setColFilterDate(e.target.value)}
+                          className="w-full px-2.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal focus:outline-none focus:border-primary transition-all"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap text-right">
+                      <div className="flex flex-col gap-1.5 items-end">
+                        <span>Amount</span>
+                        <div className="flex gap-1 w-full max-w-[150px]">
+                          <input
+                            type="number"
+                            placeholder="Min"
+                            value={colFilterMinAmount}
+                            onChange={e => setColFilterMinAmount(e.target.value)}
+                            className="w-1/2 px-1.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all text-right"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Max"
+                            value={colFilterMaxAmount}
+                            onChange={e => setColFilterMaxAmount(e.target.value)}
+                            className="w-1/2 px-1.5 py-1 bg-black/30 border border-glass-border/40 rounded-lg text-xs text-white font-normal placeholder:text-gray-500 focus:outline-none focus:border-primary transition-all text-right"
+                          />
+                        </div>
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap text-center">
+                      <div className="flex flex-col gap-1.5 items-center justify-end h-full">
+                        <span>Action</span>
+                        <div className="h-[26px] flex items-center">
+                          {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) ? (
+                            <button
+                              onClick={() => {
+                                setColFilterId('');
+                                setColFilterDistributor('');
+                                setColFilterInvoiceNo('');
+                                setColFilterDate('');
+                                setColFilterMinAmount('');
+                                setColFilterMaxAmount('');
+                              }}
+                              className="text-[10px] text-red-400 hover:text-red-300 hover:underline font-bold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20"
+                            >
+                              Clear
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-gray-500 select-none font-normal">No Filter</span>
+                          )}
+                        </div>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-glass-border/30 text-sm">
@@ -676,19 +477,19 @@ const PurchaseHistory = () => {
                   ) : (
                     paginatedData.map((tx) => (
                       <tr key={tx.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="px-6 py-4 text-gray-300 font-mono">
+                        <td className="px-4 py-3 text-gray-300 font-mono">
                           #{tx.id.toString().padStart(6, '0')}
                         </td>
-                        <td className="px-6 py-4 text-white font-medium">
+                        <td className="px-4 py-3 text-white font-medium">
                           {tx.distributor_name || '-'}
                         </td>
-                        <td className="px-6 py-4 text-gray-300 font-mono text-xs">
+                        <td className="px-4 py-3 text-gray-300 font-mono text-xs">
                           {tx.invoice_no || '-'}
                         </td>
-                        <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
+                        <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
                           {new Date(tx.date).toLocaleDateString()}
                         </td>
-                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
                           {tx.cn_amount && tx.cn_amount > 0 ? (
                             <div className="flex flex-col items-end">
                               <div className="flex items-center gap-1.5 justify-end">
@@ -709,7 +510,7 @@ const PurchaseHistory = () => {
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-center">
+                        <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
                             <button onClick={() => openView(tx.id)} className="text-gray-400 hover:text-primary transition-colors p-1 rounded hover:bg-primary/10" title="View Details">
                               <Eye size={16} />
