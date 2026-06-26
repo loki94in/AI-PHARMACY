@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Search, Plus, Minus, Sparkles, Loader2, ShoppingCart, RefreshCw, Clock, Eye } from 'lucide-react';
+import { X, Search, Plus, Minus, Sparkles, Loader2, ShoppingCart, RefreshCw, Clock, Eye, ClipboardList } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api, type SpecialOrder, type Refill } from '../services/api';
 import { toastEvent, liveCartAddEvent } from '../services/events';
 
@@ -191,6 +192,7 @@ const cleanQueryForSearch = (query: string): string => {
 };
 
 export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(true);
   
   const handleClose = () => {
@@ -890,11 +892,23 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           
           {/* Left Column: Pending Orders, Refills & Unreconciled Items */}
           <div className="flex flex-col h-full overflow-hidden pr-3">
-            <div className="flex items-center gap-2 border-b border-glass-border/30 pb-2.5 shrink-0">
-               <h3 className="flex-1 pb-1.5 text-xs font-bold uppercase tracking-wider text-center border-b-2 border-primary text-text">
-                 Pending Action ({unifiedPendingActions.length})
-               </h3>
-            </div>
+             <div className="flex items-center justify-between border-b border-glass-border/30 pb-2.5 shrink-0">
+                <h3 className="pb-1 text-xs font-bold uppercase tracking-wider border-b-2 border-primary text-text">
+                  Pending Action ({unifiedPendingActions.length})
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClose();
+                    navigate('/purchase-history', { state: { activeTab: 'reconciliation' } });
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-500 rounded-lg flex items-center gap-1 transition-all active:scale-95 cursor-pointer mb-1.5"
+                  title="Go to Reconcile Distributor Orders page"
+                >
+                  <ClipboardList size={11} />
+                  Reconcile Orders
+                </button>
+             </div>
 
             <div className="flex-1 overflow-y-auto py-3 space-y-2.5 scrollbar-thin">
               {unifiedPendingActions.length === 0 ? (

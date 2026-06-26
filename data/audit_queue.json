@@ -97,5 +97,14 @@
     "cloudDetails": null,
     "status": "pending_human_review",
     "createdAt": "2026-06-26T14:34:58.059Z"
+  },
+  {
+    "id": "audit_1782486624166",
+    "imagePath": "data\\audit_images\\audit_1782486624166.jpg",
+    "rawOcrText": "",
+    "cloudSuggestedText": "",
+    "cloudDetails": null,
+    "status": "pending_human_review",
+    "createdAt": "2026-06-26T15:10:24.205Z"
   }
 ]

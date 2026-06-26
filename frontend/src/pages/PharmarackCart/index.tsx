@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock, Send, Eye } from 'lucide-react';
+import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock, Send, Eye, ClipboardList } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api, type SpecialOrder, type Refill } from '../../services/api';
 import { toastEvent } from '../../services/events';
 
@@ -38,6 +39,7 @@ let cachedPriceHistory: Record<string, any[]> = {};
 let cachedLastFetched: Date | null = null;
 
 export default function PharmarackCart() {
+  const navigate = useNavigate();
   const [distributors, setDistributors] = useState<Distributor[]>(() => cachedDistributors);
   const [loading, setLoading] = useState(() => cachedDistributors.length === 0);
   const [error, setError] = useState<string | null>(null);
@@ -587,6 +589,15 @@ export default function PharmarackCart() {
                 <Clock size={12} className="text-primary" />
                 Pending Items ({unifiedPendingItems.length})
               </span>
+              <button
+                type="button"
+                onClick={() => navigate('/purchase-history', { state: { activeTab: 'reconciliation' } })}
+                className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-500 rounded-lg flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                title="Go to Reconcile Distributor Orders page"
+              >
+                <ClipboardList size={11} />
+                Reconcile Orders
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">

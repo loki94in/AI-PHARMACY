@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../services/api';
 import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
@@ -41,6 +41,7 @@ let cachedTransactions: PurchaseTransaction[] | null = null;
 
 const PurchaseHistory = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [transactions, setTransactions] = useState<PurchaseTransaction[]>(cachedTransactions || []);
   const [loading, setLoading] = useState(!cachedTransactions);
   
@@ -115,7 +116,15 @@ const PurchaseHistory = () => {
   }, [debouncedFilters]);
 
   // Reconciliation States
-  const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>('history');
+  const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>(
+    (location.state as any)?.activeTab || 'history'
+  );
+
+  useEffect(() => {
+    if ((location.state as any)?.activeTab) {
+      setActiveTab((location.state as any).activeTab);
+    }
+  }, [location.state]);
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
   const [loadingRecon, setLoadingRecon] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
