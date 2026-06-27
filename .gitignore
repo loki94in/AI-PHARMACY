@@ -51,6 +51,10 @@ data/staging.db
 data/temp_ocr/
 data/audit_images/
 
+# Runtime data files regenerated during server/test runs
+data/audit_queue.json
+data/ocr_corrections.json
+
 # IDE / Tool caches
 .understand-anything/
 .codegraph/
