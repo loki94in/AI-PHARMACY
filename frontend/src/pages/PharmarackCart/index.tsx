@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock, Send } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { RefreshCw, ExternalLink, ShoppingCart, Package, AlertCircle, Truck, Clock, Send, Eye, ClipboardList } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api, type SpecialOrder, type Refill } from '../../services/api';
 import { toastEvent } from '../../services/events';
 
@@ -37,6 +39,7 @@ let cachedPriceHistory: Record<string, any[]> = {};
 let cachedLastFetched: Date | null = null;
 
 export default function PharmarackCart() {
+  const navigate = useNavigate();
   const [distributors, setDistributors] = useState<Distributor[]>(() => cachedDistributors);
   const [loading, setLoading] = useState(() => cachedDistributors.length === 0);
   const [error, setError] = useState<string | null>(null);
@@ -46,9 +49,27 @@ export default function PharmarackCart() {
   const [sendingNotifId, setSendingNotifId] = useState<number | null>(null);
   const [pendingOrders, setPendingOrders] = useState<SpecialOrder[]>(() => cachedPendingOrders);
   const [addingOrderId, setAddingOrderId] = useState<number | null>(null);
-  const [sidebarTab, setSidebarTab] = useState<'requests' | 'refills'>('requests');
   const [pendingRefills, setPendingRefills] = useState<Refill[]>(() => cachedPendingRefills);
   const [addingRefillId, setAddingRefillId] = useState<number | null>(null);
+  const [reconciliationList, setReconciliationList] = useState<any[]>([]);
+  const [addingReconKey, setAddingReconKey] = useState<string | null>(null);
+
+  // Investigation Modal States & Actions
+  const [resolvingUid, setResolvingUid] = useState<number | null>(null);
+
+  const handleResolveManually = async (uid: number) => {
+    try {
+      setResolvingUid(uid);
+      const result = await api.resolveOrderManually(uid);
+      toastEvent.trigger('Order successfully ignored/resolved.', 'success');
+      await fetchReconciliationList();
+    } catch (err: any) {
+      console.error('Resolve manually error:', err);
+      toastEvent.trigger('Failed to resolve order: ' + (err.response?.data?.error || err.message), 'error');
+    } finally {
+      setResolvingUid(null);
+    }
+  };
 
   const fetchPendingRefills = async () => {
     try {
@@ -120,6 +141,72 @@ export default function PharmarackCart() {
       toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
     } finally {
       setAddingRefillId(null);
+    }
+  };
+
+  const fetchReconciliationList = async () => {
+    try {
+      const data = await api.getReconciliationList();
+      if (Array.isArray(data)) {
+        const missing = data.filter(o => o.status === 'Missing' && !o.is_saved);
+        setReconciliationList(missing);
+      }
+    } catch (err) {
+      console.error('Failed to fetch reconciliation list in cart:', err);
+    }
+  };
+
+  const getReconciliationItemInCart = (medName: string) => {
+    const nameNorm = medName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const dist of distributors) {
+      for (const item of dist.items) {
+        const cartNameNorm = item.productName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cartNameNorm.includes(nameNorm) || nameNorm.includes(cartNameNorm)) {
+          return item;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleAddReconciliationToCart = async (medName: string, emailUid: number, itemKey: string) => {
+    setAddingReconKey(itemKey);
+    try {
+      toastEvent.trigger(`Searching Pharmarack for "${medName}"...`, 'info');
+      const searchResults = await api.searchPharmarack(medName);
+      if (!searchResults || searchResults.length === 0) {
+        toastEvent.trigger(`No Pharmarack matches found for "${medName}"`, 'error');
+        return;
+      }
+
+      const matchedItem = searchResults[0];
+      const payload = [{
+        productId: matchedItem.productId,
+        storeId: matchedItem.storeId,
+        qty: 1,
+        productCode: matchedItem.productCode,
+        productName: matchedItem.name,
+        company: matchedItem.company,
+        packaging: matchedItem.packaging,
+        rate: matchedItem.rate || 0,
+        mrp: matchedItem.mrp || 0,
+        storeName: matchedItem.distributor,
+        mapped: matchedItem.mapped
+      }];
+
+      const res = await api.addPharmarackCart(payload);
+      if (res && res.success) {
+        toastEvent.trigger(`Added "${medName}" to Pharmarack cart!`, 'success');
+        await fetchCart();
+        await fetchReconciliationList();
+      } else {
+        toastEvent.trigger(res?.error || 'Failed to add item to cart', 'error');
+      }
+    } catch (err: any) {
+      console.error('Failed to add reconciliation item to cart:', err);
+      toastEvent.trigger(err?.response?.data?.error || 'Failed to add item to cart', 'error');
+    } finally {
+      setAddingReconKey(null);
     }
   };
 
@@ -388,11 +475,62 @@ export default function PharmarackCart() {
     fetchCart();
     fetchPendingOrders();
     fetchPendingRefills();
+    fetchReconciliationList();
   }, []);
 
   const totalProducts = distributors.reduce((s, d) => s + d.items.length, 0);
   const totalQty = distributors.reduce((s, d) => s + d.items.reduce((q, i) => q + i.qty, 0), 0);
   const totalAmount = distributors.reduce((s, d) => s + d.items.reduce((a, i) => a + i.amount, 0), 0);
+
+  // Map and sort special orders, refills, and unreconciled items into a unified pending list
+  const unifiedPendingItems = [
+    ...pendingOrders.map(order => ({
+      key: `request-${order.id}`,
+      type: 'request' as const,
+      name: order.product,
+      patientName: order.requester,
+      qty: order.qty,
+      date: order.date,
+      inCart: !!getOrderItemInCart(order),
+      onAdd: () => handleAddPendingToCart(order),
+      isAdding: addingOrderId === order.id
+    })),
+    ...pendingRefills.map(refill => ({
+      key: `refill-${refill.id}`,
+      type: 'refill' as const,
+      name: refill.medicine_name || `Medicine ID: ${refill.medicine_id}`,
+      patientName: refill.patient_name,
+      qty: null,
+      date: refill.next_refill_date,
+      inCart: !!getRefillItemInCart(refill),
+      onAdd: () => handleAddRefillToCart(refill),
+      isAdding: addingRefillId === refill.id
+    })),
+    ...reconciliationList.flatMap(recon => 
+      (recon.medicine_names || []).map((medName: string, idx: number) => {
+        const itemKey = `recon-${recon.email_uid}-${medName}`;
+        return {
+          key: itemKey,
+          type: 'reconcile' as const,
+          name: medName,
+          patientName: recon.extracted_distributor || 'Unknown Distributor',
+          qty: null,
+          date: recon.date,
+          inCart: !!getReconciliationItemInCart(medName),
+          onAdd: () => handleAddReconciliationToCart(medName, recon.email_uid, itemKey),
+          isAdding: addingReconKey === itemKey,
+          orderRef: recon
+        };
+      })
+    )
+  ].sort((a, b) => {
+    // Sort items not in cart to the top
+    if (a.inCart !== b.inCart) {
+      return a.inCart ? 1 : -1;
+    }
+    // Then sort by date ascending (oldest first)
+    return new Date(a.date).getTime() - new Date(b.date).getTime();
+  });
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg text-text">
@@ -445,128 +583,103 @@ export default function PharmarackCart() {
         {/* Left Sidebar: Add Pending Order panel */}
         {!loading && !error && (
           <div className="w-80 border-r border-glass-border/40 bg-bg2/25 flex flex-col shrink-0 overflow-hidden">
-            {/* Sidebar Tabs */}
-            <div className="flex border-b border-glass-border/40 bg-bg3/10 shrink-0 select-none">
+            {/* Sidebar Header */}
+            <div className="px-4 py-3 border-b border-glass-border/40 bg-bg3/10 shrink-0 select-none flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-text flex items-center gap-1.5">
+                <Clock size={12} className="text-primary" />
+                Pending Items ({unifiedPendingItems.length})
+              </span>
               <button
-                onClick={() => setSidebarTab('requests')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 transition-all flex items-center justify-center gap-1.5 ${
-                  sidebarTab === 'requests'
-                    ? 'border-primary text-primary bg-primary/5'
-                    : 'border-transparent text-muted hover:text-text hover:bg-white/5'
-                }`}
+                type="button"
+                onClick={() => navigate('/purchase-history', { state: { activeTab: 'reconciliation' } })}
+                className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-500 rounded-lg flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                title="Go to Reconcile Distributor Orders page"
               >
-                <Clock size={12} />
-                Requests ({pendingOrders.length})
-              </button>
-              <button
-                onClick={() => setSidebarTab('refills')}
-                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-wider border-b-2 transition-all flex items-center justify-center gap-1.5 ${
-                  sidebarTab === 'refills'
-                    ? 'border-primary text-primary bg-primary/5'
-                    : 'border-transparent text-muted hover:text-text hover:bg-white/5'
-                }`}
-              >
-                <ShoppingCart size={12} />
-                Refills ({pendingRefills.length})
+                <ClipboardList size={11} />
+                Reconcile Orders
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {sidebarTab === 'requests' ? (
-                pendingOrders.length === 0 ? (
-                  <div className="text-center py-8 text-[11px] text-muted italic select-none">
-                    No pending special requests from yesterday or older.
-                  </div>
-                ) : (
-                  pendingOrders.map(order => {
-                    const inCart = getOrderItemInCart(order);
-                    return (
-                      <div 
-                        key={order.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-2 transition-all shadow-sm ${
-                          inCart 
-                            ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400' 
-                            : 'bg-red/10 border-red/20 text-red'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col min-w-0">
-                            <span className={`text-[11px] font-bold truncate ${inCart ? 'line-through opacity-65 text-emerald-400' : 'text-text'}`} title={order.product}>
-                              {order.product}
-                            </span>
-                            <span className="text-[9px] text-muted mt-0.5 truncate">
-                              Customer: {order.requester} (Qty: {order.qty})
-                            </span>
-                            <span className="text-[8px] text-muted/80 font-mono mt-0.2">
-                              Date: {new Date(order.date).toLocaleDateString('en-IN')}
-                            </span>
-                          </div>
-                          {inCart ? (
-                            <span className="shrink-0 text-[8px] font-extrabold uppercase bg-emerald-500/25 px-1.5 py-0.5 rounded-md border border-emerald-500/20 text-emerald-400 select-none">
-                              Added
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleAddPendingToCart(order)}
-                              disabled={addingOrderId === order.id}
-                              className="shrink-0 text-[9px] font-bold bg-red/20 hover:bg-red/35 border border-red/30 px-2 py-0.5 rounded-md transition-all active:scale-95 text-red disabled:opacity-50 font-sans"
-                            >
-                              {addingOrderId === order.id ? 'Adding...' : 'Add'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )
+              {unifiedPendingItems.length === 0 ? (
+                <div className="text-center py-8 text-[11px] text-muted italic select-none">
+                  No pending special requests or refill medicines.
+                </div>
               ) : (
-                pendingRefills.length === 0 ? (
-                  <div className="text-center py-8 text-[11px] text-muted italic select-none">
-                    No pending out-of-stock refill medicines due.
-                  </div>
-                ) : (
-                  pendingRefills.map(refill => {
-                    const inCart = getRefillItemInCart(refill);
-                    const medName = refill.medicine_name || `Medicine ID: ${refill.medicine_id}`;
-                    return (
-                      <div 
-                        key={refill.id} 
-                        className={`p-3 rounded-xl border flex flex-col gap-2 transition-all shadow-sm ${
-                          inCart 
-                            ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400' 
-                            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col min-w-0">
-                            <span className={`text-[11px] font-bold truncate ${inCart ? 'line-through opacity-65 text-emerald-400' : 'text-text'}`} title={medName}>
-                              {medName}
-                            </span>
-                            <span className="text-[9px] text-muted mt-0.5 truncate">
-                              Patient: {refill.patient_name}
-                            </span>
-                            <span className="text-[8px] text-muted/80 font-mono mt-0.2">
-                              Due Date: {new Date(refill.next_refill_date).toLocaleDateString('en-IN')}
-                            </span>
-                          </div>
-                          {inCart ? (
-                            <span className="shrink-0 text-[8px] font-extrabold uppercase bg-emerald-500/25 px-1.5 py-0.5 rounded-md border border-emerald-500/20 text-emerald-400 select-none">
-                              Added
-                            </span>
-                          ) : (
+                unifiedPendingItems.map(item => (
+                  <div 
+                    key={item.key} 
+                    className={`p-3 rounded-xl border flex flex-col gap-2 transition-all shadow-sm ${
+                      item.inCart 
+                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400' 
+                        : item.type === 'request'
+                          ? 'bg-red/10 border-red/20 text-red'
+                          : item.type === 'refill'
+                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                            : 'bg-sky-500/10 border-sky-500/20 text-sky-400'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                          <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-md border select-none ${
+                            item.inCart
+                              ? 'bg-emerald-500/25 border-emerald-500/20 text-emerald-400'
+                              : item.type === 'request'
+                                ? 'bg-red/25 border-red/20 text-red'
+                                : item.type === 'refill'
+                                  ? 'bg-amber-500/25 border-amber-500/20 text-amber-400'
+                                  : 'bg-sky-500/25 border-sky-500/20 text-sky-400'
+                          }`}>
+                            {item.type === 'request' ? 'Request' : item.type === 'refill' ? 'Refill' : 'Reconcile'}
+                          </span>
+                        </div>
+
+                        <span className={`text-[11px] font-bold truncate ${item.inCart ? 'line-through opacity-65 text-emerald-400' : 'text-text'}`} title={item.name}>
+                          {item.name}
+                        </span>
+                        <span className="text-[9px] text-muted mt-0.5 truncate">
+                          {item.type === 'request' ? 'Customer' : item.type === 'refill' ? 'Patient' : 'Missing from'}: {item.patientName} {item.qty !== null ? `(Qty: ${item.qty})` : ''}
+                        </span>
+                        <span className="text-[8px] text-muted/80 font-mono mt-0.2">
+                          {item.type === 'request' ? 'Request Date' : 'Due Date'}: {new Date(item.date).toLocaleDateString('en-IN')}
+                        </span>
+                      </div>
+                      {item.inCart ? (
+                        <span className="shrink-0 text-[8px] font-extrabold uppercase bg-emerald-500/25 px-1.5 py-0.5 rounded-md border border-emerald-500/20 text-emerald-400 select-none">
+                          Added
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {item.type === 'reconcile' && (
                             <button
-                              onClick={() => handleAddRefillToCart(refill)}
-                              disabled={addingRefillId === refill.id}
-                              className="shrink-0 text-[9px] font-bold bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/30 px-2 py-0.5 rounded-md transition-all active:scale-95 text-amber-500 disabled:opacity-50 font-sans"
+                              type="button"
+                              onClick={() => handleResolveManually(item.orderRef.email_uid)}
+                              disabled={resolvingUid !== null}
+                              className="text-muted hover:text-red bg-bg3 hover:bg-red/10 border border-glass-border p-1 rounded-md transition-all active:scale-95 flex items-center justify-center disabled:opacity-50"
+                              title="Ignore this order (Manually Resolve)"
                             >
-                              {addingRefillId === refill.id ? 'Adding...' : 'Add'}
+                              <Eye size={12} />
                             </button>
                           )}
+                          <button
+                            onClick={item.onAdd}
+                            disabled={item.isAdding}
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-md transition-all active:scale-95 disabled:opacity-50 font-sans border ${
+                              item.type === 'request'
+                                ? 'bg-red/20 hover:bg-red/35 border-red/30 text-red'
+                                : item.type === 'refill'
+                                  ? 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-500/30 text-amber-500'
+                                  : 'bg-sky-500/20 hover:bg-sky-500/35 border-sky-500/30 text-sky-400'
+                            }`}
+                          >
+                            {item.isAdding ? 'Adding...' : 'Add'}
+                          </button>
                         </div>
-                      </div>
-                    );
-                  })
-                )
+                      )}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>

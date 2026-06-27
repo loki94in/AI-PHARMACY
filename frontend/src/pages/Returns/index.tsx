@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { api, apiClient } from '../../services/api';
 import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera, X, Loader2, Edit, Wand2 } from 'lucide-react';
 import AICamera from '../../components/AICamera';
+import { clearExpiryCache } from '../Expiry';
 
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -679,6 +680,7 @@ const Returns: React.FC = () => {
       }
 
       alert(`Successfully processed ${grouped.length} return(s)!`);
+      clearExpiryCache();
       setItems([createEmptyItem()]);
       setShowGroupedPreview(false);
       fetchReturnHistory();

@@ -27,9 +27,9 @@ function parseIntervalDays(val: any): number {
 
 // Register a manual patient refill request
 router.post('/', async (req, res) => {
-  const { patient_name, patient_phone, medicine_id, refill_interval_days = 30 } = req.body;
-  if (!patient_name || !patient_phone || !medicine_id) {
-    return res.status(400).json({ error: 'patient_name, patient_phone, and medicine_id are required' });
+  const { patient_name, patient_phone, medicine_id, refill_interval_days = 30, items } = req.body;
+  if (!patient_name || !patient_phone || (!medicine_id && (!items || !items.length))) {
+    return res.status(400).json({ error: 'patient_name, patient_phone, and medicine_id or items are required' });
   }
 
   let db;
@@ -42,16 +42,32 @@ router.post('/', async (req, res) => {
     nextRefillDate.setDate(nextRefillDate.getDate() + intervalDays);
     const nextRefillStr = nextRefillDate.toISOString().slice(0, 19).replace('T', ' ');
 
+    let resolvedItems = [];
+    if (items && Array.isArray(items) && items.length > 0) {
+      resolvedItems = items.map((it: any) => ({
+        medicine_id: Number(it.medicine_id),
+        qty: Number(it.qty || 10)
+      }));
+    } else {
+      resolvedItems = [{
+        medicine_id: Number(medicine_id),
+        qty: Number(req.body.qty || 10)
+      }];
+    }
+
+    const primaryMedicineId = resolvedItems[0].medicine_id;
+    const itemsJson = JSON.stringify(resolvedItems);
+
     await db.run(
-      `INSERT INTO patient_refills (patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status)
-       VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [patient_name, patient_phone, medicine_id, intervalDays, nextRefillStr]
+      `INSERT INTO patient_refills (patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status, items_json)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      [patient_name, patient_phone, primaryMedicineId, intervalDays, nextRefillStr, itemsJson]
     );
 
     // Run a check immediately in case the medicine is already in stock!
     await checkAllRefills(db);
 
-        res.json({ success: true, message: 'Refill registered successfully', interval_days: intervalDays });
+    res.json({ success: true, message: 'Refill registered successfully', interval_days: intervalDays });
   } catch (err) {
     console.error('Failed to register refill:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -65,10 +81,46 @@ router.get('/', async (req, res) => {
     db = await dbManager.getConnection();
     const refills = await db.all(
       `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
-       JOIN medicines m ON pr.medicine_id = m.id
+       LEFT JOIN medicines m ON pr.medicine_id = m.id
        ORDER BY pr.next_refill_date ASC`
     );
-        res.json(refills);
+
+    for (const refill of refills) {
+      if (refill.items_json) {
+        try {
+          const items = JSON.parse(refill.items_json);
+          const medIds = items.map((it: any) => it.medicine_id).filter(Boolean);
+          if (medIds.length > 0) {
+            const meds = await db.all(`SELECT id, name, mrp FROM medicines WHERE id IN (${medIds.join(',')})`);
+            const medMap = new Map(meds.map((m: any) => [m.id, m]));
+            refill.items = items.map((it: any) => {
+              const med = medMap.get(it.medicine_id);
+              return {
+                ...it,
+                medicine_name: med ? med.name : 'Unknown Medicine',
+                mrp: med ? med.mrp : 100
+              };
+            });
+          } else {
+            refill.items = [];
+          }
+        } catch (e) {
+          refill.items = [];
+        }
+      } else {
+        refill.items = [{
+          medicine_id: refill.medicine_id,
+          qty: refill.last_qty_dispensed || 10,
+          medicine_name: refill.medicine_name || 'Unknown Medicine'
+        }];
+      }
+
+      if (refill.items && refill.items.length > 0) {
+        refill.medicine_name = refill.items[0].medicine_name;
+      }
+    }
+
+    res.json(refills);
   } catch (err) {
     console.error('Failed to fetch refills:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -81,9 +133,68 @@ router.post('/check', async (req, res) => {
   try {
     db = await dbManager.getConnection();
     await checkAllRefills(db);
-        res.json({ success: true, message: 'Refill check complete' });
+    res.json({ success: true, message: 'Refill check complete' });
   } catch (err) {
     console.error('Failed to check refills:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get a single refill schedule
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const refill = await db.get(
+      `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
+       LEFT JOIN medicines m ON pr.medicine_id = m.id
+       WHERE pr.id = ?`,
+      [id]
+    );
+
+    if (!refill) {
+      return res.status(404).json({ error: 'Refill not found' });
+    }
+
+    if (refill.items_json) {
+      try {
+        const items = JSON.parse(refill.items_json);
+        const medIds = items.map((it: any) => it.medicine_id).filter(Boolean);
+        if (medIds.length > 0) {
+          const meds = await db.all(`SELECT id, name, mrp FROM medicines WHERE id IN (${medIds.join(',')})`);
+          const medMap = new Map(meds.map((m: any) => [m.id, m]));
+          refill.items = items.map((it: any) => {
+            const med = medMap.get(it.medicine_id);
+            return {
+              ...it,
+              name: med ? med.name : 'Unknown Medicine',
+              medicine_name: med ? med.name : 'Unknown Medicine',
+              mrp: med ? med.mrp : 100
+            };
+          });
+        } else {
+          refill.items = [];
+        }
+      } catch (e) {
+        refill.items = [];
+      }
+    } else {
+      refill.items = [{
+        medicine_id: refill.medicine_id,
+        qty: refill.last_qty_dispensed || 10,
+        name: refill.medicine_name || 'Unknown Medicine',
+        medicine_name: refill.medicine_name || 'Unknown Medicine'
+      }];
+    }
+
+    if (refill.items && refill.items.length > 0) {
+      refill.medicine_name = refill.items[0].medicine_name;
+    }
+
+    res.json(refill);
+  } catch (err) {
+    console.error('Failed to fetch single refill:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -91,7 +202,7 @@ router.post('/check', async (req, res) => {
 // Update a refill schedule manually
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status, hold_for_stock, is_active } = req.body;
+  const { patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status, hold_for_stock, is_active, items } = req.body;
 
   let db;
   try {
@@ -105,7 +216,30 @@ router.put('/:id', async (req, res) => {
 
     const updatedName = patient_name !== undefined ? patient_name : refill.patient_name;
     const updatedPhone = patient_phone !== undefined ? patient_phone : refill.patient_phone;
-    const updatedMedicineId = medicine_id !== undefined ? medicine_id : refill.medicine_id;
+    
+    let resolvedItems = [];
+    if (items && Array.isArray(items) && items.length > 0) {
+      resolvedItems = items.map((it: any) => ({
+        medicine_id: Number(it.medicine_id),
+        qty: Number(it.qty || 10)
+      }));
+    } else if (medicine_id !== undefined) {
+      resolvedItems = [{
+        medicine_id: Number(medicine_id),
+        qty: Number(req.body.qty || refill.last_qty_dispensed || 10)
+      }];
+    } else if (refill.items_json) {
+      try {
+        resolvedItems = JSON.parse(refill.items_json);
+      } catch (_) {
+        resolvedItems = [{ medicine_id: refill.medicine_id, qty: refill.last_qty_dispensed || 10 }];
+      }
+    } else {
+      resolvedItems = [{ medicine_id: refill.medicine_id, qty: refill.last_qty_dispensed || 10 }];
+    }
+
+    const updatedMedicineId = resolvedItems[0]?.medicine_id || refill.medicine_id;
+    const updatedItemsJson = JSON.stringify(resolvedItems);
     const updatedInterval = refill_interval_days !== undefined ? parseIntervalDays(refill_interval_days) : refill.refill_interval_days;
     const updatedNextDate = next_refill_date !== undefined ? next_refill_date : refill.next_refill_date;
     const updatedStatus = status !== undefined ? status : refill.status;
@@ -115,9 +249,9 @@ router.put('/:id', async (req, res) => {
 
     await db.run(
       `UPDATE patient_refills 
-       SET patient_name = ?, patient_phone = ?, medicine_id = ?, refill_interval_days = ?, next_refill_date = ?, status = ?, hold_for_stock = ?, is_active = ?, is_ready = ?
+       SET patient_name = ?, patient_phone = ?, medicine_id = ?, refill_interval_days = ?, next_refill_date = ?, status = ?, hold_for_stock = ?, is_active = ?, is_ready = ?, items_json = ?
        WHERE id = ?`,
-      [updatedName, updatedPhone, updatedMedicineId, updatedInterval, updatedNextDate, updatedStatus, updatedHold, updatedIsActive, updatedIsReady, id]
+      [updatedName, updatedPhone, updatedMedicineId, updatedInterval, updatedNextDate, updatedStatus, updatedHold, updatedIsActive, updatedIsReady, updatedItemsJson, id]
     );
 
     // If marked back to pending or values changed, re-run refilling triggers
@@ -140,7 +274,7 @@ router.post('/:id/send', async (req, res) => {
     db = await dbManager.getConnection();
     const refill = await db.get(
       `SELECT pr.*, m.name as medicine_name FROM patient_refills pr
-       JOIN medicines m ON pr.medicine_id = m.id
+       LEFT JOIN medicines m ON pr.medicine_id = m.id
        WHERE pr.id = ?`,
       [id]
     );
@@ -149,7 +283,19 @@ router.post('/:id/send', async (req, res) => {
       return res.status(404).json({ error: 'Refill schedule not found' });
     }
 
-    const message = `Hello ${refill.patient_name}, your prescription refill for ${refill.medicine_name} is now ready and in stock! Please visit the pharmacy to collect it.`;
+    let medNames = refill.medicine_name || 'prescription refill';
+    if (refill.items_json) {
+      try {
+        const items = JSON.parse(refill.items_json);
+        const medIds = items.map((it: any) => it.medicine_id).filter(Boolean);
+        if (medIds.length > 0) {
+          const meds = await db.all(`SELECT name FROM medicines WHERE id IN (${medIds.join(',')})`);
+          medNames = meds.map((m: any) => m.name).join(', ');
+        }
+      } catch (_) {}
+    }
+
+    const message = `Hello ${refill.patient_name}, your prescription refill for ${medNames} is now ready and in stock! Please visit the pharmacy to collect it.`;
 
     try {
       await sendMessage(refill.patient_phone, undefined, message);

@@ -8,6 +8,7 @@ import { PriceIntelPanel } from '../../components/PriceIntelPanel';
 import { HoverPriceIntelTable } from '../../components/HoverPriceIntelTable';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
+import { clearExpiryCache } from '../Expiry';
 
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -1344,6 +1345,7 @@ const Purchases: React.FC = () => {
       } else {
         response = await api.createManualPurchase(payload);
       }
+      clearExpiryCache();
 
       const savedInvoiceNo = response?.app_invoice_no || invoiceNo;
       setLastSavedInvoiceNo(savedInvoiceNo);

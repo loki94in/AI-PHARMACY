@@ -1188,14 +1188,14 @@ const RefillControlSidebar = ({
   setExpanded,
   refills,
   notifications,
-  reconciliationList,
+  reconciliationList = [],
   onActionComplete,
 }: {
   expanded: boolean;
   setExpanded: (val: boolean) => void;
   refills: any[];
   notifications: any[];
-  reconciliationList: any[];
+  reconciliationList?: any[];
   onActionComplete: () => void;
 }) => {
   const navigate = useNavigate();
@@ -1251,30 +1251,36 @@ const RefillControlSidebar = ({
           <ChevronLeftIcon size={18} />
         </button>
         <div className="flex flex-col gap-4 mt-4">
-          <div className="relative cursor-pointer" title={`${liveOrders.length} Live Order Requests`} onClick={() => setExpanded(true)}>
+          <button
+            onClick={() => setExpanded(true)}
+            className="relative p-1.5 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer focus:outline-none"
+            title={`${liveOrders.length} Live Order Requests`}
+          >
             <CartIcon size={18} className="text-sky-400" />
             {liveOrders.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-sky-500" />
+              <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-sky-500" />
             )}
-          </div>
-          <div className="relative cursor-pointer" title={`${stockAlerts.length} Stock Alerts`} onClick={() => setExpanded(true)}>
+          </button>
+          <button
+            onClick={() => setExpanded(true)}
+            className="relative p-1.5 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer focus:outline-none"
+            title={`${stockAlerts.length} Stock Alerts`}
+          >
             <AlertIcon size={18} className="text-amber-500" />
             {stockAlerts.some(r => r.acknowledged === 0) && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+              <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
             )}
-          </div>
-          <div className="relative cursor-pointer" title={`${notifications.length} Staged Messages`} onClick={() => setExpanded(true)}>
+          </button>
+          <button
+            onClick={() => setExpanded(true)}
+            className="relative p-1.5 rounded-lg text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer focus:outline-none"
+            title={`${notifications.length} Staged Messages`}
+          >
             <MessageSquareIcon size={18} className="text-purple-400" />
             {notifications.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-purple-500" />
+              <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-purple-500" />
             )}
-          </div>
-          <div className="relative cursor-pointer" title={`${unreconciledOrders.length} Missing Distributor Invoices`} onClick={() => setExpanded(true)}>
-            <BuildingIcon size={18} className="text-rose-400" />
-            {unreconciledOrders.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            )}
-          </div>
+          </button>
         </div>
       </div>
     );
@@ -1326,6 +1332,53 @@ const RefillControlSidebar = ({
         </div>
 
         <div>
+          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-sky-400">
+            <CartIcon size={14} />
+            <span>Reconcile Orders ({reconciliationList.length})</span>
+          </div>
+          {reconciliationList.length === 0 ? (
+            <p className="text-xs text-muted/60 pl-2">No pending reconciliations</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {reconciliationList.map(recon => {
+                const validNames = (recon.medicine_names || []).filter((name: string) => {
+                  if (!name || typeof name !== 'string') return false;
+                  const trimmed = name.trim();
+                  if (/^\d+$/.test(trimmed)) return false;
+                  if (/^(inv|bill|invoice|id|order|ref|no)[\s\-:#]?\d+$/i.test(trimmed)) return false;
+                  if (/^#\d+$/.test(trimmed)) return false;
+                  if (trimmed.length < 3) return false;
+                  return true;
+                });
+                return (
+                  <div key={recon.email_uid} className="p-2.5 rounded-xl bg-white/[0.02] border border-glass-border flex flex-col gap-1.5 animate-pulse-subtle">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-text truncate max-w-[150px]">{recon.extracted_distributor || 'Unknown Distributor'}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[9px] uppercase font-bold">Email Order</span>
+                    </div>
+                    <div className="space-y-1 mt-0.5">
+                      {validNames.map((name: string) => {
+                        const qty = recon.medicine_details?.[name]?.qty || 1;
+                        return (
+                          <div key={name} className="flex justify-between items-center text-xs text-muted">
+                            <span className="truncate flex-1 text-[11px]">{name}</span>
+                            <span className="shrink-0 font-medium ml-2 text-[11px]">× {qty}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[10px] text-muted/50 font-mono mt-0.5 flex items-center gap-1">
+                      <ClockIcon size={10} />
+                      Received: {recon.date ? new Date(recon.date).toLocaleDateString() : 'N/A'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div>
           <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-amber-500">
             <AlertIcon size={14} />
             <span>Stock Alerts ({stockAlerts.length})</span>
@@ -1348,7 +1401,9 @@ const RefillControlSidebar = ({
                   >
                     <div className="flex items-start justify-between gap-1">
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-text truncate">{r.medicine_name}</div>
+                        <div className="font-semibold text-text truncate" title={r.items ? r.items.map((it: any) => it.medicine_name || it.name).join(', ') : r.medicine_name}>
+                          {r.items ? r.items.map((it: any) => it.medicine_name || it.name).join(', ') : r.medicine_name}
+                        </div>
                         <div className="text-[11px] text-muted/80 mt-0.5">Patient: {r.patient_name}</div>
                       </div>
                       {!isBlinking && (
@@ -1370,7 +1425,7 @@ const RefillControlSidebar = ({
                       )}
                       <button
                         onClick={() => {
-                          navigate(`/pos?refillPatientName=${encodeURIComponent(r.patient_name)}&refillPatientPhone=${encodeURIComponent(r.patient_phone || '')}&refillMedicineId=${r.medicine_id}&refillMedicineName=${encodeURIComponent(r.medicine_name || '')}&refillId=${r.id}&refillDays=${r.refill_interval_days || 30}`);
+                          navigate(`/pos?refillId=${r.id}`);
                         }}
                         className={`
                           py-1 rounded text-[10px] font-black tracking-wide uppercase transition-all flex items-center justify-center gap-1 cursor-pointer
@@ -1571,7 +1626,17 @@ const Layout = ({
       const notifications = await api.getAutomationNotifications({ status: 'staged' });
       setStagedNotifications(Array.isArray(notifications) ? notifications : []);
     } catch (err) {
-      console.warn('Failed to load staged notifications in layout:', err);
+      console.warn('Failed to load staged staged notifications in layout:', err);
+    }
+
+    try {
+      const reconData = await api.getReconciliationList();
+      if (Array.isArray(reconData)) {
+        const missing = reconData.filter(o => o.status === 'Missing' && !o.is_saved);
+        setReconciliationList(missing);
+      }
+    } catch (err) {
+      console.warn('Failed to load reconciliation list in layout:', err);
     }
 
     try {

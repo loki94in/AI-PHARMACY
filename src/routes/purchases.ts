@@ -1632,8 +1632,34 @@ router.get('/reconciliation', async (req, res) => {
         status = 'Matched';
       }
 
-      // Get or parse medicine names
+      // Get or parse medicine names and their details
       let medNames: string[] = [];
+      const medDetails: Record<string, { mrp?: number; rate?: number }> = {};
+      const parsedItems = [];
+
+      for (const att of attachments) {
+        if (att.local_path && fs.existsSync(att.local_path)) {
+          try {
+            const resParse = await emailService.parseAndImportAttachment(att.local_path, false);
+            if (resParse && resParse.success && resParse.items) {
+              parsedItems.push(...resParse.items);
+            }
+          } catch (pe) {
+            // ignore
+          }
+        }
+      }
+
+      for (const item of parsedItems) {
+        if (item.name) {
+          medDetails[item.name] = {
+            mrp: item.mrp,
+            rate: item.rate,
+            qty: item.quantity || item.qty || 1
+          };
+        }
+      }
+
       if (email.medicine_names) {
         try {
           medNames = JSON.parse(email.medicine_names);
@@ -1641,22 +1667,9 @@ router.get('/reconciliation', async (req, res) => {
           medNames = [];
         }
       } else {
-        const parsedItems = [];
-        for (const att of attachments) {
-          if (att.local_path && fs.existsSync(att.local_path)) {
-            try {
-              const resParse = await emailService.parseAndImportAttachment(att.local_path, false);
-              if (resParse && resParse.success && resParse.items) {
-                parsedItems.push(...resParse.items);
-              }
-            } catch (pe) {
-              // ignore
-            }
-          }
-        }
         if (parsedItems.length === 0) {
           for (const med of orderInfo.medicines) {
-            parsedItems.push({ name: med.name });
+            parsedItems.push({ name: med.name, quantity: med.quantity, rate: med.rate, mrp: med.mrp });
           }
         }
         medNames = Array.from(new Set(parsedItems.map(i => i.name).filter(Boolean)));
@@ -1682,6 +1695,7 @@ router.get('/reconciliation', async (req, res) => {
         } : null,
         status,
         medicine_names: medNames,
+        medicine_details: medDetails,
         attachments: attachments.map(a => ({
           filename: a.filename,
           size: a.size,

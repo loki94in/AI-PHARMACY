@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Fragment, useRef } from 'react';
-import { Edit3, Trash2, X, User, FileText, Save, AlertTriangle, BookOpen, RefreshCw, ShieldAlert, Factory } from 'lucide-react';
+import { Edit3, Trash2, X, User, FileText, Save, AlertTriangle, BookOpen, RefreshCw, ShieldAlert, Factory, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Calendar, Search, Hash } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { api } from '../../services/api';
@@ -66,20 +66,92 @@ const Sells = () => {
   const [loading, setLoading] = useState(!cachedInvoices);
   const [colFilterNo, setColFilterNo] = useState('');
   const [colFilterName, setColFilterName] = useState('');
-  const [colFilterDate, setColFilterDate] = useState('');
+  const [colFilterStartDate, setColFilterStartDate] = useState('');
+  const [colFilterEndDate, setColFilterEndDate] = useState('');
   const [colFilterDrName, setColFilterDrName] = useState('');
-  const [colFilterMinAmount, setColFilterMinAmount] = useState('');
-  const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
-  const [colFilterPayVia, setColFilterPayVia] = useState('');
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+
+  const setQuickDateRange = (preset: 'today' | 'yesterday' | '7days' | '30days' | 'clear') => {
+    if (preset === 'today') {
+      const today = getTodayString();
+      setColFilterStartDate(today);
+      setColFilterEndDate(today);
+    } else if (preset === 'yesterday') {
+      const yesterday = getNDaysAgoString(1);
+      setColFilterStartDate(yesterday);
+      setColFilterEndDate(yesterday);
+    } else if (preset === '7days') {
+      setColFilterStartDate(getNDaysAgoString(7));
+      setColFilterEndDate(getTodayString());
+    } else if (preset === '30days') {
+      setColFilterStartDate(getNDaysAgoString(30));
+      setColFilterEndDate(getTodayString());
+    } else if (preset === 'clear') {
+      setColFilterStartDate('');
+      setColFilterEndDate('');
+    }
+  };
+
+  // Debounced filters to avoid database request saturation
+  const [debouncedFilters, setDebouncedFilters] = useState({
+    invoiceNo: '',
+    customerName: '',
+    startDate: '',
+    endDate: '',
+    doctorName: ''
+  });
+
+  useEffect(() => {
+    // Update date immediately to ensure instant filtering and UI response
+    setDebouncedFilters(prev => {
+      if (
+        prev.startDate !== colFilterStartDate ||
+        prev.endDate !== colFilterEndDate
+      ) {
+        return {
+          ...prev,
+          startDate: colFilterStartDate,
+          endDate: colFilterEndDate
+        };
+      }
+      return prev;
+    });
+
+    // Debounce text and numeric inputs by 2 seconds to prevent rapid database requests while typing
+    const handler = setTimeout(() => {
+      setDebouncedFilters(prev => {
+        // Only update debounced state if length is 0 (cleared) or at least 3 characters for text
+        const nextInvoiceNo = (colFilterNo.length === 0 || colFilterNo.length >= 3) ? colFilterNo : prev.invoiceNo;
+        const nextCustomerName = (colFilterName.length === 0 || colFilterName.length >= 3) ? colFilterName : prev.customerName;
+        const nextDoctorName = (colFilterDrName.length === 0 || colFilterDrName.length >= 3) ? colFilterDrName : prev.doctorName;
+
+        if (
+          prev.invoiceNo !== nextInvoiceNo ||
+          prev.customerName !== nextCustomerName ||
+          prev.doctorName !== nextDoctorName
+        ) {
+          return {
+            ...prev,
+            invoiceNo: nextInvoiceNo,
+            customerName: nextCustomerName,
+            doctorName: nextDoctorName
+          };
+        }
+        return prev;
+      });
+    }, 2000);
+
+    return () => clearTimeout(handler);
+  }, [colFilterNo, colFilterName, colFilterStartDate, colFilterEndDate, colFilterDrName]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = useState(100);
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [colFilterNo, colFilterName, colFilterDate, colFilterDrName, colFilterMinAmount, colFilterMaxAmount, colFilterPayVia]);
+  }, [debouncedFilters]);
 
   // Edit modal state
   const [editInvoice, setEditInvoice] = useState<SaleInvoice | null>(null);
@@ -128,11 +200,17 @@ const Sells = () => {
   const fetchInvoices = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // ponytail: only filter by date if colFilterDate is selected. If empty, load latest invoices across all dates.
-      const params: { limit: number; date_from?: string; date_to?: string } = { limit: 50 };
-      if (colFilterDate) {
-        params.date_from = colFilterDate;
-        params.date_to = colFilterDate;
+      // ponytail: only filter by date if debouncedFilters.startDate or debouncedFilters.endDate is selected. If empty, load latest invoices across all dates.
+      const params: { limit: number; date_from?: string; date_to?: string; search?: string } = { limit: 500 };
+      if (debouncedFilters.startDate) {
+        params.date_from = debouncedFilters.startDate;
+      }
+      if (debouncedFilters.endDate) {
+        params.date_to = debouncedFilters.endDate;
+      }
+      const searchVal = debouncedFilters.customerName || debouncedFilters.invoiceNo;
+      if (searchVal) {
+        params.search = searchVal;
       }
       const data = await api.listSales(params);
       const invoicesList = Array.isArray(data) ? data : (data && Array.isArray(data.invoices) ? data.invoices : []);
@@ -144,21 +222,21 @@ const Sells = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [colFilterDate]);
+  }, [debouncedFilters.startDate, debouncedFilters.endDate, debouncedFilters.invoiceNo, debouncedFilters.customerName]);
 
   // Handle mount fetch
   useEffect(() => {
     fetchInvoices(!!cachedInvoices);
   }, []);
 
-  // Handle date filter change fetch (skip initial mount)
+  // Handle filter changes that query the server (skip initial mount)
   useEffect(() => {
     if (isInitial.current) {
       isInitial.current = false;
       return;
     }
     fetchInvoices(false);
-  }, [colFilterDate]);
+  }, [debouncedFilters.startDate, debouncedFilters.endDate, debouncedFilters.invoiceNo, debouncedFilters.customerName]);
 
   const openView = async (invoice: SaleInvoice) => {
     try {
@@ -178,7 +256,16 @@ const Sells = () => {
       setEditCustomerName(full.customer_name || '');
       setEditCustomerPhone(full.customer_phone || '');
       setEditPaymentMedium(full.payment_medium || 'CASH');
-      setEditDiscount(0);
+      
+      const sub = full.subtotal || (full.items || []).reduce((sum, item) => {
+        const packSize = item.pack_size || 10;
+        const looseQty = item.loose_qty || 0;
+        const discPer = item.discount_per || 0;
+        const discountedPrice = item.unit_price * (1 - discPer / 100);
+        return sum + (discountedPrice * item.quantity) + ((discountedPrice / packSize) * looseQty);
+      }, 0);
+      const disc = full.discount || Math.max(0, sub - (full.total_amount || 0));
+      setEditDiscount(disc);
     } catch (err) {
       toastEvent.trigger('Failed to load invoice details', 'error');
     }
@@ -261,291 +348,382 @@ const Sells = () => {
   const filteredInvoices = invoices.filter(inv => {
     const total = Number(inv.total_amount) || 0;
 
-    // Column header filters
-    if (colFilterNo && !inv.invoice_no.toLowerCase().includes(colFilterNo.toLowerCase())) {
+    // Column header filters using debounced values
+    if (debouncedFilters.invoiceNo && !inv.invoice_no.toLowerCase().includes(debouncedFilters.invoiceNo.toLowerCase())) {
       return false;
     }
-    if (colFilterName) {
-      const nameMatch = (inv.customer_name || 'Walk-in').toLowerCase().includes(colFilterName.toLowerCase());
-      const phoneMatch = (inv.customer_phone || '').includes(colFilterName);
+    if (debouncedFilters.customerName) {
+      const nameMatch = (inv.customer_name || 'Walk-in').toLowerCase().includes(debouncedFilters.customerName.toLowerCase());
+      const phoneMatch = (inv.customer_phone || '').includes(debouncedFilters.customerName);
       if (!nameMatch && !phoneMatch) return false;
     }
-    if (colFilterDate) {
-      const invDate = inv.date ? inv.date.split('T')[0] : '';
-      if (invDate !== colFilterDate) return false;
+    if (debouncedFilters.startDate || debouncedFilters.endDate) {
+      const invDate = inv.date ? inv.date.substring(0, 10) : '';
+      if (debouncedFilters.startDate && invDate < debouncedFilters.startDate) return false;
+      if (debouncedFilters.endDate && invDate > debouncedFilters.endDate) return false;
     }
-    if (colFilterDrName && !((inv.doctor_name || '').toLowerCase().includes(colFilterDrName.toLowerCase()))) {
-      return false;
-    }
-    
-    // Column header min/max amount filter
-    const colMin = colFilterMinAmount ? Number(colFilterMinAmount) : 0;
-    const colMax = colFilterMaxAmount ? Number(colFilterMaxAmount) : 100000000;
-    if (total < colMin || total > colMax) return false;
-
-    if (colFilterPayVia && inv.payment_medium !== colFilterPayVia) {
+    if (debouncedFilters.doctorName && !((inv.doctor_name || '').toLowerCase().includes(debouncedFilters.doctorName.toLowerCase()))) {
       return false;
     }
 
     return true;
   });
 
+  const isDateFiltered = !!(colFilterStartDate || colFilterEndDate || debouncedFilters.startDate || debouncedFilters.endDate);
   const totalPages = Math.ceil(filteredInvoices.length / pageSize);
-  const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const paginatedInvoices = isDateFiltered ? filteredInvoices : filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const activeFiltersCount = [colFilterNo, colFilterName, colFilterStartDate, colFilterEndDate, colFilterDrName].filter(Boolean).length;
 
   return (
-    <div className="h-full flex flex-col px-6 py-6 animate-in fade-in duration-500">
+    <div className="h-full flex flex-col gap-4 overflow-hidden relative">
 
       {/* Invoices Table */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-0 border border-white/20 flex-1 flex flex-col overflow-hidden min-h-0">
-        {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
-            <div className="animate-pulse">Loading invoices...</div>
-          </div>
-        ) : invoices.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
-            <FileText size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="font-semibold">No invoices found</p>
-            <p className="text-xs mt-1">Try adjusting your search or filters</p>
-          </div>
-        ) : (
-          <>
-            <div className="flex-1 overflow-auto">
-              <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-20 bg-[#18181b]/95 backdrop-blur-sm shadow-sm">
-                <tr>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">No.</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Name of the patient</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Date</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Dr Name</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Bill Amount</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Final Amount</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Discount</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Pay Via</th>
-                  <th className="p-4 text-xs font-bold text-muted uppercase tracking-wider border-b border-glass-border">Actions</th>
-                </tr>
-                <tr className="bg-bg2 border-b border-glass-border/30">
-                  <td className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Search No..."
-                      value={colFilterNo}
-                      onChange={e => setColFilterNo(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Search patient/phone..."
-                      value={colFilterName}
-                      onChange={e => setColFilterName(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="date"
-                      value={colFilterDate}
-                      onChange={e => setColFilterDate(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Search doctor..."
-                      value={colFilterDrName}
-                      onChange={e => setColFilterDrName(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                    />
-                  </td>
-                  <td className="p-2 flex gap-1">
-                    <input
-                      type="number"
-                      placeholder="Min"
-                      value={colFilterMinAmount}
-                      onChange={e => setColFilterMinAmount(e.target.value)}
-                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Max"
-                      value={colFilterMaxAmount}
-                      onChange={e => setColFilterMaxAmount(e.target.value)}
-                      className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                    />
-                  </td>
-                  <td className="p-2"></td>
-                  <td className="p-2"></td>
-                  <td className="p-2">
-                    <select
-                      value={colFilterPayVia}
-                      onChange={e => setColFilterPayVia(e.target.value)}
-                      className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50"
-                    >
-                      <option value="">All</option>
-                      <option value="CASH">CASH</option>
-                      <option value="UPI">UPI</option>
-                      <option value="CARD">CARD</option>
-                      <option value="CREDIT">CREDIT</option>
-                    </select>
-                  </td>
-                  <td className="p-2 text-center">
-                    {(colFilterNo || colFilterName || colFilterDate || colFilterDrName || colFilterMinAmount || colFilterMaxAmount || colFilterPayVia) && (
-                      <button
-                        onClick={() => {
-                          setColFilterNo('');
-                          setColFilterName('');
-                          setColFilterDate('');
-                          setColFilterDrName('');
-                          setColFilterMinAmount('');
-                          setColFilterMaxAmount('');
-                          setColFilterPayVia('');
-                        }}
-                        className="text-xs text-red hover:underline font-bold"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedInvoices.map((inv, idx) => (
-                  <tr key={inv.id} className="hover:bg-white/10 transition-all duration-300 group relative z-10 hover:shadow-lg hover:-translate-y-0.5">
-                    <td className="p-4 border-b border-glass-border/50 relative cursor-pointer">
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-purple-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>
-                      <span className="font-mono text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-md border border-primary/20 shadow-sm">{inv.invoice_no}</span>
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50 cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-white/5 p-2 rounded-full border border-glass-border shadow-sm group-hover:bg-white/10 group-hover:shadow-md transition-all">
-                          <User size={14} className="text-muted group-hover:text-primary transition-colors" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-text group-hover:text-primary transition-colors">{inv.customer_name || 'Walk-in'}</div>
-                          {inv.customer_phone && <div className="text-[10px] text-muted font-medium mt-0.5">{inv.customer_phone}</div>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
-                      {formatDate(inv.date)}
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
-                      {inv.doctor_name || '-'}
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50">
-                      <span className="text-sm font-bold text-text">₹{Math.round(Number(inv.subtotal || 0))}</span>
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50">
-                      <span className="text-sm font-bold text-green">₹{Math.round(Number(inv.total_amount || 0))}</span>
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
-                      ₹{Math.round(Number(inv.discount || 0))}
-                    </td>
-                    <td className="p-4 border-b border-glass-border/50">
-                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/10 text-muted">
-                        {inv.payment_medium || 'CASH'}
-                      </span>
-                    </td>
-
-                    <td className="p-4 border-b border-glass-border/50">
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 min-w-[140px]">
-                        {deleteConfirm === inv.id ? (
-                          <div className="flex items-center gap-2 p-1 rounded-lg bg-red/10 border border-red/20 w-full justify-center">
-                            <button
-                              onClick={() => handleDelete(inv.id)}
-                              className="px-3 py-1.5 bg-red text-white rounded-md text-[10px] font-bold hover:bg-red/80 shadow-md transform hover:scale-105 transition-all"
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirm(null)}
-                              className="px-3 py-1.5 bg-white/10 text-text rounded-md text-[10px] font-bold hover:bg-white/20 shadow-sm transition-all"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => openView(inv)}
-                              className="p-2 rounded-lg bg-white/5 hover:bg-sky-500 hover:text-white border border-glass-border hover:border-sky-500 shadow-sm hover:shadow-[0_0_15px_rgba(14,165,233,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
-                              title="View invoice"
-                            >
-                              <FileText size={14} />
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirm(inv.id)}
-                              className="p-2 rounded-lg bg-white/5 hover:bg-red hover:text-white border border-glass-border hover:border-red shadow-sm hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
-                              title="Delete invoice"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="px-4 py-3 bg-[#18181b]/60 backdrop-blur-sm border-t border-glass-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text select-none">
-              <div className="text-muted">
-                Showing <span className="font-semibold text-text">{Math.min(filteredInvoices.length, (currentPage - 1) * pageSize + 1)}</span> to{' '}
-                <span className="font-semibold text-text">{Math.min(filteredInvoices.length, currentPage * pageSize)}</span> of{' '}
-                <span className="font-semibold text-text">{filteredInvoices.length}</span> invoices
+      <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative animate-in fade-in duration-300">
+        
+        {/* Range Selector and Pagination Header */}
+        <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
+            {!isDateFiltered ? (
+              <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
+                <span className="text-muted">Show from row</span>
+                <input
+                  type="number"
+                  min="0"
+                  max={Math.max(0, filteredInvoices.length - 1)}
+                  value={filteredInvoices.length === 0 ? 0 : (currentPage - 1) * pageSize}
+                  onChange={e => {
+                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                    const newPage = Math.floor(val / pageSize) + 1;
+                    setCurrentPage(Math.min(totalPages, newPage));
+                  }}
+                  className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
+                />
+                <span className="text-muted">to</span>
+                <span className="text-text font-mono font-bold">
+                  {filteredInvoices.length === 0 ? 0 : Math.min(filteredInvoices.length, currentPage * pageSize)}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                
-                {/* Page numbers */}
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                    .map((p, idx, arr) => {
-                      const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
-                      return (
-                        <Fragment key={p}>
-                          {showEllipsisBefore && <span className="px-1 text-muted">...</span>}
-                          <button
-                            onClick={() => setCurrentPage(p)}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border transition-all ${
-                              currentPage === p
-                                ? 'bg-primary/20 text-primary border-primary/40'
-                                : 'bg-bg3 hover:bg-white/10 text-text border-glass-border'
-                            }`}
-                          >
-                            {p}
-                          </button>
-                        </Fragment>
-                      );
-                    })}
-                </div>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
+                <span className="text-muted">Showing all</span>
+                <span className="text-text font-mono font-bold">
+                  {filteredInvoices.length}
+                </span>
+              </div>
+            )}
+            <span className="text-muted">
+              of <strong className="text-text font-bold">{filteredInvoices.length.toLocaleString()}</strong> invoices
+            </span>
+          </div>
 
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
+          {!isDateFiltered && (
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-muted">Rows:</span>
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    const newSize = parseInt(e.target.value);
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
                 >
-                  Next
+                  <option value="15">15 rows</option>
+                  <option value="50">50 rows</option>
+                  <option value="100">100 rows</option>
+                  <option value="250">250 rows</option>
+                  <option value="500">500 rows</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1 || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                  title="First Page"
+                >
+                  <ChevronsLeft size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1 || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <div className="px-3 text-muted">
+                  Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                  title="Next Page"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages || loading}
+                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                  title="Last Page"
+                >
+                  <ChevronsRight size={14} />
                 </button>
               </div>
             </div>
           )}
-        </>
-      )}
+        </div>
+
+        <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15 gap-3">
+          {/* Active Filter Pills */}
+          {activeFiltersCount > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-bg3/20 border border-glass-border/40 rounded-xl text-xs shrink-0 select-none animate-in fade-in duration-200">
+              <span className="text-muted font-bold uppercase text-[9px] tracking-wider mr-1">Active Filters:</span>
+              {colFilterNo && (
+                <span className="inline-flex items-center gap-1 bg-primary/10 border border-primary/25 text-primary px-2.5 py-0.5 rounded-full font-mono text-[10px]">
+                  No: {colFilterNo}
+                  <button onClick={() => setColFilterNo('')} className="hover:text-red transition-colors cursor-pointer ml-0.5" title="Clear Invoice filter">
+                    <X size={10} />
+                  </button>
+                </span>
+              )}
+              {colFilterName && (
+                <span className="inline-flex items-center gap-1 bg-primary/10 border border-primary/25 text-primary px-2.5 py-0.5 rounded-full text-[10px]">
+                  Patient: {colFilterName}
+                  <button onClick={() => setColFilterName('')} className="hover:text-red transition-colors cursor-pointer ml-0.5" title="Clear Patient filter">
+                    <X size={10} />
+                  </button>
+                </span>
+              )}
+              {(colFilterStartDate || colFilterEndDate) && (
+                <span className="inline-flex items-center gap-1 bg-primary/10 border border-primary/25 text-primary px-2.5 py-0.5 rounded-full text-[10px]">
+                  Date: {colFilterStartDate || 'Any'} to {colFilterEndDate || 'Any'}
+                  <button 
+                    onClick={() => {
+                      setColFilterStartDate('');
+                      setColFilterEndDate('');
+                    }} 
+                    className="hover:text-red transition-colors cursor-pointer ml-0.5"
+                    title="Clear Date filter"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              )}
+              {colFilterDrName && (
+                <span className="inline-flex items-center gap-1 bg-primary/10 border border-primary/25 text-primary px-2.5 py-0.5 rounded-full text-[10px]">
+                  Dr: {colFilterDrName}
+                  <button onClick={() => setColFilterDrName('')} className="hover:text-red transition-colors cursor-pointer ml-0.5" title="Clear Doctor filter">
+                    <X size={10} />
+                  </button>
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  setColFilterNo('');
+                  setColFilterName('');
+                  setColFilterStartDate('');
+                  setColFilterEndDate('');
+                  setColFilterDrName('');
+                }}
+                className="text-[10px] text-red hover:underline font-bold transition-all ml-2 cursor-pointer"
+              >
+                Clear All
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+              <div className="animate-pulse">Loading invoices...</div>
+            </div>
+          ) : invoices.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+              <FileText size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="font-semibold">No invoices found</p>
+              <p className="text-xs mt-1">Try adjusting your search or filters</p>
+            </div>
+          ) : (
+            <div className="flex-1 border border-glass-border/30 rounded-xl overflow-auto bg-glass-bg custom-scrollbar min-h-0 relative">
+              <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-full">
+                <thead className="sticky top-0 z-20 bg-bg2 shadow-sm">
+                  <tr className="bg-bg2 border-b border-glass-border/30 text-muted font-bold text-[10px]">
+                    <th className="p-3 border-r border-glass-border/20 min-w-[100px] uppercase tracking-wider text-muted font-black">
+                      No.
+                    </th>
+                    <th className="p-3 border-r border-glass-border/20 min-w-[180px] uppercase tracking-wider text-muted font-black">
+                      Name of the patient
+                    </th>
+                    <th className="p-3 border-r border-glass-border/20 min-w-[140px] uppercase tracking-wider text-muted font-black">
+                      Date
+                    </th>
+                    <th className="p-3 border-r border-glass-border/20 min-w-[110px] uppercase tracking-wider text-muted font-black">
+                      Dr Name
+                    </th>
+                    <th className="p-3 border-r border-glass-border/20 min-w-[100px] uppercase tracking-wider text-muted font-black">
+                      Final Amount
+                    </th>
+                    <th className="p-3 border-r border-glass-border/20 min-w-[90px] uppercase tracking-wider text-muted font-black">
+                      Discount
+                    </th>
+                    <th className="p-3 text-center min-w-[100px] uppercase tracking-wider text-muted font-black">
+                      Actions
+                    </th>
+                  </tr>
+                  <tr className="bg-bg2/90 border-b border-glass-border/30">
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter No..."
+                        value={colFilterNo}
+                        onChange={e => setColFilterNo(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-md text-[11px] text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 font-mono"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter patient..."
+                        value={colFilterName}
+                        onChange={e => setColFilterName(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-md text-[11px] text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <div className="flex items-center gap-1 w-full">
+                        <input
+                          type="date"
+                          value={colFilterStartDate}
+                          onChange={e => setColFilterStartDate(e.target.value)}
+                          className="flex-1 w-0 min-w-0 px-1 py-0.5 bg-bg3 border border-glass-border rounded-md text-[10px] text-text focus:outline-none focus:border-primary/50 cursor-pointer"
+                          title="From Date"
+                        />
+                        <span className="text-muted text-[10px] shrink-0">-</span>
+                        <input
+                          type="date"
+                          value={colFilterEndDate}
+                          onChange={e => setColFilterEndDate(e.target.value)}
+                          className="flex-1 w-0 min-w-0 px-1 py-0.5 bg-bg3 border border-glass-border rounded-md text-[10px] text-text focus:outline-none focus:border-primary/50 cursor-pointer"
+                          title="To Date"
+                        />
+                      </div>
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter doctor..."
+                        value={colFilterDrName}
+                        onChange={e => setColFilterDrName(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-md text-[11px] text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20 bg-bg2/40"></td>
+                    <td className="p-2 border-r border-glass-border/20 bg-bg2/40"></td>
+                    <td className="p-2 bg-bg2/40 text-center">
+                      {(colFilterNo || colFilterName || colFilterStartDate || colFilterEndDate || colFilterDrName) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setColFilterNo('');
+                            setColFilterName('');
+                            setColFilterStartDate('');
+                            setColFilterEndDate('');
+                            setColFilterDrName('');
+                          }}
+                          className="px-2 py-1 text-[10px] bg-red/10 border border-red/20 text-red hover:bg-red hover:text-white rounded transition-colors font-bold cursor-pointer"
+                          title="Clear filters"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedInvoices.map((inv, idx) => (
+                    <tr key={inv.id} className="hover:bg-white/10 transition-all duration-300 group relative z-10 hover:shadow-lg hover:-translate-y-0.5">
+                      <td className="p-4 border-b border-glass-border/50 relative cursor-pointer">
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-purple-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>
+                        <span className="font-mono text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-md border border-primary/20 shadow-sm">{inv.invoice_no}</span>
+                      </td>
+                      <td className="p-4 border-b border-glass-border/50 cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-white/5 p-2 rounded-full border border-glass-border shadow-sm group-hover:bg-white/10 group-hover:shadow-md transition-all">
+                            <User size={14} className="text-muted group-hover:text-primary transition-colors" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold text-text group-hover:text-primary transition-colors">{inv.customer_name || 'Walk-in'}</div>
+                            {inv.customer_phone && <div className="text-[10px] text-muted font-medium mt-0.5">{inv.customer_phone}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
+                        {formatDate(inv.date)}
+                      </td>
+                      <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
+                        {inv.doctor_name || '-'}
+                      </td>
+                      <td className="p-4 border-b border-glass-border/50">
+                        <span className="text-sm font-bold text-green">₹{Math.round(Number(inv.total_amount || 0))}</span>
+                      </td>
+                      <td className="p-4 border-b border-glass-border/50 text-sm text-muted">
+                        ₹{Math.round(Number(inv.discount || 0))}
+                      </td>
+
+                      <td className="p-4 border-b border-glass-border/50">
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 min-w-[140px]">
+                          {deleteConfirm === inv.id ? (
+                            <div className="flex items-center gap-2 p-1 rounded-lg bg-red/10 border border-red/20 w-full justify-center">
+                              <button
+                                onClick={() => handleDelete(inv.id)}
+                                className="px-3 py-1.5 bg-red text-white rounded-md text-[10px] font-bold hover:bg-red/80 shadow-md transform hover:scale-105 transition-all"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm(null)}
+                                className="px-3 py-1.5 bg-white/10 text-text rounded-md text-[10px] font-bold hover:bg-white/20 shadow-sm transition-all"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => openView(inv)}
+                                className="p-2 rounded-lg bg-white/5 hover:bg-sky-500 hover:text-white border border-glass-border hover:border-sky-500 shadow-sm hover:shadow-[0_0_15px_rgba(14,165,233,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
+                                title="View invoice"
+                              >
+                                <FileText size={14} />
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm(inv.id)}
+                                className="p-2 rounded-lg bg-white/5 hover:bg-red hover:text-white border border-glass-border hover:border-red shadow-sm hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
+                                title="Delete invoice"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Edit Modal */}
@@ -913,14 +1091,30 @@ const Sells = () => {
               {/* Discount & Tax Info */}
               <div className="flex justify-end pt-2 mt-6">
                 <div className="w-64 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">Subtotal:</span>
-                    <span className="font-semibold">₹{Math.round(viewInvoice.subtotal || 0)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">Discount:</span>
-                    <span className="font-semibold text-amber-500">-₹{Math.round(viewInvoice.discount || 0)}</span>
-                  </div>
+                  {(() => {
+                    const calculatedSubtotal = viewInvoice.items?.reduce((sum, item) => {
+                      const packSize = item.pack_size || 10;
+                      const looseQty = item.loose_qty || 0;
+                      const discPer = item.discount_per || 0;
+                      const discountedPrice = item.unit_price * (1 - discPer / 100);
+                      return sum + (discountedPrice * item.quantity) + ((discountedPrice / packSize) * looseQty);
+                    }, 0) || 0;
+                    const displaySubtotal = viewInvoice.subtotal || calculatedSubtotal;
+                    const calculatedDiscount = Math.max(0, calculatedSubtotal - (viewInvoice.total_amount || 0));
+                    const displayDiscount = viewInvoice.discount || calculatedDiscount || 0;
+                    return (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted">Subtotal:</span>
+                          <span className="font-semibold">₹{Math.round(displaySubtotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted">Discount:</span>
+                          <span className="font-semibold text-amber-500">-₹{Math.round(displayDiscount)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                   <div className="flex justify-between text-lg font-bold pt-2 border-t border-glass-border/50">
                     <span className="text-text">Grand Total:</span>
                     <span className="text-green text-xl">₹{Math.round(viewInvoice.total_amount || 0)}</span>
@@ -1060,6 +1254,257 @@ const Sells = () => {
             fetchInvoices(true);
           }} 
         />
+      )}
+
+      {/* Floating Action Button (FAB) for Filters */}
+      <button
+        type="button"
+        onClick={() => setIsFilterDrawerOpen(true)}
+        className="absolute bottom-6 right-6 z-30 flex items-center gap-2 px-4.5 py-3 bg-primary text-white rounded-full shadow-lg hover:shadow-primary/30 hover:scale-105 active:scale-95 transition-all duration-300 group cursor-pointer border border-primary/35 font-bold text-xs uppercase tracking-wider select-none"
+        title="Open Filter Panel"
+      >
+        <SlidersHorizontal size={14} className="group-hover:rotate-12 transition-transform" />
+        <span>Filters</span>
+        {activeFiltersCount > 0 && (
+          <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[9px] font-black bg-white text-primary rounded-full shadow-inner animate-pulse">
+            {activeFiltersCount}
+          </span>
+        )}
+      </button>
+
+      {/* Sliding Filter Drawer Portal */}
+      {isFilterDrawerOpen && createPortal(
+        <div className="fixed inset-0 z-50 flex justify-end overflow-hidden">
+          {/* Style injection for animations and custom scrollbars */}
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes slideInRight {
+              from { transform: translateX(100%); }
+              to { transform: translateX(0); }
+            }
+            .animate-fade-in {
+              animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            .animate-slide-in-right {
+              animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+          `}} />
+
+          {/* Backdrop with blur */}
+          <div 
+            className="absolute inset-0 bg-bg/40 backdrop-blur-xs transition-opacity duration-300 animate-fade-in"
+            onClick={() => setIsFilterDrawerOpen(false)}
+          />
+          
+          {/* Drawer Panel Container */}
+          <div className="relative w-full max-w-sm bg-bg2 border-l border-glass-border shadow-2xl h-full flex flex-col z-10 animate-slide-in-right">
+            {/* Drawer Header */}
+            <div className="p-5 border-b border-glass-border/40 bg-bg3/10 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-inner">
+                  <SlidersHorizontal size={16} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-text leading-tight">Sells Filters</h4>
+                  <p className="text-[10px] text-muted mt-0.5">Filter invoice records by criteria</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsFilterDrawerOpen(false)}
+                className="p-2 rounded-full hover:bg-bg3 text-muted hover:text-text transition-all cursor-pointer border border-transparent hover:border-glass-border"
+                title="Close Drawer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar select-none">
+              
+              {/* Search Details Section */}
+              <div className="space-y-4">
+                <h5 className="text-[10px] font-black uppercase tracking-widest text-muted/80 border-b border-glass-border/30 pb-1.5">Invoice Information</h5>
+                
+                {/* Invoice Number Input */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
+                    <Hash size={11} className="text-primary" /> Invoice Number
+                  </label>
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      placeholder="Filter by invoice no..."
+                      value={colFilterNo}
+                      onChange={e => setColFilterNo(e.target.value)}
+                      className="w-full pl-3 pr-8 py-2.5 bg-bg3 border border-glass-border rounded-xl text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 font-mono transition-all"
+                    />
+                    {colFilterNo && (
+                      <button 
+                        onClick={() => setColFilterNo('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors p-0.5 rounded-full hover:bg-bg2"
+                        title="Clear Input"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Patient Name Input */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
+                    <User size={11} className="text-primary" /> Patient Name / Phone
+                  </label>
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      placeholder="Filter by name or phone..."
+                      value={colFilterName}
+                      onChange={e => setColFilterName(e.target.value)}
+                      className="w-full pl-3 pr-8 py-2.5 bg-bg3 border border-glass-border rounded-xl text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                    />
+                    {colFilterName && (
+                      <button 
+                        onClick={() => setColFilterName('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors p-0.5 rounded-full hover:bg-bg2"
+                        title="Clear Input"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Doctor Name Input */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted uppercase tracking-wide flex items-center gap-1.5">
+                    <User size={11} className="text-primary" /> Prescribing Doctor
+                  </label>
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      placeholder="Filter by doctor..."
+                      value={colFilterDrName}
+                      onChange={e => setColFilterDrName(e.target.value)}
+                      className="w-full pl-3 pr-8 py-2.5 bg-bg3 border border-glass-border rounded-xl text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                    />
+                    {colFilterDrName && (
+                      <button 
+                        onClick={() => setColFilterDrName('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text transition-colors p-0.5 rounded-full hover:bg-bg2"
+                        title="Clear Input"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Date Filters Section */}
+              <div className="space-y-4 pt-4 border-t border-glass-border/30">
+                <h5 className="text-[10px] font-black uppercase tracking-widest text-muted/80 border-b border-glass-border/30 pb-1.5 flex items-center gap-1.5">
+                  <Calendar size={11} className="text-primary" /> Date Range
+                </h5>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold text-muted uppercase tracking-wide">From Date</span>
+                    <input
+                      type="date"
+                      value={colFilterStartDate}
+                      onChange={e => setColFilterStartDate(e.target.value)}
+                      className="w-full px-2.5 py-2.5 bg-bg3 border border-glass-border rounded-xl text-xs text-text focus:outline-none focus:border-primary/50 cursor-pointer transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold text-muted uppercase tracking-wide">To Date</span>
+                    <input
+                      type="date"
+                      value={colFilterEndDate}
+                      onChange={e => setColFilterEndDate(e.target.value)}
+                      className="w-full px-2.5 py-2.5 bg-bg3 border border-glass-border rounded-xl text-xs text-text focus:outline-none focus:border-primary/50 cursor-pointer transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Date Presets Buttons */}
+                <div className="space-y-2">
+                  <span className="text-[9px] font-bold text-muted uppercase tracking-wide block">Quick Intervals</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setQuickDateRange('today')}
+                      className="px-3 py-1.5 text-[10px] bg-bg3 hover:bg-primary/15 hover:text-primary border border-glass-border rounded-lg text-muted transition-all font-bold cursor-pointer active:scale-95"
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickDateRange('yesterday')}
+                      className="px-3 py-1.5 text-[10px] bg-bg3 hover:bg-primary/15 hover:text-primary border border-glass-border rounded-lg text-muted transition-all font-bold cursor-pointer active:scale-95"
+                    >
+                      Yesterday
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickDateRange('7days')}
+                      className="px-3 py-1.5 text-[10px] bg-bg3 hover:bg-primary/15 hover:text-primary border border-glass-border rounded-lg text-muted transition-all font-bold cursor-pointer active:scale-95"
+                    >
+                      Last 7 Days
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickDateRange('30days')}
+                      className="px-3 py-1.5 text-[10px] bg-bg3 hover:bg-primary/15 hover:text-primary border border-glass-border rounded-lg text-muted transition-all font-bold cursor-pointer active:scale-95"
+                    >
+                      Last 30 Days
+                    </button>
+                    {(colFilterStartDate || colFilterEndDate) && (
+                      <button
+                        type="button"
+                        onClick={() => setQuickDateRange('clear')}
+                        className="px-3 py-1.5 text-[10px] bg-red/10 border border-red/25 hover:bg-red hover:text-white rounded-lg text-red-400 transition-all font-bold cursor-pointer active:scale-95"
+                      >
+                        Clear Dates
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Sticky Drawer Footer */}
+            <div className="p-4 border-t border-glass-border/40 bg-bg3/10 flex gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setColFilterNo('');
+                  setColFilterName('');
+                  setColFilterStartDate('');
+                  setColFilterEndDate('');
+                  setColFilterDrName('');
+                }}
+                disabled={activeFiltersCount === 0}
+                className="flex-1 px-4 py-3 bg-bg3 hover:bg-red/10 border border-glass-border hover:border-red/30 text-muted hover:text-red rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:pointer-events-none active:scale-95 text-center"
+              >
+                Reset All
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFilterDrawerOpen(false)}
+                className="flex-1 px-4 py-3 bg-primary hover:bg-primary/90 text-white border border-primary/30 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md shadow-primary/20 active:scale-95 text-center"
+              >
+                Show {filteredInvoices.length} {filteredInvoices.length === 1 ? 'Invoice' : 'Invoices'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
     </div>

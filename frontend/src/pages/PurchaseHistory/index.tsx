@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../services/api';
-import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
+import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 interface PurchaseTransaction {
   id: number;
@@ -41,17 +41,10 @@ let cachedTransactions: PurchaseTransaction[] | null = null;
 
 const PurchaseHistory = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [transactions, setTransactions] = useState<PurchaseTransaction[]>(cachedTransactions || []);
   const [loading, setLoading] = useState(!cachedTransactions);
   
-  const [searchQuery, setSearchQuery] = useState('');
-  const [earliestDate, setEarliestDate] = useState<string>(getTodayString());
-  const [dateRange, setDateRange] = useState({ start: getNDaysAgoString(15), end: getTodayString() });
-  const [manualToDate, setManualToDate] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [supplierFilter, setSupplierFilter] = useState('All');
-  const [productFilter, setProductFilter] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   const [colFilterId, setColFilterId] = useState('');
   const [colFilterDistributor, setColFilterDistributor] = useState('');
   const [colFilterInvoiceNo, setColFilterInvoiceNo] = useState('');
@@ -59,82 +52,79 @@ const PurchaseHistory = () => {
   const [colFilterMinAmount, setColFilterMinAmount] = useState('');
   const [colFilterMaxAmount, setColFilterMaxAmount] = useState('');
 
+  // Debounced filters to avoid database/CPU saturation
+  const [debouncedFilters, setDebouncedFilters] = useState({
+    id: '',
+    distributor: '',
+    invoiceNo: '',
+    date: '',
+    minAmount: '',
+    maxAmount: ''
+  });
+
+  useEffect(() => {
+    // Update date immediately to ensure instant filtering and UI response
+    setDebouncedFilters(prev => {
+      if (prev.date !== colFilterDate) {
+        return {
+          ...prev,
+          date: colFilterDate
+        };
+      }
+      return prev;
+    });
+
+    // Debounce text and amount inputs by 2 seconds to prevent rapid changes while typing
+    const handler = setTimeout(() => {
+      setDebouncedFilters(prev => {
+        const nextId = (colFilterId.length === 0 || colFilterId.length >= 3) ? colFilterId : prev.id;
+        const nextDistributor = (colFilterDistributor.length === 0 || colFilterDistributor.length >= 3) ? colFilterDistributor : prev.distributor;
+        const nextInvoiceNo = (colFilterInvoiceNo.length === 0 || colFilterInvoiceNo.length >= 3) ? colFilterInvoiceNo : prev.invoiceNo;
+        const nextMinAmount = colFilterMinAmount;
+        const nextMaxAmount = colFilterMaxAmount;
+
+        if (
+          prev.id !== nextId ||
+          prev.distributor !== nextDistributor ||
+          prev.invoiceNo !== nextInvoiceNo ||
+          prev.minAmount !== nextMinAmount ||
+          prev.maxAmount !== nextMaxAmount
+        ) {
+          return {
+            ...prev,
+            id: nextId,
+            distributor: nextDistributor,
+            invoiceNo: nextInvoiceNo,
+            minAmount: nextMinAmount,
+            maxAmount: nextMaxAmount
+          };
+        }
+        return prev;
+      });
+    }, 2000);
+
+    return () => clearTimeout(handler);
+  }, [colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = useState(100);
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, supplierFilter, dateRange.start, dateRange.end, productFilter, colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
-
-  // Fetch the date of the earliest transaction on mount
-  useEffect(() => {
-    api.getEarliestPurchaseDate()
-      .then((res) => {
-        const defaultBoundary = getTodayString();
-        if (res && res.earliest) {
-          const formatted = res.earliest.substring(0, 10);
-          setEarliestDate(formatted);
-          setDateRange(prev => {
-            if (prev.start < formatted) {
-              return { ...prev, start: formatted };
-            }
-            return prev;
-          });
-        } else {
-          setEarliestDate(defaultBoundary);
-          setDateRange(prev => {
-            if (prev.start < defaultBoundary) {
-              return { ...prev, start: defaultBoundary };
-            }
-            return prev;
-          });
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch earliest transaction date:', err);
-        const defaultBoundary = getTodayString();
-        setEarliestDate(defaultBoundary);
-        setDateRange(prev => {
-          if (prev.start < defaultBoundary) {
-            return { ...prev, start: defaultBoundary };
-          }
-          return prev;
-        });
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!manualToDate) {
-      setDateRange(prev => ({ ...prev, end: getTodayString() }));
-    }
-  }, [manualToDate]);
-
-  const handleDateFromChange = (val: string) => {
-    if (!val) {
-      setDateRange(prev => ({ ...prev, start: earliestDate }));
-    } else if (val < earliestDate) {
-      setDateRange(prev => ({ ...prev, start: earliestDate }));
-    } else {
-      setDateRange(prev => ({ ...prev, start: val }));
-    }
-  };
-
-  const handleDateToChange = (val: string) => {
-    if (!val) {
-      setDateRange(prev => ({ ...prev, end: getTodayString() }));
-    } else if (val < earliestDate) {
-      setDateRange(prev => ({ ...prev, end: earliestDate }));
-    } else {
-      setDateRange(prev => ({ ...prev, end: val }));
-    }
-  };
+  }, [debouncedFilters]);
 
   // Reconciliation States
-  const location = useLocation();
-  const initialActiveTab = location.state?.activeTab || 'history';
-  const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>(initialActiveTab);
+  const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>(
+    (location.state as any)?.activeTab || 'history'
+  );
+
+  useEffect(() => {
+    if ((location.state as any)?.activeTab) {
+      setActiveTab((location.state as any).activeTab);
+    }
+  }, [location.state]);
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
   const [loadingRecon, setLoadingRecon] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -142,13 +132,11 @@ const PurchaseHistory = () => {
   const [resolvingUid, setResolvingUid] = useState<number | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
 
-  const fetchHistory = async (search = searchQuery, start = dateRange.start, end = dateRange.end) => {
+  const fetchHistory = async () => {
     try {
       setLoading(true);
       const data = await api.getPurchases({
-        search: search || undefined,
-        start: start || undefined,
-        end: end || undefined
+        limit: 5000 // Fetch a large history so local column filtering works over all recent items
       });
       setTransactions(Array.isArray(data) ? data : []);
       cachedTransactions = Array.isArray(data) ? data : [];
@@ -160,12 +148,8 @@ const PurchaseHistory = () => {
   };
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchHistory(searchQuery, dateRange.start, dateRange.end);
-    }, 300);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, dateRange.start, dateRange.end]);
+    fetchHistory();
+  }, []);
 
   useEffect(() => {
     fetchReconciliation();
@@ -300,53 +284,23 @@ const PurchaseHistory = () => {
 
   // Filter Logic
   const filteredData = transactions.filter(t => {
-    // Search
-    const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = 
-      t.invoice_no?.toLowerCase().includes(searchLower) ||
-      t.id.toString().includes(searchLower) ||
-      t.distributor_name?.toLowerCase().includes(searchLower) ||
-      t.plan?.toLowerCase().includes(searchLower);
-
-    // Status removed for cash workflow
-    const matchesStatus = true;
-    
-    // Supplier
-    const matchesSupplier = supplierFilter === 'All' || t.distributor_name === supplierFilter;
-
-    // Date
-    let matchesDate = true;
-    if (dateRange.start && t.date) {
-      matchesDate = matchesDate && t.date.substring(0, 10) >= dateRange.start;
-    }
-    if (dateRange.end && t.date) {
-      matchesDate = matchesDate && t.date.substring(0, 10) <= dateRange.end;
-    }
-
-    // Product/Plan Filter
-    const matchesProduct = !productFilter || t.plan?.toLowerCase().includes(productFilter.toLowerCase());
-
-    if (!(matchesSearch && matchesStatus && matchesSupplier && matchesDate && matchesProduct)) {
+    // Column header filters using debounced values
+    if (debouncedFilters.id && !t.id.toString().includes(debouncedFilters.id)) {
       return false;
     }
-
-    // Column header filters
-    if (colFilterId && !t.id.toString().includes(colFilterId)) {
+    if (debouncedFilters.distributor && !(t.distributor_name || '').toLowerCase().includes(debouncedFilters.distributor.toLowerCase())) {
       return false;
     }
-    if (colFilterDistributor && !(t.distributor_name || '').toLowerCase().includes(colFilterDistributor.toLowerCase())) {
+    if (debouncedFilters.invoiceNo && !(t.invoice_no || '').toLowerCase().includes(debouncedFilters.invoiceNo.toLowerCase())) {
       return false;
     }
-    if (colFilterInvoiceNo && !(t.invoice_no || '').toLowerCase().includes(colFilterInvoiceNo.toLowerCase())) {
-      return false;
-    }
-    if (colFilterDate) {
+    if (debouncedFilters.date) {
       const pDate = t.date ? t.date.substring(0, 10) : '';
-      if (pDate !== colFilterDate) return false;
+      if (pDate !== debouncedFilters.date) return false;
     }
     const amountVal = t.total_amount || 0;
-    const minVal = colFilterMinAmount ? Number(colFilterMinAmount) : 0;
-    const maxVal = colFilterMaxAmount ? Number(colFilterMaxAmount) : 100000000;
+    const minVal = debouncedFilters.minAmount ? Number(debouncedFilters.minAmount) : 0;
+    const maxVal = debouncedFilters.maxAmount ? Number(debouncedFilters.maxAmount) : 100000000;
     if (amountVal < minVal || amountVal > maxVal) {
       return false;
     }
@@ -354,16 +308,15 @@ const PurchaseHistory = () => {
     return true;
   });
 
+  const isDateFiltered = !!(colFilterDate || debouncedFilters.date);
   const totalPages = Math.ceil(filteredData.length / pageSize);
-  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  // Extract unique suppliers for the filter dropdown
-  const uniqueSuppliers = Array.from(new Set(transactions.map(t => t.distributor_name).filter(Boolean)));
+  const paginatedData = isDateFiltered ? filteredData : filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Purchase Analytics
   const totalPurchases = filteredData.length;
   const totalAmount = filteredData.reduce((sum, t) => sum + (t.total_amount || 0), 0);
   const paidAmount = totalAmount; // Cash workflow, all are paid
+
 
   // Export Logic
   const exportToCSV = () => {
@@ -372,7 +325,7 @@ const PurchaseHistory = () => {
       return;
     }
 
-    const headers = ['Purchase ID', 'Invoice No', 'Distributor', 'Date', 'Qty', 'Amount'];
+    const headers = ['Purchase ID', 'Invoice No', 'Distributor', 'Date', 'Amount'];
     const csvRows = [headers.join(',')];
 
     filteredData.forEach(tx => {
@@ -381,7 +334,6 @@ const PurchaseHistory = () => {
         `"${tx.invoice_no || ''}"`,
         `"${tx.distributor_name || ''}"`,
         `"${new Date(tx.date).toLocaleDateString()}"`,
-        tx.total_qty || 0,
         tx.total_amount || 0
       ];
       csvRows.push(row.join(','));
@@ -405,299 +357,337 @@ const PurchaseHistory = () => {
   };
 
   return (
-    <div className="h-full flex flex-col pt-1 px-4 gap-0 pb-4 animate-in fade-in duration-500">
-      {/* Tabs */}
-      <div className="flex border-b border-glass-border/30 mb-0">
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${
-            activeTab === 'history'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-gray-400 hover:text-white'
-          }`}
-        >
-          Purchase History
-        </button>
-        <button
-          onClick={() => setActiveTab('reconciliation')}
-          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === 'reconciliation'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-gray-400 hover:text-white'
-          }`}
-        >
-          Reconcile Distributor Orders
-          {getUnreconciledCount() > 0 && (
-            <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">
-              {getUnreconciledCount()} Missing
-            </span>
-          )}
-        </button>
+    <div className="h-full flex flex-col gap-4 overflow-hidden relative">
+      {/* Tabs with Actions */}
+      <div className="flex justify-between items-center border-b border-glass-border/30 mb-0">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === 'history'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            Purchase History
+          </button>
+          <button
+            onClick={() => setActiveTab('reconciliation')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === 'reconciliation'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            Reconcile Distributor Orders
+            {getUnreconciledCount() > 0 && (
+              <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">
+                {getUnreconciledCount()} Missing
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'history' && (
+          <button 
+            onClick={exportToCSV}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-primary to-blue-600 hover:shadow-[0_0_15px_rgba(37,99,235,0.3)] px-4 py-1.5 rounded-lg text-white text-xs font-bold transition-all hover:scale-105 active:scale-95 border border-white/10 mb-1"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
+        )}
       </div>
 
       {activeTab === 'history' ? (
         <>
           {/* Purchase History Tab */}
           {/* Purchase Analytics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 bg-white/10 backdrop-blur-lg border border-white/20 border-b-0 rounded-t-xl z-30 relative">
-            <div className="p-5 border-r border-white/10">
-              <p className="text-gray-400 text-sm mb-1">Total Purchases</p>
-              <p className="text-2xl font-bold text-white">{totalPurchases}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 bg-bg2/40 border border-glass-border rounded-2xl z-30 relative select-none">
+            <div className="p-5 border-r border-glass-border/30">
+              <p className="text-muted text-sm mb-1">Total Purchases</p>
+              <p className="text-2xl font-bold text-text">{totalPurchases}</p>
             </div>
-            <div className="p-5 border-r border-white/10">
-              <p className="text-gray-400 text-sm mb-1">Total Value</p>
+            <div className="p-5 border-r border-glass-border/30">
+              <p className="text-muted text-sm mb-1">Total Value</p>
               <p className="text-2xl font-bold text-primary">₹{totalAmount.toFixed(2)}</p>
             </div>
             <div className="p-5">
-              <p className="text-gray-400 text-sm mb-1">Total Paid</p>
-              <p className="text-2xl font-bold text-green-400">₹{paidAmount.toFixed(2)}</p>
-            </div>
-          </div>
-
-          {/* Filters & Search */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-none p-5 border border-white/20 border-b-0 relative z-20 flex flex-col md:flex-row gap-4 items-center">
-            <div className="flex-1 w-full relative">
-              <input
-                type="text"
-                placeholder="Search by order ID, invoice number, or product name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-3 bg-black/20 border border-glass-border rounded-xl text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all shadow-inner"
-              />
+              <p className="text-muted text-sm mb-1">Total Paid</p>
+              <p className="text-2xl font-bold text-green">₹{paidAmount.toFixed(2)}</p>
             </div>
           </div>
 
           {/* Table */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-b-xl border border-white/20 flex-1 flex flex-col min-h-0 relative z-10 overflow-hidden shadow-2xl">
-            <div className="flex-1 overflow-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-20 bg-[#18181b]/95 backdrop-blur-sm shadow-sm">
-                  <tr className="bg-black/40 border-b border-glass-border/50 text-sm font-semibold text-gray-300">
-                    <th className="px-6 py-4 whitespace-nowrap">Purchase ID</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Distributor Name</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Invoice No.</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Date</th>
-                    <th className="px-6 py-4 whitespace-nowrap text-right">Qty</th>
-                    <th className="px-6 py-4 whitespace-nowrap text-right">Amount</th>
-                    <th className="px-6 py-4 whitespace-nowrap text-center">Action</th>
-                  </tr>
-                  <tr className="bg-bg2 border-b border-glass-border/30">
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        placeholder="Search ID..."
-                        value={colFilterId}
-                        onChange={e => setColFilterId(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        placeholder="Search distributor..."
-                        value={colFilterDistributor}
-                        onChange={e => setColFilterDistributor(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        placeholder="Search Invoice..."
-                        value={colFilterInvoiceNo}
-                        onChange={e => setColFilterInvoiceNo(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="date"
-                        value={colFilterDate}
-                        onChange={e => setColFilterDate(e.target.value)}
-                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                      />
-                    </td>
-                    <td className="p-2"></td>
-                    <td className="p-2 flex gap-1">
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        value={colFilterMinAmount}
-                        onChange={e => setColFilterMinAmount(e.target.value)}
-                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        value={colFilterMaxAmount}
-                        onChange={e => setColFilterMaxAmount(e.target.value)}
-                        className="w-1/2 px-1 py-1 bg-bg3 border border-glass-border rounded-lg text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                      />
-                    </td>
-                    <td className="p-2 text-center">
-                      {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) && (
-                        <button
-                          onClick={() => {
-                            setColFilterId('');
-                            setColFilterDistributor('');
-                            setColFilterInvoiceNo('');
-                            setColFilterDate('');
-                            setColFilterMinAmount('');
-                            setColFilterMaxAmount('');
-                          }}
-                          className="text-xs text-red hover:underline font-bold"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-glass-border/30 text-sm">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-gray-400">
-                        <div className="flex justify-center items-center gap-2">
-                          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                          Loading history...
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredData.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center">
-                        <div className="flex flex-col items-center justify-center text-gray-400">
-                          <AlertCircle size={48} className="mb-4 opacity-20" />
-                          <p className="text-lg">No transactions found</p>
-                          <p className="text-sm opacity-70">Try adjusting your search or filters</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedData.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="px-6 py-4 text-gray-300 font-mono">
-                          #{tx.id.toString().padStart(6, '0')}
-                        </td>
-                        <td className="px-6 py-4 text-white font-medium">
-                          {tx.distributor_name || '-'}
-                        </td>
-                        <td className="px-6 py-4 text-gray-300 font-mono text-xs">
-                          {tx.invoice_no || '-'}
-                        </td>
-                        <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
-                          {new Date(tx.date).toLocaleDateString()}
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-right text-gray-300 font-medium">
-                          {tx.total_qty || 0}
-                        </td>
-                        <td className="px-6 py-4 text-right whitespace-nowrap">
-                          {tx.cn_amount && tx.cn_amount > 0 ? (
-                            <div className="flex flex-col items-end">
-                              <div className="flex items-center gap-1.5 justify-end">
-                                <span className="text-xs text-gray-500 line-through">
-                                  ₹{(tx.original_amount || (tx.total_amount + tx.cn_amount)).toFixed(2)}
-                                </span>
-                                <span className="text-white font-medium">
-                                  ₹{tx.total_amount?.toFixed(2) || '0.00'}
-                                </span>
-                              </div>
-                              <span className="text-[10px] text-sky-400 font-semibold px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 mt-1 transition-all hover:bg-sky-500/25">
-                                CN Applied: -₹{tx.cn_amount.toFixed(2)}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-white font-medium">
-                              ₹{tx.total_amount?.toFixed(2) || '0.00'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => openView(tx.id)} className="text-gray-400 hover:text-primary transition-colors p-1 rounded hover:bg-primary/10" title="View Details">
-                              <Eye size={16} />
-                            </button>
-                            <button onClick={() => openEdit(tx.id)} className="text-gray-400 hover:text-blue-400 transition-colors p-1 rounded hover:bg-blue-400/10" title="Edit Purchase">
-                              <Edit size={16} />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                if(window.confirm('Are you sure you want to delete this purchase? This will reduce the stock in inventory.')) {
-                                  api.deletePurchase(tx.id).then(() => {
-                                    alert('Purchase deleted and stock reverted');
-                                    fetchHistory();
-                                  }).catch((err) => {
-                                    alert('Failed to delete purchase: ' + (err.response?.data?.error || err.message));
-                                  });
-                                }
-                              }}
-                              className="text-gray-400 hover:text-red-400 transition-colors p-1 rounded hover:bg-red-400/10" title="Delete Purchase"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative z-10 shadow-2xl animate-in fade-in duration-300">
+            
+            {/* Range Selector and Pagination Header */}
+            <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
+                {!isDateFiltered ? (
+                  <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
+                    <span className="text-muted">Show from row</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={Math.max(0, filteredData.length - 1)}
+                      value={filteredData.length === 0 ? 0 : (currentPage - 1) * pageSize}
+                      onChange={e => {
+                        const val = Math.max(0, parseInt(e.target.value) || 0);
+                        const newPage = Math.floor(val / pageSize) + 1;
+                        setCurrentPage(Math.min(totalPages, newPage));
+                      }}
+                      className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
+                    />
+                    <span className="text-muted">to</span>
+                    <span className="text-text font-mono font-bold">
+                      {filteredData.length === 0 ? 0 : Math.min(filteredData.length, currentPage * pageSize)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
+                    <span className="text-muted">Showing all</span>
+                    <span className="text-text font-mono font-bold">
+                      {filteredData.length}
+                    </span>
+                  </div>
+                )}
+                <span className="text-muted">
+                  of <strong className="text-text font-bold">{filteredData.length.toLocaleString()}</strong> transactions
+                </span>
+              </div>
 
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="px-6 py-3 bg-[#18181b]/60 backdrop-blur-sm border-t border-glass-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text select-none">
-                <div className="text-muted text-gray-400">
-                  Showing <span className="font-semibold text-white">{Math.min(filteredData.length, (currentPage - 1) * pageSize + 1)}</span> to{' '}
-                  <span className="font-semibold text-white">{Math.min(filteredData.length, currentPage * pageSize)}</span> of{' '}
-                  <span className="font-semibold text-white">{filteredData.length}</span> transactions
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  
-                  {/* Page numbers */}
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                      .map((p, idx, arr) => {
-                        const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
-                        return (
-                          <React.Fragment key={p}>
-                            {showEllipsisBefore && <span className="px-1 text-muted text-gray-500">...</span>}
-                            <button
-                              onClick={() => setCurrentPage(p)}
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border transition-all ${
-                                currentPage === p
-                                  ? 'bg-primary/20 text-primary border-primary/40'
-                                  : 'bg-bg3 hover:bg-white/10 text-text border-glass-border'
-                              }`}
-                            >
-                              {p}
-                            </button>
-                          </React.Fragment>
-                        );
-                      })}
+              {!isDateFiltered && (
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted">Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={e => {
+                        const newSize = parseInt(e.target.value);
+                        setPageSize(newSize);
+                        setCurrentPage(1);
+                      }}
+                      className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
+                    >
+                      <option value="15">15 rows</option>
+                      <option value="50">50 rows</option>
+                      <option value="100">100 rows</option>
+                      <option value="250">250 rows</option>
+                      <option value="500">500 rows</option>
+                    </select>
                   </div>
 
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
+                  <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1 || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                      title="First Page"
+                    >
+                      <ChevronsLeft size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1 || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                      title="Previous Page"
+                    >
+                      <ChevronLeft size={14} /> Prev
+                    </button>
+                    <div className="px-3 text-muted">
+                      Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                      title="Next Page"
+                    >
+                      Next <ChevronRight size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages || loading}
+                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
+                      title="Last Page"
+                    >
+                      <ChevronsRight size={14} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15">
+              {loading ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+                  <div className="animate-pulse">Loading purchase history...</div>
+                </div>
+              ) : filteredData.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
+                  <Database size={40} className="mx-auto mb-3 opacity-30" />
+                  <p className="font-semibold">No transactions found</p>
+                  <p className="text-xs mt-1">Try adjusting your search or filters</p>
+                </div>
+              ) : (
+                <div className="flex-1 border border-glass-border/30 rounded-xl overflow-auto bg-glass-bg custom-scrollbar min-h-0 relative">
+                  <table className="w-full text-left border-collapse text-[11px] font-semibold text-text min-w-full">
+                    <thead className="sticky top-0 z-20 bg-bg2 shadow-sm">
+                      <tr className="bg-bg2 border-b border-glass-border/30 text-muted font-bold text-[10px] align-top">
+                        <th className="p-2 border-r border-glass-border/20 min-w-[100px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Purchase ID</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[180px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Distributor Name</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[120px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Invoice No.</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[120px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Date</span>
+                          </div>
+                        </th>
+                        <th className="p-2 border-r border-glass-border/20 min-w-[150px] text-right">
+                          <div className="flex flex-col gap-1 items-end">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Amount</span>
+                          </div>
+                        </th>
+                        <th className="p-2 text-center min-w-[100px]">
+                          <div className="flex flex-col gap-1 items-center justify-center">
+                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Actions</span>
+                          </div>
+                        </th>
+                      </tr>
+                      <tr className="bg-bg2 border-b border-glass-border/30">
+                        <td className="p-2 border-r border-glass-border/20">
+                          <input
+                            type="text"
+                            placeholder="Search ID..."
+                            value={colFilterId}
+                            onChange={e => setColFilterId(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
+                          <input
+                            type="text"
+                            placeholder="Search distributor..."
+                            value={colFilterDistributor}
+                            onChange={e => setColFilterDistributor(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
+                          <input
+                            type="text"
+                            placeholder="Search invoice..."
+                            value={colFilterInvoiceNo}
+                            onChange={e => setColFilterInvoiceNo(e.target.value)}
+                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          />
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
+                          <input
+                            type="date"
+                            value={colFilterDate}
+                            onChange={e => setColFilterDate(e.target.value)}
+                            className="w-full px-1.5 py-0.5 bg-bg3 border border-glass-border rounded text-[9px] text-text font-normal focus:outline-none focus:border-primary/50"
+                          />
+                        </td>
+                        <td className="p-2 border-r border-glass-border/20">
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              placeholder="Min"
+                              value={colFilterMinAmount}
+                              onChange={e => setColFilterMinAmount(e.target.value)}
+                              className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Max"
+                              value={colFilterMaxAmount}
+                              onChange={e => setColFilterMaxAmount(e.target.value)}
+                              className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                            />
+                          </div>
+                        </td>
+                        <td className="p-2 text-center flex items-center justify-center">
+                          {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) && (
+                            <button
+                              onClick={() => {
+                                setColFilterId('');
+                                setColFilterDistributor('');
+                                setColFilterInvoiceNo('');
+                                setColFilterDate('');
+                                setColFilterMinAmount('');
+                                setColFilterMaxAmount('');
+                              }}
+                              className="px-2 py-0.5 rounded bg-red/15 border border-red/30 text-red-400 hover:bg-red hover:text-white transition-all text-[9px] font-extrabold cursor-pointer"
+                              title="Clear Filters"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-glass-border/30 text-[11px]">
+                      {paginatedData.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-muted">No purchase transactions matching the filters.</td>
+                        </tr>
+                      ) : (
+                        paginatedData.map((tx) => (
+                          <tr key={tx.id} className="hover:bg-white/10 transition-all duration-300 group hover:shadow-lg hover:-translate-y-0.5 border-b border-glass-border/30">
+                            <td className="p-4 relative">
+                              <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-blue-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>
+                              <span className="font-mono text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-md border border-primary/20 shadow-sm">#{tx.id}</span>
+                            </td>
+                            <td className="p-4 text-sm font-bold text-text group-hover:text-primary transition-colors">
+                              {tx.distributor_name}
+                            </td>
+                            <td className="p-4 font-mono text-sm text-text">
+                              {tx.invoice_no || 'N/A'}
+                            </td>
+                            <td className="p-4 text-sm text-muted">
+                              {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="p-4 text-right">
+                              <span className="text-sm font-bold text-green">₹{(tx.total_amount || 0).toFixed(2)}</span>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <button
+                                  onClick={() => openView(tx.id)}
+                                  className="p-2 rounded-lg bg-white/5 hover:bg-sky-500 hover:text-white border border-glass-border hover:border-sky-500 shadow-sm hover:shadow-[0_0_15px_rgba(14,165,233,0.4)] text-muted transition-all transform hover:scale-105 active:scale-95"
+                                  title="View Details"
+                                >
+                                  <Eye size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </>
       ) : (
@@ -726,7 +716,6 @@ const PurchaseHistory = () => {
                   <tr className="bg-black/40 border-b border-glass-border/50 text-sm font-semibold text-gray-300">
                     <th className="px-6 py-4 whitespace-nowrap">Received Date</th>
                     <th className="px-6 py-4 whitespace-nowrap">Distributor / Sender</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Subject Line</th>
                     <th className="px-6 py-4 whitespace-nowrap">Extracted Invoice No.</th>
                     <th className="px-6 py-4 whitespace-nowrap">Medicines</th>
                     <th className="px-6 py-4 whitespace-nowrap text-center">Status</th>
@@ -736,7 +725,7 @@ const PurchaseHistory = () => {
                 <tbody className="divide-y divide-glass-border/30 text-sm">
                   {loadingRecon ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-gray-400">
+                      <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
                         <div className="flex justify-center items-center gap-2">
                           <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                           Analyzing email receipts...
@@ -745,7 +734,7 @@ const PurchaseHistory = () => {
                     </tr>
                   ) : reconciliationList.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
                         <div className="flex flex-col items-center justify-center">
                           <CheckCircle size={48} className="text-green-500 mb-4 opacity-40" />
                           <p className="text-base font-bold text-white">All Clear!</p>
@@ -763,21 +752,33 @@ const PurchaseHistory = () => {
                           {recon.extracted_distributor}
                           <div className="text-xs text-gray-500 font-normal mt-0.5 truncate max-w-[200px]">{recon.from}</div>
                         </td>
-                        <td className="px-6 py-4 text-gray-300 max-w-xs truncate">
-                          {recon.subject}
-                        </td>
                         <td className="px-6 py-4 font-mono text-white text-xs">
                           {recon.extracted_invoice_no || 'N/A'}
                         </td>
                         <td className="px-6 py-4">
-                          {recon.medicine_names && recon.medicine_names.length > 0 ? (
-                            <div className="text-gray-300 max-w-xs truncate" title={recon.medicine_names.join(', ')}>
-                              {recon.medicine_names.slice(0, 3).join(', ')}
-                              {recon.medicine_names.length > 3 && ` +${recon.medicine_names.length - 3} more`}
-                            </div>
-                          ) : (
-                            <span className="text-gray-500 text-xs italic">No medicines detected</span>
-                          )}
+                          {(() => {
+                            // Filter out entries that look like IDs, bill numbers, or invoice numbers (purely numeric or short numeric codes)
+                            const validNames = (recon.medicine_names || []).filter((name: string) => {
+                              if (!name || typeof name !== 'string') return false;
+                              const trimmed = name.trim();
+                              // Exclude purely numeric strings (IDs, bill numbers)
+                              if (/^\d+$/.test(trimmed)) return false;
+                              // Exclude common invoice/bill patterns like "INV-123", "BILL-456", "#12345"
+                              if (/^(inv|bill|invoice|id|order|ref|no)[\s\-:#]?\d+$/i.test(trimmed)) return false;
+                              if (/^#\d+$/.test(trimmed)) return false;
+                              // Exclude very short strings (likely codes, not medicine names)
+                              if (trimmed.length < 3) return false;
+                              return true;
+                            });
+                            return validNames.length > 0 ? (
+                              <div className="text-gray-300 max-w-xs truncate" title={validNames.join(', ')}>
+                                {validNames.slice(0, 3).join(', ')}
+                                {validNames.length > 3 && ` +${validNames.length - 3} more`}
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 text-xs italic">No medicines detected</span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-center">
                           {recon.is_saved ? (
@@ -837,9 +838,6 @@ const PurchaseHistory = () => {
                   <AlertCircle size={20} className="text-primary" />
                   Investigate Distributor Order
                 </h3>
-                <p className="text-xs text-gray-400 mt-1">
-                  Email UID: #{selectedOrder.email_uid} &middot; Received {new Date(selectedOrder.date).toLocaleString()}
-                </p>
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
@@ -853,21 +851,12 @@ const PurchaseHistory = () => {
               {/* Metadata Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-black/20 p-4 rounded-xl border border-glass-border/20">
                 <div>
-                  <span className="text-xs text-gray-400 block mb-1">From (Distributor)</span>
-                  <strong className="text-white text-base">{selectedOrder.extracted_distributor}</strong>
-                  <span className="text-[10px] text-gray-500 block font-mono mt-0.5">{selectedOrder.from}</span>
+                  <span className="text-xs text-gray-400 block mb-1">Distributor</span>
+                  <strong className="text-white text-base">{selectedOrder.extracted_distributor || 'N/A'}</strong>
                 </div>
                 <div>
-                  <span className="text-xs text-gray-400 block mb-1">Extracted Invoice No.</span>
+                  <span className="text-xs text-gray-400 block mb-1">Bill Number</span>
                   <strong className="text-white text-base">{selectedOrder.extracted_invoice_no || 'N/A'}</strong>
-                </div>
-              </div>
-
-              {/* Email Subject Line */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-sky uppercase tracking-wide">Subject Line</h4>
-                <div className="bg-black/30 p-3 rounded-lg border border-glass-border/10 font-medium text-white">
-                  {selectedOrder.subject}
                 </div>
               </div>
 
@@ -885,39 +874,6 @@ const PurchaseHistory = () => {
                 ) : (
                   <div className="text-gray-500 text-xs italic bg-white/5 p-3 rounded-xl border border-glass-border/20">
                     No medicines detected in this order
-                  </div>
-                )}
-              </div>
-
-              {/* Reconciliation Analysis Card */}
-              <div>
-                <h4 className="text-xs font-bold text-sky uppercase tracking-wide mb-2">Reconciliation Analysis</h4>
-                {selectedOrder.is_saved ? (
-                  <div className="bg-green-500/10 border border-green-500/20 p-4 rounded-xl text-green-400 flex items-start gap-3">
-                    <CheckCircle size={18} className="mt-0.5 flex-shrink-0" />
-                    <div>
-                      <strong className="block text-white text-xs">Successfully Reconciled</strong>
-                      <span className="text-xs block mt-0.5">This order is already recorded in the purchase history. No further action is required.</span>
-                    </div>
-                  </div>
-                ) : selectedOrder.status === 'Matched' ? (
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-xl text-yellow-400 flex items-start gap-3">
-                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                    <div>
-                      <strong className="block text-white text-xs">Matched in Purchase History</strong>
-                      <span className="text-xs block mt-0.5">An invoice with number <strong>{selectedOrder.extracted_invoice_no}</strong> already exists in the database, but this specific email was not marked as saved. You can mark it as resolved manually.</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-red-400 flex items-start gap-3">
-                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                    <div>
-                      <strong className="block text-white text-xs">Missing Order - Action Required</strong>
-                      <span className="text-xs block mt-0.5">This order exists as a distributor email receipt, but is <strong>NOT</strong> recorded in the purchase history and items have <strong>NOT</strong> been delivered to inventory.</span>
-                      <span className="text-xs block mt-1 text-red-300 font-semibold">
-                        💡 Reissuing this order will automatically update inventory and trigger any pending patient refills for these medicines, generating pre-filled checkout bills!
-                      </span>
-                    </div>
                   </div>
                 )}
               </div>
@@ -1087,114 +1043,7 @@ const PurchaseHistory = () => {
         document.body
       )}
     {/* Edit Purchase Modal */}
-      {/* Floating Action Buttons */}
-      {activeTab === 'history' && (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
-          {/* Drop-up Filter Menu */}
-          {showFilters && (
-            <div className="bg-[#18181b]/95 backdrop-blur-xl border border-glass-border rounded-2xl p-5 shadow-2xl animate-in slide-in-from-bottom-4 flex flex-col gap-4 min-w-[320px]">
-              <div className="flex justify-between items-center mb-1">
-                <h3 className="text-white font-semibold flex items-center gap-2">
-                  <Filter size={16} className="text-primary" />
-                  Filter Records
-                </h3>
-                <button onClick={() => setShowFilters(false)} className="text-gray-400 hover:text-white transition-colors">
-                  <XCircle size={18} />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <label className="text-gray-400 text-sm">Distributor Name</label>
-                <div className="bg-black/40 border border-glass-border rounded-xl p-2.5">
-                  <select 
-                    value={supplierFilter}
-                    onChange={(e) => setSupplierFilter(e.target.value)}
-                    className="w-full bg-transparent text-white text-sm focus:outline-none"
-                  >
-                    <option value="All" className="bg-gray-900">All Distributors</option>
-                    {uniqueSuppliers.map(sup => (
-                      <option key={sup} value={sup} className="bg-gray-900">{sup}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-gray-400 text-sm">Date Range</label>
-                  <label className="text-xs text-muted flex items-center gap-1 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={manualToDate}
-                      onChange={e => setManualToDate(e.target.checked)}
-                      className="rounded border-glass-border text-primary focus:ring-primary/20 bg-black/20"
-                    />
-                    Edit
-                  </label>
-                </div>
-                <div className="flex items-center gap-2 bg-black/40 border border-glass-border rounded-xl p-2.5">
-                  <input
-                    type="date"
-                    value={dateRange.start}
-                    min={earliestDate}
-                    max={getTodayString()}
-                    onChange={(e) => handleDateFromChange(e.target.value)}
-                    className="w-full bg-transparent text-white text-sm focus:outline-none"
-                  />
-                  <span className="text-gray-500">to</span>
-                  <input
-                    type="date"
-                    value={dateRange.end}
-                    min={earliestDate}
-                    max={getTodayString()}
-                    disabled={!manualToDate}
-                    onChange={(e) => handleDateToChange(e.target.value)}
-                    className="w-full bg-transparent text-white text-sm focus:outline-none disabled:opacity-50"
-                  />
-                </div>
-              </div>
-
-              <button 
-                onClick={() => { 
-                  setSupplierFilter('All'); 
-                  const defaultStart = getNDaysAgoString(15);
-                  setDateRange({
-                    start: defaultStart < earliestDate ? earliestDate : defaultStart, 
-                    end: getTodayString()
-                  }); 
-                  setManualToDate(false); 
-                }}
-                className="w-full mt-2 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-semibold transition-colors border border-white/10"
-              >
-                Clear Filters
-              </button>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3 relative">
-            <button 
-              onClick={() => setShowFilters(!showFilters)}
-              className={`relative flex items-center gap-2 px-5 py-3 rounded-full text-white font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-white/10 ${showFilters ? 'bg-white/20' : 'bg-glass-panel hover:bg-white/10'}`}
-            >
-              <Filter size={18} />
-              Filter
-              {(supplierFilter !== 'All' || 
-                dateRange.start !== (getNDaysAgoString(15) < earliestDate ? earliestDate : getNDaysAgoString(15)) || 
-                dateRange.end !== getTodayString()) && (
-                <span className="w-2 h-2 rounded-full bg-primary absolute top-0 right-0 animate-pulse"></span>
-              )}
-            </button>
-
-            <button 
-              onClick={exportToCSV}
-              className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-600 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] px-5 py-3 rounded-full text-white font-bold transition-all hover:scale-105 active:scale-95 shadow-xl border border-white/10"
-            >
-              <Download size={18} />
-              Export CSV
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Floating Action Buttons (Removed floating buttons, now rendered inline in search toolbar to avoid overlaying/stacking issues) */}
     </div>
   );
 };

@@ -133,6 +133,7 @@ export interface SpecialOrder {
   pharmarack_mapped?: number;
   pharmarack_scheme?: string;
   advance_payment?: number;
+  source?: string;
 }
 
 export interface Refill {
@@ -148,6 +149,15 @@ export interface Refill {
   hold_for_stock?: number;
   is_active: number;
   is_ready?: number;
+  last_qty_dispensed?: number;
+  items_json?: string;
+  items?: Array<{
+    medicine_id: number;
+    name: string;
+    qty: number;
+    mrp?: number;
+    medicine_name?: string;
+  }>;
 }
 
 export interface AutomationNotification {
@@ -386,6 +396,7 @@ export const api = {
     storeName?: string;
     packaging?: string;
     mapped?: boolean;
+    isDeleted?: boolean;
   }>) => 
     apiClient.post('/pharmarack/cart/add', { items }).then(res => res.data),
   getPharmarackCart: () => apiClient.get('/pharmarack/cart').then(res => res.data),
@@ -511,6 +522,7 @@ export const api = {
 
   // Refills
   getRefills: () => apiClient.get<Refill[]>('/refills').then(res => res.data),
+  getRefill: (id: number) => apiClient.get<Refill>(`/refills/${id}`).then(res => res.data),
   createRefill: (data: Partial<Refill>) => apiClient.post('/refills', data).then(res => res.data),
   updateRefill: (id: number, data: Partial<Refill>) => apiClient.put(`/refills/${id}`, data).then(res => res.data),
   deleteRefill: (id: number) => apiClient.delete(`/refills/${id}`).then(res => res.data),
@@ -527,7 +539,7 @@ export const api = {
 
   // Investigation Center
   searchInvestigation: (params: any) => apiClient.get('/investigation/search', { params }).then(res => res.data),
-  getInvestigationTimeline: (params: any) => apiClient.get('/investigation/timeline', { params }).then(res => res.data),
+  getInvestigationTimeline: (params: any, config?: any) => apiClient.get('/investigation/timeline', { params, ...config }).then(res => res.data),
   getInvestigationDetails: (inventoryId: number) => apiClient.get(`/investigation/details/${inventoryId}`).then(res => res.data),
   updateInvestigationInventory: (inventoryId: number, data: any) => apiClient.put(`/investigation/inventory/${inventoryId}`, data).then(res => res.data),
   updateInvestigationSaleBill: (invoiceId: number, data: any) => apiClient.put(`/investigation/sales/${invoiceId}`, data).then(res => res.data),

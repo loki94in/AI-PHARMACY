@@ -239,11 +239,62 @@ router.post('/', async (req, res) => {
         if (invRecord && invRecord.medicine_id) {
           const nextDate = new Date();
           nextDate.setDate(nextDate.getDate() + Number(refillDays));
+          const phoneVal = patient_phone || '';
           
-          await db.run(
-            'INSERT INTO patient_refills (patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status) VALUES (?, ?, ?, ?, ?, ?)',
-            [patient_name || 'Walk-in Customer', patient_phone || '', invRecord.medicine_id, refillDays, nextDate.toISOString(), 'pending']
-          );
+          let existingRefill = null;
+          if (phoneVal) {
+            existingRefill = await db.get(
+              'SELECT * FROM patient_refills WHERE patient_phone = ? LIMIT 1',
+              [phoneVal]
+            );
+          }
+
+          if (existingRefill) {
+            let items = [];
+            if (existingRefill.items_json) {
+              try {
+                items = JSON.parse(existingRefill.items_json);
+              } catch (_) {}
+            }
+            if (items.length === 0) {
+              items = [{
+                medicine_id: existingRefill.medicine_id,
+                qty: existingRefill.last_qty_dispensed || 10
+              }];
+            }
+
+            const idx = items.findIndex((it: any) => it.medicine_id === invRecord.medicine_id);
+            if (idx >= 0) {
+              items[idx].qty = Number(quantity);
+            } else {
+              items.push({
+                medicine_id: invRecord.medicine_id,
+                qty: Number(quantity)
+              });
+            }
+
+            const updatedItemsJson = JSON.stringify(items);
+            const primaryMedId = items[0].medicine_id;
+
+            await db.run(
+              `UPDATE patient_refills 
+               SET items_json = ?, medicine_id = ?, next_refill_date = ?, refill_interval_days = ? 
+               WHERE id = ?`,
+              [updatedItemsJson, primaryMedId, nextDate.toISOString(), refillDays, existingRefill.id]
+            );
+          } else {
+            const items = [{
+              medicine_id: invRecord.medicine_id,
+              qty: Number(quantity)
+            }];
+            const itemsJson = JSON.stringify(items);
+
+            await db.run(
+              `INSERT INTO patient_refills (patient_name, patient_phone, medicine_id, refill_interval_days, next_refill_date, status, items_json) 
+               VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+              [patient_name || 'Walk-in Customer', phoneVal, invRecord.medicine_id, refillDays, nextDate.toISOString(), itemsJson]
+            );
+          }
         }
       }
     }
@@ -282,6 +333,90 @@ router.post('/', async (req, res) => {
           [String(refillId)]
         );
       }
+    }
+
+    // Auto-detect refill matches: if no explicit refillId was provided,
+    // check if any sold medicine matches an active refill for this patient (by phone)
+    const resolvedRefillIds: number[] = refillId ? [Number(refillId)] : [];
+    if (patient_phone) {
+      const cleanSalePhone = (patient_phone || '').replace(/\D/g, '').slice(-10);
+      if (cleanSalePhone.length === 10) {
+        const patientRefills = await db.all(
+          `SELECT * FROM patient_refills WHERE is_active = 1 
+           AND id NOT IN (${resolvedRefillIds.length ? resolvedRefillIds.join(',') : '0'})`
+        );
+
+        for (const mr of patientRefills) {
+          const refillPhone = (mr.patient_phone || '').replace(/\D/g, '').slice(-10);
+          if (refillPhone !== cleanSalePhone) continue;
+
+          let rItems = [];
+          if (mr.items_json) {
+            try {
+              rItems = JSON.parse(mr.items_json);
+            } catch (_) {}
+          }
+          if (rItems.length === 0) {
+            rItems = [{ medicine_id: mr.medicine_id, qty: mr.last_qty_dispensed || 10 }];
+          }
+
+          let matches = false;
+          let totalQtyDispensed = 0;
+          for (const item of items) {
+            let soldMedicineId: number | null = null;
+            if (item.inventory_id) {
+              const invRec = await db.get('SELECT medicine_id FROM inventory_master WHERE id = ?', [item.inventory_id]);
+              if (invRec) soldMedicineId = invRec.medicine_id;
+            }
+            if (!soldMedicineId) continue;
+
+            const matchedItem = rItems.find((ri: any) => ri.medicine_id === soldMedicineId);
+            if (matchedItem) {
+              matches = true;
+              totalQtyDispensed += Number(item.quantity) || 0;
+            }
+          }
+
+          if (matches) {
+            const nextDate = new Date();
+            nextDate.setDate(nextDate.getDate() + Number(mr.refill_interval_days || 30));
+            const nextDateStr = nextDate.toISOString().slice(0, 19).replace('T', ' ');
+
+            await db.run(
+              `UPDATE patient_refills 
+               SET last_refill_date = datetime('now'), 
+                   next_refill_date = ?, 
+                   acknowledged = 0, 
+                   ordering_triggered = 0, 
+                   is_ready = 0, 
+                   hold_for_stock = 0, 
+                   quick_bill_id = NULL,
+                   last_qty_dispensed = ?
+               WHERE id = ?`,
+              [nextDateStr, totalQtyDispensed, mr.id]
+            );
+
+            if (mr.quick_bill_id) {
+              await db.run('DELETE FROM held_bills WHERE id = ?', [mr.quick_bill_id]);
+            }
+
+            await db.run(
+              `UPDATE automation_notifications 
+               SET lifecycle_status = 'sent' 
+               WHERE type = 'refill_collection' AND reference_id = ? AND lifecycle_status = 'staged'`,
+              [String(mr.id)]
+            );
+
+            resolvedRefillIds.push(mr.id);
+          }
+        }
+      }
+    }
+
+    // Also update last_qty_dispensed on the explicit refillId if it was provided
+    if (refillId && items.length > 0) {
+      const totalQty = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
+      await db.run('UPDATE patient_refills SET last_qty_dispensed = ? WHERE id = ?', [totalQty, refillId]);
     }
 
     // Commit transaction
@@ -756,10 +891,13 @@ router.get('/search-medicine', async (req, res) => {
           m.api_reference,
           m.item_code AS item_code,
           m.manufacturer AS manufacturer,
+          m.packaging,
+          m.pack_unit,
           im.id AS inventory_id, 
           im.batch_no, 
           MIN(im.expiry_date) AS expiry_date, 
           SUM(im.quantity) AS quantity, 
+          SUM(COALESCE(im.loose_quantity, 0)) AS loose_quantity,
           COALESCE(im.mrp, m.mrp, 0) AS mrp, 
           im.unit_price, 
           COALESCE(im.cost_price, 0) AS cost_price,
@@ -791,10 +929,13 @@ router.get('/search-medicine', async (req, res) => {
           m.api_reference,
           m.item_code AS item_code,
           m.manufacturer AS manufacturer,
+          m.packaging,
+          m.pack_unit,
           im.id AS inventory_id, 
           im.batch_no, 
           MIN(im.expiry_date) AS expiry_date, 
           SUM(im.quantity) AS quantity, 
+          SUM(COALESCE(im.loose_quantity, 0)) AS loose_quantity,
           COALESCE(im.mrp, m.mrp, 0) AS mrp, 
           im.unit_price, 
           COALESCE(im.cost_price, 0) AS cost_price,
@@ -824,10 +965,13 @@ router.get('/search-medicine', async (req, res) => {
             m.api_reference,
             m.item_code AS item_code,
             m.manufacturer AS manufacturer,
+            m.packaging,
+            m.pack_unit,
             im.id AS inventory_id, 
             im.batch_no, 
             MIN(im.expiry_date) AS expiry_date, 
             SUM(im.quantity) AS quantity, 
+            SUM(COALESCE(im.loose_quantity, 0)) AS loose_quantity,
             COALESCE(im.mrp, m.mrp, 0) AS mrp, 
             im.unit_price, 
             COALESCE(im.cost_price, 0) AS cost_price,
@@ -858,9 +1002,78 @@ router.get('/search-medicine', async (req, res) => {
       }
     }
     
+    // Map found medicine_ids to easily exclude them from out-of-stock lookup
+    const foundMedIds = new Set(rows.map(r => r.medicine_id));
+    
+    // Fallback for Out-of-Stock items
+    if (rows.length < 15) {
+      const searchLikeQuery = `%${cleanQuery}%`;
+      const outOfStockSql = `
+        SELECT id, name, api_reference, packaging, pack_unit, manufacturer
+        FROM medicines 
+        WHERE name LIKE ? 
+        LIMIT 15
+      `;
+      const extraMeds = await db.all(outOfStockSql, [searchLikeQuery]);
+      const outOfStockMeds = extraMeds.filter(m => !foundMedIds.has(m.id)).slice(0, 5);
+      
+      if (outOfStockMeds.length > 0) {
+        const oosApiRefs = [...new Set(outOfStockMeds.map(m => m.api_reference).filter(a => a && a.trim() !== ''))];
+        if (oosApiRefs.length > 0) {
+          const placeholders = oosApiRefs.map(() => '?').join(',');
+          const oosAltSql = `
+            SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
+                   im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
+                   m.cgst, m.sgst, m.igst, m.hsn_code, m.packaging, m.pack_unit
+            FROM inventory_master im
+            JOIN medicines m ON im.medicine_id = m.id
+            WHERE m.api_reference IN (${placeholders})
+              AND im.quantity > 0
+              AND date(im.expiry_date) >= date('now')
+            LIMIT 50
+          `;
+          const oosAllAlts = await db.all(oosAltSql, oosApiRefs);
+          
+          let oosAltMap: Record<string, any[]> = {};
+          for (const alt of oosAllAlts) {
+            if (!oosAltMap[alt.api_reference]) oosAltMap[alt.api_reference] = [];
+            oosAltMap[alt.api_reference].push(alt);
+          }
+
+          for (const med of outOfStockMeds) {
+            const alts = oosAltMap[med.api_reference] || [];
+            const filteredAlts = alts.filter(a => a.medicine_id !== med.id).slice(0, 5);
+            rows.push({
+              is_out_of_stock: 1,
+              medicine_id: med.id,
+              medicine_name: med.name,
+              api_reference: med.api_reference,
+              manufacturer: med.manufacturer,
+              packaging: med.packaging,
+              pack_unit: med.pack_unit,
+              alternatives: filteredAlts
+            });
+          }
+        } else {
+          for (const med of outOfStockMeds) {
+            rows.push({
+              is_out_of_stock: 1,
+              medicine_id: med.id,
+              medicine_name: med.name,
+              api_reference: med.api_reference,
+              manufacturer: med.manufacturer,
+              packaging: med.packaging,
+              pack_unit: med.pack_unit,
+              alternatives: []
+            });
+          }
+        }
+      }
+    }
+    
     // Map SQLite numeric values back to boolean for is_out_of_stock compatibility
     for (const row of rows) {
-      row.is_out_of_stock = row.is_out_of_stock === 1;
+      row.is_out_of_stock = row.is_out_of_stock === 1 || row.is_out_of_stock === true;
     }
     
     // Fetch alternatives in a single batched query
@@ -872,7 +1085,7 @@ router.get('/search-medicine', async (req, res) => {
       const altSql = `
         SELECT im.id as inventory_id, im.medicine_id, m.name as medicine_name, m.api_reference,
                im.batch_no, im.expiry_date, im.quantity, im.mrp, im.unit_price, im.cost_price,
-               m.cgst, m.sgst, m.igst, m.hsn_code
+               m.cgst, m.sgst, m.igst, m.hsn_code, m.packaging, m.pack_unit
         FROM inventory_master im
         JOIN medicines m ON im.medicine_id = m.id
         WHERE m.api_reference IN (${placeholders})
