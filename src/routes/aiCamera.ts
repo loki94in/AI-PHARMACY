@@ -3,7 +3,6 @@ import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { aiCameraService } from '../services/aiCameraService.js';
 import { productNameFilterService } from '../services/productNameFilterService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,7 +20,6 @@ router.get('/audit/queue', async (req, res) => {
     }
     const data = await fs.promises.readFile(AUDIT_QUEUE_PATH, 'utf8');
     const queue = JSON.parse(data || '[]');
-    // Filter pending items
     const pending = queue.filter((item: any) => item.status === 'pending_human_review');
     res.json(pending);
   } catch (err: any) {
@@ -39,7 +37,6 @@ router.post('/audit/resolve', async (req, res) => {
   }
 
   try {
-    // 1. Read audit queue
     if (!fs.existsSync(AUDIT_QUEUE_PATH)) {
       return res.status(404).json({ error: 'Audit queue not found' });
     }
@@ -56,12 +53,10 @@ router.post('/audit/resolve', async (req, res) => {
         return res.status(400).json({ error: 'Medicine name is required for registration' });
       }
 
-      // 2. Open DB and insert medicine
       const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
       const adjustedName = normalizeMedicineName(name.trim());
       const db = await dbManager.getConnection();
 
-      // Check if medicine already exists
       let med = await db.get('SELECT id FROM medicines WHERE name = ?', [adjustedName]);
       let medicineId: number;
 
@@ -75,7 +70,6 @@ router.post('/audit/resolve', async (req, res) => {
         medicineId = med.id;
       }
 
-      // Insert batch/inventory if batch number provided
       if (batchNumber && batchNumber.trim() !== '') {
         await db.run(
           `INSERT INTO inventory_master (medicine_id, batch_no, expiry_date, quantity) VALUES (?, ?, ?, ?)`,
@@ -83,9 +77,6 @@ router.post('/audit/resolve', async (req, res) => {
         );
       }
 
-      
-      // NEW: Learn from this correction for future OCR recognition
-      // We need to get the original OCR text from the audit entry to learn from it
       try {
         if (fs.existsSync(AUDIT_QUEUE_PATH)) {
           const auditData = await fs.promises.readFile(AUDIT_QUEUE_PATH, 'utf8');
@@ -93,7 +84,6 @@ router.post('/audit/resolve', async (req, res) => {
           const auditEntry = auditQueue.find((item: any) => item.id === id);
 
           if (auditEntry && auditEntry.rawOcrText) {
-            // Learn from the correction: OCR text -> correct medicine name
             productNameFilterService.learnFromCorrection(
               auditEntry.rawOcrText,
               name.trim()
@@ -103,11 +93,9 @@ router.post('/audit/resolve', async (req, res) => {
         }
       } catch (learnError) {
         console.warn('Failed to learn from audit correction:', learnError);
-        // Don't fail the whole operation if learning fails
       }
     }
 
-    // 3. Mark queue entry as resolved/dismissed
     queue[index].status = action === 'dismiss' ? 'dismissed' : 'resolved';
     queue[index].resolvedAt = new Date().toISOString();
     queue[index].resolvedWith = name || '';
@@ -133,7 +121,7 @@ router.delete('/audit/:id', async (req, res) => {
     }
     const data = await fs.promises.readFile(AUDIT_QUEUE_PATH, 'utf8');
     let queue = JSON.parse(data || '[]');
-    
+
     const initialLen = queue.length;
     queue = queue.filter((item: any) => item.id !== id);
 
@@ -148,18 +136,79 @@ router.delete('/audit/:id', async (req, res) => {
   }
 });
 
-// Analyze base64 image from camera stream
+/**
+ * POST /api/aicamera/analyze
+ *
+ * Enqueues a scan job in `pending_ocr_jobs` and returns a jobId immediately
+ * (HTTP 202). The forked OCR worker picks the job up within ~2 seconds and
+ * writes the result back to the same table.
+ *
+ * Poll GET /api/aicamera/result/:jobId until status === 'done' or 'error'.
+ */
 router.post('/analyze', async (req, res) => {
   const { image } = req.body;
   if (!image) {
     return res.status(400).json({ error: 'Image data (base64 string) is required' });
   }
   try {
-    const result = await aiCameraService.processImage(image);
-    res.json(result);
+    const db = await dbManager.getConnection();
+    const result = await db.run(
+      `INSERT INTO pending_ocr_jobs (image_data) VALUES (?)`,
+      [image]
+    );
+    res.status(202).json({ jobId: result.lastID });
   } catch (error: any) {
-    console.error('OCR Camera scan processing failed:', error);
-    res.status(500).json({ error: `OCR Camera scan processing failed: ${error.message}` });
+    console.error('Failed to enqueue OCR job:', error);
+    res.status(500).json({ error: `Failed to enqueue OCR job: ${error.message}` });
+  }
+});
+
+/**
+ * GET /api/aicamera/result/:jobId
+ *
+ * Poll this endpoint after POST /analyze.
+ * Returns:
+ *   { status: 'pending' }                          — still queued/processing
+ *   { status: 'done', result: { ... } }            — OCR complete
+ *   { status: 'error', error: 'message' }          — OCR failed
+ *   404 if the jobId is not found (already cleaned up)
+ */
+router.get('/result/:jobId', async (req, res) => {
+  const jobId = parseInt(req.params.jobId, 10);
+  if (isNaN(jobId)) {
+    return res.status(400).json({ error: 'Invalid jobId' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    const job = await db.get(
+      `SELECT status, result_json FROM pending_ocr_jobs WHERE id = ?`,
+      [jobId]
+    );
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found (may have been cleaned up)' });
+    }
+
+    if (job.status === 'pending' || job.status === 'processing') {
+      return res.json({ status: 'pending' });
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(job.result_json || '{}');
+    } catch (_) {
+      parsed = {};
+    }
+
+    if (job.status === 'done') {
+      return res.json({ status: 'done', result: parsed });
+    }
+
+    // status === 'error'
+    return res.json({ status: 'error', error: parsed.error || 'OCR processing failed' });
+  } catch (err: any) {
+    console.error('Failed to fetch OCR result:', err);
+    res.status(500).json({ error: 'Failed to fetch OCR result' });
   }
 });
 

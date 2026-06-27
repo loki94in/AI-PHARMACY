@@ -547,6 +547,17 @@ export async function ensureSchema(dbPath: string) {
       retries INTEGER DEFAULT 0
     );
 
+    -- OCR job queue: main process inserts, ocrWorker consumes and writes results
+    CREATE TABLE IF NOT EXISTS pending_ocr_jobs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      image_data  TEXT NOT NULL,
+      status      TEXT DEFAULT 'pending',
+      result_json TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_ocr_jobs_status ON pending_ocr_jobs (status);
+
     -- Expiry returns tracking and credit notes reconciliation
     CREATE TABLE IF NOT EXISTS expiry_returns_tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -984,6 +995,16 @@ export async function ensureSchema(dbPath: string) {
     }
   } catch (err) {
     console.error('[Database Migration] Failed to consolidate duplicate patient refills:', err);
+  }
+
+  // Standardize existing dates in database to YYYY-MM-DD HH:MM:SS format
+  try {
+    await db.run("UPDATE sales_invoices SET date = datetime(date) WHERE date IS NOT NULL AND (date LIKE '%T%' OR date LIKE '%Z%')");
+    await db.run("UPDATE purchases SET date = datetime(date) WHERE date IS NOT NULL AND (date LIKE '%T%' OR date LIKE '%Z%')");
+    await db.run("UPDATE returns SET date = datetime(date) WHERE date IS NOT NULL AND (date LIKE '%T%' OR date LIKE '%Z%')");
+    await db.run("UPDATE action_logs SET created_at = datetime(created_at) WHERE created_at IS NOT NULL AND (created_at LIKE '%T%' OR created_at LIKE '%Z%')");
+  } catch (err) {
+    console.error('[Database Migration] Failed to standardize existing date formats:', err);
   }
 
   await db.close();
