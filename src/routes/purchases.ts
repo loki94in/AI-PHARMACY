@@ -1,5 +1,6 @@
 import express from 'express';
 import { dbManager } from '../database/connection.js';
+import { calculatePurchaseTotals } from '../services/invoiceCalculationService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { notificationService } from '../services/notificationService.js';
@@ -666,39 +667,11 @@ router.post('/manual', async (req, res) => {
     }
 
     // Calculate totals securely on backend
-    let subtotal = 0;
-    let totalCgst = 0;
-    let totalSgst = 0;
-
-    for (const item of items) {
-      const qty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
-      const rate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
-      const discPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
-      const discRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
-      const addDisc = parseFloat(item.additional_discount) || 0;
-      const cgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
-      const sgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
-
-      const baseAmt = qty * rate;
-      const lineDisc = discRs + addDisc + (baseAmt * discPer / 100);
-      const taxable = baseAmt - lineDisc;
-      
-      subtotal += taxable;
-      totalCgst += taxable * (cgst / 100);
-      totalSgst += taxable * (sgst / 100);
-    }
-
-    const cdPerVal = parseFloat(cd_per) || 0;
-    const hasItemCd = items.some((item: any) => {
-      const discPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
-      const discRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
-      return discPer > 0 || discRs > 0;
-    });
-    const globalCdDisc = hasItemCd ? 0 : (subtotal * (cdPerVal / 100));
-    const originalAmount = subtotal + totalCgst + totalSgst - globalCdDisc;
     const cnAmountVal = parseFloat(cn_amount !== undefined ? cn_amount : extra_credit) || 0;
     const cnNumberVal = cn_number || null;
-    const grandTotal = Math.max(0, originalAmount - cnAmountVal);
+    const { subtotal, totalCgst, totalSgst, originalAmount, grandTotal } = calculatePurchaseTotals(
+      items, parseFloat(cd_per) || 0, cnAmountVal
+    );
 
     // Generate app_invoice_no sequentially
     const lastPur = await db.get(
@@ -951,39 +924,11 @@ router.put('/:id/full', async (req, res) => {
     }
 
     // Calculate new totals
-    let subtotal = 0;
-    let totalCgst = 0;
-    let totalSgst = 0;
-
-    for (const item of items) {
-      const qty = parseFloat(item.qty) || 0;
-      const rate = parseFloat(item.rate) || 0;
-      const discPer = parseFloat(item.discPer) || 0;
-      const discRs = parseFloat(item.discRs) || 0;
-      const addDisc = parseFloat(item.additional_discount) || 0;
-      const cgst = parseFloat(item.cgst) || 0;
-      const sgst = parseFloat(item.sgst) || 0;
-
-      const baseAmt = qty * rate;
-      const lineDisc = discRs + addDisc + (baseAmt * discPer / 100);
-      const taxable = baseAmt - lineDisc;
-      
-      subtotal += taxable;
-      totalCgst += taxable * (cgst / 100);
-      totalSgst += taxable * (sgst / 100);
-    }
-
-    const cdPerVal = parseFloat(cd_per) || 0;
-    const hasItemCd = items.some((item: any) => {
-      const discPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
-      const discRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
-      return discPer > 0 || discRs > 0;
-    });
-    const globalCdDisc = hasItemCd ? 0 : (subtotal * (cdPerVal / 100));
-    const originalAmount = subtotal + totalCgst + totalSgst - globalCdDisc;
     const cnAmountVal = parseFloat(cn_amount !== undefined ? cn_amount : extra_credit) || 0;
     const cnNumberVal = cn_number || null;
-    const grandTotal = Math.max(0, originalAmount - cnAmountVal);
+    const { subtotal, totalCgst, totalSgst, originalAmount, grandTotal } = calculatePurchaseTotals(
+      items, parseFloat(cd_per) || 0, cnAmountVal
+    );
 
     // Revert old credit reconciliation
     await db.run(

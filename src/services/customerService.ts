@@ -184,6 +184,24 @@ export class CustomerService {
       return customer;
     });
   }
+
+  async getOrCreateCustomerInTx(
+    db: Database,
+    name: string,
+    phone: string,
+    address = ''
+  ): Promise<number> {
+    const existing = await db.get(
+      'SELECT id FROM customers WHERE name = ? AND phone = ?',
+      [name, phone]
+    );
+    if (existing) return existing.id as number;
+    const result = await db.run(
+      'INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)',
+      [name, phone, address]
+    );
+    return result.lastID as number;
+  }
 }
 
 // Singleton instance

@@ -1,5 +1,6 @@
 import express from 'express';
 import { dbManager } from '../database/connection.js';
+import { parseExpiryDate } from '../utils/dateHelpers.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,23 +9,6 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
 
 const router = express.Router();
-
-// Helper to robustly parse expiry dates
-function parseExpiryDate(expiryDateStr: string | null | undefined): Date | null {
-  if (!expiryDateStr) return null;
-  let expDate: Date;
-  if (expiryDateStr.includes('/')) {
-    const parts = expiryDateStr.split('/');
-    let year = parseInt(parts[1], 10);
-    const month = parseInt(parts[0], 10) - 1; // 0-indexed
-    if (isNaN(year) || isNaN(month)) return null;
-    if (year < 100) year += 2000;
-    expDate = new Date(year, month + 1, 0); // Last day of that month
-  } else {
-    expDate = new Date(expiryDateStr);
-  }
-  return isNaN(expDate.getTime()) ? null : expDate;
-}
 
 // Get items nearing expiry / already expired
 router.get('/', async (req, res) => {

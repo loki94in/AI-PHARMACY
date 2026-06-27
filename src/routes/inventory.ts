@@ -1,6 +1,7 @@
 import express from 'express';
 import { inventoryService } from '../services/inventoryService.js';
 import { dbManager } from '../database/connection.js';
+import { normalizeNumericSearch } from '../utils/searchHelpers.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -9,22 +10,6 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data', 'app.db');
-
-// Helper to normalize numeric search terms (e.g., stripping trailing decimal zeros like "31.00" -> "31")
-// to align with SQLite CAST(value AS TEXT) representations.
-const normalizeNumericSearch = (val: string): string => {
-  const cleaned = val.trim();
-  if (!cleaned) return '';
-  // If it's a decimal number, parse it to strip trailing zeros (e.g., 31.00 -> 31, 31.50 -> 31.5)
-  if (/^\d+\.\d+$/.test(cleaned)) {
-    return String(parseFloat(cleaned));
-  }
-  // If it ends with a dot, strip it (e.g., 31. -> 31)
-  if (/^\d+\.$/.test(cleaned)) {
-    return cleaned.slice(0, -1);
-  }
-  return cleaned;
-};
 
 // Get inventory master
 router.get('/', async (req, res) => {
