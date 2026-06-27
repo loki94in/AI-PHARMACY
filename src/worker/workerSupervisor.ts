@@ -31,7 +31,15 @@ export class WorkerSupervisor {
       scriptPath: path.resolve(__dirname, `runEmailPoller${ext}`),
       restartCount: 0,
     },
+    whatsapp: {
+      name: 'WhatsApp Worker',
+      scriptPath: path.resolve(__dirname, `runWhatsappWorker${ext}`),
+      restartCount: 0,
+    },
   };
+
+  // Registered IPC message listeners keyed by worker key
+  private messageListeners: Record<string, Array<(msg: any) => void>> = {};
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
   private constructor() {}
@@ -86,10 +94,15 @@ export class WorkerSupervisor {
 
       config.instance = child;
 
-      // Handle message from child (heartbeat pongs)
+      // Handle message from child (heartbeat pongs + app messages)
       child.on('message', (msg: any) => {
         if (msg && msg.type === 'PONG') {
           config.lastPongTime = Date.now();
+        }
+        // Forward to any registered listeners for this worker
+        const listeners = this.messageListeners[key] || [];
+        for (const fn of listeners) {
+          try { fn(msg); } catch (_) {}
         }
       });
 
@@ -126,6 +139,37 @@ export class WorkerSupervisor {
     } catch (spawnErr) {
       console.error(`[WorkerSupervisor] Failed to fork ${config.name}:`, spawnErr);
     }
+  }
+
+  /**
+   * Send an IPC message to a specific worker by key (e.g. 'whatsapp').
+   * Safe to call even if the worker is currently restarting — message is dropped.
+   */
+  public sendToWorker(key: string, msg: object): void {
+    const config = this.workers[key];
+    if (!config?.instance) {
+      console.warn(`[WorkerSupervisor] sendToWorker('${key}'): worker not running, message dropped.`);
+      return;
+    }
+    try {
+      config.instance.send(msg);
+    } catch (err) {
+      console.error(`[WorkerSupervisor] sendToWorker('${key}') failed:`, err);
+    }
+  }
+
+  /**
+   * Register a callback that fires whenever a worker sends an IPC message.
+   * Returns an unsubscribe function.
+   */
+  public onWorkerMessage(key: string, handler: (msg: any) => void): () => void {
+    if (!this.messageListeners[key]) {
+      this.messageListeners[key] = [];
+    }
+    this.messageListeners[key].push(handler);
+    return () => {
+      this.messageListeners[key] = this.messageListeners[key].filter(fn => fn !== handler);
+    };
   }
 
   private startHealthCheckLoop(): void {

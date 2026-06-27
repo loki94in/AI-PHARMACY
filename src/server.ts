@@ -58,7 +58,6 @@ import distributorsRouter from './routes/distributors.js';
 import notificationsRouter from './routes/notifications.js';
 import investigationRouter from './routes/investigation.js';
 import './services/pushNotificationService.js';
-import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
 import { checkAllRefills } from './services/refillService.js';
 import { checkOverdueCreditNotes, reconcileCreditNote } from './services/creditNoteService.js';
@@ -246,19 +245,8 @@ ensureSchema(DB_PATH).then(async () => {
         if (isAutoEnabled) {
           console.log('Background automation is ENABLED in settings at startup. Running startup catch-up tasks...');
           
-          // 1. WhatsApp Pre-initialization
-          const waRow = await db.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
-          if (waRow && waRow.value === 'true') {
-            const { shouldRouteToBusiness } = await import('./whatsappClient.js');
-            const useBusiness = await shouldRouteToBusiness();
-            if (!useBusiness) {
-              console.log('WhatsApp Web (automated) is enabled, pre-initializing client in the background...');
-              const { initClient } = await import('./whatsappClient.js');
-              await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
-            } else {
-              console.log('WhatsApp Business API is active. Skipping automated client pre-initialization.');
-            }
-          }
+          // WhatsApp pre-initialization is now handled by the forked WhatsApp worker
+          // (started by WorkerSupervisor below). No imports of whatsappClient here.
 
           // 3. Startup catch-up expiry scan (checks for downtime near-expiry alerts)
           import('./services/expiryAlertService.js')
@@ -296,8 +284,8 @@ ensureSchema(DB_PATH).then(async () => {
           console.log('Background automation is DISABLED in settings at startup. Skipping startup catch-up tasks.');
         }
 
-        // 2. WhatsApp Queue Worker (started always; checks automation_enabled inside processQueue)
-        whatsappQueue.startWorker();
+        // WhatsApp queue worker is now the forked whatsappWorker process
+        // (managed by WorkerSupervisor). No startWorker() call needed here.
 
         // Start new background services for Pharmarack, messaging queue and refills
         try {
@@ -395,6 +383,22 @@ ensureSchema(DB_PATH).then(async () => {
     // Start the background worker supervisor
     try {
       workerSupervisor.start();
+
+      // Wire up IPC listener for the WhatsApp worker → keep waStatusCache in sync
+      // and forward WA_EVENT messages to the main-process eventService (SSE clients).
+      const { waStatusCache } = await import('./routes/messaging.js');
+      const { eventService } = await import('./services/eventService.js');
+      workerSupervisor.onWorkerMessage('whatsapp', (msg: any) => {
+        if (!msg) return;
+        if (msg.type === 'WA_STATUS') {
+          waStatusCache.isReady = !!msg.isReady;
+          waStatusCache.qrData = msg.qrData ?? null;
+        } else if (msg.type === 'WA_EVENT') {
+          try {
+            eventService.broadcast(msg.event, msg.data);
+          } catch (_) {}
+        }
+      });
     } catch (err) {
       console.error('Failed to start worker supervisor:', err);
     }
