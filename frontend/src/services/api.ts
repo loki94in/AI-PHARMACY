@@ -396,6 +396,7 @@ export const api = {
     storeName?: string;
     packaging?: string;
     mapped?: boolean;
+    isDeleted?: boolean;
   }>) => 
     apiClient.post('/pharmarack/cart/add', { items }).then(res => res.data),
   getPharmarackCart: () => apiClient.get('/pharmarack/cart').then(res => res.data),

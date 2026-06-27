@@ -1187,12 +1187,14 @@ const RefillControlSidebar = ({
   setExpanded,
   refills,
   notifications,
+  reconciliationList = [],
   onActionComplete,
 }: {
   expanded: boolean;
   setExpanded: (val: boolean) => void;
   refills: any[];
   notifications: any[];
+  reconciliationList?: any[];
   onActionComplete: () => void;
 }) => {
   const navigate = useNavigate();
@@ -1323,6 +1325,53 @@ const RefillControlSidebar = ({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-sky-400">
+            <CartIcon size={14} />
+            <span>Reconcile Orders ({reconciliationList.length})</span>
+          </div>
+          {reconciliationList.length === 0 ? (
+            <p className="text-xs text-muted/60 pl-2">No pending reconciliations</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {reconciliationList.map(recon => {
+                const validNames = (recon.medicine_names || []).filter((name: string) => {
+                  if (!name || typeof name !== 'string') return false;
+                  const trimmed = name.trim();
+                  if (/^\d+$/.test(trimmed)) return false;
+                  if (/^(inv|bill|invoice|id|order|ref|no)[\s\-:#]?\d+$/i.test(trimmed)) return false;
+                  if (/^#\d+$/.test(trimmed)) return false;
+                  if (trimmed.length < 3) return false;
+                  return true;
+                });
+                return (
+                  <div key={recon.email_uid} className="p-2.5 rounded-xl bg-white/[0.02] border border-glass-border flex flex-col gap-1.5 animate-pulse-subtle">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-text truncate max-w-[150px]">{recon.extracted_distributor || 'Unknown Distributor'}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[9px] uppercase font-bold">Email Order</span>
+                    </div>
+                    <div className="space-y-1 mt-0.5">
+                      {validNames.map((name: string) => {
+                        const qty = recon.medicine_details?.[name]?.qty || 1;
+                        return (
+                          <div key={name} className="flex justify-between items-center text-xs text-muted">
+                            <span className="truncate flex-1 text-[11px]">{name}</span>
+                            <span className="shrink-0 font-medium ml-2 text-[11px]">× {qty}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[10px] text-muted/50 font-mono mt-0.5 flex items-center gap-1">
+                      <ClockIcon size={10} />
+                      Received: {recon.date ? new Date(recon.date).toLocaleDateString() : 'N/A'}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1501,6 +1550,7 @@ const Layout = ({
 
   const [refills, setRefills] = useState<any[]>([]);
   const [stagedNotifications, setStagedNotifications] = useState<any[]>([]);
+  const [reconciliationList, setReconciliationList] = useState<any[]>([]);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
     try {
       return localStorage.getItem('refill_sidebar_expanded') !== 'false';
@@ -1527,7 +1577,17 @@ const Layout = ({
       const notifications = await api.getAutomationNotifications({ status: 'staged' });
       setStagedNotifications(Array.isArray(notifications) ? notifications : []);
     } catch (err) {
-      console.warn('Failed to load staged notifications in layout:', err);
+      console.warn('Failed to load staged staged notifications in layout:', err);
+    }
+
+    try {
+      const reconData = await api.getReconciliationList();
+      if (Array.isArray(reconData)) {
+        const missing = reconData.filter(o => o.status === 'Missing' && !o.is_saved);
+        setReconciliationList(missing);
+      }
+    } catch (err) {
+      console.warn('Failed to load reconciliation list in layout:', err);
     }
   }, []);
 
@@ -1758,6 +1818,7 @@ const Layout = ({
             setExpanded={setIsSidebarExpanded}
             refills={refills}
             notifications={stagedNotifications}
+            reconciliationList={reconciliationList}
             onActionComplete={fetchRefillData}
           />
         </div>

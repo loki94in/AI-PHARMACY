@@ -1654,7 +1654,8 @@ router.get('/reconciliation', async (req, res) => {
         if (item.name) {
           medDetails[item.name] = {
             mrp: item.mrp,
-            rate: item.rate
+            rate: item.rate,
+            qty: item.quantity || item.qty || 1
           };
         }
       }
@@ -1668,7 +1669,7 @@ router.get('/reconciliation', async (req, res) => {
       } else {
         if (parsedItems.length === 0) {
           for (const med of orderInfo.medicines) {
-            parsedItems.push({ name: med.name });
+            parsedItems.push({ name: med.name, quantity: med.quantity, rate: med.rate, mrp: med.mrp });
           }
         }
         medNames = Array.from(new Set(parsedItems.map(i => i.name).filter(Boolean)));

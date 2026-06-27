@@ -92,6 +92,8 @@ const Learning: React.FC = () => {
   const [settingsData, setSettingsData] = useState<any>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSetting, setSavingSetting] = useState<string | null>(null);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [savingSensitivity, setSavingSensitivity] = useState(false);
 
   // Configuration UI toggle states
   const [showWaConfig, setShowWaConfig] = useState(false);
@@ -197,6 +199,7 @@ const Learning: React.FC = () => {
   };
 
   const handleSaveConfig = async (updatedSettings = settingsData) => {
+    setSavingConfig(true);
     try {
       await apiClient.post('/settings/save', updatedSettings);
       toastEvent.trigger('Settings saved successfully', 'success');
@@ -209,6 +212,8 @@ const Learning: React.FC = () => {
     } catch (error) {
       console.error('Failed to save settings', error);
       toastEvent.trigger('Failed to save settings', 'error');
+    } finally {
+      setSavingConfig(false);
     }
   };
 
@@ -482,7 +487,7 @@ const Learning: React.FC = () => {
       console.error('Failed to save settings:', err);
       toastEvent.trigger('Failed to update automation feature settings', 'error');
       // Revert state
-      setSettingsData(settingsData);
+      fetchSettings();
     } finally {
       setSavingSetting(null);
     }
@@ -649,25 +654,28 @@ const Learning: React.FC = () => {
       clinical_learning_sensitivity: clinicalSensitivity.toString()
     };
     setSettingsData(updated);
+    setSavingSensitivity(true);
     try {
       await apiClient.post('/settings/save', updated);
       toastEvent.trigger('Clinical sensitivity settings saved.', 'success');
     } catch (error) {
       console.error('Failed to save sensitivity', error);
       toastEvent.trigger('Failed to save sensitivity', 'error');
+    } finally {
+      setSavingSensitivity(false);
     }
   };
 
   const hasSelected = selectedProfileId !== null;
 
   return (
-    <div className="h-full flex flex-col fade-in relative gap-4 overflow-hidden text-text">
+    <div className="h-full flex flex-col fade-in relative gap-4 overflow-hidden text-text px-6 pb-4 bg-bg">
       {/* Premium Dashboard Header */}
-      <div className="bg-glass-bg border border-glass-border rounded-3xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm shrink-0">
+      <div className="glass-panel p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:translate-y-0 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] shrink-0">
         <div>
-          <h2 className="text-lg font-black tracking-tight text-text flex items-center gap-2">
+          <h2 className="text-lg font-black tracking-tight text-text flex items-center gap-2 uppercase">
             <Brain className="text-sky animate-pulse" size={22} />
-            AI LEARNING & AUTOMATION command center
+            AI Learning & Automation Command Center
           </h2>
           <p className="text-xs text-muted">
             Configure automated file ingestion, training rules, client messaging gateways, and clinical heuristics.
@@ -724,7 +732,7 @@ const Learning: React.FC = () => {
       </div>
 
       {/* Main Workspace Frame */}
-      <div className="flex-1 overflow-hidden min-h-0 bg-glass-bg border border-glass-border rounded-3xl p-6 flex flex-col">
+      <div className="flex-1 overflow-hidden min-h-0 glass-panel p-6 flex flex-col hover:translate-y-0 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
         
         {/* Tab 1: Clinical AI Engine */}
         {activeTab === 'clinical' && (
@@ -766,9 +774,10 @@ const Learning: React.FC = () => {
                 <div className="flex justify-end pt-2">
                   <button
                     onClick={handleSaveSensitivity}
-                    className="px-4 py-2 bg-sky hover:bg-sky-400 text-white font-bold text-xs rounded-xl active:scale-95 transition-all shadow-md shadow-sky/10"
+                    disabled={savingSensitivity}
+                    className="px-4 py-2 bg-sky hover:bg-sky-400 disabled:opacity-50 text-white font-bold text-xs rounded-xl active:scale-95 transition-all shadow-md shadow-sky/10"
                   >
-                    Save Sensitivity
+                    {savingSensitivity ? 'Saving...' : 'Save Sensitivity'}
                   </button>
                 </div>
               </div>
@@ -936,7 +945,8 @@ const Learning: React.FC = () => {
                                 onChange={() => handleToggleDoctorSummary(doc)}
                                 className="sr-only peer"
                               />
-                              <div className="w-9 h-5 bg-bg border border-glass-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-muted after:border-glass-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white peer-checked:after:left-[4px]"></div>
+                              <div className="w-9 h-5 rounded-full bg-bg border border-glass-border peer-checked:bg-emerald-500 transition-colors" />
+                              <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-muted shadow-md transition-transform peer-checked:translate-x-4 peer-checked:bg-white" />
                             </label>
                             <span className="text-[8px] text-muted font-bold uppercase tracking-wider">Auto Summary</span>
                           </div>
@@ -1056,7 +1066,7 @@ const Learning: React.FC = () => {
                       </div>
                       <button
                         onClick={resetProfile}
-                        className="px-2 py-1 bg-red/10 hover:bg-red/20 border border-red/20 text-red hover:text-red border-red-500/20 rounded-lg text-[9px] font-bold uppercase transition-all"
+                        className="px-2 py-1 bg-red/10 hover:bg-red/20 border border-red/20 text-red hover:text-red rounded-lg text-[9px] font-bold uppercase transition-all"
                       >
                         Reset Profile
                       </button>
@@ -1212,7 +1222,7 @@ const Learning: React.FC = () => {
                                   </button>
                                   <button
                                     onClick={() => deleteHistoricalFile(file.id)}
-                                    className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red hover:text-red rounded-lg transition-all"
+                                    className="p-1.5 bg-red/10 hover:bg-red/20 border border-red/20 text-red hover:text-red rounded-lg transition-all"
                                     title="Delete file reference"
                                   >
                                     <Trash2 size={11} />
@@ -1348,7 +1358,7 @@ const Learning: React.FC = () => {
                               )}
                               <button 
                                 onClick={handleReconnect}
-                                className="text-[9px] font-bold bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/30"
+                                className="text-[9px] font-bold bg-red/20 text-red px-3 py-1.5 rounded-lg hover:bg-red/30"
                               >
                                 Logout WhatsApp
                               </button>
@@ -1420,9 +1430,10 @@ const Learning: React.FC = () => {
                             </div>
                             <button
                               onClick={() => handleSaveConfig()}
-                              className="px-3 py-1.5 rounded-lg bg-green/20 hover:bg-green/35 text-green text-[9px] font-bold uppercase"
+                              disabled={savingConfig}
+                              className="px-3 py-1.5 rounded-lg bg-green/20 hover:bg-green/35 disabled:opacity-50 text-green text-[9px] font-bold uppercase"
                             >
-                              Save Token
+                              {savingConfig ? 'Saving...' : 'Save Token'}
                             </button>
                           </div>
                         )}
@@ -1531,9 +1542,10 @@ const Learning: React.FC = () => {
                             <div className="flex items-center gap-2 pt-2 border-t border-glass-border/30">
                               <button
                                 onClick={() => handleSaveConfig()}
-                                className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35"
+                                disabled={savingConfig}
+                                className="text-[10px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 disabled:opacity-50"
                               >
-                                Save Settings
+                                {savingConfig ? 'Saving...' : 'Save Settings'}
                               </button>
                               <button
                                 onClick={handleTestWaBusiness}
@@ -1544,7 +1556,7 @@ const Learning: React.FC = () => {
                               </button>
                               {waBusinessTestResult && (
                                 <span className={`text-[9px] font-bold px-2 py-1 rounded-full ${
-                                  waBusinessTestResult.success ? 'bg-green/10 text-green' : 'bg-red-500/10 text-red-400'
+                                  waBusinessTestResult.success ? 'bg-green/10 text-green' : 'bg-red/10 text-red'
                                 }`}>
                                   {waBusinessTestResult.success ? 'Connected' : 'Connection Failed'}
                                 </span>
@@ -1749,9 +1761,10 @@ const Learning: React.FC = () => {
                         <div className="flex gap-2 pt-2 border-t border-glass-border/30">
                           <button
                             onClick={() => handleSaveConfig()}
-                            className="text-[10px] font-bold bg-green/20 text-green px-4 py-2 rounded-lg hover:bg-green/35"
+                            disabled={savingConfig}
+                            className="text-[10px] font-bold bg-green/20 text-green px-4 py-2 rounded-lg hover:bg-green/35 disabled:opacity-50"
                           >
-                            Save Ingestion Rules
+                            {savingConfig ? 'Saving...' : 'Save Ingestion Rules'}
                           </button>
                         </div>
                       </div>
@@ -1883,16 +1896,6 @@ const Learning: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[9px] font-bold text-muted uppercase">Distributor Alert Numbers</label>
-                      <input
-                        type="text"
-                        className="premium-input w-full text-xs"
-                        placeholder="e.g. +919876543210"
-                        value={settingsData.distributor_whatsapp || ''}
-                        onChange={(e) => setSettingsData({ ...settingsData, distributor_whatsapp: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1">
                       <label className="text-[9px] font-bold text-muted uppercase">Delivery Alert Numbers</label>
                       <input
                         type="text"
@@ -1902,14 +1905,25 @@ const Learning: React.FC = () => {
                         onChange={(e) => setSettingsData({ ...settingsData, delivery_boy_whatsapp: e.target.value })}
                       />
                     </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-muted uppercase">Delivery Alert 2nd Number</label>
+                      <input
+                        type="text"
+                        className="premium-input w-full text-xs"
+                        placeholder="e.g. +919876543210"
+                        value={settingsData.delivery_boy_whatsapp2 || ''}
+                        onChange={(e) => setSettingsData({ ...settingsData, delivery_boy_whatsapp2: e.target.value })}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex justify-end pt-2">
                     <button
                       onClick={() => handleSaveConfig()}
-                      className="px-4 py-2 bg-green hover:bg-emerald-600 text-white font-bold text-xs rounded-xl active:scale-95 transition-all shadow-md shadow-green/10"
+                      disabled={savingConfig}
+                      className="px-4 py-2 bg-green hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs rounded-xl active:scale-95 transition-all shadow-md shadow-green/10"
                     >
-                      Save Contacts
+                      {savingConfig ? 'Saving...' : 'Save Contacts'}
                     </button>
                   </div>
                 </div>
@@ -1920,14 +1934,14 @@ const Learning: React.FC = () => {
                     <div className="space-y-1">
                       <h4 className="text-xs font-bold text-text flex items-center gap-2">
                         <Globe size={14} className="text-sky" />
-                        Pharmarack Ingestion credentials
+                        Pharmarack Ingestion Credentials
                         {prHealth && (
                           <span className={`inline-flex items-center gap-1 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full border leading-none ${
                             prHealth.healthy
                               ? 'bg-green/10 text-green border-green/20'
-                              : 'bg-red-500/10 text-red-400 border-red-500/20'
+                              : 'bg-red/10 text-red border border-red/20'
                           }`}>
-                            <span className={`w-1 h-1 rounded-full ${prHealth.healthy ? 'bg-green' : 'bg-red-400'}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full ${prHealth.healthy ? 'bg-green' : 'bg-red'}`} />
                             {prHealth.healthy ? 'ACTIVE' : 'EXPIRED / DISCONNECTED'}
                           </span>
                         )}
@@ -1945,14 +1959,14 @@ const Learning: React.FC = () => {
                   </div>
 
                   {prHealth && !prHealth.healthy && settingsData?.pharmarack_mode === 'Live' && !showPrConfig && (
-                    <div className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg p-2.5 flex items-center justify-between">
+                    <div className="text-[10px] bg-red/10 text-red border border-red/20 rounded-lg p-2.5 flex items-center justify-between">
                       <span>Pharmarack session is expired or not linked.</span>
                       <button
                         onClick={() => {
                           setShowPrConfig(true);
                           handleOpenLoginWindow();
                         }}
-                        className="text-[8px] bg-red-500/20 hover:bg-red-500/35 border border-red-500/30 px-2 py-0.5 rounded font-black uppercase"
+                        className="text-[8px] bg-red/20 hover:bg-red/35 border border-red/30 px-2 py-0.5 rounded font-black uppercase"
                       >
                         Link Now
                       </button>
@@ -1997,9 +2011,10 @@ const Learning: React.FC = () => {
                       <div className="flex gap-2 pt-2 border-t border-glass-border/30">
                         <button
                           onClick={() => handleSaveConfig()}
-                          className="text-[9px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35"
+                          disabled={savingConfig}
+                          className="text-[9px] font-bold bg-green/20 text-green px-3.5 py-1.5 rounded-lg hover:bg-green/35 disabled:opacity-50"
                         >
-                          Save
+                          {savingConfig ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={handleOpenLoginWindow}
@@ -2011,7 +2026,7 @@ const Learning: React.FC = () => {
                         </button>
                         <button
                           onClick={handlePharmarackLogout}
-                          className="text-[9px] font-bold bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/30 flex items-center gap-1"
+                          className="text-[9px] font-bold bg-red/20 text-red px-3 py-1.5 rounded-lg hover:bg-red/30 flex items-center gap-1"
                         >
                           <LogOut size={10} /> Clear Token
                         </button>
@@ -2147,7 +2162,7 @@ const Learning: React.FC = () => {
                             <td className="py-2.5 px-4 text-right font-mono">₹{typeof item.mrp === 'number' ? item.mrp.toFixed(2) : '0.00'}</td>
                             <td className="py-2.5 px-4 text-right font-mono font-bold text-text">{item.quantity || item.qty || 0}</td>
                             <td className="py-2.5 px-4 text-right font-mono text-muted">{item.free_qty || 0}</td>
-                            <td className="py-2.5 px-4 text-right font-mono text-orange-400">{item.cgst_per || 0}%</td>
+                            <td className="py-2.5 px-4 text-right font-mono text-amber-500">{item.cgst_per || 0}%</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2317,7 +2332,8 @@ const Learning: React.FC = () => {
                     onChange={() => setNewDocSendSummary(!newDocSendSummary)}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-bg border border-glass-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-muted after:border-glass-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white peer-checked:after:left-[4px]"></div>
+                  <div className="w-9 h-5 rounded-full bg-bg border border-glass-border peer-checked:bg-emerald-500 transition-colors" />
+                  <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-muted shadow-md transition-transform peer-checked:translate-x-4 peer-checked:bg-white" />
                 </label>
               </div>
             </div>

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Search, Plus, Minus, Sparkles, Loader2, ShoppingCart, RefreshCw, Clock, Eye, ClipboardList } from 'lucide-react';
+import { X, Search, Plus, Minus, Sparkles, Loader2, ShoppingCart, RefreshCw, Clock, Eye, ClipboardList, Pin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api, type SpecialOrder, type Refill } from '../services/api';
 import { toastEvent, liveCartAddEvent } from '../services/events';
+import { PipPortal } from './PipPortal';
 
 interface SuggestionMedicine {
   medicine_name: string;
@@ -194,6 +195,8 @@ const cleanQueryForSearch = (query: string): string => {
 export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(true);
+  const [isPinned, setIsPinned] = useState(false);
+  const [pipTab, setPipTab] = useState<'search' | 'cart' | 'actions'>('search');
   
   const handleClose = () => {
     setIsOpen(false);
@@ -233,6 +236,84 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [cartDistributors, setCartDistributors] = useState<Distributor[]>([]);
   const [cartLoading, setCartLoading] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
+
+  // Recently added cart items and item update spinners
+  const [lastAddedItem, setLastAddedItem] = useState<{
+    productId: string | number;
+    storeId: string | number;
+    qty: number;
+    rate?: number;
+    scheme?: string;
+    productCode?: string;
+    company?: string;
+    productName: string;
+    storeName?: string;
+    packaging?: string;
+  } | null>(null);
+  const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
+
+  const handleUpdateCartQty = async (item: any, newQty: number) => {
+    const itemId = `${item.storeId}-${item.productId}`;
+    setUpdatingItemId(itemId);
+    try {
+      await api.addPharmarackCart([{
+        productId: item.productId,
+        storeId: item.storeId,
+        qty: newQty,
+        productCode: item.productCode,
+        productName: item.productName || item.product,
+        company: item.company,
+        packaging: item.packaging,
+        rate: item.ptr || item.rate,
+        scheme: item.scheme
+      }]);
+      toastEvent.trigger(`Updated "${item.productName || item.product}" quantity to ${newQty}.`, 'success');
+      
+      // Update lastAddedItem if it matches
+      if (lastAddedItem && String(lastAddedItem.productId) === String(item.productId) && String(lastAddedItem.storeId) === String(item.storeId)) {
+        setLastAddedItem(prev => prev ? { ...prev, qty: newQty } : null);
+      }
+      
+      await fetchCart();
+    } catch (err: any) {
+      console.error('Failed to update cart quantity:', err);
+      toastEvent.trigger(`Update failed: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setUpdatingItemId(null);
+    }
+  };
+
+  const handleRemoveCartItem = async (item: any) => {
+    const itemId = `${item.storeId}-${item.productId}`;
+    setUpdatingItemId(itemId);
+    try {
+      await api.addPharmarackCart([{
+        productId: item.productId,
+        storeId: item.storeId,
+        qty: 0,
+        isDeleted: true,
+        productCode: item.productCode,
+        productName: item.productName || item.product,
+        company: item.company,
+        packaging: item.packaging,
+        rate: item.ptr || item.rate,
+        scheme: item.scheme
+      }]);
+      toastEvent.trigger(`Removed "${item.productName || item.product}" from cart.`, 'success');
+      
+      // Clear lastAddedItem if it matches
+      if (lastAddedItem && String(lastAddedItem.productId) === String(item.productId) && String(lastAddedItem.storeId) === String(item.storeId)) {
+        setLastAddedItem(null);
+      }
+      
+      await fetchCart();
+    } catch (err: any) {
+      console.error('Failed to remove cart item:', err);
+      toastEvent.trigger(`Removal failed: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setUpdatingItemId(null);
+    }
+  };
 
   // Reconciliation States
   const [reconciliationList, setReconciliationList] = useState<any[]>([]);
@@ -349,6 +430,9 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     setProduct(item.name);
     setQty(item.qtyToOrder || 1);
     setLinkedPendingItem(item);
+    if (isPinned) {
+      setPipTab('search');
+    }
     
     // Reset selected product/distributor states
     setSelectedDistributor('');
@@ -503,18 +587,6 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     }, 100);
   }, []);
 
-  // Listen to Escape key to close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        handleClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   // Handle clicking outside to dismiss search results
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -528,8 +600,22 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
+
+    // Also listen in PiP window if it exists
+    let pipDoc: Document | null = null;
+    const activePip = (window as any).activePipWindow;
+    if (activePip) {
+      pipDoc = activePip.document;
+      pipDoc.addEventListener('mousedown', handleOutsideClick);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      if (pipDoc) {
+        pipDoc.removeEventListener('mousedown', handleOutsideClick);
+      }
+    };
+  }, [isPinned]);
 
   // Live Query autocomplete
   useEffect(() => {
@@ -759,6 +845,19 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
       toastEvent.trigger(`Added "${product}" directly to live Pharmarack cart!`, 'success');
       
+      setLastAddedItem({
+        productId: selectedProductId,
+        storeId: selectedStoreId,
+        qty: Number(qty) || 1,
+        rate: selectedRate !== '' ? Number(selectedRate) : undefined,
+        scheme: selectedScheme || undefined,
+        productCode: selectedProductCode,
+        company: selectedCompany,
+        productName: selectedMedicineName || product.trim(),
+        storeName: selectedDistributor,
+        packaging: selectedPackaging
+      });
+      
       if (linkedPendingItem) {
         try {
           if (linkedPendingItem.type === 'order') {
@@ -836,24 +935,45 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
       orderRef: refill,
       targetMrp: null
     })),
-    ...reconciliationList.flatMap(recon => 
-      (recon.medicine_names || []).map((medName: string, idx: number) => {
-        const itemKey = `recon-${recon.email_uid}-${medName}`;
+    ...reconciliationList.map(recon => {
+      const validNames = (recon.medicine_names || []).filter((name: string) => {
+        if (!name || typeof name !== 'string') return false;
+        const trimmed = name.trim();
+        // Exclude purely numeric strings (IDs, bill numbers)
+        if (/^\d+$/.test(trimmed)) return false;
+        // Exclude common invoice/bill patterns like "INV-123", "BILL-456", "#12345"
+        if (/^(inv|bill|invoice|id|order|ref|no)[\s\-:#]?\d+$/i.test(trimmed)) return false;
+        if (/^#\d+$/.test(trimmed)) return false;
+        // Exclude very short strings (likely codes, not medicine names)
+        if (trimmed.length < 3) return false;
+        return true;
+      });
+      const medicines = validNames.map((medName: string) => {
         const targetMrp = recon.medicine_details?.[medName]?.mrp;
+        const targetQty = recon.medicine_details?.[medName]?.qty || 1;
+        const inCart = !!getReconciliationItemInCart(medName);
         return {
-          key: itemKey,
-          type: 'reconcile' as const,
           name: medName,
-          patientName: recon.extracted_distributor || 'Unknown Distributor',
-          qty: null,
-          date: recon.date,
-          inCart: !!getReconciliationItemInCart(medName),
-          qtyToOrder: 1,
-          orderRef: recon,
-          targetMrp: targetMrp
+          qty: targetQty,
+          mrp: targetMrp,
+          inCart
         };
-      })
-    )
+      });
+      const allInCart = medicines.length > 0 && medicines.every(m => m.inCart);
+      return {
+        key: `recon-group-${recon.email_uid}`,
+        type: 'reconcile' as const,
+        name: recon.extracted_distributor || 'Unknown Distributor',
+        patientName: recon.extracted_distributor || 'Unknown Distributor',
+        qty: null,
+        date: recon.date,
+        inCart: allInCart,
+        qtyToOrder: 1,
+        orderRef: recon,
+        targetMrp: null,
+        medicines
+      };
+    })
   ].sort((a, b) => {
     if (a.inCart !== b.inCart) {
       return a.inCart ? 1 : -1;
@@ -863,35 +983,123 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-global-modal flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
-      {/* ponytail: fix height to h-[85vh] to prevent modal size from jumping when cart preview loads */}
-      <div className="glass-panel max-w-5xl lg:max-w-6xl xl:max-w-7xl w-full h-[85vh] max-h-[85vh] p-5 md:p-6 relative border border-glass-border shadow-[0_0_60px_rgba(59,130,246,0.25)] bg-bg2 text-text animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+  const innerContent = (
+    <div className={`${isPinned ? 'w-full h-full flex flex-col overflow-hidden p-1 text-text' : 'glass-panel max-w-5xl lg:max-w-6xl xl:max-w-7xl w-full h-[85vh] max-h-[85vh] p-5 md:p-6 relative border border-glass-border shadow-[0_0_60px_rgba(59,130,246,0.25)] bg-bg2 text-text animate-in fade-in zoom-in-95 duration-200 flex flex-col'}`}>
+      
+      {/* Header bar / Title */}
+      <div className="flex items-center justify-between pb-3 mb-2 border-b border-glass-border/30 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/20 shadow-sm flex items-center justify-center">
+            <ShoppingCart size={16} />
+          </div>
+          <div>
+            <h3 className="text-sm font-black tracking-tight text-white uppercase flex items-center gap-1.5 font-sans leading-none">
+              Live Cart Add
+              {prMode === 'Live' ? (
+                <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-black uppercase tracking-wider animate-pulse flex items-center gap-1">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                  </span>
+                  PR Connected
+                </span>
+              ) : (
+                <span className="text-[8px] bg-zinc-500/10 text-muted px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                  Checking Session...
+                </span>
+              )}
+            </h3>
+            <p className="text-[9px] text-muted font-bold uppercase tracking-wider mt-0.5 font-sans">Search and add items directly to Pharmarack cart</p>
+          </div>
+        </div>
+
+        {/* Window controls */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Float toggle button */}
+          {('documentPictureInPicture' in window) && (
+            <button
+              type="button"
+              onClick={() => setIsPinned(!isPinned)}
+              className={`p-1.5 rounded-lg border transition-all ${
+                isPinned 
+                  ? 'bg-primary/20 text-primary border-primary/30' 
+                  : 'text-muted hover:text-text border-transparent hover:bg-bg3'
+              }`}
+              title={isPinned ? "Unpin Cart (Return to main window)" : "Float Cart (Keep always-on-top over other apps)"}
+            >
+              <Pin size={14} className={isPinned ? "rotate-45" : ""} />
+            </button>
+          )}
+
+          {/* Refresh button */}
+          <button 
+            type="button"
+            onClick={fetchCart}
+            disabled={cartLoading}
+            className="p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all flex items-center justify-center disabled:opacity-50"
+            title="Refresh Cart"
+          >
+            <RefreshCw size={14} className={cartLoading ? 'animate-spin text-emerald-400' : ''} />
+          </button>
+
+          {/* Close button */}
+          {!isPinned && (
+            <button 
+              type="button"
+              onClick={handleClose}
+              className="p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all"
+              title="Close Modal (Esc)"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tab bar (PiP only) */}
+      {isPinned && (
+        <div className="flex gap-1.5 p-1 bg-bg3 border border-glass-border/50 rounded-xl mb-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => setPipTab('search')}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
+              pipTab === 'search' 
+                ? 'bg-primary text-white shadow-md' 
+                : 'text-muted hover:text-text'
+            }`}
+          >
+            Search & Add
+          </button>
+          <button
+            type="button"
+            onClick={() => setPipTab('cart')}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all relative ${
+              pipTab === 'cart' 
+                ? 'bg-emerald-500 text-black shadow-md' 
+                : 'text-muted hover:text-text'
+            }`}
+          >
+            Cart ({totalProducts})
+          </button>
+          <button
+            type="button"
+            onClick={() => setPipTab('actions')}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all relative ${
+              pipTab === 'actions' 
+                ? 'bg-amber-500 text-black shadow-md' 
+                : 'text-muted hover:text-text'
+            }`}
+          >
+            Actions ({unifiedPendingActions.length})
+          </button>
+        </div>
+      )}
+
+      <div className={isPinned ? "flex flex-col flex-1 overflow-hidden" : "grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x divide-glass-border/30 flex-1 overflow-hidden"}>
         
-        {/* Close Button */}
-        <button 
-          onClick={handleClose}
-          className="absolute top-4 right-4 p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all"
-          title="Close Modal (Esc)"
-        >
-          <X size={18} />
-        </button>
-
-        {/* Refresh Button */}
-        <button 
-          type="button"
-          onClick={fetchCart}
-          disabled={cartLoading}
-          className="absolute top-4 right-4 md:right-[33.33%] md:mr-2.5 p-1.5 text-muted hover:text-text rounded-lg hover:bg-bg3 transition-all flex items-center justify-center disabled:opacity-50"
-          title="Refresh Cart"
-        >
-          <RefreshCw size={14} className={cartLoading ? 'animate-spin text-emerald-400' : ''} />
-        </button>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x divide-glass-border/30 flex-1 overflow-hidden">
-          
-          {/* Left Column: Pending Orders, Refills & Unreconciled Items */}
-          <div className="flex flex-col h-full overflow-hidden pr-3">
+        {/* Left Column: Pending Orders, Refills & Unreconciled Items */}
+        {(!isPinned || pipTab === 'actions') && (
+          <div className={isPinned ? "flex flex-col h-full overflow-hidden" : "flex flex-col h-full overflow-hidden pr-3"}>
              <div className="flex items-center justify-between border-b border-glass-border/30 pb-2.5 shrink-0">
                 <h3 className="pb-1 text-xs font-bold uppercase tracking-wider border-b-2 border-primary text-text">
                   Pending Action ({unifiedPendingActions.length})
@@ -918,7 +1126,92 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                     <p className="text-[11px] max-w-[180px] mx-auto mt-0.5">No pending special orders, out-of-stock refills, or unreconciled orders found.</p>
                   </div>
               ) : (
-                unifiedPendingActions.map(item => {
+                unifiedPendingActions.map((item: any) => {
+                  if (item.type === 'reconcile') {
+                    return (
+                      <div 
+                        key={item.key} 
+                        className={`p-3 rounded-xl border flex flex-col gap-2 transition-all shadow-sm ${
+                          item.inCart 
+                             ? 'bg-emerald-500/5 border-emerald-500/20'
+                             : 'bg-sky-500/5 border-sky-500/10'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center border-b border-glass-border/20 pb-1.5 gap-2">
+                          <div className="flex flex-col min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded border bg-sky-500/15 border-sky-500/20 text-sky-400 select-none leading-none">
+                                Reconcile
+                              </span>
+                              <span className="text-[9px] text-muted/70 font-mono">
+                                {new Date(item.date).toLocaleDateString('en-IN')}
+                              </span>
+                            </div>
+                            <span className="text-xs font-bold text-white truncate" title={item.name}>
+                              {item.name}
+                            </span>
+                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={() => handleResolveManually(item.orderRef.email_uid)}
+                            className="text-muted hover:text-red bg-bg3 hover:bg-red/10 border border-glass-border p-1.5 rounded-lg transition-all active:scale-95 flex items-center justify-center shrink-0"
+                            title="Ignore this order (Manually Resolve)"
+                          >
+                            <Eye size={12} />
+                          </button>
+                        </div>
+
+                        <div className="space-y-1.5 mt-0.5">
+                          {item.medicines?.map((med: any) => {
+                            const pickerKey = `${item.key}-${med.name}`;
+                            const pickerItem = {
+                              key: pickerKey,
+                              type: 'reconcile',
+                              name: med.name,
+                              qtyToOrder: med.qty,
+                              patientName: item.name,
+                              targetMrp: med.mrp
+                            };
+                            return (
+                              <div key={med.name} className="flex justify-between items-center gap-2 text-xs py-0.5">
+                                <span className={`truncate flex-1 ${med.inCart ? 'line-through opacity-50 text-emerald-400 font-medium' : 'text-text font-medium'}`} title={med.name}>
+                                  {med.name} <span className="text-muted text-[10px] ml-1">× {med.qty}</span>
+                                </span>
+
+                                {med.inCart ? (
+                                  <span className="text-[8px] font-bold uppercase text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 select-none shrink-0 leading-none">
+                                    ✓ Added
+                                  </span>
+                                ) : linkedPendingItem?.key === pickerKey ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setLinkedPendingItem(null);
+                                      setProduct('');
+                                      setQty(1);
+                                    }}
+                                    className="text-[9px] font-semibold px-2 py-0.5 rounded border bg-bg3 hover:bg-bg3/80 border-border text-muted transition-all active:scale-95 shrink-0"
+                                  >
+                                    Cancel
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartPickingForForm(pickerItem)}
+                                    className="text-[9px] font-semibold px-2 py-0.5 rounded border bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20 text-sky-400 transition-all active:scale-95 shrink-0"
+                                  >
+                                    Add
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div 
                       key={item.key} 
@@ -948,7 +1241,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                                     ? 'bg-amber-500/15 border-amber-500/20 text-amber-400'
                                     : 'bg-sky-500/15 border-sky-500/20 text-sky-400'
                             }`}>
-                              {item.type === 'order' ? 'Request' : item.type === 'refill' ? 'Refill' : 'Reconcile'}
+                              {item.type === 'order' ? 'Request' : item.type === 'refill' ? 'Refill' : 'Extracted'}
                             </span>
                           </div>
 
@@ -1025,9 +1318,11 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
               )}
             </div>
           </div>
+        )}
 
           {/* Middle Column: Form */}
-          <div className="flex flex-col h-full justify-between md:pl-6 overflow-y-auto pr-2">
+          {(!isPinned || pipTab === 'search') && (
+            <div className={isPinned ? "flex flex-col h-full justify-between overflow-y-auto pr-2" : "flex flex-col h-full justify-between md:pl-6 overflow-y-auto pr-2"}>
             <div className="space-y-4">
               {/* Title */}
               <div className="flex items-center gap-2.5">
@@ -1168,7 +1463,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                         </li>
                       ))}
                     </ul>,
-                    document.body
+                    (window as any).activePipWindow?.document.body || document.body
                   )}
                 </div>
 
@@ -1318,17 +1613,84 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
                 )}
               </button>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Right Column: Mini Cart Preview */}
           {/* ponytail: show simple mini-cart preview side-by-side */}
-          <div className="md:pl-6 pt-4 md:pt-0 flex flex-col h-full overflow-hidden">
+          {(!isPinned || pipTab === 'cart') && (
+            <div className={isPinned ? "flex flex-col h-full overflow-hidden" : "md:pl-6 pt-4 md:pt-0 flex flex-col h-full overflow-hidden"}>
             <div className="flex items-center justify-between pb-3 border-b border-glass-border/30 shrink-0">
               <div className="flex items-center gap-2">
                 <ShoppingCart size={16} className="text-emerald-400" />
                 <h4 className="text-xs font-bold text-text uppercase tracking-wider">Cart Preview</h4>
               </div>
             </div>
+
+            {/* Last Added Medicine section (pinned at the top, always visible) */}
+            {lastAddedItem && (
+              <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.1)] flex flex-col gap-1.5 animate-in slide-in-from-top-2 duration-200">
+                <div className="flex justify-between items-center pb-1 border-b border-emerald-500/20">
+                  <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+                    <Sparkles size={10} className="animate-pulse" /> Recently Added
+                  </span>
+                  <span className="text-[9px] font-bold text-muted truncate max-w-[150px]">
+                    {lastAddedItem.storeName}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-semibold text-text block truncate" title={lastAddedItem.productName}>
+                      {lastAddedItem.productName}
+                    </span>
+                    <span className="text-[9px] text-muted flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      {lastAddedItem.packaging && <span className="font-mono">{lastAddedItem.packaging}</span>}
+                      {lastAddedItem.rate !== undefined && (
+                        <span className="text-emerald-400 font-bold">
+                          PTR: ₹{lastAddedItem.rate} (Total: ₹{(Number(lastAddedItem.rate) * lastAddedItem.qty).toFixed(2)})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center bg-bg3 border border-border rounded-lg h-7 px-1">
+                      <button
+                        type="button"
+                        disabled={updatingItemId === `${lastAddedItem.storeId}-${lastAddedItem.productId}` || lastAddedItem.qty <= 1}
+                        onClick={() => handleUpdateCartQty(lastAddedItem, lastAddedItem.qty - 1)}
+                        className="w-5 h-5 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center disabled:opacity-30"
+                      >
+                        <Minus size={10} />
+                      </button>
+                      <span className="w-8 text-center text-xs font-bold text-text">
+                        {updatingItemId === `${lastAddedItem.storeId}-${lastAddedItem.productId}` ? (
+                          <Loader2 size={10} className="animate-spin mx-auto text-emerald-400" />
+                        ) : (
+                          lastAddedItem.qty
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={updatingItemId === `${lastAddedItem.storeId}-${lastAddedItem.productId}`}
+                        onClick={() => handleUpdateCartQty(lastAddedItem, lastAddedItem.qty + 1)}
+                        className="w-5 h-5 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center disabled:opacity-30"
+                      >
+                        <Plus size={10} />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={updatingItemId === `${lastAddedItem.storeId}-${lastAddedItem.productId}`}
+                      onClick={() => handleRemoveCartItem(lastAddedItem)}
+                      className="p-1 text-muted hover:text-red hover:bg-red-500/10 rounded-lg transition-all"
+                      title="Remove item"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto pr-1 py-3 space-y-3 scrollbar-thin">
               {cartLoading && cartDistributors.length === 0 ? (
@@ -1362,27 +1724,78 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
 
                     {/* Distributor Items */}
                     <div className="space-y-1.5">
-                      {dist.items.map((item, idx) => (
-                        <div key={`${item.productCode}-${idx}`} className="flex justify-between items-start text-[11px] gap-2.5 hover:bg-bg3/40 p-1 rounded transition-colors">
-                          <div className="min-w-0 flex-1">
-                            <span className="font-medium text-text block truncate" title={item.productName}>
-                              {item.productName}
-                            </span>
-                            <span className="text-[9px] text-muted flex items-center gap-1 mt-0.5">
-                              {item.packaging && <span className="font-mono">{item.packaging}</span>}
-                              {item.scheme && (
-                                <span className="text-emerald-400 font-bold uppercase text-[8px] bg-emerald-500/10 px-1 rounded">
-                                  {item.scheme}
+                      {dist.items.map((item, idx) => {
+                        const isSameName = (() => {
+                          if (!product.trim()) return false;
+                          const searchNorm = (selectedMedicineName || product).toLowerCase().replace(/[^a-z0-9]/g, '');
+                          const itemNorm = item.productName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                          return itemNorm.includes(searchNorm) || searchNorm.includes(itemNorm);
+                        })();
+                        const itemId = `${item.storeId}-${item.productId}`;
+                        const isUpdating = updatingItemId === itemId;
+
+                        return (
+                          <div 
+                            key={`${item.productCode}-${idx}`} 
+                            className={`flex justify-between items-center text-[11px] gap-2.5 p-2 rounded-xl transition-all border ${
+                              isSameName 
+                                ? 'bg-primary/20 border-primary/40 font-semibold' 
+                                : 'hover:bg-bg3/40 border-transparent bg-bg3/10'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <span className="font-medium text-text block truncate" title={item.productName}>
+                                {item.productName}
+                              </span>
+                              <span className="text-[9px] text-muted flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                {item.packaging && <span className="font-mono">{item.packaging}</span>}
+                                {item.scheme && (
+                                  <span className="text-emerald-400 font-bold uppercase text-[8px] bg-emerald-500/10 px-1 rounded border border-emerald-500/20">
+                                    {item.scheme}
+                                  </span>
+                                )}
+                                {item.ptr > 0 && (
+                                  <span className="text-emerald-400 font-medium">
+                                    ₹{item.ptr} (Total: ₹{(item.ptr * item.qty).toFixed(2)})
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <div className="flex items-center bg-bg3 border border-border rounded-lg h-7 px-1">
+                                <button
+                                  type="button"
+                                  disabled={isUpdating || item.qty <= 1}
+                                  onClick={() => handleUpdateCartQty(item, item.qty - 1)}
+                                  className="w-5 h-5 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center disabled:opacity-30"
+                                >
+                                  <Minus size={10} />
+                                </button>
+                                <span className="w-8 text-center text-xs font-bold text-text">
+                                  {isUpdating ? <Loader2 size={10} className="animate-spin mx-auto text-emerald-400" /> : item.qty}
                                 </span>
-                              )}
-                            </span>
+                                <button
+                                  type="button"
+                                  disabled={isUpdating}
+                                  onClick={() => handleUpdateCartQty(item, item.qty + 1)}
+                                  className="w-5 h-5 rounded hover:bg-bg2 active:scale-90 text-muted hover:text-text transition-all flex items-center justify-center disabled:opacity-30"
+                                >
+                                  <Plus size={10} />
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => handleRemoveCartItem(item)}
+                                className="p-1 text-muted hover:text-red hover:bg-red-500/10 rounded-lg transition-all"
+                                title="Remove item"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
                           </div>
-                          <div className="text-right shrink-0 flex flex-col items-end">
-                            <span className="font-bold text-text">Qty: {item.qty}</span>
-                            {item.ptr > 0 && <span className="text-[9px] text-muted font-mono mt-0.5">₹{(item.ptr * item.qty).toFixed(2)}</span>}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* Subtotal */}
@@ -1417,17 +1830,56 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
               </div>
             )}
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Footer info hints */}
-        <div className="mt-4 pt-3 border-t border-glass-border flex justify-between text-[9px] text-muted/60 font-semibold font-mono">
+      {/* Footer info hints */}
+      {!isPinned && (
+        <div className="mt-4 pt-3 border-t border-glass-border flex justify-between text-[9px] text-muted/60 font-semibold font-mono shrink-0">
           <span>[Esc] Close</span>
           <span>[Alt + L] Toggle modal</span>
           <span>[Enter] Add to Cart</span>
         </div>
-      </div>
+      )}
+    </div>
+  );
 
+  if (isPinned) {
+    return (
+      <>
+        {/* Placeholder in main window */}
+        {createPortal(
+          <div className="fixed inset-0 z-global-modal flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
+            <div className="glass-panel max-w-md w-full p-6 text-center border border-glass-border shadow-[0_0_50px_rgba(59,130,246,0.15)] bg-bg2 text-text flex flex-col gap-4 items-center animate-in fade-in zoom-in-95 duration-200">
+              <ShoppingCart size={40} className="text-primary animate-pulse" />
+              <div>
+                <h3 className="text-base font-bold text-white uppercase tracking-wider">Cart is Floated</h3>
+                <p className="text-xs text-muted mt-1.5 leading-relaxed font-sans">
+                  The Pharmarack Live Cart is currently pinned in a floating always-on-top window. You can search, add medicines, and manage quantities from anywhere on your PC screen.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPinned(false)}
+                className="w-full py-2.5 bg-primary hover:bg-primary/90 text-white text-xs font-bold rounded-xl transition-all shadow-[0_0_12px_rgba(59,130,246,0.2)] font-sans cursor-pointer active:scale-95"
+              >
+                Bring Cart Back
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
+        <PipPortal isOpen={isPinned} onClose={() => setIsPinned(false)} title="Pharmarack Live Cart">
+          {innerContent}
+        </PipPortal>
+      </>
+    );
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-global-modal flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
+      {innerContent}
     </div>,
     document.body
   );

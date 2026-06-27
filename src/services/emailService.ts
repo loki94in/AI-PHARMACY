@@ -2694,7 +2694,7 @@ export class EmailService {
             // 2. Delete database records
             await db.run('DELETE FROM emails WHERE uid = ?', [cachedUid]);
             await db.run('DELETE FROM email_attachments WHERE uid = ?', [cachedUid]);
-            await db.run('DELETE FROM processed_emails WHERE uid = ?', [cachedUid]);
+            // ponytail: keep the record of this UID in processed_emails so it's not redownloaded
           }
         }
       }
@@ -2854,6 +2854,19 @@ export class EmailService {
       return 0;
     }
 
+    try {
+      await ensureSchema(getDbPath());
+      const db = await dbManager.getConnection();
+      const autoRow = await db.get("SELECT value FROM app_settings WHERE key = 'automation_enabled'");
+      if (!autoRow || autoRow.value !== 'true') {
+        console.log('[Sync] Email ingestion is disabled (automation_enabled is not true). Skipping IMAP sync.');
+        return 0;
+      }
+    } catch (err) {
+      console.error('[Sync] Failed to verify automation_enabled setting:', err);
+      return 0;
+    }
+
     const { imapConfig, isConfigured } = await this.buildImapConfig();
     if (!isConfigured) {
       console.log('[Sync] IMAP not configured, skipping sync.');
@@ -2868,8 +2881,9 @@ export class EmailService {
       await ensureSchema(getDbPath());
       const db = await dbManager.getConnection();
 
-      // Find the highest UID already stored
-      const maxRow = await db.get('SELECT MAX(uid) as maxUid FROM emails');
+      // Find the highest UID already stored or processed (to prevent redownloads of cleaned up emails)
+      // ponytail: check both emails and processed_emails to get the absolute max ever seen
+      const maxRow = await db.get('SELECT MAX(uid) as maxUid FROM (SELECT uid FROM emails UNION SELECT uid FROM processed_emails)');
       const lastStoredUid: number = maxRow?.maxUid || 0;
 
       console.log(`[Sync] Last stored UID: ${lastStoredUid}. Connecting to IMAP for delta sync...`);

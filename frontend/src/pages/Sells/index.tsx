@@ -580,6 +580,74 @@ const Sells = () => {
                       Actions
                     </th>
                   </tr>
+                  <tr className="bg-bg2/90 border-b border-glass-border/30">
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter No..."
+                        value={colFilterNo}
+                        onChange={e => setColFilterNo(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-md text-[11px] text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50 font-mono"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter patient..."
+                        value={colFilterName}
+                        onChange={e => setColFilterName(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-md text-[11px] text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <div className="flex items-center gap-1 w-full">
+                        <input
+                          type="date"
+                          value={colFilterStartDate}
+                          onChange={e => setColFilterStartDate(e.target.value)}
+                          className="flex-1 w-0 min-w-0 px-1 py-0.5 bg-bg3 border border-glass-border rounded-md text-[10px] text-text focus:outline-none focus:border-primary/50 cursor-pointer"
+                          title="From Date"
+                        />
+                        <span className="text-muted text-[10px] shrink-0">-</span>
+                        <input
+                          type="date"
+                          value={colFilterEndDate}
+                          onChange={e => setColFilterEndDate(e.target.value)}
+                          className="flex-1 w-0 min-w-0 px-1 py-0.5 bg-bg3 border border-glass-border rounded-md text-[10px] text-text focus:outline-none focus:border-primary/50 cursor-pointer"
+                          title="To Date"
+                        />
+                      </div>
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20">
+                      <input
+                        type="text"
+                        placeholder="Filter doctor..."
+                        value={colFilterDrName}
+                        onChange={e => setColFilterDrName(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded-md text-[11px] text-text placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                      />
+                    </td>
+                    <td className="p-2 border-r border-glass-border/20 bg-bg2/40"></td>
+                    <td className="p-2 border-r border-glass-border/20 bg-bg2/40"></td>
+                    <td className="p-2 bg-bg2/40 text-center">
+                      {(colFilterNo || colFilterName || colFilterStartDate || colFilterEndDate || colFilterDrName) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setColFilterNo('');
+                            setColFilterName('');
+                            setColFilterStartDate('');
+                            setColFilterEndDate('');
+                            setColFilterDrName('');
+                          }}
+                          className="px-2 py-1 text-[10px] bg-red/10 border border-red/20 text-red hover:bg-red hover:text-white rounded transition-colors font-bold cursor-pointer"
+                          title="Clear filters"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </td>
+                  </tr>
                 </thead>
                 <tbody>
                   {paginatedInvoices.map((inv, idx) => (
