@@ -4,6 +4,7 @@ import { dbManager } from '../database/connection.js';
 import { getSyncStats, getOrCreateDeviceId } from '../services/syncService.js';
 import { buildAimail, deserializeAimail, serializeAimail } from '../utils/aimailFormat.js';
 import { mergeDocuments } from '../worker/conflictResolver.js';
+import { getRelayStatus, setRelayConfig, pushToRelay, pollFromRelay } from '../services/relayService.js';
 
 const router = Router();
 
@@ -237,6 +238,54 @@ router.get('/version-history', async (req: Request, res: Response) => {
       [entityId]
     );
     res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/sync/relay-status */
+router.get('/relay-status', async (_req: Request, res: Response) => {
+  try {
+    const status = await getRelayStatus();
+    res.json({ success: true, data: status });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/sync/relay-config — save relay settings */
+router.post('/relay-config', async (req: Request, res: Response) => {
+  const { enabled, relayUrl, relaySecret } = req.body ?? {};
+  try {
+    if (relaySecret !== undefined && typeof relaySecret === 'string' && relaySecret.length > 0 && relaySecret.length < 16) {
+      return res.status(400).json({ success: false, error: 'relay_secret must be at least 16 characters' });
+    }
+    await setRelayConfig({
+      ...(enabled !== undefined && { enabled: Boolean(enabled) }),
+      ...(relayUrl !== undefined && { relayUrl: String(relayUrl) }),
+      ...(relaySecret !== undefined && { relaySecret: String(relaySecret) }),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/sync/relay-push — push pending jobs to relay */
+router.post('/relay-push', async (_req: Request, res: Response) => {
+  try {
+    const count = await pushToRelay();
+    res.json({ success: true, pushed: count });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/sync/relay-poll — poll relay for inbound jobs */
+router.post('/relay-poll', async (_req: Request, res: Response) => {
+  try {
+    const count = await pollFromRelay();
+    res.json({ success: true, received: count });
   } catch (err: any) {
     res.status(500).json({ success: false, error: String(err?.message ?? err) });
   }

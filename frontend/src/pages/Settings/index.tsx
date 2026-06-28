@@ -249,6 +249,15 @@ const Settings = () => {
 
   const [adbReverseLoading, setAdbReverseLoading] = useState(false);
 
+  // Cloud Sync Relay (Phase 15-B)
+  const [relayStatus, setRelayStatus] = useState<any>(null);
+  const [relayUrl, setRelayUrl] = useState('');
+  const [relaySecret, setRelaySecret] = useState('');
+  const [relayEnabled, setRelayEnabled] = useState(false);
+  const [relaySaving, setRelaySaving] = useState(false);
+  const [relayPushing, setRelayPushing] = useState(false);
+  const [relayPolling, setRelayPolling] = useState(false);
+
   // Multi-branch (Phase 15-A)
   interface Branch { id: number; name: string; address: string | null; phone: string | null; is_active: number; created_at: string; }
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -735,6 +744,49 @@ const Settings = () => {
     } catch { /* non-critical */ }
   };
 
+  const fetchRelayStatus = async () => {
+    try {
+      const { data } = await apiClient.get('/sync/relay-status');
+      setRelayStatus(data.data);
+      setRelayUrl(data.data.relayUrl ?? '');
+      setRelayEnabled(data.data.enabled ?? false);
+    } catch { /* non-critical */ }
+  };
+
+  const handleSaveRelay = async () => {
+    setRelaySaving(true);
+    try {
+      await apiClient.post('/sync/relay-config', { enabled: relayEnabled, relayUrl: relayUrl || undefined, relaySecret: relaySecret || undefined });
+      toastEvent.trigger('Relay settings saved', 'success');
+      setRelaySecret('');
+      fetchRelayStatus();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Save failed', 'error');
+    } finally { setRelaySaving(false); }
+  };
+
+  const handleRelayPush = async () => {
+    setRelayPushing(true);
+    try {
+      const { data } = await apiClient.post('/sync/relay-push');
+      toastEvent.trigger(`Pushed ${data.pushed} job(s) to relay`, 'success');
+      fetchRelayStatus();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Push failed', 'error');
+    } finally { setRelayPushing(false); }
+  };
+
+  const handleRelayPoll = async () => {
+    setRelayPolling(true);
+    try {
+      const { data } = await apiClient.post('/sync/relay-poll');
+      toastEvent.trigger(`Received ${data.received} job(s) from relay`, 'success');
+      fetchRelayStatus();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Poll failed', 'error');
+    } finally { setRelayPolling(false); }
+  };
+
   const fetchBranches = async () => {
     setBranchesLoading(true);
     try {
@@ -774,6 +826,7 @@ const Settings = () => {
     fetchBackupSchedule();
     fetchDrStatus();
     fetchBranches();
+    fetchRelayStatus();
   }, []);
 
   const handleBackupNow = async () => {
@@ -1761,6 +1814,82 @@ const Settings = () => {
             </p>
             <div className="text-[11px] text-purple-400 font-semibold">Auto-starts if bleno is installed</div>
           </div>
+        </div>
+      </div>
+
+      {/* ─── Cloud Sync Relay (Phase 15-B) ─── */}
+      <div className="glass-panel p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Zap size={16} className="text-yellow-400" />
+            Cloud Sync Relay
+            {relayStatus?.enabled && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green/20 text-green">Active</span>}
+          </h2>
+          <button onClick={fetchRelayStatus}
+            className="text-xs px-3 py-1.5 rounded-lg bg-bg3/60 hover:bg-bg3 text-muted hover:text-primary transition-all flex items-center gap-1.5">
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
+
+        {relayStatus && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5 text-[11px]">
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Device ID</div>
+              <div className="font-mono font-bold truncate">{relayStatus.deviceId}</div>
+            </div>
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Last Push</div>
+              <div className="font-bold">{relayStatus.lastPushAt ? new Date(relayStatus.lastPushAt).toLocaleTimeString() : '—'}</div>
+            </div>
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Last Poll</div>
+              <div className="font-bold">{relayStatus.lastPollAt ? new Date(relayStatus.lastPollAt).toLocaleTimeString() : '—'}</div>
+            </div>
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Status</div>
+              <div className="font-bold">{relayStatus.configured ? (relayStatus.enabled ? 'Enabled' : 'Configured / Off') : 'Not configured'}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Config form */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-muted uppercase font-bold">Relay URL</label>
+            <input value={relayUrl} onChange={e => setRelayUrl(e.target.value)}
+              placeholder="https://relay.example.com"
+              className="input-field text-xs px-3 py-2" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-muted uppercase font-bold">Relay Secret (leave blank to keep existing)</label>
+            <input type="password" value={relaySecret} onChange={e => setRelaySecret(e.target.value)}
+              placeholder="min 16 characters"
+              className="input-field text-xs px-3 py-2" />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-xs">
+            <input type="checkbox" checked={relayEnabled} onChange={e => setRelayEnabled(e.target.checked)}
+              className="accent-yellow-400 w-4 h-4" />
+            Enable relay sync
+          </label>
+          <button onClick={handleSaveRelay} disabled={relaySaving}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5">
+            {relaySaving ? <RefreshCw size={11} className="animate-spin" /> : <Save size={11} />}
+            {relaySaving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={handleRelayPush} disabled={relayPushing || !relayStatus?.configured}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg bg-sky/15 text-sky hover:bg-sky/25 transition-all disabled:opacity-50 flex items-center gap-1.5"
+            title="Push pending sync jobs to relay">
+            {relayPushing ? <RefreshCw size={11} className="animate-spin" /> : <Download size={11} className="rotate-180" />}
+            {relayPushing ? 'Pushing…' : 'Push Now'}
+          </button>
+          <button onClick={handleRelayPoll} disabled={relayPolling || !relayStatus?.configured}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg bg-purple/10 text-purple/80 hover:bg-purple/20 transition-all disabled:opacity-50 flex items-center gap-1.5"
+            title="Poll relay for inbound jobs">
+            {relayPolling ? <RefreshCw size={11} className="animate-spin" /> : <Download size={11} />}
+            {relayPolling ? 'Polling…' : 'Poll Now'}
+          </button>
         </div>
       </div>
 
