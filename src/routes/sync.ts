@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { dbManager } from '../database/connection.js';
-import { getSyncStats } from '../services/syncService.js';
+import { getSyncStats, getOrCreateDeviceId } from '../services/syncService.js';
+import { buildAimail } from '../utils/aimailFormat.js';
 
 const router = Router();
 
@@ -107,6 +109,35 @@ router.get('/jobs', async (req: Request, res: Response) => {
       [...params, limit]
     );
     res.json({ success: true, data: jobs });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/sync/test-aimail — return a ready-to-push test AimailDocument (checksummed by server) */
+router.get('/test-aimail', async (_req: Request, res: Response) => {
+  try {
+    const deviceId = await getOrCreateDeviceId();
+    const now = new Date().toISOString();
+    const doc = buildAimail({
+      id: randomUUID(),
+      source_device_id: deviceId,
+      distributor: 'Test Distributor',
+      subject: 'Test Sync .aimail — Phase 5',
+      body: 'This is a test .aimail document created by the mobile Sync Now screen to validate LAN transport.',
+      order_numbers: ['ORD-TEST-001'],
+      invoice_numbers: ['INV-TEST-001'],
+      purchase_numbers: [],
+      status: 'unprocessed',
+      attachment_list: [],
+      sync_status: 'pending',
+      transfer_version: 1,
+      email_received_at: now,
+      created_at: now,
+      updated_at: now,
+      synced_at: null,
+    });
+    res.json({ success: true, data: doc });
   } catch (err: any) {
     res.status(500).json({ success: false, error: String(err?.message ?? err) });
   }

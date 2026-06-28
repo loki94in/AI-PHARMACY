@@ -365,6 +365,7 @@ export default function RootLayout() {
         <Stack.Screen name="product-search/index" options={{ title: 'Product Trace', headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.textPrimary }} />
         <Stack.Screen name="backup/index" options={{ title: 'Backup & Safety', headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.textPrimary }} />
         <Stack.Screen name="notifications/index" options={{ title: 'System Alerts', headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.textPrimary }} />
+        <Stack.Screen name="sync/index" options={{ title: 'Sync Now', headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.textPrimary }} />
       </Stack>
 
       {/* Global Left-Aligned Toast Alert */}

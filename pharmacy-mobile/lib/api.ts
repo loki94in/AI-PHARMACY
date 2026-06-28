@@ -1168,6 +1168,114 @@ export async function addPharmarackCart(items: any[]): Promise<any> {
   }
 }
 
+// ─── Sync Engine (Phase 4 / Phase 5) ─────────────────────────────────────────
+
+export interface SyncStatus {
+  deviceId: string;
+  port: number;
+  pending: number;
+  sent: number;
+  failed: number;
+  received: number;
+}
+
+export interface SyncPeer {
+  id: number;
+  device_id: string;
+  label: string | null;
+  ip_address: string;
+  port: number;
+  last_seen: string | null;
+  created_at: string;
+}
+
+export interface SyncJob {
+  id: number;
+  job_id: string;
+  entity_type: string;
+  entity_id: string;
+  checksum: string;
+  transfer_version: number;
+  direction: 'outbound' | 'inbound';
+  status: 'pending' | 'sent' | 'failed' | 'received';
+  target_device: string | null;
+  retries: number;
+  error: string | null;
+  created_at: string;
+  synced_at: string | null;
+}
+
+export async function getSyncStatus(): Promise<SyncStatus> {
+  const res = await request<{ success: boolean; data: SyncStatus }>('/sync/status');
+  return res.data;
+}
+
+export async function getSyncPeers(): Promise<SyncPeer[]> {
+  const res = await request<{ success: boolean; data: SyncPeer[] }>('/sync/peers');
+  return res.data;
+}
+
+export async function addSyncPeer(
+  device_id: string,
+  ip_address: string,
+  port: number,
+  label?: string
+): Promise<SyncPeer> {
+  const res = await request<{ success: boolean; data: SyncPeer }>('/sync/peers', {
+    method: 'POST',
+    body: JSON.stringify({ device_id, ip_address, port, label: label ?? null }),
+  });
+  return res.data;
+}
+
+export async function deleteSyncPeer(id: number): Promise<void> {
+  await request(`/sync/peers/${id}`, { method: 'DELETE' });
+}
+
+export async function getSyncJobs(limit = 20): Promise<SyncJob[]> {
+  const res = await request<{ success: boolean; data: SyncJob[] }>(`/sync/jobs?limit=${limit}`);
+  return res.data;
+}
+
+export async function getTestAimail(): Promise<any> {
+  const res = await request<{ success: boolean; data: any }>('/sync/test-aimail');
+  return res.data;
+}
+
+/** Direct fetch to peer's sync HTTP server — bypasses the Express API */
+export async function pingPeer(ip: string, port: number): Promise<{ device_id: string; schema_version: number }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`http://${ip}:${port}/ping`, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** POST a serialised AimailDocument directly to a peer's sync HTTP server */
+export async function pushTestAimail(ip: string, port: number, doc: any): Promise<{ ok: boolean }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(`http://${ip}:${port}/receive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function logAssistantChat(payload: {
   sessionId: string;
   deviceName: string;
