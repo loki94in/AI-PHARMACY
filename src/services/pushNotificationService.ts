@@ -133,6 +133,15 @@ eventService.on('server_event', async (eventData: any) => {
         body = payload.error || 'Error processing inventory catalog file.';
       }
       break;
+    case 'sync_complete':
+      if (payload.sentCount > 0) {
+        title = '🔄 LAN Sync Complete';
+        const types: string[] = payload.entityTypes || [];
+        body = types.length > 0
+          ? `${payload.sentCount} record(s) synced (${types.join(', ')}).`
+          : `${payload.sentCount} record(s) synced to connected devices.`;
+      }
+      break;
   }
 
   if (title && body) {

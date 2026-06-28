@@ -125,6 +125,16 @@ export class WorkerSupervisor {
             .then(({ whatsappWorkerBridge }) => whatsappWorkerBridge.handleWorkerMessage(msg))
             .catch(err => console.error('[WorkerSupervisor] Failed to route WA message:', err));
         }
+        if (key === 'sync' && msg && msg.type === 'SYNC_BATCH_COMPLETE') {
+          import('../services/eventService.js')
+            .then(({ eventService }) =>
+              eventService.broadcast('sync_complete', {
+                sentCount: msg.sentCount,
+                entityTypes: msg.entityTypes,
+              })
+            )
+            .catch(err => console.error('[WorkerSupervisor] Failed to broadcast sync_complete:', err));
+        }
       });
 
       // Handle child exit

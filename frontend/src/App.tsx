@@ -771,6 +771,9 @@ const Topbar = ({
             if (typeof (window as any).refreshStagedCounts === 'function') {
               (window as any).refreshStagedCounts(true);
             }
+          } else if (data.type === 'sync_complete') {
+            const entityTypes: string[] = data.payload?.entityTypes || [];
+            window.dispatchEvent(new CustomEvent('sync_complete', { detail: { entityTypes } }));
           }
         } catch (err) {
           console.error('Failed to parse SSE event:', err);

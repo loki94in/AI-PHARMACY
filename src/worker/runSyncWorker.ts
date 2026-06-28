@@ -151,6 +151,9 @@ async function pollOutbound(): Promise<void> {
   const peers = await db.all(`SELECT * FROM sync_peers`);
   if (peers.length === 0) return;
 
+  let totalSentCount = 0;
+  const sentEntityTypes = new Set<string>();
+
   for (const job of jobs) {
     let successCount = 0;
     const errors: string[] = [];
@@ -177,6 +180,8 @@ async function pollOutbound(): Promise<void> {
         `UPDATE sync_jobs SET status = 'sent', synced_at = datetime('now') WHERE job_id = ?`,
         [job.job_id]
       );
+      totalSentCount++;
+      if (job.entity_type) sentEntityTypes.add(job.entity_type as string);
     } else {
       const newRetries = (job.retries as number) + 1;
       const newStatus = newRetries >= MAX_RETRIES ? 'failed' : 'pending';
@@ -185,6 +190,14 @@ async function pollOutbound(): Promise<void> {
         [newRetries, newStatus, errors.join('; '), job.job_id]
       );
     }
+  }
+
+  if (totalSentCount > 0) {
+    process.send?.({
+      type: 'SYNC_BATCH_COMPLETE',
+      sentCount: totalSentCount,
+      entityTypes: [...sentEntityTypes],
+    });
   }
 }
 
