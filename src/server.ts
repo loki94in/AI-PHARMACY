@@ -227,8 +227,10 @@ if (process.env.ELECTRON === 'true' || process.env.NODE_ENV === 'production') {
     || path.resolve(__dirname, '..', 'frontend', 'dist');
   if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist, { index: 'index.html' }));
-    // Catch-all: hand non-API requests to React Router (express.static() won't handle them)
-    app.use((_req, res) => {
+    // Catch-all: hand non-API requests to React Router (express.static() won't handle them).
+    // API paths must fall through so notFoundHandler returns JSON, not HTML.
+    app.use((_req, res, next) => {
+      if (_req.path.startsWith('/api/')) return next();
       res.sendFile(path.join(frontendDist, 'index.html'));
     });
   }
