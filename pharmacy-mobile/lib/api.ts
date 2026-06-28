@@ -1168,6 +1168,129 @@ export async function addPharmarackCart(items: any[]): Promise<any> {
   }
 }
 
+// ─── Phase 6: Email Manager & Notification Center ────────────────────────────
+
+export interface EmailStats {
+  total: number;
+  unread: number;
+  orders: number;
+  saved: number;
+  synced_in: number;
+  by_distributor: { distributor_name: string; cnt: number }[];
+}
+
+export interface EmailRow {
+  uid: number;
+  from_addr: string;
+  subject: string;
+  date: string;
+  is_seen: number;
+  is_order: number;
+  is_saved: number;
+  distributor_name: string | null;
+  has_attachments: number;
+  medicine_names: string | null;
+}
+
+export interface OutgoingEmail {
+  id: number;
+  to_addr: string;
+  subject: string;
+  status: 'sent' | 'failed';
+  error: string | null;
+  triggered_by_uid: number | null;
+  created_at: string;
+}
+
+export interface SyncFeedJob {
+  job_id: string;
+  entity_id: string;
+  payload: string;
+  checksum: string;
+  transfer_version: number;
+  retries: number;
+  created_at: string;
+  synced_at: string | null;
+}
+
+export interface NotificationCenterItem {
+  id: number;
+  source: 'automation' | 'action' | 'sync';
+  type: string;
+  message: string;
+  recipient: string | null;
+  status: string;
+  error: string | null;
+  lifecycle_status: string | null;
+  created_at: string;
+}
+
+export async function searchEmails(params: {
+  q?: string;
+  distributor?: string;
+  is_order?: boolean;
+  is_seen?: boolean;
+  from_date?: string;
+  to_date?: string;
+  limit?: number;
+}): Promise<EmailRow[]> {
+  const qs = new URLSearchParams();
+  if (params.q)           qs.set('q', params.q);
+  if (params.distributor) qs.set('distributor', params.distributor);
+  if (params.is_order !== undefined) qs.set('is_order', params.is_order ? '1' : '0');
+  if (params.is_seen !== undefined)  qs.set('is_seen',  params.is_seen  ? '1' : '0');
+  if (params.from_date)  qs.set('from_date', params.from_date);
+  if (params.to_date)    qs.set('to_date', params.to_date);
+  if (params.limit)      qs.set('limit', String(params.limit));
+  const res = await request<{ success: boolean; data: EmailRow[] }>(`/email/search?${qs}`);
+  return res.data;
+}
+
+export async function getEmailStats(): Promise<EmailStats> {
+  const res = await request<{ success: boolean; data: EmailStats }>('/email/stats');
+  return res.data;
+}
+
+export async function getEmailDistributors(): Promise<string[]> {
+  const res = await request<{ success: boolean; data: string[] }>('/email/distributors');
+  return res.data;
+}
+
+export async function getOutgoingEmails(limit = 50): Promise<OutgoingEmail[]> {
+  const res = await request<{ success: boolean; data: OutgoingEmail[] }>(`/email/outgoing?limit=${limit}`);
+  return res.data;
+}
+
+export async function tagEmail(uid: number, updates: { distributor_name?: string; is_order?: boolean }): Promise<void> {
+  await request(`/email/${uid}/tag`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function getSyncFeed(limit = 50): Promise<SyncFeedJob[]> {
+  const res = await request<{ success: boolean; data: SyncFeedJob[] }>(`/email/sync-feed?limit=${limit}`);
+  return res.data;
+}
+
+export async function ingestSyncFeedJob(job_id: string): Promise<void> {
+  await request(`/email/sync-feed/${encodeURIComponent(job_id)}/ingest`, { method: 'POST' });
+}
+
+export async function getNotificationCenter(limit = 60, type?: string): Promise<NotificationCenterItem[]> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (type) qs.set('type', type);
+  const res = await request<{ success: boolean; data: NotificationCenterItem[] }>(`/notifications/center?${qs}`);
+  return res.data;
+}
+
+export async function markNotificationsRead(ids: number[]): Promise<void> {
+  await request('/notifications/center/mark-read', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
 // ─── Sync Engine (Phase 4 / Phase 5) ─────────────────────────────────────────
 
 export interface SyncStatus {

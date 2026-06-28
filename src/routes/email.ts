@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { emailService } from '../services/emailService.js';
 import { eventService } from '../services/eventService.js';
+import { deserializeAimail } from '../utils/aimailFormat.js';
 
 
 import fs from 'fs';
@@ -402,6 +403,197 @@ router.get('/auth/google/callback', async (req, res) => {
   } catch (err: any) {
     console.error('OAuth Callback Error:', err);
     res.status(500).send('Authentication Callback Failed: ' + err.message);
+  }
+});
+
+// ─── Phase 6 extensions ───────────────────────────────────────────────────────
+
+/** GET /api/email/search — full-text search across inbox history */
+router.get('/search', async (req, res) => {
+  const { q, distributor, is_order, is_seen, from_date, to_date, limit: lim } = req.query;
+  const limit = Math.min(parseInt(String(lim ?? '50'), 10) || 50, 200);
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (q) {
+    conditions.push(`(subject LIKE ? OR body LIKE ? OR from_addr LIKE ? OR medicine_names LIKE ?)`);
+    const like = `%${q}%`;
+    params.push(like, like, like, like);
+  }
+  if (distributor) { conditions.push('distributor_name LIKE ?'); params.push(`%${distributor}%`); }
+  if (is_order !== undefined) { conditions.push('is_order = ?'); params.push(is_order === '1' ? 1 : 0); }
+  if (is_seen !== undefined) { conditions.push('is_seen = ?'); params.push(is_seen === '1' ? 1 : 0); }
+  if (from_date) { conditions.push('date >= ?'); params.push(from_date); }
+  if (to_date)   { conditions.push('date <= ?'); params.push(to_date); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, from_addr, subject, date, is_seen, is_order, is_saved,
+              distributor_name, has_attachments, medicine_names
+       FROM emails ${where} ORDER BY date DESC LIMIT ?`,
+      [...params, limit]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/stats — aggregate counts for dashboard strip */
+router.get('/stats', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const [totals, byDist, synced] = await Promise.all([
+      db.all(`SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN is_seen = 0 THEN 1 ELSE 0 END) AS unread,
+        SUM(CASE WHEN is_order = 1 THEN 1 ELSE 0 END) AS orders,
+        SUM(CASE WHEN is_saved = 1 THEN 1 ELSE 0 END) AS saved
+        FROM emails`),
+      db.all(`SELECT distributor_name, COUNT(*) AS cnt
+        FROM emails WHERE distributor_name IS NOT NULL AND distributor_name != ''
+        GROUP BY distributor_name ORDER BY cnt DESC LIMIT 10`),
+      db.get(`SELECT COUNT(*) AS cnt FROM sync_jobs
+        WHERE entity_type = 'email' AND direction = 'inbound' AND status = 'received'`),
+    ]);
+    const t = totals[0] as any;
+    res.json({
+      success: true,
+      data: {
+        total: t.total ?? 0,
+        unread: t.unread ?? 0,
+        orders: t.orders ?? 0,
+        saved: t.saved ?? 0,
+        synced_in: (synced as any)?.cnt ?? 0,
+        by_distributor: byDist,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/distributors — unique distributor list */
+router.get('/distributors', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT DISTINCT distributor_name FROM emails
+       WHERE distributor_name IS NOT NULL AND distributor_name != ''
+       ORDER BY distributor_name ASC`
+    );
+    res.json({ success: true, data: rows.map((r: any) => r.distributor_name as string) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/outgoing — list sent/outgoing emails */
+router.get('/outgoing', async (req, res) => {
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+  const status = req.query.status as string | undefined;
+  const where = status ? `WHERE status = ?` : '';
+  const params: unknown[] = status ? [status, limit] : [limit];
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT id, to_addr, subject, status, error, triggered_by_uid, created_at
+       FROM outgoing_emails ${where} ORDER BY created_at DESC LIMIT ?`,
+      params
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** PATCH /api/email/:uid/tag — update distributor_name or is_order flag */
+router.patch('/:uid/tag', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  const { distributor_name, is_order } = req.body ?? {};
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (distributor_name !== undefined) { sets.push('distributor_name = ?'); params.push(distributor_name); }
+  if (is_order !== undefined) { sets.push('is_order = ?'); params.push(is_order ? 1 : 0); }
+  if (sets.length === 0) return res.status(400).json({ success: false, error: 'Nothing to update' });
+  params.push(uid);
+  try {
+    const db = await dbManager.getConnection();
+    await db.run(`UPDATE emails SET ${sets.join(', ')} WHERE uid = ?`, params);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/sync-feed — inbound .aimail jobs from Phase 4 sync */
+router.get('/sync-feed', async (req, res) => {
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT job_id, entity_id, payload, checksum, transfer_version,
+              retries, created_at, synced_at
+       FROM sync_jobs
+       WHERE entity_type = 'email' AND direction = 'inbound' AND status = 'received'
+       ORDER BY created_at DESC LIMIT ?`,
+      [limit]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/sync-feed/:job_id/ingest — parse .aimail payload → emails table */
+router.post('/sync-feed/:job_id/ingest', async (req, res) => {
+  const { job_id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const job = await db.get(
+      `SELECT * FROM sync_jobs WHERE job_id = ? AND entity_type = 'email'
+         AND direction = 'inbound' AND status = 'received'`,
+      [job_id]
+    );
+    if (!job) return res.status(404).json({ success: false, error: 'Sync job not found or already ingested' });
+
+    const doc = deserializeAimail(job.payload as string);
+
+    // Upsert into emails — use entity_id as the stable email uid key
+    await db.run(
+      `INSERT OR IGNORE INTO emails
+         (from_addr, subject, body, date, is_seen, is_order, is_saved,
+          distributor_name, has_attachments, synced_at, medicine_names)
+       VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), ?)`,
+      [
+        doc.source_device_id,
+        doc.subject,
+        doc.body,
+        doc.email_received_at ?? doc.created_at,
+        doc.distributor ?? null,
+        doc.attachment_list?.length > 0 ? 1 : 0,
+        [
+          ...(doc.order_numbers ?? []),
+          ...(doc.invoice_numbers ?? []),
+          ...(doc.purchase_numbers ?? []),
+        ].join(', ') || null,
+      ]
+    );
+
+    // Mark sync job as processed
+    await db.run(
+      `UPDATE sync_jobs SET status = 'processed', synced_at = datetime('now') WHERE job_id = ?`,
+      [job_id]
+    );
+
+    eventService.broadcast('email_update', { source: 'sync_ingest', job_id });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
   }
 });
 

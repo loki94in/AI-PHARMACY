@@ -850,6 +850,17 @@ export async function ensureSchema(dbPath: string) {
       delivery_persons_json TEXT,
       last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS outgoing_emails (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      to_addr          TEXT NOT NULL,
+      subject          TEXT NOT NULL,
+      body             TEXT NOT NULL DEFAULT '',
+      status           TEXT NOT NULL DEFAULT 'sent',
+      error            TEXT,
+      triggered_by_uid INTEGER,
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Insert default settings if they don't exist
