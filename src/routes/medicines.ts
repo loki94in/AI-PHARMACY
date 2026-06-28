@@ -314,6 +314,12 @@ router.get('/online-search', async (req, res) => {
     if (results.length > 0) {
       return res.json(results);
     }
+    // Firecrawl HTML-scrape fallback (1mg + Apollo + Netmeds)
+    const { FirecrawlClient } = await import('../services/apiClients/firecrawlClient.js');
+    const fcResults = await new FirecrawlClient().searchSuggestions(query);
+    if (fcResults.length > 0) {
+      return res.json(fcResults);
+    }
     // Final fallback: OpenFDA (covers edge cases like rare generics)
     const { OpenFdaClient } = await import('../services/apiClients/openFdaClient.js');
     const fdaClient = new OpenFdaClient();

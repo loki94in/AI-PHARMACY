@@ -7,7 +7,7 @@ export interface OnlineMedicineSuggestion {
   mrp: number;
   packaging: string;
   category: string;
-  source: '1mg' | 'Pharmeasy' | 'OpenFDA';
+  source: '1mg' | 'Pharmeasy' | 'OpenFDA' | 'Firecrawl';
 }
 
 export class OneMgClient extends BaseApiClient {

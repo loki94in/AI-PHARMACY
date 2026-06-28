@@ -1,6 +1,7 @@
 import { checkConnectivity } from '../utils/networkDetector.js';
 import { OpenFdaClient } from './apiClients/openFdaClient.js';
 import { OneMgClient } from './apiClients/oneMgClient.js';
+import { FirecrawlClient } from './apiClients/firecrawlClient.js';
 import { BaseApiClient } from './apiClients/baseApiClient.js';
 import { cacheService } from './cacheService.js';
 import { mergeOcrAndEnrichedData, MergedMedicineResult } from './dataMerger.js';
@@ -11,6 +12,7 @@ export class OnlineDataEnricher {
 
   constructor() {
     this.apiClients.push(new OneMgClient());
+    this.apiClients.push(new FirecrawlClient());
     this.apiClients.push(new OpenFdaClient());
   }
 
