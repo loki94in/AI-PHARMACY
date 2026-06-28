@@ -866,6 +866,15 @@ export async function ensureSchema(dbPath: string) {
       created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Phase 8.9: Units Master
+    CREATE TABLE IF NOT EXISTS units_master (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL UNIQUE,
+      abbreviation TEXT,
+      description  TEXT,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Phase 8.8: Tax Config
     CREATE TABLE IF NOT EXISTS tax_config (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,

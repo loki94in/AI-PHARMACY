@@ -1567,3 +1567,16 @@ export const updateTaxConfig = (id: number, payload: {
 
 export const deleteTaxConfig = (id: number): Promise<{ success: boolean }> =>
   request(`/tax-config/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.9: Units Master ───────────────────────────────────────────────────
+export const getUnits = (): Promise<any[]> =>
+  request('/units');
+
+export const createUnit = (payload: { name: string; abbreviation?: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request('/units', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateUnit = (id: number, payload: { name: string; abbreviation?: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request(`/units/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteUnit = (id: number): Promise<{ success: boolean }> =>
+  request(`/units/${id}`, { method: 'DELETE' });
