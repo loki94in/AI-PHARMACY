@@ -1416,3 +1416,22 @@ export async function logAssistantChat(payload: {
     return { success: false, offline: true };
   }
 }
+
+// ── Phase 7: email linking ───────────────────────────────────────────────────
+
+export interface EmailLinkResult {
+  linked: boolean;
+  skipped?: boolean;
+  reason?: string;
+  distributor_id?: number;
+  order_id?: number;
+  purchase_id?: number;
+  extracted_invoice_no?: string;
+}
+
+// 7a — email → distributor
+export const linkEmailDistributor = (uid: number): Promise<EmailLinkResult> =>
+  request(`/email/${uid}/link-distributor`, { method: 'POST' });
+
+export const batchLinkDistributors = (): Promise<{ processed: number; linked: number; missed: number }> =>
+  request('/email/batch-link-distributors', { method: 'POST' });

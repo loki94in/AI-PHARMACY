@@ -597,4 +597,74 @@ router.post('/sync-feed/:job_id/ingest', async (req, res) => {
   }
 });
 
+// ── Phase 7a: email → distributor linking ───────────────────────────────────
+
+/** POST /api/email/:uid/link-distributor — tag one email with its distributor row */
+router.post('/:uid/link-distributor', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  try {
+    const db = await dbManager.getConnection();
+    const email = await db.get(
+      'SELECT uid, distributor_name, linked_distributor_id FROM emails WHERE uid = ?', [uid]
+    );
+    if (!email) return res.status(404).json({ success: false, error: 'Email not found' });
+    if (!email.distributor_name?.trim()) {
+      return res.json({ linked: false, reason: 'no_distributor_name' });
+    }
+    if (email.linked_distributor_id != null) {
+      return res.json({ linked: true, skipped: true, distributor_id: email.linked_distributor_id });
+    }
+    const dist = await db.get(
+      `SELECT id FROM distributors WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))`,
+      [email.distributor_name]
+    );
+    if (!dist) {
+      await db.run(
+        `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+        ['email_link_miss_distributor', `uid=${uid} name="${email.distributor_name}"`]
+      );
+      return res.json({ linked: false, reason: 'no_distributor_match' });
+    }
+    await db.run(
+      `UPDATE emails SET linked_distributor_id = ? WHERE uid = ?`,
+      [dist.id, uid]
+    );
+    return res.json({ linked: true, distributor_id: dist.id });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/batch-link-distributors — link all unlinked emails that have a distributor_name */
+router.post('/batch-link-distributors', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, distributor_name FROM emails
+       WHERE linked_distributor_id IS NULL AND distributor_name IS NOT NULL AND TRIM(distributor_name) != ''`
+    );
+    let linked = 0, missed = 0;
+    for (const email of rows) {
+      const dist = await db.get(
+        `SELECT id FROM distributors WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))`,
+        [email.distributor_name]
+      );
+      if (dist) {
+        await db.run(`UPDATE emails SET linked_distributor_id = ? WHERE uid = ?`, [dist.id, email.uid]);
+        linked++;
+      } else {
+        await db.run(
+          `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+          ['email_link_miss_distributor', `uid=${email.uid} name="${email.distributor_name}"`]
+        );
+        missed++;
+      }
+    }
+    res.json({ processed: rows.length, linked, missed });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
 export default router;

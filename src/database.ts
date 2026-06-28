@@ -311,6 +311,10 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE catalog_jobs ADD COLUMN newly_detected_columns TEXT DEFAULT NULL`,
     `ALTER TABLE return_items ADD COLUMN expiry_date DATETIME`,
     `ALTER TABLE emails ADD COLUMN medicine_names TEXT`,
+    // Phase 7: email linking columns (nullable; NULL = unlinked)
+    `ALTER TABLE emails ADD COLUMN linked_distributor_id INTEGER`,
+    `ALTER TABLE emails ADD COLUMN linked_order_id INTEGER`,
+    `ALTER TABLE emails ADD COLUMN linked_purchase_id INTEGER`,
     // Refill automation updates
     `ALTER TABLE patient_refills ADD COLUMN acknowledged INTEGER DEFAULT 0`,
     `ALTER TABLE patient_refills ADD COLUMN ordering_triggered INTEGER DEFAULT 0`,
