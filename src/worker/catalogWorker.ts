@@ -980,6 +980,70 @@ export async function runCatalogImport(jobId: number) {
   }
 }
 
+// ── Phase 9: Module-specific CSV importer dispatcher ─────────────────────────
+export async function runModuleImport(jobId: number, moduleType: string): Promise<void> {
+  const db = await dbManager.getConnection();
+  const job = await db.get('SELECT * FROM catalog_jobs WHERE id = ?', [jobId]);
+  if (!job) {
+    console.error(`[Worker] runModuleImport: job ${jobId} not found`);
+    return;
+  }
+  const filePath = job.file_path as string;
+  if (!filePath || !fs.existsSync(filePath)) {
+    await db.run("UPDATE catalog_jobs SET status='failed', error_log=? WHERE id=?",
+      [`File not found: ${filePath}`, jobId]);
+    eventService.broadcast('catalog_job_update', { id: jobId, status: 'failed' });
+    return;
+  }
+
+  await db.run("UPDATE catalog_jobs SET status='processing', progress=0 WHERE id=?", [jobId]);
+  eventService.broadcast('catalog_job_update', { id: jobId, status: 'processing', progress: 0 });
+
+  const onProgress = async (processed: number, total: number) => {
+    const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+    await db.run("UPDATE catalog_jobs SET progress=?, processed_count=? WHERE id=?", [pct, processed, jobId]);
+    eventService.broadcast('catalog_job_update', { id: jobId, progress: pct, status: 'processing' });
+  };
+
+  try {
+    let stats = { imported: 0, skipped: 0, errors: 0 };
+
+    if (moduleType === 'inventory') {
+      const { runCsvInventoryImport } = await import('./importers/csvInventoryImporter.js');
+      stats = await runCsvInventoryImport(filePath, db, onProgress);
+    } else if (moduleType === 'medicines') {
+      const { runCsvMedicinesImport } = await import('./importers/csvMedicinesImporter.js');
+      stats = await runCsvMedicinesImport(filePath, db, onProgress);
+    } else if (moduleType === 'suppliers') {
+      const { runCsvSuppliersImport } = await import('./importers/csvSuppliersImporter.js');
+      stats = await runCsvSuppliersImport(filePath, db, onProgress);
+    } else if (moduleType === 'customers') {
+      const { runCsvCustomersImport } = await import('./importers/csvCustomersImporter.js');
+      stats = await runCsvCustomersImport(filePath, db, onProgress);
+    } else if (moduleType === 'purchases') {
+      const { runCsvPurchasesImport } = await import('./importers/csvPurchasesImporter.js');
+      stats = await runCsvPurchasesImport(filePath, db, onProgress);
+    } else if (moduleType === 'sales') {
+      const { runCsvSalesImport } = await import('./importers/csvSalesImporter.js');
+      stats = await runCsvSalesImport(filePath, db, onProgress);
+    } else {
+      throw new Error(`Unknown module type: ${moduleType}`);
+    }
+
+    await db.run(
+      "UPDATE catalog_jobs SET status='done', progress=100, new_count=?, duplicate_count=?, error_log=? WHERE id=?",
+      [stats.imported, stats.skipped, stats.errors > 0 ? `${stats.errors} row(s) had errors` : null, jobId]
+    );
+    eventService.broadcast('catalog_job_update', { id: jobId, status: 'done', progress: 100, stats });
+    console.log(`[Worker] Module import ${moduleType} job ${jobId} done: ${JSON.stringify(stats)}`);
+  } catch (err: any) {
+    await db.run("UPDATE catalog_jobs SET status='failed', error_log=? WHERE id=?",
+      [err?.message || 'Unknown error', jobId]);
+    eventService.broadcast('catalog_job_update', { id: jobId, status: 'failed', error: err?.message });
+    console.error(`[Worker] Module import ${moduleType} job ${jobId} failed:`, err);
+  }
+}
+
 let isWorking = false;
 const failedDiscoveryAttempts = new Map<string, number>();
 const DISCOVERY_RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes
@@ -1015,8 +1079,13 @@ export async function startWorker() {
       } else {
         const job = await db.get(`SELECT * FROM catalog_jobs WHERE status='pending' ORDER BY id ASC LIMIT 1`);
         if (job) {
-          console.log(`[Worker] Found pending job ${job.id}, triggering runCatalogImport.`);
-          await runCatalogImport(job.id);
+          if (job.module_type && job.module_type !== 'medicines') {
+            console.log(`[Worker] Found pending ${job.module_type} import job ${job.id}.`);
+            await runModuleImport(job.id, job.module_type);
+          } else {
+            console.log(`[Worker] Found pending catalog job ${job.id}, triggering runCatalogImport.`);
+            await runCatalogImport(job.id);
+          }
         } else {
           // Process staged reviews background enrichment
           const pendingReviews = await db.all(

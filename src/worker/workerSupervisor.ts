@@ -31,6 +31,21 @@ export class WorkerSupervisor {
       scriptPath: path.resolve(__dirname, `runEmailPoller${ext}`),
       restartCount: 0,
     },
+    whatsapp: {
+      name: 'WhatsApp Worker',
+      scriptPath: path.resolve(__dirname, `runWhatsappWorker${ext}`),
+      restartCount: 0,
+    },
+    ocr: {
+      name: 'OCR Worker',
+      scriptPath: path.resolve(__dirname, `runOcrWorker${ext}`),
+      restartCount: 0,
+    },
+    sync: {
+      name: 'Sync Worker',
+      scriptPath: path.resolve(__dirname, `runSyncWorker${ext}`),
+      restartCount: 0,
+    },
   };
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
@@ -50,6 +65,18 @@ export class WorkerSupervisor {
       this.spawnWorker(key);
     }
     this.startHealthCheckLoop();
+    this.startTransports();
+  }
+
+  /** Starts optional transport services (mDNS, BLE) — each degrades gracefully if unavailable */
+  private startTransports(): void {
+    import('../transport/mdnsAdvertiser.js')
+      .then(({ startMdnsAdvertiser }) => startMdnsAdvertiser())
+      .catch(err => console.warn('[WorkerSupervisor] mDNS advertiser failed to load:', err.message));
+
+    import('../transport/bleTransport.js')
+      .then(({ startBleTransport }) => startBleTransport())
+      .catch(err => console.warn('[WorkerSupervisor] BLE transport failed to load:', err.message));
   }
 
   /** Gracefully stops all workers and loops */
@@ -66,6 +93,26 @@ export class WorkerSupervisor {
         config.instance = undefined;
         console.log(`[WorkerSupervisor] Terminated ${config.name}.`);
       }
+    }
+    import('../transport/mdnsAdvertiser.js')
+      .then(({ stopMdnsAdvertiser }) => stopMdnsAdvertiser())
+      .catch(() => {});
+    import('../transport/bleTransport.js')
+      .then(({ stopBleTransport }) => stopBleTransport())
+      .catch(() => {});
+  }
+
+  /** Send an IPC message to a specific named worker */
+  public sendToWorker(key: string, msg: any): void {
+    const config = this.workers[key];
+    if (!config?.instance) {
+      console.warn(`[WorkerSupervisor] Cannot send to ${key}: worker not running`);
+      return;
+    }
+    try {
+      config.instance.send(msg);
+    } catch (err) {
+      console.error(`[WorkerSupervisor] Failed to send message to ${config.name}:`, err);
     }
   }
 
@@ -86,10 +133,36 @@ export class WorkerSupervisor {
 
       config.instance = child;
 
-      // Handle message from child (heartbeat pongs)
+      // Handle message from child (heartbeat pongs + worker-specific routing)
       child.on('message', (msg: any) => {
         if (msg && msg.type === 'PONG') {
           config.lastPongTime = Date.now();
+        }
+        if (key === 'whatsapp' && msg && msg.type !== 'PONG') {
+          import('../services/whatsappWorkerBridge.js')
+            .then(({ whatsappWorkerBridge }) => whatsappWorkerBridge.handleWorkerMessage(msg))
+            .catch(err => console.error('[WorkerSupervisor] Failed to route WA message:', err));
+        }
+        if (key === 'sync' && msg && msg.type === 'SYNC_BATCH_COMPLETE') {
+          import('../services/eventService.js')
+            .then(({ eventService }) =>
+              eventService.broadcast('sync_complete', {
+                sentCount: msg.sentCount,
+                entityTypes: msg.entityTypes,
+              })
+            )
+            .catch(err => console.error('[WorkerSupervisor] Failed to broadcast sync_complete:', err));
+        }
+        if (key === 'sync' && msg && msg.type === 'CONFLICT_DETECTED') {
+          import('../services/eventService.js')
+            .then(({ eventService }) =>
+              eventService.broadcast('conflict_detected', {
+                entityType: msg.entityType,
+                entityId: msg.entityId,
+                strategy: msg.strategy,
+              })
+            )
+            .catch(err => console.error('[WorkerSupervisor] Failed to broadcast conflict_detected:', err));
         }
       });
 

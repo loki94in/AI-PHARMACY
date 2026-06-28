@@ -57,6 +57,15 @@ import enrichmentRouter from './routes/enrichment.js';
 import distributorsRouter from './routes/distributors.js';
 import notificationsRouter from './routes/notifications.js';
 import investigationRouter from './routes/investigation.js';
+import syncRouter from './routes/sync.js';
+import branchesRouter, { initBranchSchema } from './routes/branches.js';
+import v1Router from './routes/v1/index.js';
+import pluginsRouter from './routes/plugins.js';
+import { loadAllPlugins } from './plugins/pluginHost.js';
+import taxConfigRouter from './routes/taxConfig.js';
+import unitsRouter from './routes/units.js';
+import barcodeRouter from './routes/barcode.js';
+import importExportRouter from './routes/importExport.js';
 import './services/pushNotificationService.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
@@ -199,11 +208,33 @@ app.use('/api', enrichmentRouter);
 app.use('/api', distributorsRouter);
 app.use('/api', notificationsRouter);
 app.use('/api/investigation', investigationRouter);
-
-
+app.use('/api/sync', syncRouter);
+app.use('/api/tax-config', taxConfigRouter);
+app.use('/api/units', unitsRouter);
+app.use('/api/barcode', barcodeRouter);
+app.use('/api', importExportRouter);
+app.use('/api', branchesRouter);
+app.use('/api/v1', v1Router);
+app.use('/api', pluginsRouter);
 
 // Initialize services that need startup logic
 // These would be initialized via dependency injection in a complete refactor
+
+// Serve the built React app in Electron / production mode.
+// ELECTRON env var is set by the Electron main process; FRONTEND_DIST points to frontend/dist.
+if (process.env.ELECTRON === 'true' || process.env.NODE_ENV === 'production') {
+  const frontendDist = process.env.FRONTEND_DIST
+    || path.resolve(__dirname, '..', 'frontend', 'dist');
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist, { index: 'index.html' }));
+    // Catch-all: hand non-API requests to React Router (express.static() won't handle them).
+    // API paths must fall through so notFoundHandler returns JSON, not HTML.
+    app.use((_req, res, next) => {
+      if (_req.path.startsWith('/api/')) return next();
+      res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+  }
+}
 
 // Error handling middleware - should be last
 app.use(notFoundHandler);
@@ -222,6 +253,22 @@ ensureSchema(DB_PATH).then(async () => {
     await bootDb.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_clean_shutdown', 'false')");
   } catch (bootErr) {
     console.error('[Boot] Could not write last_clean_shutdown flag:', bootErr);
+  }
+
+  // Initialize multi-branch schema (idempotent — safe every boot)
+  try {
+    await initBranchSchema();
+    console.log('[Boot] Branch schema initialized.');
+  } catch (err) {
+    console.error('[Boot] Branch schema init failed (non-fatal):', err);
+  }
+
+  // Load plugins from /plugins directory
+  try {
+    const pluginResult = loadAllPlugins();
+    console.log(`[Boot] Plugins loaded: ${pluginResult.loaded} ok, ${pluginResult.errors} error(s).`);
+  } catch (err) {
+    console.error('[Boot] Plugin load failed (non-fatal):', err);
   }
 
   app.listen(PORT, async () => {
@@ -246,19 +293,8 @@ ensureSchema(DB_PATH).then(async () => {
         if (isAutoEnabled) {
           console.log('Background automation is ENABLED in settings at startup. Running startup catch-up tasks...');
           
-          // 1. WhatsApp Pre-initialization
-          const waRow = await db.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
-          if (waRow && waRow.value === 'true') {
-            const { shouldRouteToBusiness } = await import('./whatsappClient.js');
-            const useBusiness = await shouldRouteToBusiness();
-            if (!useBusiness) {
-              console.log('WhatsApp Web (automated) is enabled, pre-initializing client in the background...');
-              const { initClient } = await import('./whatsappClient.js');
-              await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
-            } else {
-              console.log('WhatsApp Business API is active. Skipping automated client pre-initialization.');
-            }
-          }
+          // 1. WhatsApp client is now managed by the WhatsApp worker process (runWhatsappWorker.ts).
+          //    The worker auto-initializes based on settings at startup; no main-process init needed.
 
           // 3. Startup catch-up expiry scan (checks for downtime near-expiry alerts)
           import('./services/expiryAlertService.js')

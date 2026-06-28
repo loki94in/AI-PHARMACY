@@ -435,4 +435,79 @@ async function checkDeviceConnections() {
 // Check connections status every 10 seconds
 setInterval(checkDeviceConnections, 10000);
 
+// ─── Phase 6: Notification Center ────────────────────────────────────────────
+
+/**
+ * GET /api/notifications/center
+ * Unified notification feed — merges automation_notifications, action_logs,
+ * and sync_jobs events. No new table; reads existing data only.
+ */
+router.get('/notifications/center', async (req, res) => {
+  const limit = Math.min(parseInt(String(req.query.limit ?? '60'), 10) || 60, 200);
+  const type = req.query.type as string | undefined;
+  try {
+    const db = await dbManager.getConnection();
+
+    const automationRows = (!type || type === 'automation') ? await db.all(
+      `SELECT id, 'automation' AS source, type, message,
+              recipient_phone AS recipient, status,
+              error_message AS error, lifecycle_status,
+              created_at
+       FROM automation_notifications
+       ORDER BY created_at DESC LIMIT ?`, [limit]
+    ) : [];
+
+    const actionRows = (!type || type === 'action') ? await db.all(
+      `SELECT id, 'action' AS source, action_type AS type,
+              description AS message, NULL AS recipient,
+              'info' AS status, NULL AS error,
+              NULL AS lifecycle_status, created_at
+       FROM action_logs
+       ORDER BY created_at DESC LIMIT ?`, [limit]
+    ) : [];
+
+    const syncRows = (!type || type === 'sync') ? await db.all(
+      `SELECT id, 'sync' AS source,
+              (direction || '_' || entity_type) AS type,
+              ('Sync ' || direction || ' ' || entity_type || ' — ' || status) AS message,
+              target_device AS recipient, status,
+              error, NULL AS lifecycle_status, created_at
+       FROM sync_jobs
+       ORDER BY created_at DESC LIMIT ?`, [limit]
+    ) : [];
+
+    const all = [...automationRows, ...actionRows, ...syncRows]
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, limit);
+
+    res.json({ success: true, data: all });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/**
+ * POST /api/notifications/center/mark-read
+ * Mark automation_notifications entries as read (lifecycle_status = 'read').
+ * action_logs and sync_jobs are informational-only; they are not mutated.
+ */
+router.post('/notifications/center/mark-read', async (req, res) => {
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ success: false, error: 'ids array required' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    const placeholders = ids.map(() => '?').join(',');
+    await db.run(
+      `UPDATE automation_notifications SET lifecycle_status = 'read'
+       WHERE id IN (${placeholders})`,
+      ids
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
 export default router;

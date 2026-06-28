@@ -4,10 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from 'expo-router';
 import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  getSavedNotifications, 
-  markAllNotificationsAsRead, 
-  clearAllNotifications, 
+import {
+  getSavedNotifications,
+  markAllNotificationsAsRead,
+  clearAllNotifications,
   SavedNotification,
   isAdminMode,
   getOfflineSalesQueue,
@@ -19,11 +19,16 @@ import {
   getServerAutomationNotifications,
   retryServerNotification,
   markServerNotificationManual,
-  syncOfflineSalesAndRefresh
+  syncOfflineSalesAndRefresh,
+  getNotificationCenter,
+  markNotificationsRead,
+  NotificationCenterItem,
 } from '../../lib/api';
 
 export default function NotificationsScreen() {
-  const [activeSegment, setActiveSegment] = useState<'alerts' | 'tasks'>('alerts');
+  const [activeSegment, setActiveSegment] = useState<'alerts' | 'tasks' | 'center'>('alerts');
+  const [centerItems, setCenterItems] = useState<NotificationCenterItem[]>([]);
+  const [markingRead, setMarkingRead] = useState(false);
   const [notifications, setNotifications] = useState<SavedNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation();
@@ -88,8 +93,26 @@ export default function NotificationsScreen() {
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     setAutomationTasks(combined);
-    
+
+    try {
+      const center = await getNotificationCenter();
+      setCenterItems(center);
+    } catch { /* ignore */ }
+
     setLoading(false);
+  };
+
+  const handleMarkCenterRead = async () => {
+    const unread = centerItems.filter(c => c.status !== 'read' && c.source === 'automation').map(c => c.id);
+    if (unread.length === 0) return;
+    setMarkingRead(true);
+    try {
+      await markNotificationsRead(unread);
+      const center = await getNotificationCenter();
+      setCenterItems(center);
+    } catch { /* ignore */ } finally {
+      setMarkingRead(false);
+    }
   };
 
   useEffect(() => {
@@ -235,10 +258,76 @@ export default function NotificationsScreen() {
           >
             <Text style={[styles.segmentText, activeSegment === 'tasks' && styles.segmentTextActive]}>Automation Task Center</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segmentButton, activeSegment === 'center' && styles.segmentButtonActive]}
+            onPress={() => setActiveSegment('center')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segmentText, activeSegment === 'center' && styles.segmentTextActive]}>Center</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {activeSegment === 'alerts' ? (
+      {activeSegment === 'center' ? (
+        <FlatList
+          data={centerItems}
+          keyExtractor={(item) => `${item.source}-${item.id}`}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            centerItems.some(c => c.source === 'automation' && c.status !== 'read') ? (
+              <TouchableOpacity
+                style={styles.markReadBtn}
+                onPress={handleMarkCenterRead}
+                disabled={markingRead}
+                activeOpacity={0.7}
+              >
+                {markingRead
+                  ? <ActivityIndicator size="small" color={colors.warning} />
+                  : <Text style={styles.markReadBtnText}>Mark Automation Read</Text>}
+              </TouchableOpacity>
+            ) : null
+          }
+          renderItem={({ item }) => {
+            const sourceColor =
+              item.source === 'automation' ? colors.warning :
+              item.source === 'action' ? colors.info :
+              colors.primary;
+            const sourceIcon =
+              item.source === 'automation' ? 'flash-outline' :
+              item.source === 'action' ? 'construct-outline' :
+              'sync-outline';
+            return (
+              <View style={[styles.centerCard, { borderLeftColor: sourceColor }]}>
+                <View style={styles.taskHeader}>
+                  <Ionicons name={sourceIcon as any} size={18} color={sourceColor} />
+                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                    <Text style={styles.taskTitle}>{item.title}</Text>
+                    <Text style={styles.taskSubtitle}>{item.source} · {item.type}</Text>
+                  </View>
+                  {item.status !== 'read' && item.source === 'automation' && (
+                    <View style={[styles.statusBadge, { backgroundColor: colors.warning + '20' }]}>
+                      <Text style={[styles.statusBadgeText, { color: colors.warning }]}>unread</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.taskMsg} numberOfLines={4}>{item.body}</Text>
+                <Text style={[styles.taskSubtitle, { marginTop: 4 }]}>{formatDate(item.created_at)}</Text>
+              </View>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="albums-outline" size={60} color={colors.textMuted} />
+              <Text style={[typography.h3, { marginTop: spacing.md, color: colors.textSecondary }]}>
+                Notification Center Empty
+              </Text>
+              <Text style={[typography.bodySmall, { textAlign: 'center', marginTop: spacing.sm, color: colors.textMuted }]}>
+                Automation alerts, action logs, and sync events will appear here.
+              </Text>
+            </View>
+          }
+        />
+      ) : activeSegment === 'alerts' ? (
         <FlatList
           data={notifications}
           keyExtractor={(item) => item.id}
@@ -657,5 +746,28 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 11,
     fontWeight: '600',
+  },
+  centerCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.small,
+  },
+  markReadBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: radius.sm,
+    backgroundColor: colors.warning + '20',
+    marginBottom: spacing.sm,
+  },
+  markReadBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.warning,
   },
 });

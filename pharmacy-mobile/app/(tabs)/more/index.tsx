@@ -11,6 +11,7 @@ const menuItems = [
   { icon: 'search-outline', label: 'Product Trace', desc: 'Find product across purchases & sales', route: '/product-search', color: colors.accent },
   { icon: 'cloud-upload-outline', label: 'Backup & Safety', desc: 'Create backup, restore data', route: '/backup', color: colors.info },
   { icon: 'notifications-outline', label: 'Notification History', desc: 'View all past system alerts', route: '/notifications', color: colors.primary },
+  { icon: 'sync-outline', label: 'Sync Now', desc: 'Push records to peer devices over Wi-Fi', route: '/sync', color: '#00D9A6' },
 ];
 
 export default function MoreScreen() {

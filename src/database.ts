@@ -269,6 +269,7 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE distributors ADD COLUMN dl_no TEXT`,
     `ALTER TABLE distributors ADD COLUMN phone TEXT`,
     `ALTER TABLE distributors ADD COLUMN state_code TEXT`,
+    `ALTER TABLE distributors ADD COLUMN whatsapp_number TEXT`,
     `ALTER TABLE doctors ADD COLUMN send_daily_summary INTEGER DEFAULT 0`,
     // Customers extra columns
     `ALTER TABLE customers ADD COLUMN legacy_id TEXT`,
@@ -311,6 +312,12 @@ export async function ensureSchema(dbPath: string) {
     `ALTER TABLE catalog_jobs ADD COLUMN newly_detected_columns TEXT DEFAULT NULL`,
     `ALTER TABLE return_items ADD COLUMN expiry_date DATETIME`,
     `ALTER TABLE emails ADD COLUMN medicine_names TEXT`,
+    // Phase 9: import/export module routing
+    `ALTER TABLE catalog_jobs ADD COLUMN module_type TEXT DEFAULT 'medicines'`,
+    // Phase 7: email linking columns (nullable; NULL = unlinked)
+    `ALTER TABLE emails ADD COLUMN linked_distributor_id INTEGER`,
+    `ALTER TABLE emails ADD COLUMN linked_order_id INTEGER`,
+    `ALTER TABLE emails ADD COLUMN linked_purchase_id INTEGER`,
     // Refill automation updates
     `ALTER TABLE patient_refills ADD COLUMN acknowledged INTEGER DEFAULT 0`,
     `ALTER TABLE patient_refills ADD COLUMN ordering_triggered INTEGER DEFAULT 0`,
@@ -545,6 +552,49 @@ export async function ensureSchema(dbPath: string) {
       caption TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       retries INTEGER DEFAULT 0
+    );
+
+    -- OCR job queue: main process submits, OCR worker processes
+    CREATE TABLE IF NOT EXISTS pending_ocr_jobs (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id       TEXT UNIQUE NOT NULL,
+      image_data   TEXT NOT NULL,
+      job_type     TEXT NOT NULL DEFAULT 'processImage',
+      skip_enrichment INTEGER NOT NULL DEFAULT 0,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      result       TEXT,
+      error        TEXT,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME
+    );
+
+    -- Sync engine: outbound + inbound job queue
+    CREATE TABLE IF NOT EXISTS sync_jobs (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id           TEXT UNIQUE NOT NULL,
+      entity_type      TEXT NOT NULL DEFAULT 'email',
+      entity_id        TEXT NOT NULL,
+      payload          TEXT NOT NULL,
+      checksum         TEXT NOT NULL,
+      transfer_version INTEGER NOT NULL DEFAULT 1,
+      direction        TEXT NOT NULL DEFAULT 'outbound',
+      status           TEXT NOT NULL DEFAULT 'pending',
+      target_device    TEXT,
+      retries          INTEGER NOT NULL DEFAULT 0,
+      error            TEXT,
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+      synced_at        DATETIME
+    );
+
+    -- Sync engine: registered LAN peers
+    CREATE TABLE IF NOT EXISTS sync_peers (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id   TEXT UNIQUE NOT NULL,
+      label       TEXT,
+      ip_address  TEXT NOT NULL,
+      port        INTEGER NOT NULL DEFAULT 3030,
+      last_seen   DATETIME,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Expiry returns tracking and credit notes reconciliation
@@ -807,6 +857,79 @@ export async function ensureSchema(dbPath: string) {
       delivery_persons_json TEXT,
       last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS outgoing_emails (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      to_addr          TEXT NOT NULL,
+      subject          TEXT NOT NULL,
+      body             TEXT NOT NULL DEFAULT '',
+      status           TEXT NOT NULL DEFAULT 'sent',
+      error            TEXT,
+      triggered_by_uid INTEGER,
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Phase 8.10: Barcode Master
+    CREATE TABLE IF NOT EXISTS barcode_master (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      barcode     TEXT NOT NULL UNIQUE,
+      medicine_id INTEGER NOT NULL,
+      batch_no    TEXT,
+      expiry_date DATETIME,
+      notes       TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_barcode_master_barcode ON barcode_master (barcode);
+    CREATE INDEX IF NOT EXISTS idx_barcode_master_medicine_id ON barcode_master (medicine_id);
+
+    -- Phase 8.9: Units Master
+    CREATE TABLE IF NOT EXISTS units_master (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL UNIQUE,
+      abbreviation TEXT,
+      description  TEXT,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Phase 8.8: Tax Config
+    CREATE TABLE IF NOT EXISTS tax_config (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL UNIQUE,
+      rate        REAL NOT NULL,
+      cgst_per    REAL NOT NULL DEFAULT 0,
+      sgst_per    REAL NOT NULL DEFAULT 0,
+      igst_per    REAL NOT NULL DEFAULT 0,
+      description TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Phase 8.7: Medicine Categories
+    CREATE TABLE IF NOT EXISTS medicine_categories (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL UNIQUE,
+      description TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_medicine_categories_name ON medicine_categories (name);
+
+    -- Phase 8.5: Manufacturer Master
+    CREATE TABLE IF NOT EXISTS manufacturers (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      name           TEXT NOT NULL UNIQUE,
+      contact_person TEXT,
+      phone          TEXT,
+      email          TEXT,
+      address        TEXT,
+      city           TEXT,
+      state          TEXT,
+      gstin          TEXT,
+      drug_license   TEXT,
+      website        TEXT,
+      notes          TEXT,
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_manufacturers_name ON manufacturers (name);
   `);
 
   // Insert default settings if they don't exist

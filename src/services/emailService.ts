@@ -1643,21 +1643,44 @@ export class EmailService {
       });
 
       if (responseSent) {
-        // Log successful auto-response
         const db2 = await dbManager.getConnection();
-        await db2.run(
-          'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-          ['EMAIL_AUTO_RESPONSE_SENT', `Auto-response sent to: ${email.from}`]
-        );
-                console.log('Auto-response sent successfully to:', email.from);
+        await Promise.all([
+          db2.run(
+            'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+            ['EMAIL_AUTO_RESPONSE_SENT', `Auto-response sent to: ${email.from}`]
+          ),
+          db2.run(
+            `INSERT INTO outgoing_emails (to_addr, subject, body, status, triggered_by_uid)
+             VALUES (?, ?, ?, 'sent', ?)`,
+            [
+              email.from,
+              `Re: ${email.subject}`,
+              `Thank you for your inquiry regarding "${email.subject}".`,
+              (email as any).uid ?? null,
+            ]
+          ),
+        ]);
+        console.log('Auto-response sent successfully to:', email.from);
       } else {
-        // Log failed auto-response
         const db2 = await dbManager.getConnection();
-        await db2.run(
-          'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
-          ['EMAIL_AUTO_RESPONSE_FAILED', `Failed to send auto-response to: ${email.from}`]
-        );
-                console.error('Failed to send auto-response to:', email.from);
+        await Promise.all([
+          db2.run(
+            'INSERT INTO action_logs (action_type, description) VALUES (?, ?)',
+            ['EMAIL_AUTO_RESPONSE_FAILED', `Failed to send auto-response to: ${email.from}`]
+          ),
+          db2.run(
+            `INSERT INTO outgoing_emails (to_addr, subject, body, status, error, triggered_by_uid)
+             VALUES (?, ?, ?, 'failed', ?, ?)`,
+            [
+              email.from,
+              `Re: ${email.subject}`,
+              '',
+              'SMTP transporter returned false',
+              (email as any).uid ?? null,
+            ]
+          ),
+        ]);
+        console.error('Failed to send auto-response to:', email.from);
       }
     } catch (error) {
       console.error('Error sending auto-response:', error);

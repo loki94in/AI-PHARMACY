@@ -1,6 +1,11 @@
 import express from 'express';
 import { Database } from 'sqlite';
 import { dbManager } from '../database/connection.js';
+import { queryAllWithRetry } from '../database/queryHelpers.js';
+import { normalizeNumericSearch } from '../utils/searchHelpers.js';
+import { generateSalesInvoiceNo } from '../services/invoiceNumberService.js';
+import { calculateSalesTotals } from '../services/invoiceCalculationService.js';
+import { customerService } from '../services/customerService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -10,81 +15,16 @@ const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '..', '..', 'data
 
 const router = express.Router();
 
-// Helper to normalize numeric search terms (e.g., stripping trailing decimal zeros like "31.00" -> "31")
-// to align with SQLite CAST(value AS TEXT) representations.
-const normalizeNumericSearch = (val: string): string => {
-  const cleaned = val.trim();
-  if (!cleaned) return '';
-  // If it's a decimal number, parse it to strip trailing zeros (e.g., 31.00 -> 31, 31.50 -> 31.5)
-  if (/^\d+\.\d+$/.test(cleaned)) {
-    return String(parseFloat(cleaned));
-  }
-  // If it ends with a dot, strip it (e.g., 31. -> 31)
-  if (/^\d+\.$/.test(cleaned)) {
-    return cleaned.slice(0, -1);
-  }
-  return cleaned;
-};
-
-// Configuration: tune these values for your environment
 const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 500;           // hard cap to avoid huge payloads
-const MAX_ITEMS_IN_BATCH = 200;  // max invoices to fetch items for in a single response
-const SQLITE_BUSY_RETRIES = 5;
-const SQLITE_BUSY_BASE_DELAY_MS = 100; // exponential backoff base
-
-// Helper sleep
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Wrap DB queries to retry on SQLITE_BUSY and set busy_timeout
-async function queryAllWithRetry(db: Database, sql: string, params: any[] = []) {
-  // Ensure busy timeout is set (ms). Safe to call repeatedly.
-  try {
-    await db.run('PRAGMA busy_timeout = 5000'); // 5 seconds
-  } catch (e) {
-    // ignore if not supported
-  }
-
-  let attempt = 0;
-  while (true) {
-    try {
-      return await db.all(sql, params);
-    } catch (err: any) {
-      const code = err && (err.code || err.errno || err.message);
-      const isBusy = typeof code === 'string' ? code.includes('BUSY') : (err && err.message && err.message.includes('BUSY'));
-      if (isBusy && attempt < SQLITE_BUSY_RETRIES) {
-        const backoff = SQLITE_BUSY_BASE_DELAY_MS * Math.pow(2, attempt);
-        await sleep(backoff);
-        attempt++;
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-const generateInvoiceNo = async (db: Database) => {
-  const year = new Date().getFullYear();
-  const prefix = `S-${year}-`;
-  const row = await db.get('SELECT invoice_no FROM sales_invoices WHERE invoice_no LIKE ? ORDER BY invoice_no DESC LIMIT 1', `${prefix}%`);
-  let nextNum = 1;
-  if (row && row.invoice_no) {
-    const parts = row.invoice_no.split('-');
-    const numPart = parts[2];
-    nextNum = parseInt(numPart, 10) + 1;
-  }
-  const padded = String(nextNum).padStart(4, '0');
-  return `${prefix}${padded}`;
-};
+const MAX_LIMIT = 500;
+const MAX_ITEMS_IN_BATCH = 200;
 
 // Get next sequential invoice number
 router.get('/next-invoice', async (req, res) => {
   let db;
   try {
     db = await dbManager.getConnection();
-    const invoice_no = await generateInvoiceNo(db);
+    const invoice_no = await generateSalesInvoiceNo(db);
         res.json({ invoice_no });
   } catch (error) {
     const err = error as Error;
@@ -129,44 +69,21 @@ router.post('/', async (req, res) => {
     await db.run('BEGIN TRANSACTION');
 
     // Resolve or auto-create customer/patient
-    let customerId = patient_id || null;
+    let customerId: number | null = patient_id || null;
     if (patient_name) {
-      const cleanPhone = patient_phone || '';
-      const existing = await db.get('SELECT id FROM customers WHERE name = ? AND phone = ?', [patient_name, cleanPhone]);
-      if (existing) {
-        customerId = existing.id;
-      } else {
-        const custResult = await db.run(
-          'INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)',
-          [patient_name, cleanPhone, patient_address || '']
-        );
-        customerId = custResult.lastID;
-      }
+      customerId = await customerService.getOrCreateCustomerInTx(
+        db, patient_name, patient_phone || '', patient_address || ''
+      );
     }
 
-    // Compute subtotal, tax, and total strictly checking values to prevent null/NaN
-    let subtotal = 0;
-    for (const item of items) {
-      const { quantity = 0, unit_price = 0, loose_qty = 0, pack_size = 10, discount_per = 0 } = item;
-      const q = Number(quantity);
-      const l = Number(loose_qty);
-      const pSize = Number(pack_size || 10);
-      const d = Number(discount_per);
-      const uPrice = Number(unit_price);
-      const dPrice = uPrice * (1 - d / 100);
-      subtotal += (q * dPrice) + (l * (dPrice / pSize));
-    }
-
-    const taxRate = 0.05; // 5% tax
-    const total = Math.round(subtotal - Number(discount));
-    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
+    const { subtotal, total, tax } = calculateSalesTotals(items, Number(discount));
 
     if (isNaN(subtotal) || isNaN(tax) || isNaN(total)) {
       throw new Error('Calculated totals resulted in NaN value.');
     }
 
     // Generate invoice number
-    const invoice_no = await generateInvoiceNo(db);
+    const invoice_no = await generateSalesInvoiceNo(db);
 
     // Insert invoice
     const invoiceDateValue = sale_date ? new Date(sale_date).toISOString() : new Date().toISOString();
@@ -494,7 +411,7 @@ router.post('/hold', async (req, res) => {
       remarks: remarks || ''
     });
 
-    const holdInvoiceNo = await generateInvoiceNo(db);
+    const holdInvoiceNo = await generateSalesInvoiceNo(db);
     
     await db.run('BEGIN TRANSACTION');
 
@@ -1292,9 +1209,8 @@ router.put('/:id', async (req, res) => {
         subtotal += (q * dPrice) + (l * (dPrice / pSize));
       }
 
-      const taxRate = 0.05;
       const total = Math.round(subtotal - discount);
-      const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
+      const tax = Number((total * 0.05 / 1.05).toFixed(2));
 
       await db.run(
         'UPDATE sales_invoices SET customer_id = ?, total_amount = ?, tax_amount = ?, payment_medium = COALESCE(?, payment_medium), payment_status = COALESCE(?, payment_status), discount = ?, subtotal = ?, doctor_id = ? WHERE id = ?',
@@ -1399,37 +1315,13 @@ router.post('/sync', async (req, res) => {
 
       if (adminMode) {
         // Direct commit for Admin Remote Operations
-        let customerId = null;
+        let customerId: number | null = null;
         if (patient_name) {
-          const cleanPhone = patient_phone || '';
-          const existing = await db.get('SELECT id FROM customers WHERE name = ? AND phone = ?', [patient_name, cleanPhone]);
-          if (existing) {
-            customerId = existing.id;
-          } else {
-            const custResult = await db.run(
-              'INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)',
-              [patient_name, cleanPhone, '']
-            );
-            customerId = custResult.lastID;
-          }
+          customerId = await customerService.getOrCreateCustomerInTx(db, patient_name, patient_phone || '');
         }
 
-        let subtotal = 0;
-        for (const item of items) {
-          const { quantity = 0, unit_price = 0, loose_qty = 0, pack_size = 10, discount_per = 0 } = item;
-          const q = Number(quantity);
-          const l = Number(loose_qty);
-          const pSize = Number(pack_size || 10);
-          const d = Number(discount_per);
-          const uPrice = Number(unit_price);
-          const dPrice = uPrice * (1 - d / 100);
-          subtotal += (q * dPrice) + (l * (dPrice / pSize));
-        }
-
-        const taxRate = 0.05;
-        const total = Math.round(subtotal - Number(discount));
-        const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
-        const invoice_no = await generateInvoiceNo(db);
+        const { subtotal, total, tax } = calculateSalesTotals(items, Number(discount));
+        const invoice_no = await generateSalesInvoiceNo(db);
         const invoiceDateValue = sale_date ? new Date(sale_date).toISOString() : new Date().toISOString();
 
         const result = await db.run(
@@ -1509,39 +1401,15 @@ router.post('/staged/:id/approve', async (req, res) => {
     await db.run('BEGIN TRANSACTION');
 
     // Resolve customer
-    let customerId = null;
+    let customerId: number | null = null;
     if (finalPatientName) {
-      const cleanPhone = finalPatientPhone || '';
-      const existing = await db.get('SELECT id FROM customers WHERE name = ? AND phone = ?', [finalPatientName, cleanPhone]);
-      if (existing) {
-        customerId = existing.id;
-      } else {
-        const custResult = await db.run(
-          'INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)',
-          [finalPatientName, cleanPhone, '']
-        );
-        customerId = custResult.lastID;
-      }
+      customerId = await customerService.getOrCreateCustomerInTx(db, finalPatientName, finalPatientPhone || '');
     }
 
-    // Compute totals
-    let subtotal = 0;
-    for (const item of itemsToProcess) {
-      const { quantity = 0, unit_price = 0, loose_qty = 0, pack_size = 10, discount_per = 0 } = item;
-      const q = Number(quantity);
-      const l = Number(loose_qty);
-      const pSize = Number(pack_size || 10);
-      const d = Number(discount_per);
-      const uPrice = Number(unit_price);
-      const dPrice = uPrice * (1 - d / 100);
-      subtotal += (q * dPrice) + (l * (dPrice / pSize));
-    }
-    const taxRate = 0.05;
-    const total = Math.round(subtotal - Number(finalDiscount));
-    const tax = Number((total * taxRate / (1 + taxRate)).toFixed(2));
+    const { subtotal, total, tax } = calculateSalesTotals(itemsToProcess, Number(finalDiscount));
 
     // Generate invoice number
-    const invoice_no = await generateInvoiceNo(db);
+    const invoice_no = await generateSalesInvoiceNo(db);
 
     // Save invoice
     const result = await db.run(

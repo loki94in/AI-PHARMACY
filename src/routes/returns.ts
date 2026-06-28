@@ -1,10 +1,11 @@
 import express from 'express';
 import { dbManager } from '../database/connection.js';
+import { parseExpiryDate } from '../utils/dateHelpers.js';
 import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'url';
-import { aiCameraService } from '../services/aiCameraService.js';
+import { submitOcrJob } from '../services/ocrJobQueue.js';
 import { extractMedicineNameFromText } from '../utils/ocrCleaner.js';
 
 
@@ -130,19 +131,8 @@ router.get('/near-expiry', async (req, res) => {
     thresholdDate.setMonth(now.getMonth() + months);
 
     const nearExpiryItems = rows.filter(row => {
-      if (!row.expiry_date) return false;
-      let expDate;
-      // Handle MM/YY or MM/YYYY
-      if (row.expiry_date.includes('/')) {
-        const parts = row.expiry_date.split('/');
-        let year = parseInt(parts[1], 10);
-        const month = parseInt(parts[0], 10) - 1; // 0-indexed
-        if (year < 100) year += 2000;
-        expDate = new Date(year, month + 1, 0); // Last day of that month
-      } else {
-        expDate = new Date(row.expiry_date);
-      }
-      return expDate <= thresholdDate;
+      const expDate = parseExpiryDate(row.expiry_date);
+      return expDate !== null && expDate <= thresholdDate;
     });
 
     // Group by distributor
@@ -223,7 +213,7 @@ router.post('/ai-camera/process', async (req, res) => {
     const imageData = req.body.image;
 
     // Process the image with Tesseract OCR (offline capable)
-    const result = await aiCameraService.processImage(imageData);
+    const result = await submitOcrJob(imageData, 'processImage');
 
     // Extract potential medicine information (prioritize service structured results)
     const medicineInfo = result.medicineInfo || extractMedicineInfo(result.text);

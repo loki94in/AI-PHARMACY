@@ -167,15 +167,49 @@ router.get('/export-pdf', async (req, res) => {
       keys = ['medicine_name', 'batch_no', 'expiry_date', 'quantity'];
       alignMap = { medicine_name: 'left', batch_no: 'left', expiry_date: 'center', quantity: 'right' };
       colWidths = [220, 100, 100, 92];
+    } else if (type === 'top-medicines') {
+      title = 'Top Medicines by Revenue';
+      headers = ['Medicine', 'Revenue (₹)', 'Qty Sold'];
+      keys = ['name', 'revenue', 'qty'];
+      query = `SELECT m.name, ROUND(SUM(si.quantity * COALESCE(si.mrp,0)),2) as revenue, SUM(si.quantity) as qty
+               FROM sale_items si JOIN sales_invoices inv ON si.invoice_id = inv.id
+               JOIN inventory_master im ON si.inventory_id = im.id JOIN medicines m ON im.medicine_id = m.id
+               WHERE date(inv.date) BETWEEN date(?) AND date(?)
+               GROUP BY m.id ORDER BY revenue DESC LIMIT 20`;
+      params = [from, to];
+      alignMap = { name: 'left', revenue: 'right', qty: 'right' };
+      colWidths = [280, 120, 112];
+    } else if (type === 'top-customers') {
+      title = 'Top Customers by Spend';
+      headers = ['Customer', 'Total Spend (₹)', 'Visits'];
+      keys = ['name', 'total', 'visits'];
+      query = `SELECT c.name, ROUND(SUM(inv.total_amount),2) as total, COUNT(*) as visits
+               FROM sales_invoices inv JOIN customers c ON inv.customer_id = c.id
+               WHERE date(inv.date) BETWEEN date(?) AND date(?)
+               GROUP BY c.id ORDER BY total DESC LIMIT 20`;
+      params = [from, to];
+      alignMap = { name: 'left', total: 'right', visits: 'right' };
+      colWidths = [280, 120, 112];
+    } else if (type === 'top-distributors') {
+      title = 'Top Distributors by Purchase Spend';
+      headers = ['Distributor', 'Total Spend (₹)', 'Invoices'];
+      keys = ['name', 'total', 'invoice_count'];
+      query = `SELECT d.name, ROUND(SUM(p.total_amount),2) as total, COUNT(*) as invoice_count
+               FROM purchases p JOIN distributors d ON p.distributor_id = d.id
+               WHERE date(p.date) BETWEEN date(?) AND date(?)
+               GROUP BY d.id ORDER BY total DESC LIMIT 20`;
+      params = [from, to];
+      alignMap = { name: 'left', total: 'right', invoice_count: 'right' };
+      colWidths = [280, 120, 112];
     } else {
       return res.status(400).json({ error: 'Invalid report type' });
     }
 
     const rows = await db.all(query, params);
-    
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=report_${type}_${Date.now()}.pdf`);
-    
+
     exportToPdf(res, title, headers, keys, rows, alignMap, colWidths);
   } catch (err: any) {
     console.error('PDF export error:', err);
@@ -226,6 +260,34 @@ router.get('/export-excel', async (req, res) => {
       }
       headers = ['Medicine Name', 'Batch No', 'Expiry Date', 'Stock Qty'];
       keys = ['medicine_name', 'batch_no', 'expiry_date', 'quantity'];
+    } else if (type === 'top-medicines') {
+      title = 'Top Medicines by Revenue';
+      headers = ['Medicine', 'Revenue (Rs.)', 'Qty Sold'];
+      keys = ['name', 'revenue', 'qty'];
+      query = `SELECT m.name, ROUND(SUM(si.quantity * COALESCE(si.mrp,0)),2) as revenue, SUM(si.quantity) as qty
+               FROM sale_items si JOIN sales_invoices inv ON si.invoice_id = inv.id
+               JOIN inventory_master im ON si.inventory_id = im.id JOIN medicines m ON im.medicine_id = m.id
+               WHERE date(inv.date) BETWEEN date(?) AND date(?)
+               GROUP BY m.id ORDER BY revenue DESC LIMIT 20`;
+      params = [from, to];
+    } else if (type === 'top-customers') {
+      title = 'Top Customers by Spend';
+      headers = ['Customer', 'Total Spend (Rs.)', 'Visits'];
+      keys = ['name', 'total', 'visits'];
+      query = `SELECT c.name, ROUND(SUM(inv.total_amount),2) as total, COUNT(*) as visits
+               FROM sales_invoices inv JOIN customers c ON inv.customer_id = c.id
+               WHERE date(inv.date) BETWEEN date(?) AND date(?)
+               GROUP BY c.id ORDER BY total DESC LIMIT 20`;
+      params = [from, to];
+    } else if (type === 'top-distributors') {
+      title = 'Top Distributors by Purchase Spend';
+      headers = ['Distributor', 'Total Spend (Rs.)', 'Invoices'];
+      keys = ['name', 'total', 'invoice_count'];
+      query = `SELECT d.name, ROUND(SUM(p.total_amount),2) as total, COUNT(*) as invoice_count
+               FROM purchases p JOIN distributors d ON p.distributor_id = d.id
+               WHERE date(p.date) BETWEEN date(?) AND date(?)
+               GROUP BY d.id ORDER BY total DESC LIMIT 20`;
+      params = [from, to];
     } else {
       return res.status(400).json({ error: 'Invalid report type' });
     }
@@ -239,6 +301,139 @@ router.get('/export-excel', async (req, res) => {
   } catch (err: any) {
     console.error('Excel export error:', err);
     res.status(500).json({ error: 'Failed to export Excel sheet' });
+  }
+});
+
+// Analytics endpoint — chart-ready aggregates for all four domains
+router.get('/analytics', async (req, res) => {
+  const { type, fromDate, toDate } = req.query;
+  const from = fromDate ? String(fromDate) : '1970-01-01';
+  const to = toDate ? String(toDate) : '9999-12-31';
+
+  try {
+    const db = await dbManager.getConnection();
+
+    if (type === 'sales') {
+      const [trend, topMedicines, topCustomers, byPaymentStatus, totalRow] = await Promise.all([
+        db.all(
+          `SELECT date(date) as day, ROUND(SUM(total_amount),2) as amount, COUNT(*) as invoice_count
+           FROM sales_invoices WHERE date(date) BETWEEN date(?) AND date(?) GROUP BY date(date) ORDER BY day ASC`,
+          [from, to]
+        ),
+        db.all(
+          `SELECT m.name, ROUND(SUM(si.quantity * COALESCE(si.mrp, 0)),2) as revenue, SUM(si.quantity) as qty
+           FROM sale_items si
+           JOIN sales_invoices inv ON si.invoice_id = inv.id
+           JOIN inventory_master im ON si.inventory_id = im.id
+           JOIN medicines m ON im.medicine_id = m.id
+           WHERE date(inv.date) BETWEEN date(?) AND date(?)
+           GROUP BY m.id ORDER BY revenue DESC LIMIT 5`,
+          [from, to]
+        ),
+        db.all(
+          `SELECT c.name, ROUND(SUM(inv.total_amount),2) as total, COUNT(*) as visits
+           FROM sales_invoices inv
+           JOIN customers c ON inv.customer_id = c.id
+           WHERE date(inv.date) BETWEEN date(?) AND date(?)
+           GROUP BY c.id ORDER BY total DESC LIMIT 5`,
+          [from, to]
+        ),
+        db.all(
+          `SELECT COALESCE(payment_status,'UNKNOWN') as status, COUNT(*) as count, ROUND(SUM(total_amount),2) as amount
+           FROM sales_invoices WHERE date(date) BETWEEN date(?) AND date(?) GROUP BY payment_status`,
+          [from, to]
+        ),
+        db.get(
+          `SELECT COUNT(*) as cnt FROM sales_invoices WHERE date(date) BETWEEN date(?) AND date(?)`,
+          [from, to]
+        ),
+      ]);
+      return res.json({ trend, topMedicines, topCustomers, byPaymentStatus, totalInvoices: totalRow.cnt });
+    }
+
+    if (type === 'purchases') {
+      const [trend, topDistributors, totalRow] = await Promise.all([
+        db.all(
+          `SELECT date(date) as day, ROUND(SUM(total_amount),2) as amount, COUNT(*) as invoice_count
+           FROM purchases WHERE date(date) BETWEEN date(?) AND date(?) GROUP BY date(date) ORDER BY day ASC`,
+          [from, to]
+        ),
+        db.all(
+          `SELECT d.name, ROUND(SUM(p.total_amount),2) as total, COUNT(*) as invoice_count
+           FROM purchases p JOIN distributors d ON p.distributor_id = d.id
+           WHERE date(p.date) BETWEEN date(?) AND date(?)
+           GROUP BY d.id ORDER BY total DESC LIMIT 5`,
+          [from, to]
+        ),
+        db.get(
+          `SELECT COUNT(*) as cnt FROM purchases WHERE date(date) BETWEEN date(?) AND date(?)`,
+          [from, to]
+        ),
+      ]);
+      return res.json({ trend, topDistributors, totalInvoices: totalRow.cnt });
+    }
+
+    if (type === 'inventory') {
+      const [valueRow, lowRow, deadRow, expiryRow, topValueItems] = await Promise.all([
+        db.get(`SELECT ROUND(IFNULL(SUM(quantity * cost_price),0),2) as total FROM inventory_master`),
+        db.get(`SELECT COUNT(*) as cnt FROM inventory_master WHERE quantity > 0 AND quantity < 5`),
+        db.get(
+          `SELECT COUNT(DISTINCT im.id) as cnt FROM inventory_master im
+           WHERE im.quantity > 0
+           AND im.id NOT IN (
+             SELECT DISTINCT si.inventory_id FROM sale_items si
+             JOIN sales_invoices inv ON si.invoice_id = inv.id
+             WHERE date(inv.date) >= date('now','-90 days')
+           )`
+        ),
+        db.get(
+          `SELECT
+             SUM(CASE WHEN date(expiry_date) BETWEEN date('now') AND date('now','+30 days') THEN 1 ELSE 0 END) as in30,
+             SUM(CASE WHEN date(expiry_date) BETWEEN date('now') AND date('now','+60 days') THEN 1 ELSE 0 END) as in60,
+             SUM(CASE WHEN date(expiry_date) BETWEEN date('now') AND date('now','+90 days') THEN 1 ELSE 0 END) as in90
+           FROM inventory_master WHERE quantity > 0`
+        ),
+        db.all(
+          `SELECT m.name, im.quantity, ROUND(im.quantity * im.cost_price,2) as value
+           FROM inventory_master im JOIN medicines m ON im.medicine_id = m.id
+           WHERE im.quantity > 0 ORDER BY value DESC LIMIT 5`
+        ),
+      ]);
+      return res.json({
+        totalValue: valueRow.total,
+        lowStockCount: lowRow.cnt,
+        deadStockCount: deadRow.cnt,
+        expiringIn30: expiryRow.in30 || 0,
+        expiringIn60: expiryRow.in60 || 0,
+        expiringIn90: expiryRow.in90 || 0,
+        topValueItems,
+      });
+    }
+
+    if (type === 'email') {
+      const [totalRow, linkedRow, attachRow, topDistributors] = await Promise.all([
+        db.get(`SELECT COUNT(*) as cnt FROM emails`),
+        db.get(`SELECT COUNT(*) as cnt FROM emails WHERE linked_distributor_id IS NOT NULL`),
+        db.get(`SELECT COUNT(*) as cnt FROM email_attachments`),
+        db.all(
+          `SELECT distributor_name as name, COUNT(*) as count
+           FROM emails WHERE distributor_name IS NOT NULL AND distributor_name != ''
+           GROUP BY distributor_name ORDER BY count DESC LIMIT 5`
+        ),
+      ]);
+      return res.json({
+        total: totalRow.cnt,
+        linked: linkedRow.cnt,
+        attachmentCount: attachRow.cnt,
+        linkRate: totalRow.cnt > 0 ? Math.round((linkedRow.cnt / totalRow.cnt) * 100) : 0,
+        topDistributors,
+      });
+    }
+
+    return res.status(400).json({ error: 'Invalid type. Use: sales, purchases, inventory, email' });
+  } catch (err) {
+    console.error('Analytics error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -3,7 +3,7 @@ import { dbManager } from '../database/connection.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { aiCameraService } from '../services/aiCameraService.js';
+import { submitOcrJob } from '../services/ocrJobQueue.js';
 import { productNameFilterService } from '../services/productNameFilterService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -155,7 +155,7 @@ router.post('/analyze', async (req, res) => {
     return res.status(400).json({ error: 'Image data (base64 string) is required' });
   }
   try {
-    const result = await aiCameraService.processImage(image);
+    const result = await submitOcrJob(image, 'processImage');
     res.json(result);
   } catch (error: any) {
     console.error('OCR Camera scan processing failed:', error);

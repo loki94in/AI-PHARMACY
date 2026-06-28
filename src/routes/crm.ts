@@ -13,18 +13,26 @@ const router = express.Router();
 // Get patients
 router.get('/patients', async (req, res) => {
   const { q, limit } = req.query;
+  const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string, 10) : null;
   try {
     const db = await dbManager.getConnection();
     let query = 'SELECT * FROM customers';
-    const params = [];
-    
+    const params: any[] = [];
+    const where: string[] = [];
+
     if (q) {
-      query += ' WHERE name LIKE ? OR phone LIKE ?';
+      where.push('(name LIKE ? OR phone LIKE ?)');
       params.push(`%${q}%`, `%${q}%`);
     }
-    
+
+    if (branchId !== null && !isNaN(branchId)) {
+      where.push('branch_id = ?');
+      params.push(branchId);
+    }
+
+    if (where.length > 0) query += ' WHERE ' + where.join(' AND ');
     query += ' ORDER BY id DESC';
-    
+
     if (limit) {
       const limitVal = parseInt(limit as string, 10);
       if (!isNaN(limitVal)) {
@@ -32,7 +40,7 @@ router.get('/patients', async (req, res) => {
         params.push(limitVal);
       }
     }
-    
+
     const patients = await db.all(query, params);
     res.json(patients);
   } catch (error) {
@@ -41,19 +49,49 @@ router.get('/patients', async (req, res) => {
   }
 });
 
+// Get single patient
+router.get('/patients/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const patient = await db.get('SELECT * FROM customers WHERE id = ?', [id]);
+    if (!patient) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+    const stats = await db.get(
+      `SELECT COUNT(*) AS total_visits,
+              COALESCE(SUM(total_amount), 0) AS total_spent,
+              MAX(date) AS last_visit_date
+       FROM sales_invoices WHERE customer_id = ?`,
+      [id]
+    );
+    await dbManager.close();
+    res.json({ ...patient, stats });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch patient:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Create patient
 router.post('/patients', async (req, res) => {
-  const { name, phone, address, notes } = req.body;
+  const { name, phone, address, notes, age, gender, credit_enabled, credit_balance } = req.body;
   if (!name) return res.status(400).json({ error: 'Name is required' });
   try {
     const db = await dbManager.getConnection();
     const result = await db.run(
-      'INSERT INTO customers (name, phone, address, notes) VALUES (?, ?, ?, ?)',
-      [name, phone || '', address || '', notes || '']
+      `INSERT INTO customers (name, phone, address, notes, age, gender, credit_enabled, credit_balance)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name, phone || '', address || '', notes || '',
+       age || '', gender || '', credit_enabled ? 1 : 0, parseFloat(credit_balance) || 0]
     );
     const newPatient = await db.get('SELECT * FROM customers WHERE id = ?', result.lastID);
-        res.status(201).json(newPatient);
+    await dbManager.close();
+    res.status(201).json(newPatient);
   } catch (error) {
+    await dbManager.close();
     console.error('Failed to create patient:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -62,16 +100,22 @@ router.post('/patients', async (req, res) => {
 // Update patient
 router.put('/patients/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, phone, address, notes } = req.body;
+  const { name, phone, address, notes, age, gender, credit_enabled, credit_balance } = req.body;
   try {
     const db = await dbManager.getConnection();
     await db.run(
-      'UPDATE customers SET name=?, phone=?, address=?, notes=? WHERE id=?',
-      [name, phone || '', address || '', notes || '', id]
+      `UPDATE customers
+       SET name=?, phone=?, address=?, notes=?, age=?, gender=?, credit_enabled=?, credit_balance=?
+       WHERE id=?`,
+      [name, phone || '', address || '', notes || '',
+       age || '', gender || '', credit_enabled ? 1 : 0,
+       parseFloat(credit_balance) || 0, id]
     );
     const updated = await db.get('SELECT * FROM customers WHERE id = ?', id);
-        res.json(updated);
+    await dbManager.close();
+    res.json(updated);
   } catch (error) {
+    await dbManager.close();
     console.error('Failed to update patient:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -120,12 +164,49 @@ router.get('/:id/history', async (req, res) => {
 
 // Get doctors list
 router.get('/doctors', async (req, res) => {
+  const { q } = req.query;
   try {
     const db = await dbManager.getConnection();
-    const doctors = await db.all('SELECT * FROM doctors ORDER BY name ASC');
-        res.json(doctors);
+    let doctors;
+    if (q) {
+      doctors = await db.all(
+        `SELECT * FROM doctors WHERE name LIKE ? OR speciality LIKE ? OR hospital LIKE ? ORDER BY name ASC`,
+        [`%${q}%`, `%${q}%`, `%${q}%`]
+      );
+    } else {
+      doctors = await db.all('SELECT * FROM doctors ORDER BY name ASC');
+    }
+    await dbManager.close();
+    res.json(doctors);
   } catch (error) {
+    await dbManager.close();
     console.error('Failed to fetch doctors:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get single doctor
+router.get('/doctors/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const doctor = await db.get('SELECT * FROM doctors WHERE id = ?', [id]);
+    if (!doctor) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Doctor not found' });
+    }
+    const stats = await db.get(
+      `SELECT COUNT(DISTINCT si.id) AS total_prescriptions,
+              COUNT(DISTINCT si.customer_id) AS unique_patients,
+              MAX(si.date) AS last_prescription_date
+       FROM sales_invoices si WHERE si.doctor_id = ?`,
+      [id]
+    );
+    await dbManager.close();
+    res.json({ ...doctor, stats });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch doctor:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

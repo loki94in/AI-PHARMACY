@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Database from 'better-sqlite3';
 import AdmZip from 'adm-zip';
 import axios from 'axios';
 import { dbManager } from '../database/connection.js';
@@ -112,11 +111,11 @@ export class BackupRecoveryService {
       fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
     }
 
-    // Safely clone database via checkpointed WAL copy to temporary raw file
+    // Flush WAL frames back to main DB file, then copy — avoids native binary ABI issues.
     const tempDbPath = destPath.replace('.gz', '');
-    const tempDb = new Database(DB_PATH);
-    await tempDb.backup(tempDbPath);
-    tempDb.close();
+    const snapDb = await dbManager.getConnection();
+    await snapDb.run('PRAGMA wal_checkpoint(TRUNCATE)');
+    fs.copyFileSync(DB_PATH, tempDbPath);
 
     // Compress raw database using gzip (ponytail: native stdlib zlib)
     const gzip = zlib.createGzip();

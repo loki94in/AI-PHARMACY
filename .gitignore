@@ -2,6 +2,11 @@
 node_modules/
 **/node_modules/
 
+# Electron build outputs
+dist-electron/
+dist-server/
+dist-release/
+
 # local env
 .env
 .env*.local
@@ -50,6 +55,10 @@ data/staging.db
 # Temp OCR & audit images
 data/temp_ocr/
 data/audit_images/
+
+# Runtime data files regenerated during server/test runs
+data/audit_queue.json
+data/ocr_corrections.json
 
 # IDE / Tool caches
 .understand-anything/

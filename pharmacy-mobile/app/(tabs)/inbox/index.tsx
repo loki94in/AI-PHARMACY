@@ -30,6 +30,17 @@ import {
   getEmailsFromServer,
   getAttachmentPreviewFromServer,
   getServerUrl,
+  // Phase 6
+  searchEmails,
+  getEmailStats,
+  getOutgoingEmails,
+  getSyncFeed,
+  ingestSyncFeedJob,
+  tagEmail,
+  EmailRow,
+  OutgoingEmail,
+  SyncFeedJob,
+  EmailStats,
 } from '../../../lib/api';
 
 // ── File-type icon config: returns Ionicons name + colors per extension ──
@@ -270,6 +281,18 @@ export default function InboxScreen() {
   const [pdfPreviewText, setPdfPreviewText] = useState('');
   const [pdfPreviewFilename, setPdfPreviewFilename] = useState('');
 
+  // ── Phase 6: Email Manager tabs ──────────────────────────────────────────
+  type InboxTab = 'all' | 'orders' | 'distributor' | 'synced' | 'sent';
+  const [activeTab, setActiveTab] = useState<InboxTab>('all');
+  const [emailQuery, setEmailQuery] = useState('');
+  const [searchDebounce, setSearchDebounce] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [emailSearchResults, setEmailSearchResults] = useState<EmailRow[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [emailStats, setEmailStats] = useState<EmailStats | null>(null);
+  const [outgoingEmails, setOutgoingEmails] = useState<OutgoingEmail[]>([]);
+  const [syncFeed, setSyncFeed] = useState<SyncFeedJob[]>([]);
+  const [ingestingId, setIngestingId] = useState<string | null>(null);
+
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -312,6 +335,75 @@ export default function InboxScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ── Phase 6 loaders ────────────────────────────────────────────────────
+  const loadTabData = useCallback(async (tab: InboxTab) => {
+    try {
+      if (tab === 'orders') {
+        const rows = await searchEmails({ is_order: true, limit: 80 });
+        setEmailSearchResults(rows);
+      } else if (tab === 'distributor') {
+        const rows = await searchEmails({ limit: 80 });
+        setEmailSearchResults(rows.filter(r => r.distributor_name));
+      } else if (tab === 'synced') {
+        const feed = await getSyncFeed(50);
+        setSyncFeed(feed);
+      } else if (tab === 'sent') {
+        const out = await getOutgoingEmails(50);
+        setOutgoingEmails(out);
+      }
+    } catch (err) {
+      console.warn('[InboxTab] load error:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    getEmailStats().then(setEmailStats).catch(() => null);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'all') loadTabData(activeTab);
+  }, [activeTab, loadTabData]);
+
+  const handleEmailSearch = (q: string) => {
+    setEmailQuery(q);
+    if (searchDebounce) clearTimeout(searchDebounce);
+    if (!q.trim()) { setEmailSearchResults([]); setIsSearching(false); return; }
+    setIsSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const rows = await searchEmails({ q, limit: 50 });
+        setEmailSearchResults(rows);
+      } catch { /* ignore */ } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+    setSearchDebounce(t);
+  };
+
+  const handleIngest = async (job_id: string) => {
+    setIngestingId(job_id);
+    try {
+      await ingestSyncFeedJob(job_id);
+      const feed = await getSyncFeed(50);
+      setSyncFeed(feed);
+      const stats = await getEmailStats();
+      setEmailStats(stats);
+      Alert.alert('Ingested', 'Email added to inbox from sync feed.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Ingest failed');
+    } finally {
+      setIngestingId(null);
+    }
+  };
+
+  const TABS: { key: InboxTab; label: string; count?: number }[] = [
+    { key: 'all',         label: 'All',        count: emailStats?.total },
+    { key: 'orders',      label: 'Orders',     count: emailStats?.orders },
+    { key: 'distributor', label: 'Distributor' },
+    { key: 'synced',      label: 'Synced',     count: emailStats?.synced_in },
+    { key: 'sent',        label: 'Sent' },
+  ];
 
   const handleSelectEmail = async (email: GmailMessagePreview) => {
     setSelectedEmail(email);
@@ -618,6 +710,86 @@ export default function InboxScreen() {
     );
   }
 
+  // ── Phase 6 sub-renders ────────────────────────────────────────────────
+
+  const renderEmailRow = (item: EmailRow) => (
+    <View style={styles.emailCard} key={item.uid}>
+      <View style={styles.emailTop}>
+        <View style={styles.senderWrap}>
+          <View style={styles.envelopeBadge}>
+            <Ionicons name="mail-outline" size={16} color={colors.primary} />
+          </View>
+          <Text style={styles.senderText} numberOfLines={1}>{item.from_addr}</Text>
+        </View>
+        <Text style={styles.dateText}>{formatDate(item.date)}</Text>
+      </View>
+      <Text style={styles.subjectText} numberOfLines={1}>{item.subject}</Text>
+      {item.distributor_name ? (
+        <Text style={[styles.snippetText, { color: colors.accent }]} numberOfLines={1}>
+          {item.distributor_name}
+        </Text>
+      ) : null}
+      {item.is_order === 1 && (
+        <View style={{ flexDirection: 'row', marginTop: 4 }}>
+          <View style={[styles.envelopeBadge, { backgroundColor: colors.warning + '20' }]}>
+            <Text style={{ fontSize: 10, color: colors.warning, fontWeight: '700' }}>ORDER</Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderSyncFeedRow = (job: SyncFeedJob) => {
+    let parsed: any = null;
+    try { parsed = JSON.parse(job.payload); } catch { /* ignore */ }
+    return (
+      <View style={styles.emailCard} key={job.job_id}>
+        <View style={styles.emailTop}>
+          <View style={[styles.envelopeBadge, { backgroundColor: colors.info + '20' }]}>
+            <Ionicons name="sync-outline" size={14} color={colors.info} />
+          </View>
+          <Text style={[styles.senderText, { color: colors.info }]} numberOfLines={1}>
+            {parsed?.source_device_id?.slice(0, 8) ?? job.entity_id.slice(0, 8)}…
+          </Text>
+          <Text style={styles.dateText}>{formatDate(job.created_at)}</Text>
+        </View>
+        <Text style={styles.subjectText} numberOfLines={1}>{parsed?.subject ?? '(aimail)'}</Text>
+        <Text style={styles.snippetText} numberOfLines={2}>{parsed?.body ?? ''}</Text>
+        <TouchableOpacity
+          style={[styles.proceedBtn, { marginTop: 8, alignSelf: 'flex-start' },
+            ingestingId === job.job_id && styles.disabledBtn]}
+          disabled={ingestingId === job.job_id}
+          onPress={() => handleIngest(job.job_id)}
+        >
+          {ingestingId === job.job_id
+            ? <ActivityIndicator size="small" color={colors.textInverse} />
+            : <Text style={styles.proceedBtnText}>Ingest →</Text>}
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderOutgoingRow = (item: OutgoingEmail) => (
+    <View style={styles.emailCard} key={item.id}>
+      <View style={styles.emailTop}>
+        <View style={[styles.envelopeBadge, {
+          backgroundColor: item.status === 'sent' ? colors.success + '20' : colors.danger + '20' }]}>
+          <Ionicons
+            name={item.status === 'sent' ? 'paper-plane-outline' : 'alert-circle-outline'}
+            size={14}
+            color={item.status === 'sent' ? colors.success : colors.danger}
+          />
+        </View>
+        <Text style={styles.senderText} numberOfLines={1}>{item.to_addr}</Text>
+        <Text style={styles.dateText}>{formatDate(item.created_at)}</Text>
+      </View>
+      <Text style={styles.subjectText} numberOfLines={1}>{item.subject}</Text>
+      {item.error ? (
+        <Text style={[styles.snippetText, { color: colors.danger }]} numberOfLines={1}>{item.error}</Text>
+      ) : null}
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       {isOfflineMode && (
@@ -627,6 +799,104 @@ export default function InboxScreen() {
         </View>
       )}
 
+      {/* ── Stats strip ─────────────────────────────────────────────────── */}
+      {emailStats && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          style={styles.statsStrip} contentContainerStyle={styles.statsStripContent}>
+          {[
+            { label: 'Total',   value: emailStats.total,     color: colors.textSecondary },
+            { label: 'Unread',  value: emailStats.unread,    color: colors.warning },
+            { label: 'Orders',  value: emailStats.orders,    color: colors.primary },
+            { label: 'Synced',  value: emailStats.synced_in, color: colors.info },
+          ].map(s => (
+            <View key={s.label} style={styles.statChip}>
+              <Text style={[styles.statChipVal, { color: s.color }]}>{s.value}</Text>
+              <Text style={styles.statChipLabel}>{s.label}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* ── Tab row ─────────────────────────────────────────────────────── */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={styles.tabRow} contentContainerStyle={styles.tabRowContent}>
+        {TABS.map(tab => (
+          <TouchableOpacity key={tab.key}
+            style={[styles.tabBtn, activeTab === tab.key && styles.tabBtnActive]}
+            onPress={() => setActiveTab(tab.key)} activeOpacity={0.7}>
+            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+              {tab.label}{tab.count !== undefined ? ` (${tab.count})` : ''}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* ── Search bar (visible on All tab) ─────────────────────────────── */}
+      {activeTab === 'all' && (
+        <View style={styles.searchBarWrap}>
+          <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchBarInput}
+            value={emailQuery}
+            onChangeText={handleEmailSearch}
+            placeholder="Search emails, distributors, medicines…"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {emailQuery.length > 0 && (
+            <TouchableOpacity onPress={() => { setEmailQuery(''); setSearchResults([]); }}>
+              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+          {isSearching && <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 6 }} />}
+        </View>
+      )}
+
+      {/* ── Non-Gmail tab content ────────────────────────────────────────── */}
+      {activeTab !== 'all' && (
+        <ScrollView
+          contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }}
+          refreshControl={<RefreshControl refreshing={refreshing}
+            onRefresh={() => loadTabData(activeTab)}
+            tintColor={colors.primary} colors={[colors.primary]} />}
+        >
+          {activeTab === 'synced' && (
+            syncFeed.length === 0
+              ? <View style={styles.emptyContainer}>
+                  <Ionicons name="sync-outline" size={48} color={colors.textMuted} />
+                  <Text style={[typography.bodySmall, { marginTop: spacing.md, textAlign: 'center' }]}>
+                    No inbound .aimail records yet. Use Sync Now to receive from peers.
+                  </Text>
+                </View>
+              : syncFeed.map(renderSyncFeedRow)
+          )}
+          {activeTab === 'sent' && (
+            outgoingEmails.length === 0
+              ? <View style={styles.emptyContainer}>
+                  <Ionicons name="paper-plane-outline" size={48} color={colors.textMuted} />
+                  <Text style={[typography.bodySmall, { marginTop: spacing.md }]}>No outgoing emails logged yet.</Text>
+                </View>
+              : outgoingEmails.map(renderOutgoingRow)
+          )}
+          {(activeTab === 'orders' || activeTab === 'distributor') && (
+            emailSearchResults.length === 0
+              ? <View style={styles.emptyContainer}>
+                  <Ionicons name="mail-unread-outline" size={48} color={colors.textMuted} />
+                  <Text style={[typography.bodySmall, { marginTop: spacing.md }]}>No emails found.</Text>
+                </View>
+              : emailSearchResults.map(renderEmailRow)
+          )}
+        </ScrollView>
+      )}
+
+      {/* ── All tab: existing Gmail FlatList (+ search results overlay) ─── */}
+      {activeTab === 'all' && (
+        emailQuery.trim() && emailSearchResults.length > 0 ? (
+          <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }}>
+            {emailSearchResults.map(renderEmailRow)}
+          </ScrollView>
+        ) : (
       <FlatList
         data={emails}
         keyExtractor={(item) => item.id}
@@ -684,6 +954,8 @@ export default function InboxScreen() {
           </View>
         }
       />
+        )
+      )}
 
       {/* ─── EMAIL DETAIL VIEW MODAL ───────────────────────────────────────── */}
       <Modal
@@ -1252,4 +1524,17 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica' : 'monospace',
   },
+  statsStrip: { maxHeight: 52, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  statsStripContent: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.md, flexDirection: 'row', alignItems: 'center' },
+  statChip: { alignItems: 'center', paddingHorizontal: spacing.sm },
+  statChipVal: { fontSize: 20, fontWeight: '800', lineHeight: 24 },
+  statChipLabel: { ...typography.caption, color: colors.textMuted },
+  tabRow: { maxHeight: 44, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  tabRowContent: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, gap: spacing.xs, flexDirection: 'row', alignItems: 'center' },
+  tabBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, backgroundColor: colors.surface },
+  tabBtnActive: { backgroundColor: colors.primary },
+  tabText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
+  tabTextActive: { color: colors.textInverse },
+  searchBarWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radius.md, paddingHorizontal: spacing.sm, marginHorizontal: spacing.md, marginVertical: spacing.sm },
+  searchBarInput: { flex: 1, color: colors.textPrimary, paddingVertical: 8, paddingHorizontal: spacing.xs, fontSize: 13 },
 });

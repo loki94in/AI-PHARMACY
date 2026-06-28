@@ -14,7 +14,26 @@ let cachedBaseUrl: string | null = null;
 
 // ─── Server URL Management ──────────────────────────────────────────────────
 
+// USB mode: when enabled, adb reverse tunnels phone localhost → PC ports,
+// so the server URL becomes http://localhost:<port> regardless of Wi-Fi.
+const USB_MODE_KEY = 'usb_sync_mode';
+const USB_SERVER_URL = 'http://localhost:3000';
+
+export async function setUsbMode(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(USB_MODE_KEY, enabled ? 'true' : 'false');
+  cachedBaseUrl = null; // invalidate cache so next call re-resolves
+}
+
+export async function getUsbMode(): Promise<boolean> {
+  const val = await AsyncStorage.getItem(USB_MODE_KEY);
+  return val === 'true';
+}
+
 export async function getServerUrl(): Promise<string | null> {
+  // USB mode overrides Wi-Fi server URL
+  const usbMode = await AsyncStorage.getItem(USB_MODE_KEY);
+  if (usbMode === 'true') return USB_SERVER_URL;
+
   if (cachedBaseUrl) return cachedBaseUrl;
   const url = await SecureStore.getItemAsync(SERVER_KEY);
   if (url) cachedBaseUrl = url;
@@ -1168,6 +1187,262 @@ export async function addPharmarackCart(items: any[]): Promise<any> {
   }
 }
 
+// ─── Phase 6: Email Manager & Notification Center ────────────────────────────
+
+export interface EmailStats {
+  total: number;
+  unread: number;
+  orders: number;
+  saved: number;
+  synced_in: number;
+  by_distributor: { distributor_name: string; cnt: number }[];
+}
+
+export interface EmailRow {
+  uid: number;
+  from_addr: string;
+  subject: string;
+  date: string;
+  is_seen: number;
+  is_order: number;
+  is_saved: number;
+  distributor_name: string | null;
+  has_attachments: number;
+  medicine_names: string | null;
+}
+
+export interface OutgoingEmail {
+  id: number;
+  to_addr: string;
+  subject: string;
+  status: 'sent' | 'failed';
+  error: string | null;
+  triggered_by_uid: number | null;
+  created_at: string;
+}
+
+export interface SyncFeedJob {
+  job_id: string;
+  entity_id: string;
+  payload: string;
+  checksum: string;
+  transfer_version: number;
+  retries: number;
+  created_at: string;
+  synced_at: string | null;
+}
+
+export interface NotificationCenterItem {
+  id: number;
+  source: 'automation' | 'action' | 'sync';
+  type: string;
+  message: string;
+  recipient: string | null;
+  status: string;
+  error: string | null;
+  lifecycle_status: string | null;
+  created_at: string;
+}
+
+export async function searchEmails(params: {
+  q?: string;
+  distributor?: string;
+  is_order?: boolean;
+  is_seen?: boolean;
+  from_date?: string;
+  to_date?: string;
+  limit?: number;
+}): Promise<EmailRow[]> {
+  const qs = new URLSearchParams();
+  if (params.q)           qs.set('q', params.q);
+  if (params.distributor) qs.set('distributor', params.distributor);
+  if (params.is_order !== undefined) qs.set('is_order', params.is_order ? '1' : '0');
+  if (params.is_seen !== undefined)  qs.set('is_seen',  params.is_seen  ? '1' : '0');
+  if (params.from_date)  qs.set('from_date', params.from_date);
+  if (params.to_date)    qs.set('to_date', params.to_date);
+  if (params.limit)      qs.set('limit', String(params.limit));
+  const res = await request<{ success: boolean; data: EmailRow[] }>(`/email/search?${qs}`);
+  return res.data;
+}
+
+export async function getEmailStats(): Promise<EmailStats> {
+  const res = await request<{ success: boolean; data: EmailStats }>('/email/stats');
+  return res.data;
+}
+
+export async function getEmailDistributors(): Promise<string[]> {
+  const res = await request<{ success: boolean; data: string[] }>('/email/distributors');
+  return res.data;
+}
+
+export async function getOutgoingEmails(limit = 50): Promise<OutgoingEmail[]> {
+  const res = await request<{ success: boolean; data: OutgoingEmail[] }>(`/email/outgoing?limit=${limit}`);
+  return res.data;
+}
+
+export async function tagEmail(uid: number, updates: { distributor_name?: string; is_order?: boolean }): Promise<void> {
+  await request(`/email/${uid}/tag`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function getSyncFeed(limit = 50): Promise<SyncFeedJob[]> {
+  const res = await request<{ success: boolean; data: SyncFeedJob[] }>(`/email/sync-feed?limit=${limit}`);
+  return res.data;
+}
+
+export async function ingestSyncFeedJob(job_id: string): Promise<void> {
+  await request(`/email/sync-feed/${encodeURIComponent(job_id)}/ingest`, { method: 'POST' });
+}
+
+export async function getNotificationCenter(limit = 60, type?: string): Promise<NotificationCenterItem[]> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (type) qs.set('type', type);
+  const res = await request<{ success: boolean; data: NotificationCenterItem[] }>(`/notifications/center?${qs}`);
+  return res.data;
+}
+
+export async function markNotificationsRead(ids: number[]): Promise<void> {
+  await request('/notifications/center/mark-read', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
+// ─── Sync Engine (Phase 4 / Phase 5) ─────────────────────────────────────────
+
+export interface SyncStatus {
+  deviceId: string;
+  port: number;
+  pending: number;
+  sent: number;
+  failed: number;
+  received: number;
+}
+
+export interface SyncPeer {
+  id: number;
+  device_id: string;
+  label: string | null;
+  ip_address: string;
+  port: number;
+  last_seen: string | null;
+  created_at: string;
+}
+
+export interface SyncJob {
+  id: number;
+  job_id: string;
+  entity_type: string;
+  entity_id: string;
+  checksum: string;
+  transfer_version: number;
+  direction: 'outbound' | 'inbound';
+  status: 'pending' | 'sent' | 'failed' | 'received';
+  target_device: string | null;
+  retries: number;
+  error: string | null;
+  created_at: string;
+  synced_at: string | null;
+}
+
+export async function getSyncStatus(): Promise<SyncStatus> {
+  const res = await request<{ success: boolean; data: SyncStatus }>('/sync/status');
+  return res.data;
+}
+
+export async function getSyncPeers(): Promise<SyncPeer[]> {
+  const res = await request<{ success: boolean; data: SyncPeer[] }>('/sync/peers');
+  return res.data;
+}
+
+export async function addSyncPeer(
+  device_id: string,
+  ip_address: string,
+  port: number,
+  label?: string
+): Promise<SyncPeer> {
+  const res = await request<{ success: boolean; data: SyncPeer }>('/sync/peers', {
+    method: 'POST',
+    body: JSON.stringify({ device_id, ip_address, port, label: label ?? null }),
+  });
+  return res.data;
+}
+
+export async function deleteSyncPeer(id: number): Promise<void> {
+  await request(`/sync/peers/${id}`, { method: 'DELETE' });
+}
+
+export async function getSyncJobs(limit = 20): Promise<SyncJob[]> {
+  const res = await request<{ success: boolean; data: SyncJob[] }>(`/sync/jobs?limit=${limit}`);
+  return res.data;
+}
+
+export async function getTestAimail(): Promise<any> {
+  const res = await request<{ success: boolean; data: any }>('/sync/test-aimail');
+  return res.data;
+}
+
+/** Direct fetch to peer's sync HTTP server — bypasses the Express API */
+export async function pingPeer(ip: string, port: number): Promise<{ device_id: string; schema_version: number }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`http://${ip}:${port}/ping`, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** POST a serialised AimailDocument directly to a peer's sync HTTP server */
+export async function pushTestAimail(ip: string, port: number, doc: any): Promise<{ ok: boolean }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(`http://${ip}:${port}/receive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Phase 14: Sync Conflicts ──────────────────────────────────────────────────
+
+export interface SyncConflict {
+  id: number;
+  entity_type: string;
+  entity_id: string;
+  local_checksum: string;
+  remote_checksum: string;
+  remote_device_id: string | null;
+  strategy: string;
+  created_at: string;
+}
+
+export async function getSyncConflicts(): Promise<SyncConflict[]> {
+  const res = await request<{ success: boolean; data: SyncConflict[] }>('/sync/conflicts');
+  return res.data;
+}
+
+export async function resolveSyncConflict(id: number, choice: 'local' | 'remote' | 'merge'): Promise<void> {
+  await request(`/sync/conflicts/${id}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ choice }),
+  });
+}
+
 export async function logAssistantChat(payload: {
   sessionId: string;
   deviceName: string;
@@ -1184,4 +1459,241 @@ export async function logAssistantChat(payload: {
     console.warn('Failed to log assistant chat session:', err);
     return { success: false, offline: true };
   }
+}
+
+// ── Phase 7: email linking ───────────────────────────────────────────────────
+
+export interface EmailLinkResult {
+  linked: boolean;
+  skipped?: boolean;
+  reason?: string;
+  distributor_id?: number;
+  order_id?: number;
+  purchase_id?: number;
+  extracted_invoice_no?: string;
+}
+
+// 7a — email → distributor
+export const linkEmailDistributor = (uid: number): Promise<EmailLinkResult> =>
+  request(`/email/${uid}/link-distributor`, { method: 'POST' });
+
+export const batchLinkDistributors = (): Promise<{ processed: number; linked: number; missed: number }> =>
+  request('/email/batch-link-distributors', { method: 'POST' });
+
+// 7b — email → special_order
+export const linkEmailOrder = (uid: number): Promise<EmailLinkResult> =>
+  request(`/email/${uid}/link-order`, { method: 'POST' });
+
+export const batchLinkOrders = (): Promise<{ processed: number; linked: number; missed: number }> =>
+  request('/email/batch-link-orders', { method: 'POST' });
+
+// 7c — email → purchase invoice (additive only)
+export const linkEmailInvoice = (uid: number): Promise<EmailLinkResult> =>
+  request(`/email/${uid}/link-invoice`, { method: 'POST' });
+
+export const batchLinkInvoices = (): Promise<{ processed: number; linked: number; missed: number }> =>
+  request('/email/batch-link-invoices', { method: 'POST' });
+
+// ── Phase 8.1: Medicine Master ───────────────────────────────────────────────
+export const getMedicine = (id: number): Promise<any> =>
+  request(`/medicines/${id}`);
+
+export const updateMedicine = (id: number, payload: Record<string, any>): Promise<{ success: boolean; data: any }> =>
+  request(`/medicines/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+// ── Phase 8.2: Supplier Master ───────────────────────────────────────────────
+export const getDistributor = (id: number): Promise<any> =>
+  request(`/distributors/${id}`);
+
+export const updateDistributor = (
+  id: number,
+  payload: {
+    name: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    state_code?: string;
+    gstin?: string;
+    dl_no?: string;
+    city?: string;
+  }
+): Promise<{ success: boolean; data: any }> =>
+  request(`/distributors/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteDistributor = (id: number): Promise<{ success: boolean }> =>
+  request(`/distributors/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.3: Customer Master ───────────────────────────────────────────────
+export const getPatient = (id: number): Promise<any> =>
+  request(`/patients/${id}`);
+
+export const updatePatient = (
+  id: number,
+  payload: {
+    name: string;
+    phone?: string;
+    address?: string;
+    notes?: string;
+    age?: string;
+    gender?: string;
+    credit_enabled?: boolean;
+    credit_balance?: number;
+  }
+): Promise<any> =>
+  request(`/patients/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+// ── Phase 8.4: Doctor Master ─────────────────────────────────────────────────
+export const getDoctor = (id: number): Promise<any> =>
+  request(`/doctors/${id}`);
+
+export const searchDoctors = (q: string): Promise<any[]> =>
+  request(`/doctors?q=${encodeURIComponent(q)}`);
+
+// ── Phase 8.5: Manufacturer Master ───────────────────────────────────────────
+export const getManufacturers = (q?: string): Promise<any[]> =>
+  request(`/manufacturers/master${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+
+export const getManufacturer = (id: number): Promise<any> =>
+  request(`/manufacturers/master/${id}`);
+
+export const createManufacturer = (payload: Record<string, any>): Promise<{ success: boolean; data: any }> =>
+  request('/manufacturers/master', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateManufacturer = (id: number, payload: Record<string, any>): Promise<{ success: boolean; data: any }> =>
+  request(`/manufacturers/master/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteManufacturer = (id: number): Promise<{ success: boolean }> =>
+  request(`/manufacturers/master/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.6: Company Master ─────────────────────────────────────────────────
+export const getCompany = (): Promise<Record<string, string>> =>
+  request('/settings/company');
+
+export const saveCompany = (payload: Record<string, string>): Promise<{ success: boolean; message: string }> =>
+  request('/settings/company', { method: 'POST', body: JSON.stringify(payload) });
+
+// ── Phase 8.7: Medicine Categories ───────────────────────────────────────────
+export const getCategories = (q?: string): Promise<any[]> =>
+  request(`/categories/master${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+
+export const createCategory = (payload: { name: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request('/categories/master', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateCategory = (id: number, payload: { name: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request(`/categories/master/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteCategory = (id: number): Promise<{ success: boolean }> =>
+  request(`/categories/master/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.8: Tax Config ─────────────────────────────────────────────────────
+export const getTaxConfigs = (): Promise<any[]> =>
+  request('/tax-config');
+
+export const createTaxConfig = (payload: {
+  name: string;
+  rate: number;
+  cgst_per?: number;
+  sgst_per?: number;
+  igst_per?: number;
+  description?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request('/tax-config', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateTaxConfig = (id: number, payload: {
+  name: string;
+  rate: number;
+  cgst_per?: number;
+  sgst_per?: number;
+  igst_per?: number;
+  description?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request(`/tax-config/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteTaxConfig = (id: number): Promise<{ success: boolean }> =>
+  request(`/tax-config/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.9: Units Master ───────────────────────────────────────────────────
+export const getUnits = (): Promise<any[]> =>
+  request('/units');
+
+export const createUnit = (payload: { name: string; abbreviation?: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request('/units', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateUnit = (id: number, payload: { name: string; abbreviation?: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request(`/units/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteUnit = (id: number): Promise<{ success: boolean }> =>
+  request(`/units/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.10: Barcode Master ────────────────────────────────────────────────
+export const getBarcodes = (params?: { q?: string; medicine_id?: number }): Promise<any[]> => {
+  const qs = params?.medicine_id
+    ? `?medicine_id=${params.medicine_id}`
+    : params?.q
+    ? `?q=${encodeURIComponent(params.q)}`
+    : '';
+  return request(`/barcode${qs}`);
+};
+
+export const lookupBarcode = (barcode: string): Promise<any> =>
+  request(`/barcode/lookup/${encodeURIComponent(barcode)}`);
+
+export const createBarcode = (payload: {
+  barcode: string;
+  medicine_id: number;
+  batch_no?: string;
+  expiry_date?: string;
+  notes?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request('/barcode', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateBarcode = (id: number, payload: {
+  barcode: string;
+  medicine_id: number;
+  batch_no?: string;
+  expiry_date?: string;
+  notes?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request(`/barcode/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteBarcode = (id: number): Promise<{ success: boolean }> =>
+  request(`/barcode/${id}`, { method: 'DELETE' });
+
+// ── Phase 9: Import/Export ────────────────────────────────────────────────────
+export async function importModule(
+  module: string,
+  formData: FormData
+): Promise<{ success: boolean; jobId: number }> {
+  const base = await getServerUrl();
+  if (!base) throw new Error('Server URL not configured');
+  let deviceUuid = await SecureStore.getItemAsync('admin_device_uuid');
+  if (!deviceUuid) deviceUuid = 'DEV-' + Math.random().toString(36).substring(2);
+  const sessionToken = await SecureStore.getItemAsync('admin_session_token');
+  const res = await fetch(`${base}/api/import/${module}`, {
+    method: 'POST',
+    headers: {
+      ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+      'x-device-id': deviceUuid,
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+export const getImportJobStatus = (jobId: number): Promise<any> =>
+  request(`/import/status/${jobId}`);
+
+export async function getExportUrl(
+  module: 'inventory' | 'medicines' | 'suppliers' | 'customers' | 'purchases' | 'sales' |
+          'stock-report' | 'expiry-report' | 'sales-report' | 'purchase-report',
+  params?: Record<string, string>
+): Promise<string> {
+  const base = await getServerUrl();
+  if (!base) throw new Error('Server URL not configured');
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  return `${base}/api/export/${module}.csv${qs}`;
 }

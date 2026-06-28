@@ -1,6 +1,9 @@
 // Messaging Hub API (Agent 2)
 import express from 'express';
-import { initClient, sendMessage, currentQr, isReady, forceReconnect, destroyClient, shouldRouteToBusiness } from '../whatsappClient.js';
+import { shouldRouteToBusiness } from '../whatsappClient.js';
+import { whatsappWorkerBridge } from '../services/whatsappWorkerBridge.js';
+import { whatsappQueue } from '../services/whatsappQueue.js';
+import { whatsappBusinessService } from '../services/whatsappBusinessService.js';
 import QRCode from 'qrcode';
 import { eventService } from '../services/eventService.js';
 import fs from 'fs';
@@ -37,6 +40,8 @@ router.get('/qr', async (req, res) => {
       return res.json({ isReady: true, qrUrl: null, message: 'WhatsApp Business API is active.' });
     }
 
+    const { isReady, currentQr } = whatsappWorkerBridge.getStatus();
+
     if (isReady) {
       return res.json({ isReady: true, qrUrl: null });
     }
@@ -44,10 +49,10 @@ router.get('/qr', async (req, res) => {
       const qrUrl = await QRCode.toDataURL(currentQr);
       return res.json({ isReady: false, qrUrl });
     }
-    
-    // Trigger initialization if it hasn't started or QR isn't ready
-    initClient().catch(console.error);
-    
+
+    // Trigger initialization in the worker
+    whatsappWorkerBridge.sendCommand('WA_INIT');
+
     res.json({ isReady: false, qrUrl: null, message: 'Initializing WhatsApp client. Waiting for QR...' });
   } catch (err) {
     console.error('QR generation error:', err);
@@ -72,8 +77,8 @@ router.post('/login-window', async (req, res) => {
   (async () => {
     let browser;
     try {
-      // 1. Destroy background client to release session folder locks
-      await destroyClient();
+      // Destroy background client in the worker to release session folder locks
+      whatsappWorkerBridge.sendCommand('WA_DESTROY');
 
       // Give the OS 2.5 seconds to fully release file locks on the profile directory
       await new Promise(resolve => setTimeout(resolve, 2500));
@@ -120,7 +125,6 @@ router.post('/login-window', async (req, res) => {
       }
     } catch (err: any) {
       console.error('[WhatsApp] Error in Chrome login window:', err);
-      // Broadcast error message to the frontend so the user knows why it failed
       try {
         eventService.broadcast('auth_failure', {
           message: `Failed to open WhatsApp login window: ${err.message || err}. Ensure Chrome is installed and not already open in another process.`
@@ -137,22 +141,17 @@ router.post('/login-window', async (req, res) => {
           console.error('[WhatsApp] Error closing browser:', err);
         }
       }
-      // Re-initialize the background client now that Chrome is closed
-      console.log('[WhatsApp] Re-initializing background client...');
-      initClient().catch(err => {
-        console.error('[WhatsApp] Re-initialization after popup failed:', err);
-      });
+      // Re-initialize the background client in the worker now that Chrome is closed
+      console.log('[WhatsApp] Re-initializing background client via worker...');
+      whatsappWorkerBridge.sendCommand('WA_INIT');
     }
   })();
 });
 
 // Force reconnect and clear session
 router.post('/reconnect', async (req, res) => {
-
   try {
-    // Return early to the client, the forceReconnect runs asynchronously 
-    // and takes a few seconds to destroy and restart the browser
-    forceReconnect().catch(console.error);
+    whatsappWorkerBridge.sendCommand('WA_RECONNECT');
     res.json({ success: true, message: 'Reconnecting...' });
   } catch (err) {
     console.error('Reconnect error:', err);
@@ -167,8 +166,32 @@ router.post('/send', async (req, res) => {
     return res.status(400).json({ error: 'number and either message or file are required' });
   }
   try {
-    await sendMessage(number, mediaUrl, message, file);
-    res.json({ success: true, message: 'WhatsApp message sent' });
+    const useBusiness = await shouldRouteToBusiness();
+    if (useBusiness) {
+      if (file && file.mimetype && file.data) {
+        const { config: appConfig } = await import('../config/index.js');
+        const tempPath = path.join(appConfig.tempDir, `wa_send_${Date.now()}_${file.filename || 'file.pdf'}`);
+        if (!fs.existsSync(appConfig.tempDir)) fs.mkdirSync(appConfig.tempDir, { recursive: true });
+        fs.writeFileSync(tempPath, Buffer.from(file.data, 'base64'));
+        try {
+          const result = await whatsappBusinessService.sendDocument(number, tempPath, message, file.filename);
+          if (!result.success) throw new Error(result.error || 'Business API send failed');
+        } finally {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        }
+      } else if (mediaUrl) {
+        const result = await whatsappBusinessService.sendDocument(number, mediaUrl, message);
+        if (!result.success) throw new Error(result.error || 'Business API send failed');
+      } else {
+        const result = await whatsappBusinessService.sendTextMessage(number, message ?? '');
+        if (!result.success) throw new Error(result.error || 'Business API send failed');
+      }
+      return res.json({ success: true, message: 'WhatsApp message sent' });
+    }
+
+    // Web client path — queue for the worker to deliver
+    await whatsappQueue.queueMessage(number, mediaUrl ?? null, message ?? null);
+    res.json({ success: true, message: 'WhatsApp message queued for delivery' });
   } catch (err) {
     console.error('Messaging hub error:', err);
     res.status(500).json({ error: 'Failed to send message' });

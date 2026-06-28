@@ -8,7 +8,13 @@
     "scheme": "pharmacymobile",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "AI-Pharmacy uses Bluetooth to sync records with the desktop when Wi-Fi is unavailable.",
+        "NSBluetoothPeripheralUsageDescription": "AI-Pharmacy uses Bluetooth to sync records with the desktop when Wi-Fi is unavailable.",
+        "NSLocalNetworkUsageDescription": "AI-Pharmacy uses local network access to discover the desktop server via mDNS.",
+        "NSBonjourServices": ["_aipharmacy._tcp"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +24,15 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_ADVERTISE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CHANGE_WIFI_MULTICAST_STATE"
       ],
       "package": "com.pharmacy.genius"
     },
@@ -28,6 +42,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-dev-client",
       "expo-router",
       "expo-secure-store",
       [
@@ -48,6 +63,14 @@
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#0F0F1A"
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": ["central"],
+          "bluetoothAlwaysPermission": "AI-Pharmacy uses Bluetooth to sync records when Wi-Fi is unavailable."
         }
       ],
       "expo-font",

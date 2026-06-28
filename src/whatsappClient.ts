@@ -96,6 +96,7 @@ export async function initClient(): Promise<WAClient> {
       console.log('WhatsApp QR code received');
       currentQr = qr;
       isReady = false;
+      eventService.broadcast('wa_qr', { qr });
 
       // Try sending QR via Telegram
       try {
@@ -129,6 +130,7 @@ export async function initClient(): Promise<WAClient> {
       initializing = false;
       isReady = true;
       currentQr = null;
+      eventService.broadcast('wa_ready', {});
       resolve(client);
 
       // Start background synchronization of chats and messages
@@ -140,6 +142,8 @@ export async function initClient(): Promise<WAClient> {
     client.on('disconnected', (reason) => {
       console.log('WhatsApp client disconnected:', reason);
       isReady = false;
+      currentQr = null;
+      eventService.broadcast('wa_disconnected', { reason });
       clientInstance = null;
       activeClient = null;
       initializing = false;

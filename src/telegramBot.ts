@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { dbManager } from './database/connection.js';
 import { ensureSchema } from './database.js';
 import { telegramPrescriptionService } from './services/telegramPrescriptionService.js';
-import { aiCameraService } from './services/aiCameraService.js';
+import { submitOcrJob } from './services/ocrJobQueue.js';
 import { imageArchiveService } from './services/imageArchiveService.js';
 import { notificationManager } from './utils/notifications.js';
 import { extractDateFromText } from './utils/dateExtractor.js';
@@ -405,7 +405,7 @@ class TelegramBotService {
                 await imageArchiveService.processAndRouteImage(tempFilePath);
 
                 // Process with AI camera service
-                const result = await aiCameraService.processImage(buffer);
+                const result = await submitOcrJob(buffer, 'processImage');
 
                 // Determine if it is a bill/invoice photo
                 const captionText = (msg.caption || '').toLowerCase();

@@ -302,12 +302,48 @@ const POS = () => {
             setRefillDays(Number(refill.refill_interval_days || 30));
             setActiveRefillId(Number(refillId));
 
+            // Collect items from the primary refill
+            const seenMedicineIds = new Set<number>();
+            const allItems: any[] = [];
+
+            const addItems = (items: any[]) => {
+              for (const it of (items || [])) {
+                const mid = Number(it.medicine_id);
+                if (mid && !seenMedicineIds.has(mid)) {
+                  seenMedicineIds.add(mid);
+                  allItems.push(it);
+                }
+              }
+            };
+
+            addItems(refill.items || []);
+
+            // Also collect medicines from ALL other active refills for the same patient
+            // (patients often have one refill record per medicine — we load them all)
+            try {
+              const allRefills: any[] = await api.getRefills();
+              const patientPhone = refill.patient_phone?.trim() || '';
+              const patientNameLower = refill.patient_name?.trim().toLowerCase() || '';
+              const siblingRefills = allRefills.filter(r =>
+                r.id !== Number(refillId) &&
+                r.is_active !== 0 &&
+                (
+                  (patientPhone && r.patient_phone?.trim() === patientPhone) ||
+                  (patientNameLower && r.patient_name?.trim().toLowerCase() === patientNameLower)
+                )
+              );
+              for (const sibling of siblingRefills) {
+                addItems(sibling.items || []);
+              }
+            } catch (e) {
+              // Non-fatal — carry on with what we have from the primary refill
+            }
+
             const cartItems = [];
-            const itemsToLoad = refill.items || [];
-            
-            for (const item of itemsToLoad) {
+            for (const item of allItems) {
               try {
-                const results = await api.searchMedicine(item.medicine_name || item.name);
+                const medQuery = item.medicine_name || item.name;
+                const results = medQuery ? await api.searchMedicine(medQuery) : [];
                 if (results && results.length > 0) {
                   const matched = results[0];
                   cartItems.push({
@@ -339,7 +375,7 @@ const POS = () => {
                   });
                 }
               } catch (err) {
-                console.error('Failed to search medicine in POS hydrate:', err);
+                console.error('Failed to search medicine in POS refill hydrate:', err);
               }
             }
             if (cartItems.length > 0) {

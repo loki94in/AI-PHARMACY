@@ -81,11 +81,16 @@ export interface DashboardStats {
   todaySales: number;
   lowStock: number;
   pendingTasks: number;
-  alerts?: Array<{
-    id: number;
-    description: string;
-    created_at: string;
-  }>;
+  alerts?: Array<{ id: number; description: string; created_at: string }>;
+  mtdSales?: number;
+  mtdPurchases?: number;
+  grossProfitToday?: number;
+  expiringIn30?: number;
+  expiringIn60?: number;
+  expiringIn90?: number;
+  outstandingCredit?: number;
+  totalStockValue?: number;
+  topMedicinesToday?: Array<{ name: string; revenue: number }>;
 }
 
 export interface Medicine {
@@ -553,6 +558,27 @@ export const api = {
   // Reports
   getReportsSummary: (params: { fromDate?: string; toDate?: string }) => apiClient.get('/reports', { params }).then(res => res.data),
   getReportsData: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/data', { params }).then(res => res.data),
+  getReportsAnalytics: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/analytics', { params }).then(res => res.data),
   exportReportsPDF: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-pdf', { params, responseType: 'blob' }).then(res => res.data),
   exportReportsExcel: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-excel', { params, responseType: 'blob' }).then(res => res.data),
+
+  // Sync Conflicts (Phase 14)
+  getSyncConflicts: () =>
+    apiClient.get('/sync/conflicts').then(res => res.data),
+  resolveSyncConflict: (id: number, choice: 'local' | 'remote' | 'merge') =>
+    apiClient.post(`/sync/conflicts/${id}/resolve`, { choice }).then(res => res.data),
+  getSyncVersionHistory: (entityId: string) =>
+    apiClient.get('/sync/version-history', { params: { entity_id: entityId } }).then(res => res.data),
+
+  // System Administration (Phase 12)
+  getAuditLogs: (params: { page?: number; limit?: number; type?: string; from?: string; to?: string; q?: string }) =>
+    apiClient.get('/settings/audit-logs', { params }).then(res => res.data),
+  getSystemStatus: () => apiClient.get('/settings/system-status').then(res => res.data),
+  vacuumDb: () => apiClient.post('/settings/db/vacuum').then(res => res.data),
+  analyzeDb: () => apiClient.post('/settings/db/analyze').then(res => res.data),
+  exportSettingsJson: () => apiClient.get('/settings/export', { responseType: 'blob' }).then(res => res.data),
+  importSettingsJson: (settings: { key: string; value: string }[]) =>
+    apiClient.post('/settings/import', { settings }).then(res => res.data),
+  triggerAdbReverse: () =>
+    apiClient.post('/settings/adb-reverse').then(res => res.data),
 };

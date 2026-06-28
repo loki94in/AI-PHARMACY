@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { emailService } from '../services/emailService.js';
 import { eventService } from '../services/eventService.js';
+import { deserializeAimail } from '../utils/aimailFormat.js';
 
 
 import fs from 'fs';
@@ -402,6 +403,473 @@ router.get('/auth/google/callback', async (req, res) => {
   } catch (err: any) {
     console.error('OAuth Callback Error:', err);
     res.status(500).send('Authentication Callback Failed: ' + err.message);
+  }
+});
+
+// ─── Phase 6 extensions ───────────────────────────────────────────────────────
+
+/** GET /api/email/search — full-text search across inbox history */
+router.get('/search', async (req, res) => {
+  const { q, distributor, is_order, is_seen, from_date, to_date, limit: lim } = req.query;
+  const limit = Math.min(parseInt(String(lim ?? '50'), 10) || 50, 200);
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (q) {
+    conditions.push(`(subject LIKE ? OR body LIKE ? OR from_addr LIKE ? OR medicine_names LIKE ?)`);
+    const like = `%${q}%`;
+    params.push(like, like, like, like);
+  }
+  if (distributor) { conditions.push('distributor_name LIKE ?'); params.push(`%${distributor}%`); }
+  if (is_order !== undefined) { conditions.push('is_order = ?'); params.push(is_order === '1' ? 1 : 0); }
+  if (is_seen !== undefined) { conditions.push('is_seen = ?'); params.push(is_seen === '1' ? 1 : 0); }
+  if (from_date) { conditions.push('date >= ?'); params.push(from_date); }
+  if (to_date)   { conditions.push('date <= ?'); params.push(to_date); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, from_addr, subject, date, is_seen, is_order, is_saved,
+              distributor_name, has_attachments, medicine_names
+       FROM emails ${where} ORDER BY date DESC LIMIT ?`,
+      [...params, limit]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/stats — aggregate counts for dashboard strip */
+router.get('/stats', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const [totals, byDist, synced] = await Promise.all([
+      db.all(`SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN is_seen = 0 THEN 1 ELSE 0 END) AS unread,
+        SUM(CASE WHEN is_order = 1 THEN 1 ELSE 0 END) AS orders,
+        SUM(CASE WHEN is_saved = 1 THEN 1 ELSE 0 END) AS saved
+        FROM emails`),
+      db.all(`SELECT distributor_name, COUNT(*) AS cnt
+        FROM emails WHERE distributor_name IS NOT NULL AND distributor_name != ''
+        GROUP BY distributor_name ORDER BY cnt DESC LIMIT 10`),
+      db.get(`SELECT COUNT(*) AS cnt FROM sync_jobs
+        WHERE entity_type = 'email' AND direction = 'inbound' AND status = 'received'`),
+    ]);
+    const t = totals[0] as any;
+    res.json({
+      success: true,
+      data: {
+        total: t.total ?? 0,
+        unread: t.unread ?? 0,
+        orders: t.orders ?? 0,
+        saved: t.saved ?? 0,
+        synced_in: (synced as any)?.cnt ?? 0,
+        by_distributor: byDist,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/distributors — unique distributor list */
+router.get('/distributors', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT DISTINCT distributor_name FROM emails
+       WHERE distributor_name IS NOT NULL AND distributor_name != ''
+       ORDER BY distributor_name ASC`
+    );
+    res.json({ success: true, data: rows.map((r: any) => r.distributor_name as string) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/outgoing — list sent/outgoing emails */
+router.get('/outgoing', async (req, res) => {
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+  const status = req.query.status as string | undefined;
+  const where = status ? `WHERE status = ?` : '';
+  const params: unknown[] = status ? [status, limit] : [limit];
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT id, to_addr, subject, status, error, triggered_by_uid, created_at
+       FROM outgoing_emails ${where} ORDER BY created_at DESC LIMIT ?`,
+      params
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** PATCH /api/email/:uid/tag — update distributor_name or is_order flag */
+router.patch('/:uid/tag', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  const { distributor_name, is_order } = req.body ?? {};
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (distributor_name !== undefined) { sets.push('distributor_name = ?'); params.push(distributor_name); }
+  if (is_order !== undefined) { sets.push('is_order = ?'); params.push(is_order ? 1 : 0); }
+  if (sets.length === 0) return res.status(400).json({ success: false, error: 'Nothing to update' });
+  params.push(uid);
+  try {
+    const db = await dbManager.getConnection();
+    await db.run(`UPDATE emails SET ${sets.join(', ')} WHERE uid = ?`, params);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/email/sync-feed — inbound .aimail jobs from Phase 4 sync */
+router.get('/sync-feed', async (req, res) => {
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT job_id, entity_id, payload, checksum, transfer_version,
+              retries, created_at, synced_at
+       FROM sync_jobs
+       WHERE entity_type = 'email' AND direction = 'inbound' AND status = 'received'
+       ORDER BY created_at DESC LIMIT ?`,
+      [limit]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/sync-feed/:job_id/ingest — parse .aimail payload → emails table */
+router.post('/sync-feed/:job_id/ingest', async (req, res) => {
+  const { job_id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const job = await db.get(
+      `SELECT * FROM sync_jobs WHERE job_id = ? AND entity_type = 'email'
+         AND direction = 'inbound' AND status = 'received'`,
+      [job_id]
+    );
+    if (!job) return res.status(404).json({ success: false, error: 'Sync job not found or already ingested' });
+
+    const doc = deserializeAimail(job.payload as string);
+
+    // Upsert into emails — use entity_id as the stable email uid key
+    await db.run(
+      `INSERT OR IGNORE INTO emails
+         (from_addr, subject, body, date, is_seen, is_order, is_saved,
+          distributor_name, has_attachments, synced_at, medicine_names)
+       VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, datetime('now'), ?)`,
+      [
+        doc.source_device_id,
+        doc.subject,
+        doc.body,
+        doc.email_received_at ?? doc.created_at,
+        doc.distributor ?? null,
+        doc.attachment_list?.length > 0 ? 1 : 0,
+        [
+          ...(doc.order_numbers ?? []),
+          ...(doc.invoice_numbers ?? []),
+          ...(doc.purchase_numbers ?? []),
+        ].join(', ') || null,
+      ]
+    );
+
+    // Mark sync job as processed
+    await db.run(
+      `UPDATE sync_jobs SET status = 'processed', synced_at = datetime('now') WHERE job_id = ?`,
+      [job_id]
+    );
+
+    eventService.broadcast('email_update', { source: 'sync_ingest', job_id });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+// ── Phase 7a: email → distributor linking ───────────────────────────────────
+
+/** POST /api/email/:uid/link-distributor — tag one email with its distributor row */
+router.post('/:uid/link-distributor', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  try {
+    const db = await dbManager.getConnection();
+    const email = await db.get(
+      'SELECT uid, distributor_name, linked_distributor_id FROM emails WHERE uid = ?', [uid]
+    );
+    if (!email) return res.status(404).json({ success: false, error: 'Email not found' });
+    if (!email.distributor_name?.trim()) {
+      return res.json({ linked: false, reason: 'no_distributor_name' });
+    }
+    if (email.linked_distributor_id != null) {
+      return res.json({ linked: true, skipped: true, distributor_id: email.linked_distributor_id });
+    }
+    const dist = await db.get(
+      `SELECT id FROM distributors WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))`,
+      [email.distributor_name]
+    );
+    if (!dist) {
+      await db.run(
+        `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+        ['email_link_miss_distributor', `uid=${uid} name="${email.distributor_name}"`]
+      );
+      return res.json({ linked: false, reason: 'no_distributor_match' });
+    }
+    await db.run(
+      `UPDATE emails SET linked_distributor_id = ? WHERE uid = ?`,
+      [dist.id, uid]
+    );
+    return res.json({ linked: true, distributor_id: dist.id });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/batch-link-distributors — link all unlinked emails that have a distributor_name */
+router.post('/batch-link-distributors', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, distributor_name FROM emails
+       WHERE linked_distributor_id IS NULL AND distributor_name IS NOT NULL AND TRIM(distributor_name) != ''`
+    );
+    let linked = 0, missed = 0;
+    for (const email of rows) {
+      const dist = await db.get(
+        `SELECT id FROM distributors WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))`,
+        [email.distributor_name]
+      );
+      if (dist) {
+        await db.run(`UPDATE emails SET linked_distributor_id = ? WHERE uid = ?`, [dist.id, email.uid]);
+        linked++;
+      } else {
+        await db.run(
+          `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+          ['email_link_miss_distributor', `uid=${email.uid} name="${email.distributor_name}"`]
+        );
+        missed++;
+      }
+    }
+    res.json({ processed: rows.length, linked, missed });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+// ── Phase 7b: email → special_order linking ─────────────────────────────────
+
+function extractOrderId(subject: string, body: string): number | null {
+  // Match "order #42", "order: 42", "order id 42" etc. in subject first, then body
+  const pattern = /order[#:\s]+(\d+)/i;
+  const sm = subject.match(pattern);
+  if (sm) return parseInt(sm[1], 10);
+  const bm = body?.match(pattern);
+  if (bm) return parseInt(bm[1], 10);
+  return null;
+}
+
+/** POST /api/email/:uid/link-order — tag one email with a special_orders row */
+router.post('/:uid/link-order', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  try {
+    const db = await dbManager.getConnection();
+    const email = await db.get(
+      'SELECT uid, subject, body, medicine_names, linked_order_id FROM emails WHERE uid = ?', [uid]
+    );
+    if (!email) return res.status(404).json({ success: false, error: 'Email not found' });
+    if (email.linked_order_id != null) {
+      return res.json({ linked: true, skipped: true, order_id: email.linked_order_id });
+    }
+
+    // Pass 1: extract order# from subject/body → match by id
+    const orderId = extractOrderId(email.subject ?? '', email.body ?? '');
+    if (orderId) {
+      const order = await db.get('SELECT id FROM special_orders WHERE id = ?', [orderId]);
+      if (order) {
+        await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, uid]);
+        return res.json({ linked: true, order_id: order.id });
+      }
+    }
+
+    // Pass 2: match any medicine_name word against special_orders.product
+    const names: string[] = (email.medicine_names ?? '')
+      .split(',').map((n: string) => n.trim()).filter(Boolean);
+    for (const name of names) {
+      const order = await db.get(
+        `SELECT id FROM special_orders
+         WHERE LOWER(product) LIKE LOWER(?)
+         ORDER BY date DESC LIMIT 1`,
+        [`%${name}%`]
+      );
+      if (order) {
+        await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, uid]);
+        return res.json({ linked: true, order_id: order.id });
+      }
+    }
+
+    await db.run(
+      `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+      ['email_link_miss_order', `uid=${uid} subject="${(email.subject ?? '').slice(0, 80)}"`]
+    );
+    return res.json({ linked: false, reason: 'no_order_match' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/batch-link-orders — link all emails with no linked_order_id */
+router.post('/batch-link-orders', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, subject, body, medicine_names FROM emails WHERE linked_order_id IS NULL`
+    );
+    let linked = 0, missed = 0;
+    for (const email of rows) {
+      // Pass 1: id match
+      const orderId = extractOrderId(email.subject ?? '', email.body ?? '');
+      if (orderId) {
+        const order = await db.get('SELECT id FROM special_orders WHERE id = ?', [orderId]);
+        if (order) {
+          await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, email.uid]);
+          linked++;
+          continue;
+        }
+      }
+      // Pass 2: product name match
+      let found = false;
+      const names: string[] = (email.medicine_names ?? '')
+        .split(',').map((n: string) => n.trim()).filter(Boolean);
+      for (const name of names) {
+        const order = await db.get(
+          `SELECT id FROM special_orders WHERE LOWER(product) LIKE LOWER(?) ORDER BY date DESC LIMIT 1`,
+          [`%${name}%`]
+        );
+        if (order) {
+          await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, email.uid]);
+          linked++;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        await db.run(
+          `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+          ['email_link_miss_order', `uid=${email.uid} subject="${(email.subject ?? '').slice(0, 80)}"`]
+        );
+        missed++;
+      }
+    }
+    res.json({ processed: rows.length, linked, missed });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+// ── Phase 7c: email → purchase invoice linking (additive only) ───────────────
+
+function extractInvoiceNo(subject: string, body: string): string | null {
+  // Ordered patterns — first match in subject wins, then body
+  const patterns = [
+    /(INV|BILL|PO)[-#\s:]*([\w/-]+)/i,
+    /invoice[#:\s]*([\w/-]+)/i,
+    /bill[#:\s]*([\w/-]+)/i,
+  ];
+  for (const text of [subject, body ?? '']) {
+    for (const pat of patterns) {
+      const m = text.match(pat);
+      // Last capture group holds the number part; skip pure whitespace
+      const candidate = (m?.[2] ?? m?.[1] ?? '').trim();
+      if (candidate && /\w/.test(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/** POST /api/email/:uid/link-invoice — tag one email with a purchases row (read + additive only) */
+router.post('/:uid/link-invoice', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  try {
+    const db = await dbManager.getConnection();
+    const email = await db.get(
+      'SELECT uid, subject, body, linked_purchase_id FROM emails WHERE uid = ?', [uid]
+    );
+    if (!email) return res.status(404).json({ success: false, error: 'Email not found' });
+    if (email.linked_purchase_id != null) {
+      return res.json({ linked: true, skipped: true, purchase_id: email.linked_purchase_id });
+    }
+
+    const invoiceNo = extractInvoiceNo(email.subject ?? '', email.body ?? '');
+    if (!invoiceNo) {
+      await db.run(
+        `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+        ['email_link_miss_purchase', `uid=${uid} reason=no_invoice_extracted`]
+      );
+      return res.json({ linked: false, reason: 'no_invoice_extracted' });
+    }
+
+    const purchase = await db.get(
+      `SELECT id FROM purchases WHERE LOWER(TRIM(invoice_no)) = LOWER(TRIM(?))`,
+      [invoiceNo]
+    );
+    if (!purchase) {
+      await db.run(
+        `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+        ['email_link_miss_purchase', `uid=${uid} invoice_no="${invoiceNo}"`]
+      );
+      return res.json({ linked: false, reason: 'no_purchase_match', extracted_invoice_no: invoiceNo });
+    }
+
+    // Additive only: write only emails.linked_purchase_id — purchases row is never touched
+    await db.run(`UPDATE emails SET linked_purchase_id = ? WHERE uid = ?`, [purchase.id, uid]);
+    return res.json({ linked: true, purchase_id: purchase.id, extracted_invoice_no: invoiceNo });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/batch-link-invoices — link all emails with no linked_purchase_id */
+router.post('/batch-link-invoices', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, subject, body FROM emails WHERE linked_purchase_id IS NULL`
+    );
+    let linked = 0, missed = 0;
+    for (const email of rows) {
+      const invoiceNo = extractInvoiceNo(email.subject ?? '', email.body ?? '');
+      if (!invoiceNo) { missed++; continue; }
+      const purchase = await db.get(
+        `SELECT id FROM purchases WHERE LOWER(TRIM(invoice_no)) = LOWER(TRIM(?))`,
+        [invoiceNo]
+      );
+      if (purchase) {
+        await db.run(`UPDATE emails SET linked_purchase_id = ? WHERE uid = ?`, [purchase.id, email.uid]);
+        linked++;
+      } else {
+        await db.run(
+          `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+          ['email_link_miss_purchase', `uid=${email.uid} invoice_no="${invoiceNo}"`]
+        );
+        missed++;
+      }
+    }
+    res.json({ processed: rows.length, linked, missed });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
   }
 });
 

@@ -1,5 +1,6 @@
 import express from 'express';
 import { dbManager } from '../database/connection.js';
+import { calculatePurchaseTotals } from '../services/invoiceCalculationService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { notificationService } from '../services/notificationService.js';
@@ -8,7 +9,7 @@ import pdfParse from 'pdf-parse';
 import { parse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
-import { aiCameraService } from '../services/aiCameraService.js';
+import { submitOcrJob } from '../services/ocrJobQueue.js';
 import { productNameFilterService } from '../services/productNameFilterService.js';
 import { emailService } from '../services/emailService.js';
 import { onlineDataEnricher } from '../services/onlineDataEnricher.js';
@@ -496,7 +497,7 @@ async function parseInvoiceBuffer(fileBuffer: Buffer, filename: string): Promise
   }
 
   try {
-    const ocrResult = await aiCameraService.processImage(fileBuffer, true);
+    const ocrResult = await submitOcrJob(fileBuffer, 'processImage', true);
     if (ocrResult && ocrResult.text) {
       return parseTextInvoice(ocrResult.text, filename);
     }
@@ -666,39 +667,11 @@ router.post('/manual', async (req, res) => {
     }
 
     // Calculate totals securely on backend
-    let subtotal = 0;
-    let totalCgst = 0;
-    let totalSgst = 0;
-
-    for (const item of items) {
-      const qty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
-      const rate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
-      const discPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
-      const discRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
-      const addDisc = parseFloat(item.additional_discount) || 0;
-      const cgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
-      const sgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
-
-      const baseAmt = qty * rate;
-      const lineDisc = discRs + addDisc + (baseAmt * discPer / 100);
-      const taxable = baseAmt - lineDisc;
-      
-      subtotal += taxable;
-      totalCgst += taxable * (cgst / 100);
-      totalSgst += taxable * (sgst / 100);
-    }
-
-    const cdPerVal = parseFloat(cd_per) || 0;
-    const hasItemCd = items.some((item: any) => {
-      const discPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
-      const discRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
-      return discPer > 0 || discRs > 0;
-    });
-    const globalCdDisc = hasItemCd ? 0 : (subtotal * (cdPerVal / 100));
-    const originalAmount = subtotal + totalCgst + totalSgst - globalCdDisc;
     const cnAmountVal = parseFloat(cn_amount !== undefined ? cn_amount : extra_credit) || 0;
     const cnNumberVal = cn_number || null;
-    const grandTotal = Math.max(0, originalAmount - cnAmountVal);
+    const { subtotal, totalCgst, totalSgst, originalAmount, grandTotal } = calculatePurchaseTotals(
+      items, parseFloat(cd_per) || 0, cnAmountVal
+    );
 
     // Generate app_invoice_no sequentially
     const lastPur = await db.get(
@@ -748,7 +721,9 @@ router.post('/manual', async (req, res) => {
       const rawExpiry = item.expiry !== undefined ? item.expiry : (expiry_date || '');
       const rawQty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
       const rawFreeQty = parseFloat(free_qty !== undefined ? free_qty : (item.free_quantity !== undefined ? item.free_quantity : 0)) || 0;
-      const rawRate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
+      const rawRate = parseFloat(
+        item.rate ?? item.cost_price ?? item.purchase_price ?? item.price ?? 0
+      ) || 0;
       const rawCgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
       const rawSgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
       const rawDiscPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
@@ -951,39 +926,11 @@ router.put('/:id/full', async (req, res) => {
     }
 
     // Calculate new totals
-    let subtotal = 0;
-    let totalCgst = 0;
-    let totalSgst = 0;
-
-    for (const item of items) {
-      const qty = parseFloat(item.qty) || 0;
-      const rate = parseFloat(item.rate) || 0;
-      const discPer = parseFloat(item.discPer) || 0;
-      const discRs = parseFloat(item.discRs) || 0;
-      const addDisc = parseFloat(item.additional_discount) || 0;
-      const cgst = parseFloat(item.cgst) || 0;
-      const sgst = parseFloat(item.sgst) || 0;
-
-      const baseAmt = qty * rate;
-      const lineDisc = discRs + addDisc + (baseAmt * discPer / 100);
-      const taxable = baseAmt - lineDisc;
-      
-      subtotal += taxable;
-      totalCgst += taxable * (cgst / 100);
-      totalSgst += taxable * (sgst / 100);
-    }
-
-    const cdPerVal = parseFloat(cd_per) || 0;
-    const hasItemCd = items.some((item: any) => {
-      const discPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
-      const discRs = parseFloat(item.discRs !== undefined ? item.discRs : (item.cd_rs !== undefined ? item.cd_rs : 0)) || 0;
-      return discPer > 0 || discRs > 0;
-    });
-    const globalCdDisc = hasItemCd ? 0 : (subtotal * (cdPerVal / 100));
-    const originalAmount = subtotal + totalCgst + totalSgst - globalCdDisc;
     const cnAmountVal = parseFloat(cn_amount !== undefined ? cn_amount : extra_credit) || 0;
     const cnNumberVal = cn_number || null;
-    const grandTotal = Math.max(0, originalAmount - cnAmountVal);
+    const { subtotal, totalCgst, totalSgst, originalAmount, grandTotal } = calculatePurchaseTotals(
+      items, parseFloat(cd_per) || 0, cnAmountVal
+    );
 
     // Revert old credit reconciliation
     await db.run(
@@ -1022,7 +969,9 @@ router.put('/:id/full', async (req, res) => {
       const rawExpiry = item.expiry !== undefined ? item.expiry : (expiry_date || '');
       const rawQty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
       const rawFreeQty = parseFloat(free_qty !== undefined ? free_qty : (item.free_quantity !== undefined ? item.free_quantity : 0)) || 0;
-      const rawRate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
+      const rawRate = parseFloat(
+        item.rate ?? item.cost_price ?? item.purchase_price ?? item.price ?? 0
+      ) || 0;
       const rawCgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
       const rawSgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
       const rawDiscPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;

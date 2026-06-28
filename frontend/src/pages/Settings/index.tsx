@@ -19,6 +19,7 @@ import {
   X,
   QrCode,
   History,
+  Usb,
 } from 'lucide-react';
 import { toastEvent } from '../../services/events';
 import { MobileConnectionModal } from '../../components/MobileConnectionModal';
@@ -147,6 +148,167 @@ const Settings = () => {
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [verifyingFile, setVerifyingFile] = useState<string | null>(null);
+  const [verifyResults, setVerifyResults] = useState<Record<string, { ok: boolean; result: string }>>({});
+  const [testRestoringFile, setTestRestoringFile] = useState<string | null>(null);
+  const [testRestoreResults, setTestRestoreResults] = useState<Record<string, { ok: boolean; elapsedMs: number; sizeBytes: number }>>({});
+  const [drStatus, setDrStatus] = useState<{ rpoGapMinutes: number | null; backupCount: number; totalDiskBytes: number } | null>(null);
+
+  // Phase 12: System Administration state
+  const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [systemStatusLoading, setSystemStatusLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLogsTotal, setAuditLogsTotal] = useState(0);
+  const [auditLogsPage, setAuditLogsPage] = useState(1);
+  const [auditLogsPages, setAuditLogsPages] = useState(1);
+  const [auditLogsTypes, setAuditLogsTypes] = useState<string[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
+  const [auditFilter, setAuditFilter] = useState({ type: '', from: '', to: '', q: '' });
+  const [dbMaintenanceLoading, setDbMaintenanceLoading] = useState(false);
+  const [settingsImportLoading, setSettingsImportLoading] = useState(false);
+
+  const fetchSystemStatus = async () => {
+    setSystemStatusLoading(true);
+    try {
+      const data = await api.getSystemStatus();
+      setSystemStatus(data);
+    } catch { /* ignore */ }
+    finally { setSystemStatusLoading(false); }
+  };
+
+  const fetchAuditLogs = async (page = 1) => {
+    setAuditLogsLoading(true);
+    try {
+      const data = await api.getAuditLogs({
+        page,
+        limit: 20,
+        type: auditFilter.type || undefined,
+        from: auditFilter.from || undefined,
+        to: auditFilter.to || undefined,
+        q: auditFilter.q || undefined,
+      } as any);
+      setAuditLogs(data.rows || []);
+      setAuditLogsTotal(data.total || 0);
+      setAuditLogsPage(data.page || 1);
+      setAuditLogsPages(data.pages || 1);
+      setAuditLogsTypes(data.types || []);
+    } catch { /* ignore */ }
+    finally { setAuditLogsLoading(false); }
+  };
+
+  const handleDbVacuum = async () => {
+    if (!confirm('Run VACUUM? This will reclaim unused disk space. The operation is safe but may take a few seconds.')) return;
+    setDbMaintenanceLoading(true);
+    try {
+      const res = await api.vacuumDb();
+      toastEvent.trigger(`VACUUM complete. Freed ${Math.round((res.freedBytes || 0) / 1024)} KB.`, 'success');
+      fetchSystemStatus();
+    } catch (e: any) {
+      toastEvent.trigger('VACUUM failed: ' + (e?.response?.data?.error || e?.message), 'error');
+    } finally { setDbMaintenanceLoading(false); }
+  };
+
+  const handleDbAnalyze = async () => {
+    setDbMaintenanceLoading(true);
+    try {
+      await api.analyzeDb();
+      toastEvent.trigger('ANALYZE complete. Query stats rebuilt.', 'success');
+    } catch (e: any) {
+      toastEvent.trigger('ANALYZE failed: ' + (e?.response?.data?.error || e?.message), 'error');
+    } finally { setDbMaintenanceLoading(false); }
+  };
+
+  const handleExportSettings = async () => {
+    try {
+      const blob = await api.exportSettingsJson();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `settings_export_${Date.now()}.json`;
+      document.body.appendChild(a); a.click();
+      URL.revokeObjectURL(url); document.body.removeChild(a);
+    } catch { toastEvent.trigger('Settings export failed', 'error'); }
+  };
+
+  const handleImportSettings = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSettingsImportLoading(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const settings = Array.isArray(parsed) ? parsed : (parsed.settings || []);
+      const res = await api.importSettingsJson(settings);
+      toastEvent.trigger(`Imported ${res.imported} settings (${res.skipped} skipped).`, 'success');
+    } catch (e: any) {
+      toastEvent.trigger('Import failed: ' + e.message, 'error');
+    } finally {
+      setSettingsImportLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const [adbReverseLoading, setAdbReverseLoading] = useState(false);
+
+  // Plugin Ecosystem (Phase 15-C)
+  const [plugins, setPlugins] = useState<any[]>([]);
+  const [pluginsLoading, setPluginsLoading] = useState(false);
+  const [pluginReloading, setPluginReloading] = useState(false);
+  const [hookName, setHookName] = useState('');
+  const [hookRunning, setHookRunning] = useState(false);
+  const [hookResult, setHookResult] = useState<string | null>(null);
+
+  // Cloud Sync Relay (Phase 15-B)
+  const [relayStatus, setRelayStatus] = useState<any>(null);
+  const [relayUrl, setRelayUrl] = useState('');
+  const [relaySecret, setRelaySecret] = useState('');
+  const [relayEnabled, setRelayEnabled] = useState(false);
+  const [relaySaving, setRelaySaving] = useState(false);
+  const [relayPushing, setRelayPushing] = useState(false);
+  const [relayPolling, setRelayPolling] = useState(false);
+
+  // Multi-branch (Phase 15-A)
+  interface Branch { id: number; name: string; address: string | null; phone: string | null; is_active: number; created_at: string; }
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
+  const [newBranchAddress, setNewBranchAddress] = useState('');
+  const [newBranchPhone, setNewBranchPhone] = useState('');
+  const [addingBranch, setAddingBranch] = useState(false);
+
+  // Sync Conflicts (Phase 14)
+  const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
+  const [syncConflictsLoading, setSyncConflictsLoading] = useState(false);
+
+  const fetchSyncConflicts = async () => {
+    setSyncConflictsLoading(true);
+    try {
+      const res = await api.getSyncConflicts();
+      setSyncConflicts(res.data ?? []);
+    } catch { /* ignore */ }
+    finally { setSyncConflictsLoading(false); }
+  };
+
+  const handleResolveConflict = async (id: number, choice: 'local' | 'remote' | 'merge') => {
+    try {
+      await api.resolveSyncConflict(id, choice);
+      toastEvent.trigger(`Conflict resolved: ${choice}`, 'success');
+      await fetchSyncConflicts();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Resolution failed', 'error');
+    }
+  };
+
+  const handleAdbReverse = async () => {
+    setAdbReverseLoading(true);
+    try {
+      const res = await api.triggerAdbReverse();
+      toastEvent.trigger(res.message ?? 'ADB tunnels set', 'success');
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'ADB reverse failed. Is adb on PATH?', 'error');
+    } finally {
+      setAdbReverseLoading(false);
+    }
+  };
 
   // Generic helper to update settings fields
   const updateSetting = <K extends keyof SettingsData>(key: K, value: SettingsData[K] | ((prevVal: SettingsData[K]) => SettingsData[K])) => {
@@ -583,9 +745,131 @@ const Settings = () => {
     }
   };
 
+  const fetchDrStatus = async () => {
+    try {
+      const { data } = await apiClient.get('/utilities/backup/dr-status');
+      setDrStatus(data.data);
+    } catch { /* non-critical */ }
+  };
+
+  const fetchPlugins = async () => {
+    setPluginsLoading(true);
+    try {
+      const { data } = await apiClient.get('/plugins');
+      setPlugins(data.plugins ?? []);
+    } catch { /* non-critical */ } finally { setPluginsLoading(false); }
+  };
+
+  const handleReloadPlugins = async () => {
+    setPluginReloading(true);
+    try {
+      const { data } = await apiClient.post('/plugins/reload');
+      setPlugins(data.plugins ?? []);
+      toastEvent.trigger(`Reloaded: ${data.loaded} ok, ${data.errors} error(s)`, data.errors > 0 ? 'error' : 'success');
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Reload failed', 'error');
+    } finally { setPluginReloading(false); }
+  };
+
+  const handleRunHook = async () => {
+    if (!hookName.trim()) return;
+    setHookRunning(true);
+    setHookResult(null);
+    try {
+      const { data } = await apiClient.post('/plugins/run-hook', { hookName: hookName.trim(), ctx: {} });
+      setHookResult(JSON.stringify(data.result, null, 2));
+      toastEvent.trigger(`Hook "${hookName}" executed`, 'success');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error ?? 'Hook failed';
+      setHookResult(`Error: ${msg}`);
+      toastEvent.trigger(msg, 'error');
+    } finally { setHookRunning(false); }
+  };
+
+  const fetchRelayStatus = async () => {
+    try {
+      const { data } = await apiClient.get('/sync/relay-status');
+      setRelayStatus(data.data);
+      setRelayUrl(data.data.relayUrl ?? '');
+      setRelayEnabled(data.data.enabled ?? false);
+    } catch { /* non-critical */ }
+  };
+
+  const handleSaveRelay = async () => {
+    setRelaySaving(true);
+    try {
+      await apiClient.post('/sync/relay-config', { enabled: relayEnabled, relayUrl: relayUrl || undefined, relaySecret: relaySecret || undefined });
+      toastEvent.trigger('Relay settings saved', 'success');
+      setRelaySecret('');
+      fetchRelayStatus();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Save failed', 'error');
+    } finally { setRelaySaving(false); }
+  };
+
+  const handleRelayPush = async () => {
+    setRelayPushing(true);
+    try {
+      const { data } = await apiClient.post('/sync/relay-push');
+      toastEvent.trigger(`Pushed ${data.pushed} job(s) to relay`, 'success');
+      fetchRelayStatus();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Push failed', 'error');
+    } finally { setRelayPushing(false); }
+  };
+
+  const handleRelayPoll = async () => {
+    setRelayPolling(true);
+    try {
+      const { data } = await apiClient.post('/sync/relay-poll');
+      toastEvent.trigger(`Received ${data.received} job(s) from relay`, 'success');
+      fetchRelayStatus();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Poll failed', 'error');
+    } finally { setRelayPolling(false); }
+  };
+
+  const fetchBranches = async () => {
+    setBranchesLoading(true);
+    try {
+      const { data } = await apiClient.get('/branches');
+      setBranches(data.branches ?? []);
+    } catch { /* non-critical */ } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const handleAddBranch = async () => {
+    if (!newBranchName.trim()) return;
+    setAddingBranch(true);
+    try {
+      await apiClient.post('/branches', { name: newBranchName, address: newBranchAddress || undefined, phone: newBranchPhone || undefined });
+      setNewBranchName(''); setNewBranchAddress(''); setNewBranchPhone('');
+      toastEvent.trigger('Branch added', 'success');
+      fetchBranches();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Failed to add branch', 'error');
+    } finally {
+      setAddingBranch(false);
+    }
+  };
+
+  const handleToggleBranch = async (b: Branch) => {
+    try {
+      await apiClient.patch(`/branches/${b.id}`, { is_active: !b.is_active });
+      fetchBranches();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Failed to update branch', 'error');
+    }
+  };
+
   useEffect(() => {
     fetchBackupList();
     fetchBackupSchedule();
+    fetchDrStatus();
+    fetchBranches();
+    fetchRelayStatus();
+    fetchPlugins();
   }, []);
 
   const handleBackupNow = async () => {
@@ -635,6 +919,38 @@ const Settings = () => {
       toastEvent.trigger('Failed to restore backup', 'error');
     } finally {
       setRestoringFile(null);
+    }
+  };
+
+  const handleVerifyBackup = async (filename: string) => {
+    setVerifyingFile(filename);
+    try {
+      const { data } = await apiClient.post(`/utilities/backup/verify/${encodeURIComponent(filename)}`);
+      setVerifyResults(prev => ({ ...prev, [filename]: { ok: data.ok, result: data.result } }));
+      toastEvent.trigger(data.ok ? 'Integrity check passed' : `Integrity check FAILED: ${data.result}`, data.ok ? 'success' : 'error');
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Verify failed', 'error');
+    } finally {
+      setVerifyingFile(null);
+    }
+  };
+
+  const handleTestRestore = async (filename: string) => {
+    setTestRestoringFile(filename);
+    try {
+      const { data } = await apiClient.post(`/utilities/backup/test-restore/${encodeURIComponent(filename)}`);
+      const r = data.report;
+      setTestRestoreResults(prev => ({ ...prev, [filename]: { ok: r.integrityOk, elapsedMs: r.elapsedMs, sizeBytes: r.tempSizeBytes } }));
+      toastEvent.trigger(
+        r.integrityOk
+          ? `DR test passed in ${r.elapsedMs} ms (${(r.tempSizeBytes / 1024 / 1024).toFixed(1)} MB)`
+          : `DR test FAILED: ${r.integrityResult}`,
+        r.integrityOk ? 'success' : 'error'
+      );
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Test restore failed', 'error');
+    } finally {
+      setTestRestoringFile(null);
     }
   };
 
@@ -1251,6 +1567,7 @@ const Settings = () => {
                     <th className="text-right px-4 py-2.5 font-bold">Size</th>
                     <th className="text-right px-4 py-2.5 font-bold">Date & Time</th>
                     <th className="text-right px-4 py-2.5 font-bold">Actions</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Integrity</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1262,6 +1579,16 @@ const Settings = () => {
                       </td>
                       <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatFileSize(b.sizeBytes)}</td>
                       <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatDate(b.createdAt)}</td>
+                      {/* Integrity result cell (before actions) — shown after verify is run */}
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {verifyResults[b.filename] ? (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${verifyResults[b.filename].ok ? 'bg-green/20 text-green' : 'bg-red/20 text-red'}`}>
+                            {verifyResults[b.filename].ok ? '✓ OK' : '✗ Corrupt'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           {/* Restore */}
@@ -1291,6 +1618,42 @@ const Settings = () => {
                               <RotateCcw size={10} /> Restore
                             </button>
                           )}
+
+                          {/* Verify */}
+                          <button
+                            onClick={() => handleVerifyBackup(b.filename)}
+                            disabled={verifyingFile === b.filename}
+                            className="text-[10px] font-bold bg-green/10 text-green/80 px-2.5 py-1 rounded-full hover:bg-green/20 transition-all flex items-center gap-1 disabled:opacity-50"
+                            title="Run integrity check on this backup"
+                          >
+                            {verifyingFile === b.filename ? <RefreshCw size={10} className="animate-spin" /> : <Shield size={10} />}
+                            {verifyingFile === b.filename ? '…' : 'Verify'}
+                          </button>
+
+                          {/* DR Test Restore */}
+                          <button
+                            onClick={() => handleTestRestore(b.filename)}
+                            disabled={testRestoringFile === b.filename}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all flex items-center gap-1 disabled:opacity-50 ${
+                              testRestoreResults[b.filename]
+                                ? testRestoreResults[b.filename].ok
+                                  ? 'bg-teal/10 text-teal/80 hover:bg-teal/20'
+                                  : 'bg-red/10 text-red/80 hover:bg-red/20'
+                                : 'bg-purple/10 text-purple/80 hover:bg-purple/20'
+                            }`}
+                            title="Dry-run restore: decompress + integrity check without touching live DB"
+                          >
+                            {testRestoringFile === b.filename
+                              ? <RefreshCw size={10} className="animate-spin" />
+                              : <Database size={10} />}
+                            {testRestoringFile === b.filename
+                              ? '…'
+                              : testRestoreResults[b.filename]
+                                ? testRestoreResults[b.filename].ok
+                                  ? `DR OK (${testRestoreResults[b.filename].elapsedMs}ms)`
+                                  : 'DR FAIL'
+                                : 'DR Test'}
+                          </button>
 
                           {/* Delete */}
                           {confirmDelete === b.filename ? (
@@ -1362,6 +1725,556 @@ const Settings = () => {
             <span className="text-sm font-semibold text-sky">v2.0.0</span>
           </div>
         </div>
+      </div>
+
+      {/* ─── System Status ─── */}
+      <div className="glass-panel p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-bold flex items-center gap-2">
+            <Shield size={18} className="text-sky" />
+            System Status
+          </h3>
+          <button
+            onClick={fetchSystemStatus}
+            disabled={systemStatusLoading}
+            className="px-3 py-1.5 bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={systemStatusLoading ? 'animate-spin' : ''} />
+            {systemStatus ? 'Refresh' : 'Load Status'}
+          </button>
+        </div>
+
+        {systemStatus ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Uptime', value: (() => { const s = systemStatus.uptimeSeconds; const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; })(), sub: 'Process uptime', color: 'text-green' },
+              { label: 'Memory (RSS)', value: `${systemStatus.memoryRssMb} MB`, sub: `Heap ${systemStatus.memoryHeapUsedMb}/${systemStatus.memoryHeapTotalMb} MB`, color: 'text-amber' },
+              { label: 'DB Size', value: `${systemStatus.dbSizeMb} MB`, sub: `${(systemStatus.dbSizeBytes / 1024).toFixed(0)} KB total`, color: 'text-sky' },
+              { label: 'Version', value: `v${systemStatus.appVersion}`, sub: `Node ${systemStatus.nodeVersion} · ${systemStatus.platform}`, color: 'text-primary' },
+            ].map(card => (
+              <div key={card.label} className="bg-bg3 border border-glass-border rounded-xl p-4">
+                <div className="text-[9px] text-muted font-bold uppercase tracking-wider mb-1">{card.label}</div>
+                <div className={`text-xl font-black ${card.color}`}>{card.value}</div>
+                <div className="text-[10px] text-muted mt-1">{card.sub}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted">Click "Load Status" to fetch live system information.</p>
+        )}
+      </div>
+
+      {/* ─── Database Maintenance + Settings Export/Import ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-5">
+          <Database size={18} className="text-amber" />
+          Database Maintenance &amp; Settings
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-muted uppercase tracking-wider">SQLite Maintenance</div>
+            <p className="text-[11px] text-muted leading-relaxed">VACUUM reclaims disk space from deleted rows. ANALYZE rebuilds query planner statistics for faster queries.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDbVacuum}
+                disabled={dbMaintenanceLoading}
+                className="flex-1 px-3 py-2 bg-green/10 hover:bg-green/20 border border-green/20 text-green rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <HardDrive size={13} />VACUUM
+              </button>
+              <button
+                onClick={handleDbAnalyze}
+                disabled={dbMaintenanceLoading}
+                className="flex-1 px-3 py-2 bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <Zap size={13} />ANALYZE
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-muted uppercase tracking-wider">Settings Backup</div>
+            <p className="text-[11px] text-muted leading-relaxed">Export all non-sensitive settings to a JSON file, or restore from a previous export. Passwords are never exported.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleExportSettings}
+                className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+              >
+                <Download size={13} />Export JSON
+              </button>
+              <label className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${settingsImportLoading ? 'opacity-50 cursor-not-allowed bg-bg3 border-glass-border text-muted' : 'bg-amber/10 hover:bg-amber/20 border-amber/20 text-amber active:scale-95'}`}>
+                <RotateCcw size={13} />{settingsImportLoading ? 'Importing…' : 'Import JSON'}
+                <input type="file" accept=".json" className="hidden" onChange={handleImportSettings} disabled={settingsImportLoading} />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── USB / Transport Alternatives ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-4">
+          <Usb size={18} className="text-amber-400" />
+          Mobile Transport Alternatives
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* USB */}
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">USB Cable</div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              Tunnels phone localhost ports to this PC so the mobile app works over USB.
+              Requires ADB (Android Platform Tools) installed and USB debugging enabled on device.
+            </p>
+            <button
+              onClick={handleAdbReverse}
+              disabled={adbReverseLoading}
+              className="btn-primary text-sm w-full flex items-center justify-center gap-2"
+            >
+              {adbReverseLoading ? <span className="animate-spin">⟳</span> : null}
+              Run ADB Reverse
+            </button>
+            <p className="text-[10px] text-muted">Sets: adb reverse tcp:3000 tcp:3000 and tcp:3030 tcp:3030</p>
+          </div>
+
+          {/* mDNS */}
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-sky-400 uppercase tracking-wider">mDNS Auto-Discover</div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              This server automatically advertises itself via mDNS (_aipharmacy._tcp) on port 3030
+              when the desktop app starts — no action needed here.
+              Mobile uses "Discover via mDNS" in the Sync screen.
+            </p>
+            <div className="text-[11px] text-sky-400 font-semibold">Active on startup (bonjour-hap)</div>
+          </div>
+
+          {/* BLE */}
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-purple-400 uppercase tracking-wider">Bluetooth (BLE)</div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              Desktop advertises as a GATT peripheral so the mobile can push AIMAIL payloads
+              over BLE when Wi-Fi is absent. Requires <code className="bg-bg2 px-1 rounded">@abandonware/bleno</code> to be installed
+              and Bluetooth hardware on this PC.
+            </p>
+            <div className="text-[11px] text-purple-400 font-semibold">Auto-starts if bleno is installed</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Plugin Ecosystem (Phase 15-C) ─── */}
+      <div className="glass-panel p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Zap size={16} className="text-pink-400" />
+            Plugin Ecosystem
+            {plugins.length > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300">
+                {plugins.length} loaded
+              </span>
+            )}
+          </h2>
+          <button onClick={handleReloadPlugins} disabled={pluginReloading}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-pink-500/15 text-pink-300 hover:bg-pink-500/25 transition-all flex items-center gap-1.5 disabled:opacity-50">
+            <RefreshCw size={12} className={pluginReloading ? 'animate-spin' : ''} />
+            {pluginReloading ? 'Reloading…' : 'Reload Plugins'}
+          </button>
+        </div>
+
+        {plugins.length === 0 && !pluginsLoading && (
+          <div className="text-center py-8 text-muted text-xs italic">
+            No plugins found in <code className="bg-bg2 px-1 rounded">/plugins</code> directory.
+            Drop a .js file there and click Reload.
+          </div>
+        )}
+
+        {plugins.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-3 py-2 font-bold text-muted">Name</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Version</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Hooks</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Status</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {plugins.map((p, i) => (
+                  <tr key={i} className="border-b border-border/40 hover:bg-bg2/30 transition-all">
+                    <td className="px-3 py-2 font-semibold">{p.name}</td>
+                    <td className="px-3 py-2 font-mono text-muted">{p.version}</td>
+                    <td className="px-3 py-2 text-muted">{(p.hookNames ?? []).join(', ') || '—'}</td>
+                    <td className="px-3 py-2">
+                      {p.error
+                        ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red/20 text-red" title={p.error}>Error</span>
+                        : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green/20 text-green">OK</span>}
+                    </td>
+                    <td className="px-3 py-2 text-muted">{p.description ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Run Hook tester */}
+        {plugins.some(p => !p.error) && (
+          <div className="border-t border-border mt-4 pt-4">
+            <h3 className="text-xs font-bold text-muted mb-2 uppercase tracking-wider">Run Hook</h3>
+            <div className="flex gap-2 items-center mb-2">
+              <select value={hookName} onChange={e => setHookName(e.target.value)}
+                className="input-field text-xs px-2.5 py-1.5 flex-1">
+                <option value="">— select a hook —</option>
+                {Array.from(new Set(plugins.flatMap(p => p.hookNames ?? []))).map(h => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
+              <button onClick={handleRunHook} disabled={hookRunning || !hookName}
+                className="text-xs font-bold px-4 py-1.5 rounded-lg bg-pink-500/20 text-pink-300 hover:bg-pink-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5">
+                {hookRunning ? <RefreshCw size={11} className="animate-spin" /> : <Zap size={11} />}
+                {hookRunning ? 'Running…' : 'Run'}
+              </button>
+            </div>
+            {hookResult && (
+              <pre className="text-[10px] bg-bg3/60 rounded-lg p-3 overflow-x-auto max-h-40 font-mono text-muted whitespace-pre-wrap">
+                {hookResult}
+              </pre>
+            )}
+          </div>
+        )}
+
+        <p className="text-[10px] text-muted mt-3">
+          Plugins run in a sandboxed VM context — no filesystem, network, or process access.
+          Place <code className="bg-bg2 px-1 rounded">.js</code> files in the <code className="bg-bg2 px-1 rounded">plugins/</code> directory.
+        </p>
+      </div>
+
+      {/* ─── Cloud Sync Relay (Phase 15-B) ─── */}
+      <div className="glass-panel p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Zap size={16} className="text-yellow-400" />
+            Cloud Sync Relay
+            {relayStatus?.enabled && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green/20 text-green">Active</span>}
+          </h2>
+          <button onClick={fetchRelayStatus}
+            className="text-xs px-3 py-1.5 rounded-lg bg-bg3/60 hover:bg-bg3 text-muted hover:text-primary transition-all flex items-center gap-1.5">
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
+
+        {relayStatus && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5 text-[11px]">
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Device ID</div>
+              <div className="font-mono font-bold truncate">{relayStatus.deviceId}</div>
+            </div>
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Last Push</div>
+              <div className="font-bold">{relayStatus.lastPushAt ? new Date(relayStatus.lastPushAt).toLocaleTimeString() : '—'}</div>
+            </div>
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Last Poll</div>
+              <div className="font-bold">{relayStatus.lastPollAt ? new Date(relayStatus.lastPollAt).toLocaleTimeString() : '—'}</div>
+            </div>
+            <div className="bg-bg3/40 rounded-lg px-3 py-2">
+              <div className="text-muted mb-0.5">Status</div>
+              <div className="font-bold">{relayStatus.configured ? (relayStatus.enabled ? 'Enabled' : 'Configured / Off') : 'Not configured'}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Config form */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-muted uppercase font-bold">Relay URL</label>
+            <input value={relayUrl} onChange={e => setRelayUrl(e.target.value)}
+              placeholder="https://relay.example.com"
+              className="input-field text-xs px-3 py-2" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-muted uppercase font-bold">Relay Secret (leave blank to keep existing)</label>
+            <input type="password" value={relaySecret} onChange={e => setRelaySecret(e.target.value)}
+              placeholder="min 16 characters"
+              className="input-field text-xs px-3 py-2" />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-xs">
+            <input type="checkbox" checked={relayEnabled} onChange={e => setRelayEnabled(e.target.checked)}
+              className="accent-yellow-400 w-4 h-4" />
+            Enable relay sync
+          </label>
+          <button onClick={handleSaveRelay} disabled={relaySaving}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5">
+            {relaySaving ? <RefreshCw size={11} className="animate-spin" /> : <Save size={11} />}
+            {relaySaving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={handleRelayPush} disabled={relayPushing || !relayStatus?.configured}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg bg-sky/15 text-sky hover:bg-sky/25 transition-all disabled:opacity-50 flex items-center gap-1.5"
+            title="Push pending sync jobs to relay">
+            {relayPushing ? <RefreshCw size={11} className="animate-spin" /> : <Download size={11} className="rotate-180" />}
+            {relayPushing ? 'Pushing…' : 'Push Now'}
+          </button>
+          <button onClick={handleRelayPoll} disabled={relayPolling || !relayStatus?.configured}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg bg-purple/10 text-purple/80 hover:bg-purple/20 transition-all disabled:opacity-50 flex items-center gap-1.5"
+            title="Poll relay for inbound jobs">
+            {relayPolling ? <RefreshCw size={11} className="animate-spin" /> : <Download size={11} />}
+            {relayPolling ? 'Polling…' : 'Poll Now'}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Multi-Branch Management ─── */}
+      <div className="glass-panel p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Building2 size={16} className="text-indigo-400" />
+            Branches / Warehouses
+          </h2>
+          <button onClick={fetchBranches} disabled={branchesLoading}
+            className="text-xs px-3 py-1.5 rounded-lg bg-bg3/60 hover:bg-bg3 text-muted hover:text-primary transition-all flex items-center gap-1.5 disabled:opacity-50">
+            <RefreshCw size={12} className={branchesLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
+
+        {/* Existing branches table */}
+        <div className="overflow-x-auto mb-5">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left px-3 py-2 font-bold text-muted">ID</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Name</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Address</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Phone</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Status</th>
+                <th className="text-right px-3 py-2 font-bold text-muted">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {branches.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-6 text-muted italic">No branches found</td></tr>
+              ) : branches.map(b => (
+                <tr key={b.id} className="border-b border-border/40 hover:bg-bg2/30 transition-all">
+                  <td className="px-3 py-2 font-mono text-muted">{b.id}</td>
+                  <td className="px-3 py-2 font-semibold">{b.name}</td>
+                  <td className="px-3 py-2 text-muted">{b.address ?? '—'}</td>
+                  <td className="px-3 py-2 text-muted">{b.phone ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${b.is_active ? 'bg-green/20 text-green' : 'bg-red/20 text-red'}`}>
+                      {b.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {b.id !== 1 && (
+                      <button onClick={() => handleToggleBranch(b)}
+                        className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber/10 text-amber/80 hover:bg-amber/20 transition-all">
+                        {b.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Add new branch form */}
+        <div className="border-t border-border pt-4">
+          <h3 className="text-xs font-bold text-muted mb-3 uppercase tracking-wider">Add Branch</h3>
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted">Name *</label>
+              <input value={newBranchName} onChange={e => setNewBranchName(e.target.value)}
+                placeholder="Branch name" className="input-field text-xs px-2.5 py-1.5 w-40" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted">Address</label>
+              <input value={newBranchAddress} onChange={e => setNewBranchAddress(e.target.value)}
+                placeholder="Optional" className="input-field text-xs px-2.5 py-1.5 w-44" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted">Phone</label>
+              <input value={newBranchPhone} onChange={e => setNewBranchPhone(e.target.value)}
+                placeholder="Optional" className="input-field text-xs px-2.5 py-1.5 w-32" />
+            </div>
+            <button onClick={handleAddBranch} disabled={addingBranch || !newBranchName.trim()}
+              className="text-xs font-bold px-4 py-1.5 rounded-lg bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5">
+              {addingBranch ? <RefreshCw size={11} className="animate-spin" /> : <Save size={11} />}
+              {addingBranch ? 'Adding…' : 'Add Branch'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Sync Conflicts ─── */}
+      <div className="glass-panel p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold flex items-center gap-2">
+            <X size={18} className="text-orange-400" />
+            Sync Conflicts
+            {syncConflicts.length > 0 && (
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 text-xs font-bold">
+                {syncConflicts.length}
+              </span>
+            )}
+          </h3>
+          <button
+            onClick={fetchSyncConflicts}
+            disabled={syncConflictsLoading}
+            className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={syncConflictsLoading ? 'animate-spin' : ''} />
+            {syncConflicts.length ? 'Refresh' : 'Load'}
+          </button>
+        </div>
+
+        {syncConflictsLoading && (
+          <p className="text-xs text-muted text-center py-4">Loading…</p>
+        )}
+
+        {!syncConflictsLoading && syncConflicts.length === 0 && (
+          <p className="text-xs text-muted py-4 text-center">No unresolved conflicts. Click Load to check.</p>
+        )}
+
+        {!syncConflictsLoading && syncConflicts.length > 0 && (
+          <div className="overflow-auto rounded-xl border border-glass-border">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="sticky top-0 bg-bg2 border-b border-glass-border">
+                <tr className="text-muted">
+                  <th className="px-3 py-2 font-semibold">Entity</th>
+                  <th className="px-3 py-2 font-semibold">Remote Device</th>
+                  <th className="px-3 py-2 font-semibold">Detected</th>
+                  <th className="px-3 py-2 font-semibold text-right">Resolve</th>
+                </tr>
+              </thead>
+              <tbody>
+                {syncConflicts.map((c: any, i: number) => (
+                  <tr key={c.id} className={`border-b border-glass-border ${i % 2 === 0 ? 'bg-bg3/30' : ''}`}>
+                    <td className="px-3 py-2 font-mono">
+                      <span className="text-text">{c.entity_type}</span>
+                      <span className="text-muted ml-2">{String(c.entity_id).slice(0, 8)}…</span>
+                    </td>
+                    <td className="px-3 py-2 text-muted font-mono">
+                      {c.remote_device_id ? String(c.remote_device_id).slice(0, 8) + '…' : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-muted">
+                      {new Date(c.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex gap-1 justify-end">
+                        <button
+                          onClick={() => handleResolveConflict(c.id, 'local')}
+                          className="px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 text-[10px] font-semibold transition-all"
+                        >
+                          Keep Local
+                        </button>
+                        <button
+                          onClick={() => handleResolveConflict(c.id, 'remote')}
+                          className="px-2 py-1 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 text-[10px] font-semibold transition-all"
+                        >
+                          Use Remote
+                        </button>
+                        <button
+                          onClick={() => handleResolveConflict(c.id, 'merge')}
+                          className="px-2 py-1 rounded bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 text-[10px] font-semibold transition-all"
+                        >
+                          Merge
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Audit Log Viewer ─── */}
+      <div className="glass-panel p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-bold flex items-center gap-2">
+            <History size={18} className="text-primary" />
+            Audit Log
+          </h3>
+          <button
+            onClick={() => fetchAuditLogs(1)}
+            disabled={auditLogsLoading}
+            className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={auditLogsLoading ? 'animate-spin' : ''} />
+            {auditLogs.length ? 'Refresh' : 'Load Logs'}
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <select
+            value={auditFilter.type}
+            onChange={e => setAuditFilter(f => ({ ...f, type: e.target.value }))}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">All types</option>
+            {auditLogsTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <input type="date" value={auditFilter.from} onChange={e => setAuditFilter(f => ({ ...f, from: e.target.value }))}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary" />
+          <input type="date" value={auditFilter.to} onChange={e => setAuditFilter(f => ({ ...f, to: e.target.value }))}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary" />
+          <input type="text" placeholder="Search…" value={auditFilter.q} onChange={e => setAuditFilter(f => ({ ...f, q: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && fetchAuditLogs(1)}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary flex-1 min-w-[140px]" />
+          <button onClick={() => fetchAuditLogs(1)} className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold transition-all">
+            Apply
+          </button>
+          <button onClick={() => { setAuditFilter({ type: '', from: '', to: '', q: '' }); }} className="px-3 py-1.5 bg-bg3 hover:bg-bg3/80 border border-glass-border text-muted rounded-lg text-xs transition-all">
+            Clear
+          </button>
+        </div>
+
+        {auditLogs.length === 0 ? (
+          <p className="text-xs text-muted py-6 text-center">{auditLogsLoading ? 'Loading…' : 'No logs loaded. Click "Load Logs" to start.'}</p>
+        ) : (
+          <>
+            <div className="overflow-auto rounded-xl border border-glass-border">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 bg-bg2 border-b border-glass-border">
+                  <tr className="text-muted">
+                    <th className="px-3 py-2 font-semibold w-40">Timestamp</th>
+                    <th className="px-3 py-2 font-semibold w-44">Type</th>
+                    <th className="px-3 py-2 font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.map(row => (
+                    <tr key={row.id} className="border-b border-glass-border/30 hover:bg-bg3/20 transition-colors">
+                      <td className="px-3 py-2 text-muted font-mono text-[10px] whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
+                      <td className="px-3 py-2">
+                        <span className="inline-block bg-primary/10 text-primary border border-primary/20 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide truncate max-w-[160px]">{row.action_type}</span>
+                      </td>
+                      <td className="px-3 py-2 text-text">{row.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[10px] text-muted">{auditLogsTotal} total entries</span>
+              <div className="flex gap-2">
+                <button disabled={auditLogsPage <= 1 || auditLogsLoading} onClick={() => fetchAuditLogs(auditLogsPage - 1)}
+                  className="px-3 py-1 bg-bg3 border border-glass-border text-muted rounded-lg text-xs disabled:opacity-40 hover:text-text transition-all">
+                  Prev
+                </button>
+                <span className="text-xs text-muted self-center">Page {auditLogsPage} / {auditLogsPages}</span>
+                <button disabled={auditLogsPage >= auditLogsPages || auditLogsLoading} onClick={() => fetchAuditLogs(auditLogsPage + 1)}
+                  className="px-3 py-1 bg-bg3 border border-glass-border text-muted rounded-lg text-xs disabled:opacity-40 hover:text-text transition-all">
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ─── Factory Reset Confirmation Modal ─── */}

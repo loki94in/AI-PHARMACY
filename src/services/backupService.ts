@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 import cron, { type ScheduledTask } from 'node-cron';
 import { dbManager } from '../database/connection.js';
-import Database from 'better-sqlite3';
 import zlib from 'zlib';
 import { pipeline } from 'stream/promises';
 
@@ -30,11 +30,11 @@ export async function createBackup(reason: string = 'Manual'): Promise<{ filenam
   const filename = `app_backup_${timestamp}.db.gz`;
   const backupPath = path.join(BACKUP_DIR, filename);
 
-  // Use native better-sqlite3 backup API to safely checkpoint WAL and clone live SQLite database
+  // Flush WAL frames back to main DB file, then copy — avoids native binary ABI issues.
   const tempDbPath = backupPath.replace('.gz', '');
-  const tempDb = new Database(DB_PATH);
-  await tempDb.backup(tempDbPath);
-  tempDb.close();
+  const db = await dbManager.getConnection();
+  await db.run('PRAGMA wal_checkpoint(TRUNCATE)');
+  fs.copyFileSync(DB_PATH, tempDbPath);
 
   // Compress the backup using gzip (ponytail: native stdlib zlib)
   const gzip = zlib.createGzip();
@@ -265,4 +265,138 @@ function enforceRetention(): void {
 export async function initBackupScheduler(): Promise<void> {
   const freq = await getScheduleConfig();
   startScheduler(freq);
+}
+
+/**
+ * Run PRAGMA integrity_check on a backup file without touching the live DB.
+ * Decompresses .gz backups to a temp file, checks, then cleans up.
+ * Returns { ok, result } — result is 'ok' for a clean file, or the first error row.
+ */
+export async function verifyBackupIntegrity(
+  filename: string
+): Promise<{ ok: boolean; result: string }> {
+  const sanitized = path.basename(filename);
+  if (!sanitized.match(/\.(db|db\.gz)$/)) {
+    throw new Error('Invalid backup filename');
+  }
+
+  const filePath = path.join(BACKUP_DIR, sanitized);
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(BACKUP_DIR + path.sep)) {
+    throw new Error('Invalid backup path');
+  }
+  if (!fs.existsSync(filePath)) {
+    throw new Error('Backup file not found');
+  }
+
+  let tempPath: string | null = null;
+  try {
+    if (sanitized.endsWith('.gz')) {
+      tempPath = path.join(os.tmpdir(), `verify_${Date.now()}_${sanitized.replace('.gz', '')}`);
+      const gunzip = zlib.createGunzip();
+      const src = fs.createReadStream(filePath);
+      const dst = fs.createWriteStream(tempPath);
+      await pipeline(src, gunzip, dst);
+    } else {
+      tempPath = filePath;
+    }
+
+    const checkDb = new Database(tempPath, { readonly: true });
+    const rows = checkDb.prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>;
+    checkDb.close();
+
+    const first = rows[0]?.integrity_check ?? 'unknown';
+    return { ok: first === 'ok', result: first };
+  } finally {
+    if (tempPath && tempPath !== filePath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+  }
+}
+
+/**
+ * Dry-run restore: decompress backup to a temp path, run integrity_check,
+ * measure elapsed time — never touching the live database file.
+ * Returns a structured report suitable for the /backup/test-restore endpoint.
+ */
+export async function testRestoreBackup(filename: string): Promise<{
+  filename: string;
+  integrityOk: boolean;
+  integrityResult: string;
+  elapsedMs: number;
+  tempSizeBytes: number;
+}> {
+  const sanitized = path.basename(filename);
+  if (!sanitized.match(/\.(db|db\.gz)$/)) {
+    throw new Error('Invalid backup filename');
+  }
+
+  const filePath = path.join(BACKUP_DIR, sanitized);
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(BACKUP_DIR + path.sep)) {
+    throw new Error('Invalid backup path');
+  }
+  if (!fs.existsSync(filePath)) {
+    throw new Error('Backup file not found');
+  }
+
+  const t0 = Date.now();
+  let tempPath: string | null = null;
+  try {
+    if (sanitized.endsWith('.gz')) {
+      tempPath = path.join(os.tmpdir(), `test_restore_${Date.now()}_${sanitized.replace('.gz', '')}`);
+      const gunzip = zlib.createGunzip();
+      const src = fs.createReadStream(filePath);
+      const dst = fs.createWriteStream(tempPath);
+      await pipeline(src, gunzip, dst);
+    } else {
+      tempPath = path.join(os.tmpdir(), `test_restore_${Date.now()}_${sanitized}`);
+      fs.copyFileSync(filePath, tempPath);
+    }
+
+    const tempSizeBytes = fs.statSync(tempPath).size;
+    const checkDb = new Database(tempPath, { readonly: true });
+    const rows = checkDb.prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>;
+    checkDb.close();
+    const first = rows[0]?.integrity_check ?? 'unknown';
+
+    return {
+      filename: sanitized,
+      integrityOk: first === 'ok',
+      integrityResult: first,
+      elapsedMs: Date.now() - t0,
+      tempSizeBytes,
+    };
+  } finally {
+    if (tempPath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+  }
+}
+
+/**
+ * Return DR status: latest backup metadata and RPO gap in minutes.
+ */
+export function getDrStatus(): {
+  backupCount: number;
+  latestFilename: string | null;
+  latestCreatedAt: string | null;
+  rpoGapMinutes: number | null;
+  totalDiskBytes: number;
+  backupDirectory: string;
+} {
+  const backups = listBackups();
+  const latest = backups[0] ?? null;
+  const rpoGapMinutes = latest
+    ? Math.floor((Date.now() - new Date(latest.createdAt).getTime()) / 60_000)
+    : null;
+  const totalDiskBytes = backups.reduce((s, b) => s + b.sizeBytes, 0);
+  return {
+    backupCount: backups.length,
+    latestFilename: latest?.filename ?? null,
+    latestCreatedAt: latest?.createdAt ?? null,
+    rpoGapMinutes,
+    totalDiskBytes,
+    backupDirectory: BACKUP_DIR,
+  };
 }
