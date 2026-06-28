@@ -150,6 +150,8 @@ const Settings = () => {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [verifyingFile, setVerifyingFile] = useState<string | null>(null);
   const [verifyResults, setVerifyResults] = useState<Record<string, { ok: boolean; result: string }>>({});
+  const [testRestoringFile, setTestRestoringFile] = useState<string | null>(null);
+  const [testRestoreResults, setTestRestoreResults] = useState<Record<string, { ok: boolean; elapsedMs: number; sizeBytes: number }>>({});
   const [drStatus, setDrStatus] = useState<{ rpoGapMinutes: number | null; backupCount: number; totalDiskBytes: number } | null>(null);
 
   // Phase 12: System Administration state
@@ -790,6 +792,25 @@ const Settings = () => {
       toastEvent.trigger(err?.response?.data?.error ?? 'Verify failed', 'error');
     } finally {
       setVerifyingFile(null);
+    }
+  };
+
+  const handleTestRestore = async (filename: string) => {
+    setTestRestoringFile(filename);
+    try {
+      const { data } = await apiClient.post(`/utilities/backup/test-restore/${encodeURIComponent(filename)}`);
+      const r = data.report;
+      setTestRestoreResults(prev => ({ ...prev, [filename]: { ok: r.integrityOk, elapsedMs: r.elapsedMs, sizeBytes: r.tempSizeBytes } }));
+      toastEvent.trigger(
+        r.integrityOk
+          ? `DR test passed in ${r.elapsedMs} ms (${(r.tempSizeBytes / 1024 / 1024).toFixed(1)} MB)`
+          : `DR test FAILED: ${r.integrityResult}`,
+        r.integrityOk ? 'success' : 'error'
+      );
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Test restore failed', 'error');
+    } finally {
+      setTestRestoringFile(null);
     }
   };
 
@@ -1467,6 +1488,31 @@ const Settings = () => {
                           >
                             {verifyingFile === b.filename ? <RefreshCw size={10} className="animate-spin" /> : <Shield size={10} />}
                             {verifyingFile === b.filename ? '…' : 'Verify'}
+                          </button>
+
+                          {/* DR Test Restore */}
+                          <button
+                            onClick={() => handleTestRestore(b.filename)}
+                            disabled={testRestoringFile === b.filename}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all flex items-center gap-1 disabled:opacity-50 ${
+                              testRestoreResults[b.filename]
+                                ? testRestoreResults[b.filename].ok
+                                  ? 'bg-teal/10 text-teal/80 hover:bg-teal/20'
+                                  : 'bg-red/10 text-red/80 hover:bg-red/20'
+                                : 'bg-purple/10 text-purple/80 hover:bg-purple/20'
+                            }`}
+                            title="Dry-run restore: decompress + integrity check without touching live DB"
+                          >
+                            {testRestoringFile === b.filename
+                              ? <RefreshCw size={10} className="animate-spin" />
+                              : <Database size={10} />}
+                            {testRestoringFile === b.filename
+                              ? '…'
+                              : testRestoreResults[b.filename]
+                                ? testRestoreResults[b.filename].ok
+                                  ? `DR OK (${testRestoreResults[b.filename].elapsedMs}ms)`
+                                  : 'DR FAIL'
+                                : 'DR Test'}
                           </button>
 
                           {/* Delete */}

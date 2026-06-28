@@ -316,6 +316,66 @@ export async function verifyBackupIntegrity(
 }
 
 /**
+ * Dry-run restore: decompress backup to a temp path, run integrity_check,
+ * measure elapsed time — never touching the live database file.
+ * Returns a structured report suitable for the /backup/test-restore endpoint.
+ */
+export async function testRestoreBackup(filename: string): Promise<{
+  filename: string;
+  integrityOk: boolean;
+  integrityResult: string;
+  elapsedMs: number;
+  tempSizeBytes: number;
+}> {
+  const sanitized = path.basename(filename);
+  if (!sanitized.match(/\.(db|db\.gz)$/)) {
+    throw new Error('Invalid backup filename');
+  }
+
+  const filePath = path.join(BACKUP_DIR, sanitized);
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(BACKUP_DIR + path.sep)) {
+    throw new Error('Invalid backup path');
+  }
+  if (!fs.existsSync(filePath)) {
+    throw new Error('Backup file not found');
+  }
+
+  const t0 = Date.now();
+  let tempPath: string | null = null;
+  try {
+    if (sanitized.endsWith('.gz')) {
+      tempPath = path.join(os.tmpdir(), `test_restore_${Date.now()}_${sanitized.replace('.gz', '')}`);
+      const gunzip = zlib.createGunzip();
+      const src = fs.createReadStream(filePath);
+      const dst = fs.createWriteStream(tempPath);
+      await pipeline(src, gunzip, dst);
+    } else {
+      tempPath = path.join(os.tmpdir(), `test_restore_${Date.now()}_${sanitized}`);
+      fs.copyFileSync(filePath, tempPath);
+    }
+
+    const tempSizeBytes = fs.statSync(tempPath).size;
+    const checkDb = new Database(tempPath, { readonly: true });
+    const rows = checkDb.prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>;
+    checkDb.close();
+    const first = rows[0]?.integrity_check ?? 'unknown';
+
+    return {
+      filename: sanitized,
+      integrityOk: first === 'ok',
+      integrityResult: first,
+      elapsedMs: Date.now() - t0,
+      tempSizeBytes,
+    };
+  } finally {
+    if (tempPath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+  }
+}
+
+/**
  * Return DR status: latest backup metadata and RPO gap in minutes.
  */
 export function getDrStatus(): {

@@ -22,6 +22,7 @@ import {
   setScheduleConfig,
   verifyBackupIntegrity,
   getDrStatus,
+  testRestoreBackup,
 } from '../services/backupService.js';
 import { backupRecoveryService } from '../services/backupRecoveryService.js';
 import { closeMessageDAO } from '../database/messageDAO.js';
@@ -78,6 +79,16 @@ router.post('/backup/verify/:filename', async (req, res) => {
   try {
     const result = await verifyBackupIntegrity(req.params.filename);
     res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// DR dry-run: decompress + integrity check without touching live DB
+router.post('/backup/test-restore/:filename', async (req, res) => {
+  try {
+    const report = await testRestoreBackup(req.params.filename);
+    res.json({ success: true, report });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
   }
