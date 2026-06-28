@@ -771,6 +771,8 @@ const Topbar = ({
             if (typeof (window as any).refreshStagedCounts === 'function') {
               (window as any).refreshStagedCounts(true);
             }
+          } else if (data.type === 'email_update') {
+            window.dispatchEvent(new CustomEvent('email_update', { detail: data.payload }));
           } else if (data.type === 'sync_complete') {
             const entityTypes: string[] = data.payload?.entityTypes || [];
             window.dispatchEvent(new CustomEvent('sync_complete', { detail: { entityTypes } }));

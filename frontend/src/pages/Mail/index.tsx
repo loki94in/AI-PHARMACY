@@ -281,15 +281,16 @@ const Mail = () => {
       syncDelay = setTimeout(() => triggerSync(), 1500);
     }
 
-    // Periodic background refresh: re-read local DB every 30s (silent, no loading indicator).
-    const refreshInterval = setInterval(() => silentRefreshLocal(), 30000);
+    // Refresh local DB when the email poller fetches new mail (event-driven, replaces 30s poll).
+    const onEmailUpdate = () => silentRefreshLocal();
+    window.addEventListener('email_update', onEmailUpdate);
 
     // Periodic IMAP sync every 2 minutes.
     const syncInterval = setInterval(() => triggerSync(), 120000);
 
     return () => {
       if (syncDelay) clearTimeout(syncDelay);
-      clearInterval(refreshInterval);
+      window.removeEventListener('email_update', onEmailUpdate);
       clearInterval(syncInterval);
     };
   }, [triggerSync, silentRefreshLocal]);
