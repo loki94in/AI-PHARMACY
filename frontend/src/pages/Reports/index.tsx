@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { BarChart3, TrendingUp, Download, IndianRupee, ShoppingBag, Package, FileText, Info } from 'lucide-react';
+import { BarChart3, TrendingUp, Download, IndianRupee, ShoppingBag, Package, FileText, Info, Mail, Users } from 'lucide-react';
 import { api } from '../../services/api';
 
 const getTodayString = () => {
@@ -45,9 +45,11 @@ const Reports = () => {
       setToDate(val);
     }
   };
-  const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'purchases' | 'expiry'>('sales');
+  const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'purchases' | 'expiry' | 'analytics' | 'email'>('sales');
   const [stats, setStats] = useState({ totalSales: 0, totalPurchases: 0, profitMargin: 0, itemsSold: 0 });
   const [records, setRecords] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [emailAnalytics, setEmailAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const [hasGenerated, setHasGenerated] = useState(false);
@@ -56,6 +58,18 @@ const Reports = () => {
   const fetchReportData = async () => {
     setLoading(true);
     try {
+      if (activeTab === 'analytics') {
+        const data = await api.getReportsAnalytics({ type: 'sales', fromDate, toDate });
+        setAnalytics(data);
+        setHasGenerated(true);
+        return;
+      }
+      if (activeTab === 'email') {
+        const data = await api.getReportsAnalytics({ type: 'email', fromDate, toDate });
+        setEmailAnalytics(data);
+        setHasGenerated(true);
+        return;
+      }
       const [summaryData, tableData] = await Promise.all([
         api.getReportsSummary({ fromDate, toDate }),
         api.getReportsData({ type: activeTab, fromDate, toDate })
@@ -145,6 +159,8 @@ const Reports = () => {
     { id: 'inventory', label: 'Inventory Report', icon: Package, color: 'text-sky' },
     { id: 'purchases', label: 'Purchase Report', icon: ShoppingBag, color: 'text-amber' },
     { id: 'expiry', label: 'Expiry Report', icon: BarChart3, color: 'text-red' },
+    { id: 'analytics', label: 'Sales Analytics', icon: TrendingUp, color: 'text-primary' },
+    { id: 'email', label: 'Email Analytics', icon: Mail, color: 'text-sky' },
   ] as const;
 
   return (
@@ -494,6 +510,177 @@ const Reports = () => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 border-b border-glass-border flex justify-between items-center bg-bg3/30 flex-shrink-0">
+                <h3 className="font-bold text-sm flex items-center gap-2 text-text">
+                  <TrendingUp size={18} className="text-primary" />
+                  <span>Sales Analytics</span>
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export Top Medicines PDF"
+                    onClick={() => {
+                      api.exportReportsPDF({ type: 'top-medicines', fromDate, toDate })
+                        .then(blob => { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = `top_medicines_${Date.now()}.pdf`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(u); document.body.removeChild(a); })
+                        .catch(() => alert('Export failed'));
+                    }}
+                  >
+                    <FileText size={14} /><span>PDF</span>
+                  </button>
+                  <button
+                    className="px-3 py-1.5 bg-green/10 hover:bg-green/20 border border-green/20 text-green rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    onClick={() => {
+                      api.exportReportsExcel({ type: 'top-medicines', fromDate, toDate })
+                        .then(blob => { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = `top_medicines_${Date.now()}.xlsx`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(u); document.body.removeChild(a); })
+                        .catch(() => alert('Export failed'));
+                    }}
+                  >
+                    <Download size={14} /><span>Excel</span>
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto p-4 space-y-6">
+                {loading ? (
+                  <div className="text-center text-xs text-muted py-12">Loading analytics...</div>
+                ) : !analytics ? (
+                  <div className="text-center text-xs text-muted py-12">{hasGenerated ? 'No data' : 'Select dates and click "Generate"'}</div>
+                ) : (
+                  <>
+                    {/* Top Medicines */}
+                    <div>
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted mb-3 flex items-center gap-1.5"><Package size={12} />Top Medicines by Revenue</h4>
+                      <div className="space-y-2">
+                        {(analytics.topMedicines || []).map((m: any, i: number) => {
+                          const max = analytics.topMedicines[0]?.revenue || 1;
+                          const pct = Math.round((m.revenue / max) * 100);
+                          return (
+                            <div key={i} className="flex items-center gap-3">
+                              <span className="text-[10px] font-bold text-muted w-4">{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-baseline mb-0.5">
+                                  <span className="text-xs font-semibold text-text truncate max-w-[200px]">{m.name}</span>
+                                  <span className="text-xs font-bold text-green ml-2 shrink-0">₹{Number(m.revenue || 0).toLocaleString('en-IN')}</span>
+                                </div>
+                                <div className="h-1.5 bg-bg3 rounded-full overflow-hidden">
+                                  <div className="h-full bg-green rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                              <span className="text-[10px] text-muted shrink-0">{m.qty} units</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Top Customers */}
+                    <div>
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted mb-3 flex items-center gap-1.5"><Users size={12} />Top Customers by Spend</h4>
+                      <div className="space-y-2">
+                        {(analytics.topCustomers || []).map((c: any, i: number) => {
+                          const max = analytics.topCustomers[0]?.total || 1;
+                          const pct = Math.round((c.total / max) * 100);
+                          return (
+                            <div key={i} className="flex items-center gap-3">
+                              <span className="text-[10px] font-bold text-muted w-4">{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-baseline mb-0.5">
+                                  <span className="text-xs font-semibold text-text truncate max-w-[200px]">{c.name}</span>
+                                  <span className="text-xs font-bold text-primary ml-2 shrink-0">₹{Number(c.total || 0).toLocaleString('en-IN')}</span>
+                                </div>
+                                <div className="h-1.5 bg-bg3 rounded-full overflow-hidden">
+                                  <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                              <span className="text-[10px] text-muted shrink-0">{c.visits} visits</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Payment Status Breakdown */}
+                    {(analytics.byPaymentStatus || []).length > 0 && (
+                      <div>
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted mb-3">Payment Status Breakdown</h4>
+                        <div className="flex gap-3 flex-wrap">
+                          {(analytics.byPaymentStatus || []).map((s: any) => (
+                            <div key={s.status} className="bg-bg3 border border-glass-border rounded-xl px-4 py-3 min-w-[120px]">
+                              <div className="text-[9px] text-muted font-bold uppercase mb-1">{s.status}</div>
+                              <div className="text-lg font-black text-text">{s.count}</div>
+                              <div className="text-[10px] text-muted">₹{Number(s.amount || 0).toLocaleString('en-IN')}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'email' && (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 border-b border-glass-border flex items-center bg-bg3/30 flex-shrink-0">
+                <h3 className="font-bold text-sm flex items-center gap-2 text-text">
+                  <Mail size={18} className="text-sky" />
+                  <span>Email Analytics</span>
+                </h3>
+              </div>
+              <div className="flex-1 overflow-auto p-4 space-y-6">
+                {loading ? (
+                  <div className="text-center text-xs text-muted py-12">Loading email analytics...</div>
+                ) : !emailAnalytics ? (
+                  <div className="text-center text-xs text-muted py-12">{hasGenerated ? 'No data' : 'Click "Generate" to load email stats'}</div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        { label: 'Total Emails', value: emailAnalytics.total || 0, color: 'text-text' },
+                        { label: 'Linked to Distributor', value: emailAnalytics.linked || 0, color: 'text-green' },
+                        { label: 'Attachments Stored', value: emailAnalytics.attachmentCount || 0, color: 'text-primary' },
+                        { label: 'Link Rate', value: `${emailAnalytics.linkRate || 0}%`, color: 'text-amber' },
+                      ].map(card => (
+                        <div key={card.label} className="bg-bg3 border border-glass-border rounded-xl p-4">
+                          <div className="text-[9px] text-muted font-bold uppercase mb-1">{card.label}</div>
+                          <div className={`text-2xl font-black ${card.color}`}>{card.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {(emailAnalytics.topDistributors || []).length > 0 && (
+                      <div>
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted mb-3">Top Distributors by Email Volume</h4>
+                        <div className="space-y-2">
+                          {(emailAnalytics.topDistributors || []).map((d: any, i: number) => {
+                            const max = emailAnalytics.topDistributors[0]?.count || 1;
+                            const pct = Math.round((d.count / max) * 100);
+                            return (
+                              <div key={i} className="flex items-center gap-3">
+                                <span className="text-[10px] font-bold text-muted w-4">{i + 1}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex justify-between items-baseline mb-0.5">
+                                    <span className="text-xs font-semibold text-text truncate max-w-[220px]">{d.name}</span>
+                                    <span className="text-xs font-bold text-sky ml-2 shrink-0">{d.count} emails</span>
+                                  </div>
+                                  <div className="h-1.5 bg-bg3 rounded-full overflow-hidden">
+                                    <div className="h-full bg-sky rounded-full" style={{ width: `${pct}%` }} />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
