@@ -36,6 +36,7 @@ interface LearningProfileSummary {
   distributor_name: string;
   distributor_email: string | null;
   distributor_phone: string | null;
+  distributor_whatsapp: string | null;
   last_updated: string | null;
   files_count: number;
   last_status: string | null;
@@ -119,6 +120,7 @@ const Learning: React.FC = () => {
   const [showAddDistModal, setShowAddDistModal] = useState(false);
   const [newDistName, setNewDistName] = useState('');
   const [newDistPhone, setNewDistPhone] = useState('');
+  const [newDistWhatsApp, setNewDistWhatsApp] = useState('');
   const [newDistEmail, setNewDistEmail] = useState('');
 
   // Manual trainer editing state
@@ -182,6 +184,7 @@ const Learning: React.FC = () => {
       const res = await apiClient.post('/settings/distributors', {
         name: newDistName.trim(),
         phone: newDistPhone.trim(),
+        whatsapp_number: newDistWhatsApp.trim() || undefined,
         email: newDistEmail.trim()
       });
       if (res.data && res.data.success) {
@@ -189,6 +192,7 @@ const Learning: React.FC = () => {
         setShowAddDistModal(false);
         setNewDistName('');
         setNewDistPhone('');
+        setNewDistWhatsApp('');
         setNewDistEmail('');
         fetchProfiles();
       }
@@ -1080,7 +1084,7 @@ const Learning: React.FC = () => {
                         <h4 className="text-[10px] font-black uppercase tracking-wider text-sky flex items-center gap-1 border-b border-glass-border/30 pb-1">
                           Distributor Details
                         </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-muted uppercase">Distributor Name</label>
                             <input
@@ -1091,20 +1095,6 @@ const Learning: React.FC = () => {
                                 setSelectedProfile({
                                   ...selectedProfile,
                                   distributor: { ...selectedProfile.distributor, name: e.target.value }
-                                });
-                              }}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-muted uppercase">Phone (WhatsApp)</label>
-                            <input
-                              type="text"
-                              className="premium-input w-full text-xs py-1 px-2.5"
-                              value={selectedProfile.distributor.phone || ''}
-                              onChange={(e) => {
-                                setSelectedProfile({
-                                  ...selectedProfile,
-                                  distributor: { ...selectedProfile.distributor, phone: e.target.value }
                                 });
                               }}
                             />
@@ -1122,6 +1112,40 @@ const Learning: React.FC = () => {
                                 });
                               }}
                             />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-muted uppercase">Phone (Office)</label>
+                            <input
+                              type="text"
+                              className="premium-input w-full text-xs py-1 px-2.5"
+                              placeholder="Office / landline number"
+                              value={selectedProfile.distributor.phone || ''}
+                              onChange={(e) => {
+                                setSelectedProfile({
+                                  ...selectedProfile,
+                                  distributor: { ...selectedProfile.distributor, phone: e.target.value }
+                                });
+                              }}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-muted uppercase flex items-center gap-1">
+                              WhatsApp Number
+                              <span className="text-green text-[8px] font-bold bg-green/10 px-1 rounded">Used for automation</span>
+                            </label>
+                            <input
+                              type="text"
+                              className="premium-input w-full text-xs py-1 px-2.5 border-green/30 focus:border-green/60"
+                              placeholder="WhatsApp number (if different from phone)"
+                              value={selectedProfile.distributor.whatsapp_number || ''}
+                              onChange={(e) => {
+                                setSelectedProfile({
+                                  ...selectedProfile,
+                                  distributor: { ...selectedProfile.distributor, whatsapp_number: e.target.value }
+                                });
+                              }}
+                            />
+                            <p className="text-[8px] text-muted">Automation sends order confirmations here. Falls back to Phone if empty.</p>
                           </div>
                         </div>
 
@@ -2248,14 +2272,28 @@ const Learning: React.FC = () => {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">WhatsApp Phone No(s). (comma sep.)</label>
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Phone (Office)</label>
                 <input
                   type="text"
                   className="premium-input w-full text-xs"
-                  placeholder="e.g. +919876543210, +919900000000"
+                  placeholder="e.g. 9876543210"
                   value={newDistPhone}
                   onChange={(e) => setNewDistPhone(e.target.value)}
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1">
+                  WhatsApp Number
+                  <span className="text-green text-[8px] font-bold bg-green/10 px-1 rounded">Used for automation</span>
+                </label>
+                <input
+                  type="text"
+                  className="premium-input w-full text-xs border-green/30 focus:border-green/60"
+                  placeholder="WhatsApp number (if different from phone)"
+                  value={newDistWhatsApp}
+                  onChange={(e) => setNewDistWhatsApp(e.target.value)}
+                />
+                <p className="text-[8px] text-muted">Automation sends order confirmations here. Falls back to Phone if empty.</p>
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Email Address</label>

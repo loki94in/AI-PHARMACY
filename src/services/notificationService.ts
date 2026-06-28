@@ -194,7 +194,8 @@ export class NotificationService {
 
       // 1. Find the purchase record that matches the invoice_no or app_invoice_no
       const purchase = await db.get(
-        `SELECT p.id as purchase_id, p.invoice_no, d.id as distributor_id, d.name as distributor_name, d.phone as distributor_phone
+        `SELECT p.id as purchase_id, p.invoice_no, d.id as distributor_id, d.name as distributor_name,
+                d.phone as distributor_phone, d.whatsapp_number as distributor_whatsapp
          FROM purchases p
          LEFT JOIN distributors d ON p.distributor_id = d.id
          WHERE p.invoice_no = ? OR p.app_invoice_no = ?`,
@@ -206,9 +207,9 @@ export class NotificationService {
         return false;
       }
 
-      // If distributor has no phone number, we can't send WhatsApp
-      const rawPhone = purchase.distributor_phone || '';
-      if (!rawPhone.trim()) {
+      // Prefer dedicated whatsapp_number; fall back to phone if not set
+      const rawPhone = purchase.distributor_whatsapp?.trim() || purchase.distributor_phone?.trim() || '';
+      if (!rawPhone) {
         console.warn(`[DistributorNotif] Distributor ${purchase.distributor_name} has no WhatsApp number in profile. Skipping.`);
         // Log action trace for transparency
         await db.run(

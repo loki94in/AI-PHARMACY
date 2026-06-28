@@ -233,13 +233,13 @@ router.post('/company', async (req, res) => {
 
 // Create a new distributor
 router.post('/distributors', async (req, res) => {
-  const { name, phone, email, address, state_code } = req.body;
+  const { name, phone, whatsapp_number, email, address, state_code } = req.body;
   if (!name) return res.status(400).json({ error: 'Distributor name is required' });
   try {
     const db = await dbManager.getConnection();
     const result = await db.run(
-      `INSERT INTO distributors (name, phone, email, address, state_code) VALUES (?, ?, ?, ?, ?)`,
-      [name, phone || '', email || '', address || '', state_code || '']
+      `INSERT INTO distributors (name, phone, whatsapp_number, email, address, state_code) VALUES (?, ?, ?, ?, ?, ?)`,
+      [name, phone || '', whatsapp_number ?? null, email || '', address || '', state_code || '']
     );
     const id = result.lastID;
     const saved = await db.get('SELECT * FROM distributors WHERE id = ?', [id]);
@@ -255,16 +255,16 @@ router.post('/distributors', async (req, res) => {
 // Update a distributor
 router.put('/distributors/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, phone, email, address, state_code, gstin, dl_no, city } = req.body;
+  const { name, phone, whatsapp_number, email, address, state_code, gstin, dl_no, city } = req.body;
   if (!name) return res.status(400).json({ error: 'Distributor name is required' });
   try {
     const db = await dbManager.getConnection();
     await db.run(
       `UPDATE distributors
-       SET name = ?, phone = ?, email = ?, address = ?, state_code = ?,
+       SET name = ?, phone = ?, whatsapp_number = ?, email = ?, address = ?, state_code = ?,
            gstin = ?, dl_no = ?, city = ?
        WHERE id = ?`,
-      [name, phone || '', email || '', address || '', state_code || '',
+      [name, phone || '', whatsapp_number ?? null, email || '', address || '', state_code || '',
        gstin || '', dl_no || '', city || '', id]
     );
     const updated = await db.get('SELECT * FROM distributors WHERE id = ?', [id]);
