@@ -667,4 +667,115 @@ router.post('/batch-link-distributors', async (req, res) => {
   }
 });
 
+// ── Phase 7b: email → special_order linking ─────────────────────────────────
+
+function extractOrderId(subject: string, body: string): number | null {
+  // Match "order #42", "order: 42", "order id 42" etc. in subject first, then body
+  const pattern = /order[#:\s]+(\d+)/i;
+  const sm = subject.match(pattern);
+  if (sm) return parseInt(sm[1], 10);
+  const bm = body?.match(pattern);
+  if (bm) return parseInt(bm[1], 10);
+  return null;
+}
+
+/** POST /api/email/:uid/link-order — tag one email with a special_orders row */
+router.post('/:uid/link-order', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  try {
+    const db = await dbManager.getConnection();
+    const email = await db.get(
+      'SELECT uid, subject, body, medicine_names, linked_order_id FROM emails WHERE uid = ?', [uid]
+    );
+    if (!email) return res.status(404).json({ success: false, error: 'Email not found' });
+    if (email.linked_order_id != null) {
+      return res.json({ linked: true, skipped: true, order_id: email.linked_order_id });
+    }
+
+    // Pass 1: extract order# from subject/body → match by id
+    const orderId = extractOrderId(email.subject ?? '', email.body ?? '');
+    if (orderId) {
+      const order = await db.get('SELECT id FROM special_orders WHERE id = ?', [orderId]);
+      if (order) {
+        await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, uid]);
+        return res.json({ linked: true, order_id: order.id });
+      }
+    }
+
+    // Pass 2: match any medicine_name word against special_orders.product
+    const names: string[] = (email.medicine_names ?? '')
+      .split(',').map((n: string) => n.trim()).filter(Boolean);
+    for (const name of names) {
+      const order = await db.get(
+        `SELECT id FROM special_orders
+         WHERE LOWER(product) LIKE LOWER(?)
+         ORDER BY date DESC LIMIT 1`,
+        [`%${name}%`]
+      );
+      if (order) {
+        await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, uid]);
+        return res.json({ linked: true, order_id: order.id });
+      }
+    }
+
+    await db.run(
+      `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+      ['email_link_miss_order', `uid=${uid} subject="${(email.subject ?? '').slice(0, 80)}"`]
+    );
+    return res.json({ linked: false, reason: 'no_order_match' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/batch-link-orders — link all emails with no linked_order_id */
+router.post('/batch-link-orders', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, subject, body, medicine_names FROM emails WHERE linked_order_id IS NULL`
+    );
+    let linked = 0, missed = 0;
+    for (const email of rows) {
+      // Pass 1: id match
+      const orderId = extractOrderId(email.subject ?? '', email.body ?? '');
+      if (orderId) {
+        const order = await db.get('SELECT id FROM special_orders WHERE id = ?', [orderId]);
+        if (order) {
+          await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, email.uid]);
+          linked++;
+          continue;
+        }
+      }
+      // Pass 2: product name match
+      let found = false;
+      const names: string[] = (email.medicine_names ?? '')
+        .split(',').map((n: string) => n.trim()).filter(Boolean);
+      for (const name of names) {
+        const order = await db.get(
+          `SELECT id FROM special_orders WHERE LOWER(product) LIKE LOWER(?) ORDER BY date DESC LIMIT 1`,
+          [`%${name}%`]
+        );
+        if (order) {
+          await db.run(`UPDATE emails SET linked_order_id = ? WHERE uid = ?`, [order.id, email.uid]);
+          linked++;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        await db.run(
+          `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+          ['email_link_miss_order', `uid=${email.uid} subject="${(email.subject ?? '').slice(0, 80)}"`]
+        );
+        missed++;
+      }
+    }
+    res.json({ processed: rows.length, linked, missed });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
 export default router;

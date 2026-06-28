@@ -1435,3 +1435,10 @@ export const linkEmailDistributor = (uid: number): Promise<EmailLinkResult> =>
 
 export const batchLinkDistributors = (): Promise<{ processed: number; linked: number; missed: number }> =>
   request('/email/batch-link-distributors', { method: 'POST' });
+
+// 7b — email → special_order
+export const linkEmailOrder = (uid: number): Promise<EmailLinkResult> =>
+  request(`/email/${uid}/link-order`, { method: 'POST' });
+
+export const batchLinkOrders = (): Promise<{ processed: number; linked: number; missed: number }> =>
+  request('/email/batch-link-orders', { method: 'POST' });
