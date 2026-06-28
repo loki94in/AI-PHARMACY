@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { dbManager } from '../database/connection.js';
 import { getSyncStats, getOrCreateDeviceId } from '../services/syncService.js';
-import { buildAimail } from '../utils/aimailFormat.js';
+import { buildAimail, deserializeAimail, serializeAimail } from '../utils/aimailFormat.js';
+import { mergeDocuments } from '../worker/conflictResolver.js';
 
 const router = Router();
 
@@ -138,6 +139,104 @@ router.get('/test-aimail', async (_req: Request, res: Response) => {
       synced_at: null,
     });
     res.json({ success: true, data: doc });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/sync/conflicts — list unresolved sync conflicts */
+router.get('/conflicts', async (_req: Request, res: Response) => {
+  try {
+    const db = await dbManager.getConnection();
+    const conflicts = await db.all(
+      `SELECT id, entity_type, entity_id, local_checksum, remote_checksum,
+              remote_device_id, strategy, created_at
+       FROM sync_conflicts
+       WHERE resolved_at IS NULL
+       ORDER BY created_at DESC`
+    );
+    res.json({ success: true, data: conflicts });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/sync/conflicts/:id/resolve — apply a resolution choice */
+router.post('/conflicts/:id/resolve', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ success: false, error: 'Invalid conflict id' });
+  }
+  const { choice } = req.body ?? {};
+  if (!['local', 'remote', 'merge'].includes(choice)) {
+    return res.status(400).json({ success: false, error: "choice must be 'local', 'remote', or 'merge'" });
+  }
+
+  try {
+    const db = await dbManager.getConnection();
+    const conflict = await db.get(
+      `SELECT * FROM sync_conflicts WHERE id = ? AND resolved_at IS NULL`,
+      [id]
+    );
+    if (!conflict) {
+      return res.status(404).json({ success: false, error: 'Conflict not found or already resolved' });
+    }
+
+    let resolvedPayload: string;
+    if (choice === 'local') {
+      resolvedPayload = conflict.local_payload as string;
+    } else if (choice === 'remote') {
+      resolvedPayload = conflict.remote_payload as string;
+    } else {
+      const local = deserializeAimail(conflict.local_payload as string);
+      const remote = deserializeAimail(conflict.remote_payload as string);
+      const merged = mergeDocuments(local, remote);
+      resolvedPayload = serializeAimail(merged);
+    }
+
+    await db.run(
+      `UPDATE sync_conflicts
+       SET resolved_payload = ?, resolved_at = datetime('now'), strategy = ?
+       WHERE id = ?`,
+      [resolvedPayload, choice, id]
+    );
+
+    // Update the inbound sync_job to the resolved payload
+    const resolvedDoc = deserializeAimail(resolvedPayload);
+    await db.run(
+      `UPDATE sync_jobs
+       SET payload = ?, checksum = ?, synced_at = datetime('now')
+       WHERE entity_id = ? AND direction = 'inbound'`,
+      [resolvedPayload, resolvedDoc.checksum, conflict.entity_id]
+    );
+
+    await db.run(
+      `INSERT INTO action_logs (action, details) VALUES ('sync_conflict_resolved', ?)`,
+      [JSON.stringify({ conflictId: id, entityId: conflict.entity_id, choice })]
+    );
+
+    res.json({ success: true, resolution: choice });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** GET /api/sync/version-history?entity_id=<uuid> — list version snapshots */
+router.get('/version-history', async (req: Request, res: Response) => {
+  const entityId = req.query.entity_id as string | undefined;
+  if (!entityId) {
+    return res.status(400).json({ success: false, error: 'entity_id query parameter is required' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT id, entity_type, entity_id, checksum, source_device_id, created_at
+       FROM sync_version_history
+       WHERE entity_id = ?
+       ORDER BY created_at DESC`,
+      [entityId]
+    );
+    res.json({ success: true, data: rows });
   } catch (err: any) {
     res.status(500).json({ success: false, error: String(err?.message ?? err) });
   }

@@ -3,9 +3,15 @@ import { randomUUID } from 'crypto';
 import { dbManager } from '../database/connection.js';
 import {
   deserializeAimail,
+  serializeAimail,
   verifyChecksum,
   AIMAIL_SCHEMA_VERSION,
 } from '../utils/aimailFormat.js';
+import {
+  detectConflict,
+  resolveAutomatic,
+  type ConflictStrategy,
+} from './conflictResolver.js';
 
 const POLL_INTERVAL_MS = 30_000;
 const DEFAULT_SYNC_PORT = 3030;
@@ -46,6 +52,22 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+/** Save a snapshot to version history; silently skips exact-checksum duplicates. */
+async function saveVersionHistory(
+  db: any,
+  entityType: string,
+  entityId: string,
+  doc: { checksum: string; source_device_id?: string },
+  payload: string
+): Promise<void> {
+  await db.run(
+    `INSERT OR IGNORE INTO sync_version_history
+       (entity_type, entity_id, checksum, payload, source_device_id)
+     VALUES (?, ?, ?, ?, ?)`,
+    [entityType, entityId, doc.checksum, payload, doc.source_device_id ?? null]
+  );
+}
+
 async function handleReceive(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   try {
     const body = await readBody(req);
@@ -55,7 +77,90 @@ async function handleReceive(req: http.IncomingMessage, res: http.ServerResponse
       res.end(JSON.stringify({ error: 'Checksum verification failed' }));
       return;
     }
+
     const db = await dbManager.getConnection();
+
+    // Read configured resolution strategy (default: lww — identical to previous behaviour)
+    const stratRow = await db.get(
+      `SELECT value FROM app_settings WHERE key = 'sync_conflict_strategy'`
+    );
+    const strategy: ConflictStrategy = (stratRow?.value as ConflictStrategy) ?? 'lww';
+
+    // Check for an existing inbound record with the same entity id
+    const existingRow = await db.get(
+      `SELECT payload, checksum FROM sync_jobs
+       WHERE entity_id = ? AND direction = 'inbound'
+       ORDER BY created_at DESC LIMIT 1`,
+      [doc.id]
+    );
+
+    if (existingRow && (existingRow.checksum as string) !== doc.checksum) {
+      // Different checksums for the same entity — run conflict detection
+      const existingDoc = deserializeAimail(existingRow.payload as string);
+      const info = detectConflict(existingDoc, doc);
+
+      if (info.isConflict) {
+        // Save both snapshots to version history
+        await saveVersionHistory(db, 'email', doc.id, existingDoc, existingRow.payload as string);
+        await saveVersionHistory(db, 'email', doc.id, doc, body);
+
+        if (strategy === 'flag') {
+          // Defer to human — persist conflict record and notify
+          await db.run(
+            `INSERT INTO sync_conflicts
+               (entity_type, entity_id, local_payload, remote_payload,
+                local_checksum, remote_checksum, remote_device_id, strategy)
+             VALUES ('email', ?, ?, ?, ?, ?, ?, 'pending')`,
+            [doc.id, existingRow.payload, body,
+             existingRow.checksum, doc.checksum, doc.source_device_id ?? null]
+          );
+          process.send?.({
+            type: 'CONFLICT_DETECTED',
+            entityType: 'email',
+            entityId: doc.id,
+            strategy,
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, conflict: true, resolution: 'flagged' }));
+          return;
+        }
+
+        // Auto-resolve (lww or merge)
+        const { winner, resolution } = resolveAutomatic(existingDoc, doc, strategy, info);
+        const winnerBody = serializeAimail(winner);
+
+        // Update the existing inbound job to the winning payload
+        await db.run(
+          `UPDATE sync_jobs
+           SET payload = ?, checksum = ?, synced_at = datetime('now')
+           WHERE entity_id = ? AND direction = 'inbound'`,
+          [winnerBody, winner.checksum, doc.id]
+        );
+
+        // Save the winning version to history too
+        await saveVersionHistory(db, 'email', doc.id, winner, winnerBody);
+
+        console.log(`[Sync Worker] Conflict auto-resolved (${resolution}) for entity ${doc.id.slice(0, 8)}…`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, conflict: true, resolution }));
+        return;
+      }
+
+      // Not a real fork (incoming is a newer version in the linear chain)
+      // Fall through: save history + upsert below
+      await saveVersionHistory(db, 'email', doc.id, doc, body);
+      await db.run(
+        `UPDATE sync_jobs SET payload = ?, checksum = ?, transfer_version = ?, synced_at = datetime('now')
+         WHERE entity_id = ? AND direction = 'inbound'`,
+        [body, doc.checksum, doc.transfer_version, doc.id]
+      );
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // Clean path: first time seeing this entity (or exact-same checksum resend)
+    await saveVersionHistory(db, 'email', doc.id, doc, body);
     await db.run(
       `INSERT OR IGNORE INTO sync_jobs
          (job_id, entity_type, entity_id, payload, checksum, transfer_version, direction, status)
@@ -218,6 +323,36 @@ async function startup(): Promise<void> {
   const db = await dbManager.getConnection();
   await db.run('PRAGMA journal_mode=WAL');
   await db.run('PRAGMA busy_timeout=5000');
+
+  // Phase 14 — conflict resolution tables (idempotent; safe to run every restart)
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS sync_version_history (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type      TEXT NOT NULL,
+      entity_id        TEXT NOT NULL,
+      checksum         TEXT NOT NULL,
+      payload          TEXT NOT NULL,
+      source_device_id TEXT,
+      created_at       TEXT DEFAULT (datetime('now')),
+      UNIQUE(entity_id, checksum)
+    )
+  `);
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS sync_conflicts (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type      TEXT NOT NULL,
+      entity_id        TEXT NOT NULL,
+      local_payload    TEXT NOT NULL,
+      remote_payload   TEXT NOT NULL,
+      local_checksum   TEXT NOT NULL,
+      remote_checksum  TEXT NOT NULL,
+      remote_device_id TEXT,
+      strategy         TEXT DEFAULT 'pending',
+      resolved_payload TEXT,
+      resolved_at      TEXT,
+      created_at       TEXT DEFAULT (datetime('now'))
+    )
+  `);
 
   const [myDeviceId, port] = await Promise.all([getDeviceId(), getSyncPort()]);
 

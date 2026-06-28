@@ -153,6 +153,17 @@ export class WorkerSupervisor {
             )
             .catch(err => console.error('[WorkerSupervisor] Failed to broadcast sync_complete:', err));
         }
+        if (key === 'sync' && msg && msg.type === 'CONFLICT_DETECTED') {
+          import('../services/eventService.js')
+            .then(({ eventService }) =>
+              eventService.broadcast('conflict_detected', {
+                entityType: msg.entityType,
+                entityId: msg.entityId,
+                strategy: msg.strategy,
+              })
+            )
+            .catch(err => console.error('[WorkerSupervisor] Failed to broadcast conflict_detected:', err));
+        }
       });
 
       // Handle child exit

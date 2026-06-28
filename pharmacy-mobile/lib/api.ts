@@ -1418,6 +1418,31 @@ export async function pushTestAimail(ip: string, port: number, doc: any): Promis
   }
 }
 
+// ── Phase 14: Sync Conflicts ──────────────────────────────────────────────────
+
+export interface SyncConflict {
+  id: number;
+  entity_type: string;
+  entity_id: string;
+  local_checksum: string;
+  remote_checksum: string;
+  remote_device_id: string | null;
+  strategy: string;
+  created_at: string;
+}
+
+export async function getSyncConflicts(): Promise<SyncConflict[]> {
+  const res = await request<{ success: boolean; data: SyncConflict[] }>('/sync/conflicts');
+  return res.data;
+}
+
+export async function resolveSyncConflict(id: number, choice: 'local' | 'remote' | 'merge'): Promise<void> {
+  await request(`/sync/conflicts/${id}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ choice }),
+  });
+}
+
 export async function logAssistantChat(payload: {
   sessionId: string;
   deviceName: string;

@@ -562,6 +562,14 @@ export const api = {
   exportReportsPDF: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-pdf', { params, responseType: 'blob' }).then(res => res.data),
   exportReportsExcel: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-excel', { params, responseType: 'blob' }).then(res => res.data),
 
+  // Sync Conflicts (Phase 14)
+  getSyncConflicts: () =>
+    apiClient.get('/sync/conflicts').then(res => res.data),
+  resolveSyncConflict: (id: number, choice: 'local' | 'remote' | 'merge') =>
+    apiClient.post(`/sync/conflicts/${id}/resolve`, { choice }).then(res => res.data),
+  getSyncVersionHistory: (entityId: string) =>
+    apiClient.get('/sync/version-history', { params: { entity_id: entityId } }).then(res => res.data),
+
   // System Administration (Phase 12)
   getAuditLogs: (params: { page?: number; limit?: number; type?: string; from?: string; to?: string; q?: string }) =>
     apiClient.get('/settings/audit-logs', { params }).then(res => res.data),

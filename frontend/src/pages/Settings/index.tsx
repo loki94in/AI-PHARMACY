@@ -243,6 +243,30 @@ const Settings = () => {
   };
 
   const [adbReverseLoading, setAdbReverseLoading] = useState(false);
+
+  // Sync Conflicts (Phase 14)
+  const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
+  const [syncConflictsLoading, setSyncConflictsLoading] = useState(false);
+
+  const fetchSyncConflicts = async () => {
+    setSyncConflictsLoading(true);
+    try {
+      const res = await api.getSyncConflicts();
+      setSyncConflicts(res.data ?? []);
+    } catch { /* ignore */ }
+    finally { setSyncConflictsLoading(false); }
+  };
+
+  const handleResolveConflict = async (id: number, choice: 'local' | 'remote' | 'merge') => {
+    try {
+      await api.resolveSyncConflict(id, choice);
+      toastEvent.trigger(`Conflict resolved: ${choice}`, 'success');
+      await fetchSyncConflicts();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Resolution failed', 'error');
+    }
+  };
+
   const handleAdbReverse = async () => {
     setAdbReverseLoading(true);
     try {
@@ -1602,6 +1626,90 @@ const Settings = () => {
             <div className="text-[11px] text-purple-400 font-semibold">Auto-starts if bleno is installed</div>
           </div>
         </div>
+      </div>
+
+      {/* ─── Sync Conflicts ─── */}
+      <div className="glass-panel p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold flex items-center gap-2">
+            <X size={18} className="text-orange-400" />
+            Sync Conflicts
+            {syncConflicts.length > 0 && (
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 text-xs font-bold">
+                {syncConflicts.length}
+              </span>
+            )}
+          </h3>
+          <button
+            onClick={fetchSyncConflicts}
+            disabled={syncConflictsLoading}
+            className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={syncConflictsLoading ? 'animate-spin' : ''} />
+            {syncConflicts.length ? 'Refresh' : 'Load'}
+          </button>
+        </div>
+
+        {syncConflictsLoading && (
+          <p className="text-xs text-muted text-center py-4">Loading…</p>
+        )}
+
+        {!syncConflictsLoading && syncConflicts.length === 0 && (
+          <p className="text-xs text-muted py-4 text-center">No unresolved conflicts. Click Load to check.</p>
+        )}
+
+        {!syncConflictsLoading && syncConflicts.length > 0 && (
+          <div className="overflow-auto rounded-xl border border-glass-border">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="sticky top-0 bg-bg2 border-b border-glass-border">
+                <tr className="text-muted">
+                  <th className="px-3 py-2 font-semibold">Entity</th>
+                  <th className="px-3 py-2 font-semibold">Remote Device</th>
+                  <th className="px-3 py-2 font-semibold">Detected</th>
+                  <th className="px-3 py-2 font-semibold text-right">Resolve</th>
+                </tr>
+              </thead>
+              <tbody>
+                {syncConflicts.map((c: any, i: number) => (
+                  <tr key={c.id} className={`border-b border-glass-border ${i % 2 === 0 ? 'bg-bg3/30' : ''}`}>
+                    <td className="px-3 py-2 font-mono">
+                      <span className="text-text">{c.entity_type}</span>
+                      <span className="text-muted ml-2">{String(c.entity_id).slice(0, 8)}…</span>
+                    </td>
+                    <td className="px-3 py-2 text-muted font-mono">
+                      {c.remote_device_id ? String(c.remote_device_id).slice(0, 8) + '…' : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-muted">
+                      {new Date(c.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex gap-1 justify-end">
+                        <button
+                          onClick={() => handleResolveConflict(c.id, 'local')}
+                          className="px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 text-[10px] font-semibold transition-all"
+                        >
+                          Keep Local
+                        </button>
+                        <button
+                          onClick={() => handleResolveConflict(c.id, 'remote')}
+                          className="px-2 py-1 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 text-[10px] font-semibold transition-all"
+                        >
+                          Use Remote
+                        </button>
+                        <button
+                          onClick={() => handleResolveConflict(c.id, 'merge')}
+                          className="px-2 py-1 rounded bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 text-[10px] font-semibold transition-all"
+                        >
+                          Merge
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ─── Audit Log Viewer ─── */}

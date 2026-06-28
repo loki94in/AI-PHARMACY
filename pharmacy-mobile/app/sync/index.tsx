@@ -29,9 +29,12 @@ import {
   setServerUrl,
   setUsbMode,
   getUsbMode,
+  getSyncConflicts,
+  resolveSyncConflict,
   SyncStatus,
   SyncPeer,
   SyncJob,
+  SyncConflict,
 } from '../../lib/api';
 import { discoverPharmacyServers, type DiscoveredServer } from '../../lib/mdnsDiscovery';
 import { syncViaBle } from '../../lib/bleSync';
@@ -134,6 +137,11 @@ export default function SyncNowScreen() {
   const [usbMode, setUsbModeState]      = useState(false);
   const [adbRunning, setAdbRunning]     = useState(false);
 
+  // Conflicts
+  const [conflicts, setConflicts]               = useState<SyncConflict[]>([]);
+  const [conflictsLoading, setConflictsLoading] = useState(false);
+  const [resolvingId, setResolvingId]           = useState<number | null>(null);
+
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -150,11 +158,45 @@ export default function SyncNowScreen() {
     }
   }, []);
 
+  const loadConflicts = useCallback(async () => {
+    setConflictsLoading(true);
+    try {
+      const list = await getSyncConflicts();
+      setConflicts(list);
+    } catch { /* silently ignore */ }
+    finally { setConflictsLoading(false); }
+  }, []);
+
   useFocusEffect(useCallback(() => {
     load();
+    loadConflicts();
     // Restore USB mode state
     getUsbMode().then(setUsbModeState).catch(() => {});
-  }, [load]));
+  }, [load, loadConflicts]));
+
+  const handleResolveConflict = (conflict: SyncConflict, choice: 'local' | 'remote' | 'merge') => {
+    Alert.alert(
+      'Resolve Conflict',
+      `Apply "${choice}" resolution for entity ${conflict.entity_id.slice(0, 8)}…?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            setResolvingId(conflict.id);
+            try {
+              await resolveSyncConflict(conflict.id, choice);
+              await loadConflicts();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message ?? 'Resolution failed');
+            } finally {
+              setResolvingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // ── mDNS discovery ─────────────────────────────────────────────────────────
   const handleDiscoverMdns = () => {
@@ -626,6 +668,65 @@ export default function SyncNowScreen() {
         </View>
       </View>
 
+      {/* ── Sync Conflicts ────────────────────────────────────────────────── */}
+      <View style={styles.card}>
+        <View style={[sec.row, { justifyContent: 'space-between' }]}>
+          <SectionHeader icon="git-merge-outline" title={`Conflicts${conflicts.length > 0 ? ` (${conflicts.length})` : ''}`} />
+          <TouchableOpacity onPress={loadConflicts} disabled={conflictsLoading}>
+            <Ionicons name="refresh-outline" size={18} color={conflictsLoading ? colors.textMuted : colors.accent} />
+          </TouchableOpacity>
+        </View>
+
+        {conflictsLoading && <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: spacing.sm }} />}
+
+        {!conflictsLoading && conflicts.length === 0 && (
+          <Text style={typography.bodySmall}>No unresolved conflicts.</Text>
+        )}
+
+        {conflicts.map((c) => (
+          <View key={c.id} style={cStyles.conflictRow}>
+            <View style={{ marginBottom: spacing.xs }}>
+              <Text style={[typography.bodySmall, { color: colors.textPrimary, fontWeight: '600' }]}>
+                {c.entity_type}  ·  {c.entity_id.slice(0, 8)}…
+              </Text>
+              <Text style={typography.caption}>
+                {new Date(c.created_at).toLocaleString()}
+                {c.remote_device_id ? `  ·  from ${c.remote_device_id.slice(0, 8)}…` : ''}
+              </Text>
+            </View>
+            <View style={cStyles.btnRow}>
+              {(['local', 'remote', 'merge'] as const).map((choice) => (
+                <TouchableOpacity
+                  key={choice}
+                  style={[
+                    cStyles.resolveBtn,
+                    choice === 'local'  && { backgroundColor: colors.accent + '22', borderColor: colors.accent },
+                    choice === 'remote' && { backgroundColor: colors.info   + '22', borderColor: colors.info },
+                    choice === 'merge'  && { backgroundColor: colors.success + '22', borderColor: colors.success },
+                    resolvingId === c.id && { opacity: 0.5 },
+                  ]}
+                  onPress={() => handleResolveConflict(c, choice)}
+                  disabled={resolvingId === c.id}
+                  activeOpacity={0.75}
+                >
+                  {resolvingId === c.id
+                    ? <ActivityIndicator size="small" color={colors.textMuted} />
+                    : <Text style={[
+                        cStyles.resolveBtnText,
+                        choice === 'local'  && { color: colors.accent },
+                        choice === 'remote' && { color: colors.info },
+                        choice === 'merge'  && { color: colors.success },
+                      ]}>
+                        {choice === 'local' ? 'Keep Local' : choice === 'remote' ? 'Use Remote' : 'Merge'}
+                      </Text>
+                  }
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ))}
+      </View>
+
       {/* ── Recent Jobs ───────────────────────────────────────────────────── */}
       <View style={[styles.card, { marginBottom: spacing.xl }]}>
         <SectionHeader icon="list-outline" title={`Recent Jobs (last ${jobs.length})`} />
@@ -862,5 +963,30 @@ const tStyles = StyleSheet.create({
     padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.cardBorder,
+  },
+});
+
+const cStyles = StyleSheet.create({
+  conflictRow: {
+    borderTopWidth: 1,
+    borderColor: colors.divider,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  resolveBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  resolveBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
