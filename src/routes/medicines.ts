@@ -296,6 +296,87 @@ router.delete('/medicines/:id', async (req, res) => {
   }
 });
 
+// GET single medicine with last-purchase enrichment
+router.get('/medicines/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const medicine = await db.get(
+      `SELECT medicines.*,
+              lp.cost_price AS last_purchase_rate,
+              lp.mrp       AS last_purchase_mrp,
+              lp.last_distributor_name
+       FROM medicines
+       LEFT JOIN (
+         SELECT pi.medicine_id, pi.cost_price, pi.mrp, d.name AS last_distributor_name,
+                ROW_NUMBER() OVER (PARTITION BY pi.medicine_id ORDER BY p.date DESC) AS rn
+         FROM purchase_items pi
+         JOIN purchases p ON pi.purchase_id = p.id
+         LEFT JOIN distributors d ON p.distributor_id = d.id
+       ) lp ON lp.medicine_id = medicines.id AND lp.rn = 1
+       WHERE medicines.id = ?`,
+      [id]
+    );
+    await dbManager.close();
+    if (!medicine) return res.status(404).json({ error: 'Medicine not found' });
+    res.json(medicine);
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch medicine:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /medicines/:id — update all editable fields
+router.put('/medicines/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    name, generic_name, manufacturer, marketed_by, pack_unit, strength,
+    cgst_per, sgst_per, igst_per, hsn_code, category, mrp, schedule_type,
+    rack, item_code, metadata,
+  } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Medicine name is required' });
+  try {
+    const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
+    const db = await dbManager.getConnection();
+    const adjustedName = normalizeMedicineName(name.trim(), manufacturer || '');
+    // Block rename if another medicine already has that name
+    const clash = await db.get(
+      'SELECT id FROM medicines WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND id != ?',
+      [adjustedName, id]
+    );
+    if (clash) {
+      await dbManager.close();
+      return res.status(400).json({ error: 'A medicine with this name already exists' });
+    }
+    await db.run(
+      `UPDATE medicines SET
+         name = ?, generic_name = ?, manufacturer = ?, marketed_by = ?,
+         pack_unit = ?, strength = ?, cgst_per = ?, sgst_per = ?, igst_per = ?,
+         hsn_code = ?, category = ?, mrp = ?, schedule_type = ?,
+         rack = ?, item_code = ?, metadata = ?
+       WHERE id = ?`,
+      [
+        adjustedName, generic_name || '', manufacturer || '', marketed_by || '',
+        pack_unit || '', strength || '', parseFloat(cgst_per) || 0,
+        parseFloat(sgst_per) || 0, parseFloat(igst_per) || 0,
+        hsn_code || '', category || '', parseFloat(mrp) || 0,
+        schedule_type || '', rack || '', item_code || '',
+        metadata ? JSON.stringify(metadata) : null,
+        id,
+      ]
+    );
+    const updated = await db.get('SELECT * FROM medicines WHERE id = ?', [id]);
+    await dbManager.close();
+    if (!updated) return res.status(404).json({ error: 'Medicine not found' });
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to update medicine:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Dynamic Online Search using OpenFDA API fallback
 router.get('/online-search', async (req, res) => {
   const query = (req.query.q as string || '').trim();

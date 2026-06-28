@@ -1449,3 +1449,10 @@ export const linkEmailInvoice = (uid: number): Promise<EmailLinkResult> =>
 
 export const batchLinkInvoices = (): Promise<{ processed: number; linked: number; missed: number }> =>
   request('/email/batch-link-invoices', { method: 'POST' });
+
+// ── Phase 8.1: Medicine Master ───────────────────────────────────────────────
+export const getMedicine = (id: number): Promise<any> =>
+  request(`/medicines/${id}`);
+
+export const updateMedicine = (id: number, payload: Record<string, any>): Promise<{ success: boolean; data: any }> =>
+  request(`/medicines/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
