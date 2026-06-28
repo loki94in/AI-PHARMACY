@@ -1478,3 +1478,29 @@ export const updateDistributor = (
 
 export const deleteDistributor = (id: number): Promise<{ success: boolean }> =>
   request(`/distributors/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.3: Customer Master ───────────────────────────────────────────────
+export const getPatient = (id: number): Promise<any> =>
+  request(`/patients/${id}`);
+
+export const updatePatient = (
+  id: number,
+  payload: {
+    name: string;
+    phone?: string;
+    address?: string;
+    notes?: string;
+    age?: string;
+    gender?: string;
+    credit_enabled?: boolean;
+    credit_balance?: number;
+  }
+): Promise<any> =>
+  request(`/patients/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+// ── Phase 8.4: Doctor Master ─────────────────────────────────────────────────
+export const getDoctor = (id: number): Promise<any> =>
+  request(`/doctors/${id}`);
+
+export const searchDoctors = (q: string): Promise<any[]> =>
+  request(`/doctors?q=${encodeURIComponent(q)}`);
