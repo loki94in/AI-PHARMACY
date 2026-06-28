@@ -480,6 +480,105 @@ router.get('/manufacturers', async (req, res) => {
   }
 });
 
+// ── Phase 8.7: Medicine Categories ──────────────────────────────────────────
+router.get('/categories/master', async (req, res) => {
+  const { q } = req.query;
+  try {
+    const db = await dbManager.getConnection();
+    let rows;
+    if (q) {
+      rows = await db.all(
+        'SELECT * FROM medicine_categories WHERE name LIKE ? ORDER BY name ASC',
+        [`%${q}%`]
+      );
+    } else {
+      rows = await db.all('SELECT * FROM medicine_categories ORDER BY name ASC');
+    }
+    await dbManager.close();
+    res.json(rows);
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch categories:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/categories/master', async (req, res) => {
+  const { name, description } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Category name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    const result = await db.run(
+      'INSERT INTO medicine_categories (name, description) VALUES (?, ?)',
+      [name.trim(), description || '']
+    );
+    const saved = await db.get('SELECT * FROM medicine_categories WHERE id = ?', [result.lastID]);
+    await dbManager.close();
+    res.status(201).json({ success: true, data: saved });
+  } catch (error: any) {
+    await dbManager.close();
+    if (error?.message?.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ error: 'Category already exists' });
+    }
+    console.error('Failed to create category:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.put('/categories/master/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, description } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Category name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    const result = await db.run(
+      'UPDATE medicine_categories SET name=?, description=? WHERE id=?',
+      [name.trim(), description || '', id]
+    );
+    if (result.changes === 0) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    const updated = await db.get('SELECT * FROM medicine_categories WHERE id = ?', [id]);
+    await dbManager.close();
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    await dbManager.close();
+    if (error?.message?.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ error: 'Category already exists' });
+    }
+    console.error('Failed to update category:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/categories/master/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const cat = await db.get('SELECT name FROM medicine_categories WHERE id = ?', [id]);
+    if (!cat) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    const count = await db.get(
+      `SELECT COUNT(*) AS cnt FROM medicines WHERE LOWER(TRIM(category)) = LOWER(TRIM(?))`,
+      [cat.name]
+    );
+    if (count && count.cnt > 0) {
+      await dbManager.close();
+      return res.status(400).json({ error: `Cannot delete: ${count.cnt} medicine(s) use this category` });
+    }
+    await db.run('DELETE FROM medicine_categories WHERE id = ?', [id]);
+    await dbManager.close();
+    res.json({ success: true });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to delete category:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── Phase 8.5: Manufacturer Master ──────────────────────────────────────────
 router.get('/manufacturers/master', async (req, res) => {
   const { q } = req.query;

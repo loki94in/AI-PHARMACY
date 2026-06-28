@@ -1527,3 +1527,16 @@ export const getCompany = (): Promise<Record<string, string>> =>
 
 export const saveCompany = (payload: Record<string, string>): Promise<{ success: boolean; message: string }> =>
   request('/settings/company', { method: 'POST', body: JSON.stringify(payload) });
+
+// ── Phase 8.7: Medicine Categories ───────────────────────────────────────────
+export const getCategories = (q?: string): Promise<any[]> =>
+  request(`/categories/master${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+
+export const createCategory = (payload: { name: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request('/categories/master', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateCategory = (id: number, payload: { name: string; description?: string }): Promise<{ success: boolean; data: any }> =>
+  request(`/categories/master/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteCategory = (id: number): Promise<{ success: boolean }> =>
+  request(`/categories/master/${id}`, { method: 'DELETE' });

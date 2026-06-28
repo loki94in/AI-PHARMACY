@@ -866,6 +866,15 @@ export async function ensureSchema(dbPath: string) {
       created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Phase 8.7: Medicine Categories
+    CREATE TABLE IF NOT EXISTS medicine_categories (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL UNIQUE,
+      description TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_medicine_categories_name ON medicine_categories (name);
+
     -- Phase 8.5: Manufacturer Master
     CREATE TABLE IF NOT EXISTS manufacturers (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
