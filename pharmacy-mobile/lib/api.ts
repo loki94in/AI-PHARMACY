@@ -1540,3 +1540,30 @@ export const updateCategory = (id: number, payload: { name: string; description?
 
 export const deleteCategory = (id: number): Promise<{ success: boolean }> =>
   request(`/categories/master/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.8: Tax Config ─────────────────────────────────────────────────────
+export const getTaxConfigs = (): Promise<any[]> =>
+  request('/tax-config');
+
+export const createTaxConfig = (payload: {
+  name: string;
+  rate: number;
+  cgst_per?: number;
+  sgst_per?: number;
+  igst_per?: number;
+  description?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request('/tax-config', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateTaxConfig = (id: number, payload: {
+  name: string;
+  rate: number;
+  cgst_per?: number;
+  sgst_per?: number;
+  igst_per?: number;
+  description?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request(`/tax-config/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteTaxConfig = (id: number): Promise<{ success: boolean }> =>
+  request(`/tax-config/${id}`, { method: 'DELETE' });

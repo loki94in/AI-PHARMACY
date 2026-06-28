@@ -866,6 +866,18 @@ export async function ensureSchema(dbPath: string) {
       created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Phase 8.8: Tax Config
+    CREATE TABLE IF NOT EXISTS tax_config (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL UNIQUE,
+      rate        REAL NOT NULL,
+      cgst_per    REAL NOT NULL DEFAULT 0,
+      sgst_per    REAL NOT NULL DEFAULT 0,
+      igst_per    REAL NOT NULL DEFAULT 0,
+      description TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Phase 8.7: Medicine Categories
     CREATE TABLE IF NOT EXISTS medicine_categories (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
