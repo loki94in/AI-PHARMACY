@@ -108,27 +108,35 @@ Filename: "{app}\{#AppExeName}";
   Description: "Launch {#AppName} now";
   Flags: nowait postinstall skipifsilent unchecked
 
+[UninstallRun]
+; Kill any running instance of the app before uninstalling
+Filename: "taskkill.exe"; Parameters: "/F /IM ""AI Pharmacy.exe"" /T"; Flags: runhidden skipifdoesntexist; RunOnceId: "KillApp"
+
 [UninstallDelete]
-; Remove user data directory on uninstall (optional — comment out to keep data)
-; Type: filesandordirs; Name: "{localappdata}\ai-pharmacy"
+; Remove the entire user data directory (DB, uploads, backups, logs).
+; This is declared here as a safety net; the Pascal code below also handles it
+; so the user gets a confirmation prompt first.
+Type: filesandordirs; Name: "{localappdata}\ai-pharmacy"
 
 ; ===========================================================================
-; [Code] — Pascal script for first-run setup and upgrade handling
+; [Code] — Pascal script for first-run setup and upgrade/uninstall handling
 ; ===========================================================================
 [Code]
 
-// Check for a running instance before installing
+// ---------------------------------------------------------------------------
+// INSTALL helpers
+// ---------------------------------------------------------------------------
+
+// Terminate any running instance before installation begins.
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
 begin
   Result := True;
-  // Attempt to terminate any running instance gracefully
   Exec('taskkill.exe', '/F /IM "AI Pharmacy.exe" /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-// Ensure the user data directories exist on first run
-// (electron/main.cjs does this at runtime, but belt-and-suspenders here)
+// Create the per-user data directories that the app expects on first launch.
 procedure CreateUserDataDirs();
 var
   DataDir: String;
@@ -148,4 +156,66 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
     CreateUserDataDirs();
+end;
+
+// ---------------------------------------------------------------------------
+// UNINSTALL helpers
+// ---------------------------------------------------------------------------
+
+// Ask the user whether to delete all pharmacy data, then act on the answer.
+// Called by Inno Setup during the uninstall sequence.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir:    String;
+  MsgResult:  Integer;
+begin
+  // usUninstall fires just before the installed [Files] are removed.
+  // We handle data deletion here so the directory is wiped in one pass.
+  if CurUninstallStep = usUninstall then
+  begin
+    DataDir := ExpandConstant('{localappdata}\ai-pharmacy');
+
+    if DirExists(DataDir) then
+    begin
+      MsgResult := MsgBox(
+        'Do you want to permanently delete all AI Pharmacy data?' + #13#10 +
+        #13#10 +
+        'This includes:' + #13#10 +
+        '  • Prescription and patient records (app.db)' + #13#10 +
+        '  • Uploaded prescription images' + #13#10 +
+        '  • Database backups' + #13#10 +
+        '  • All other generated files' + #13#10 +
+        #13#10 +
+        'Location: ' + DataDir + #13#10 +
+        #13#10 +
+        'WARNING: This action cannot be undone.',
+        mbConfirmation,
+        MB_YESNO or MB_DEFBUTTON2   // default button = No (safe default)
+      );
+
+      if MsgResult = IDYES then
+      begin
+        // DelTree removes the directory and everything inside it recursively.
+        // Parameters: path, isDir, deleteFiles, deleteSubDirs
+        if not DelTree(DataDir, True, True, True) then
+          MsgBox(
+            'Could not fully delete:' + #13#10 + DataDir + #13#10 +
+            #13#10 +
+            'Some files may be locked by another process.' + #13#10 +
+            'You can delete them manually after restarting Windows.',
+            mbError,
+            MB_OK
+          );
+      end;
+    end;
+  end;
+end;
+
+// Terminate any running instance before the uninstaller starts removing files.
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  Exec('taskkill.exe', '/F /IM "AI Pharmacy.exe" /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
