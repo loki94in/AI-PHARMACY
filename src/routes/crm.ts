@@ -13,18 +13,26 @@ const router = express.Router();
 // Get patients
 router.get('/patients', async (req, res) => {
   const { q, limit } = req.query;
+  const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string, 10) : null;
   try {
     const db = await dbManager.getConnection();
     let query = 'SELECT * FROM customers';
-    const params = [];
-    
+    const params: any[] = [];
+    const where: string[] = [];
+
     if (q) {
-      query += ' WHERE name LIKE ? OR phone LIKE ?';
+      where.push('(name LIKE ? OR phone LIKE ?)');
       params.push(`%${q}%`, `%${q}%`);
     }
-    
+
+    if (branchId !== null && !isNaN(branchId)) {
+      where.push('branch_id = ?');
+      params.push(branchId);
+    }
+
+    if (where.length > 0) query += ' WHERE ' + where.join(' AND ');
     query += ' ORDER BY id DESC';
-    
+
     if (limit) {
       const limitVal = parseInt(limit as string, 10);
       if (!isNaN(limitVal)) {
@@ -32,7 +40,7 @@ router.get('/patients', async (req, res) => {
         params.push(limitVal);
       }
     }
-    
+
     const patients = await db.all(query, params);
     res.json(patients);
   } catch (error) {

@@ -58,6 +58,7 @@ import distributorsRouter from './routes/distributors.js';
 import notificationsRouter from './routes/notifications.js';
 import investigationRouter from './routes/investigation.js';
 import syncRouter from './routes/sync.js';
+import branchesRouter, { initBranchSchema } from './routes/branches.js';
 import taxConfigRouter from './routes/taxConfig.js';
 import unitsRouter from './routes/units.js';
 import barcodeRouter from './routes/barcode.js';
@@ -209,8 +210,7 @@ app.use('/api/tax-config', taxConfigRouter);
 app.use('/api/units', unitsRouter);
 app.use('/api/barcode', barcodeRouter);
 app.use('/api', importExportRouter);
-
-
+app.use('/api', branchesRouter);
 
 // Initialize services that need startup logic
 // These would be initialized via dependency injection in a complete refactor
@@ -232,6 +232,14 @@ ensureSchema(DB_PATH).then(async () => {
     await bootDb.run("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_clean_shutdown', 'false')");
   } catch (bootErr) {
     console.error('[Boot] Could not write last_clean_shutdown flag:', bootErr);
+  }
+
+  // Initialize multi-branch schema (idempotent — safe every boot)
+  try {
+    await initBranchSchema();
+    console.log('[Boot] Branch schema initialized.');
+  } catch (err) {
+    console.error('[Boot] Branch schema init failed (non-fatal):', err);
   }
 
   app.listen(PORT, async () => {

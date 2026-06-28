@@ -30,6 +30,7 @@ router.get('/medicines', async (req, res) => {
     const packagingFilter = (req.query.packagingFilter as string) || '';
     const distributorFilter = (req.query.distributorFilter as string) || '';
     const categoryFilter = (req.query.category as string) || '';
+    const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string, 10) : null;
     const offset = (page - 1) * limit;
 
     const db = await dbManager.getConnection();
@@ -105,7 +106,12 @@ router.get('/medicines', async (req, res) => {
       whereClauses.push('category LIKE ?');
       params.push(`%${categoryFilter}%`);
     }
-    
+
+    if (branchId !== null && !isNaN(branchId)) {
+      whereClauses.push('medicines.branch_id = ?');
+      params.push(branchId);
+    }
+
     if (whereClauses.length > 0) {
       const whereString = ' WHERE ' + whereClauses.join(' AND ');
       query += whereString;

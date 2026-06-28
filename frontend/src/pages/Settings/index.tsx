@@ -249,6 +249,15 @@ const Settings = () => {
 
   const [adbReverseLoading, setAdbReverseLoading] = useState(false);
 
+  // Multi-branch (Phase 15-A)
+  interface Branch { id: number; name: string; address: string | null; phone: string | null; is_active: number; created_at: string; }
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
+  const [newBranchAddress, setNewBranchAddress] = useState('');
+  const [newBranchPhone, setNewBranchPhone] = useState('');
+  const [addingBranch, setAddingBranch] = useState(false);
+
   // Sync Conflicts (Phase 14)
   const [syncConflicts, setSyncConflicts] = useState<any[]>([]);
   const [syncConflictsLoading, setSyncConflictsLoading] = useState(false);
@@ -726,10 +735,45 @@ const Settings = () => {
     } catch { /* non-critical */ }
   };
 
+  const fetchBranches = async () => {
+    setBranchesLoading(true);
+    try {
+      const { data } = await apiClient.get('/branches');
+      setBranches(data.branches ?? []);
+    } catch { /* non-critical */ } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const handleAddBranch = async () => {
+    if (!newBranchName.trim()) return;
+    setAddingBranch(true);
+    try {
+      await apiClient.post('/branches', { name: newBranchName, address: newBranchAddress || undefined, phone: newBranchPhone || undefined });
+      setNewBranchName(''); setNewBranchAddress(''); setNewBranchPhone('');
+      toastEvent.trigger('Branch added', 'success');
+      fetchBranches();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Failed to add branch', 'error');
+    } finally {
+      setAddingBranch(false);
+    }
+  };
+
+  const handleToggleBranch = async (b: Branch) => {
+    try {
+      await apiClient.patch(`/branches/${b.id}`, { is_active: !b.is_active });
+      fetchBranches();
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Failed to update branch', 'error');
+    }
+  };
+
   useEffect(() => {
     fetchBackupList();
     fetchBackupSchedule();
     fetchDrStatus();
+    fetchBranches();
   }, []);
 
   const handleBackupNow = async () => {
@@ -1716,6 +1760,88 @@ const Settings = () => {
               and Bluetooth hardware on this PC.
             </p>
             <div className="text-[11px] text-purple-400 font-semibold">Auto-starts if bleno is installed</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Multi-Branch Management ─── */}
+      <div className="glass-panel p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Building2 size={16} className="text-indigo-400" />
+            Branches / Warehouses
+          </h2>
+          <button onClick={fetchBranches} disabled={branchesLoading}
+            className="text-xs px-3 py-1.5 rounded-lg bg-bg3/60 hover:bg-bg3 text-muted hover:text-primary transition-all flex items-center gap-1.5 disabled:opacity-50">
+            <RefreshCw size={12} className={branchesLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
+
+        {/* Existing branches table */}
+        <div className="overflow-x-auto mb-5">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left px-3 py-2 font-bold text-muted">ID</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Name</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Address</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Phone</th>
+                <th className="text-left px-3 py-2 font-bold text-muted">Status</th>
+                <th className="text-right px-3 py-2 font-bold text-muted">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {branches.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-6 text-muted italic">No branches found</td></tr>
+              ) : branches.map(b => (
+                <tr key={b.id} className="border-b border-border/40 hover:bg-bg2/30 transition-all">
+                  <td className="px-3 py-2 font-mono text-muted">{b.id}</td>
+                  <td className="px-3 py-2 font-semibold">{b.name}</td>
+                  <td className="px-3 py-2 text-muted">{b.address ?? '—'}</td>
+                  <td className="px-3 py-2 text-muted">{b.phone ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${b.is_active ? 'bg-green/20 text-green' : 'bg-red/20 text-red'}`}>
+                      {b.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {b.id !== 1 && (
+                      <button onClick={() => handleToggleBranch(b)}
+                        className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber/10 text-amber/80 hover:bg-amber/20 transition-all">
+                        {b.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Add new branch form */}
+        <div className="border-t border-border pt-4">
+          <h3 className="text-xs font-bold text-muted mb-3 uppercase tracking-wider">Add Branch</h3>
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted">Name *</label>
+              <input value={newBranchName} onChange={e => setNewBranchName(e.target.value)}
+                placeholder="Branch name" className="input-field text-xs px-2.5 py-1.5 w-40" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted">Address</label>
+              <input value={newBranchAddress} onChange={e => setNewBranchAddress(e.target.value)}
+                placeholder="Optional" className="input-field text-xs px-2.5 py-1.5 w-44" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted">Phone</label>
+              <input value={newBranchPhone} onChange={e => setNewBranchPhone(e.target.value)}
+                placeholder="Optional" className="input-field text-xs px-2.5 py-1.5 w-32" />
+            </div>
+            <button onClick={handleAddBranch} disabled={addingBranch || !newBranchName.trim()}
+              className="text-xs font-bold px-4 py-1.5 rounded-lg bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5">
+              {addingBranch ? <RefreshCw size={11} className="animate-spin" /> : <Save size={11} />}
+              {addingBranch ? 'Adding…' : 'Add Branch'}
+            </button>
           </div>
         </div>
       </div>
