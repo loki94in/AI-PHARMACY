@@ -36,13 +36,15 @@ import {
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { toastEvent, quickOrderEvent, liveCartAddEvent } from './services/events';
 import type { ToastEventDetail } from './services/events';
-import { QuickOrderModal } from './components/QuickOrderModal';
-import { LiveCartAddModal } from './components/LiveCartAddModal';
-import { StagedReviewModal } from './components/StagedReviewModal';
-import { MobileConnectionModal } from './components/MobileConnectionModal';
 import { api, apiClient } from './services/api';
 import { Agentation } from 'agentation';
-import BackupCenterModal from './components/BackupCenterModal';
+
+// Lazy-load heavy modals — keeps main bundle lean; each only downloads when first opened
+const QuickOrderModal   = lazy(() => import('./components/QuickOrderModal').then(m => ({ default: m.QuickOrderModal })));
+const LiveCartAddModal  = lazy(() => import('./components/LiveCartAddModal').then(m => ({ default: m.LiveCartAddModal })));
+const StagedReviewModal = lazy(() => import('./components/StagedReviewModal').then(m => ({ default: m.StagedReviewModal })));
+const MobileConnectionModal = lazy(() => import('./components/MobileConnectionModal').then(m => ({ default: m.MobileConnectionModal })));
+const BackupCenterModal = lazy(() => import('./components/BackupCenterModal'));
 
 // ponytail: lazy-load all pages so each is its own JS chunk — avoids loading
 // all 26 pages upfront and eliminates the main cause of slow page switching.
@@ -1884,34 +1886,33 @@ const Layout = ({
           />
         </div>
         
-        {/* Global Modals */}
-        {showQuickOrder && (
-          <QuickOrderModal onClose={() => setShowQuickOrder(false)} />
-        )}
-        {showLiveCartAdd && (
-          <LiveCartAddModal onClose={() => setShowLiveCartAdd(false)} />
-        )}
-
-        {showStagedReview && (
-          <StagedReviewModal
-            onClose={() => setShowStagedReview(false)}
-            onActionComplete={() => fetchStagedCounts(true)}
-          />
-        )}
-
-        {showConnectModal && (
-          <MobileConnectionModal
-            onClose={() => setShowConnectModal(false)}
-          />
-        )}
-
-        {showBackupModal && (
-          <BackupCenterModal
-            isOpen={showBackupModal}
-            onClose={() => setShowBackupModal(false)}
-            isStartupMode={isBackupStartupMode}
-          />
-        )}
+        {/* Global Modals — lazy-loaded, Suspense fallback=null so nothing flashes */}
+        <Suspense fallback={null}>
+          {showQuickOrder && (
+            <QuickOrderModal onClose={() => setShowQuickOrder(false)} />
+          )}
+          {showLiveCartAdd && (
+            <LiveCartAddModal onClose={() => setShowLiveCartAdd(false)} />
+          )}
+          {showStagedReview && (
+            <StagedReviewModal
+              onClose={() => setShowStagedReview(false)}
+              onActionComplete={() => fetchStagedCounts(true)}
+            />
+          )}
+          {showConnectModal && (
+            <MobileConnectionModal
+              onClose={() => setShowConnectModal(false)}
+            />
+          )}
+          {showBackupModal && (
+            <BackupCenterModal
+              isOpen={showBackupModal}
+              onClose={() => setShowBackupModal(false)}
+              isStartupMode={isBackupStartupMode}
+            />
+          )}
+        </Suspense>
 
         {/* Subtle background glow */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
