@@ -59,6 +59,7 @@ import notificationsRouter from './routes/notifications.js';
 import investigationRouter from './routes/investigation.js';
 import syncRouter from './routes/sync.js';
 import branchesRouter, { initBranchSchema } from './routes/branches.js';
+import v1Router from './routes/v1/index.js';
 import taxConfigRouter from './routes/taxConfig.js';
 import unitsRouter from './routes/units.js';
 import barcodeRouter from './routes/barcode.js';
@@ -211,6 +212,7 @@ app.use('/api/units', unitsRouter);
 app.use('/api/barcode', barcodeRouter);
 app.use('/api', importExportRouter);
 app.use('/api', branchesRouter);
+app.use('/api/v1', v1Router);
 
 // Initialize services that need startup logic
 // These would be initialized via dependency injection in a complete refactor
