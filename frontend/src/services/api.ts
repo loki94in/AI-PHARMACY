@@ -81,11 +81,16 @@ export interface DashboardStats {
   todaySales: number;
   lowStock: number;
   pendingTasks: number;
-  alerts?: Array<{
-    id: number;
-    description: string;
-    created_at: string;
-  }>;
+  alerts?: Array<{ id: number; description: string; created_at: string }>;
+  mtdSales?: number;
+  mtdPurchases?: number;
+  grossProfitToday?: number;
+  expiringIn30?: number;
+  expiringIn60?: number;
+  expiringIn90?: number;
+  outstandingCredit?: number;
+  totalStockValue?: number;
+  topMedicinesToday?: Array<{ name: string; revenue: number }>;
 }
 
 export interface Medicine {

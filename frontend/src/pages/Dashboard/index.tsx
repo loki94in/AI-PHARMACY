@@ -124,6 +124,51 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Second KPI row: MTD, Expiry, Credit, Stock Value */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="glass-panel p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle,rgba(16,185,129,0.12)_0%,transparent_70%)] translate-x-8 -translate-y-8" />
+          <TrendingUp className="absolute right-6 top-6 text-muted/30" size={28} />
+          <div className="text-xs text-muted font-bold uppercase tracking-wider mb-2">MTD Sales</div>
+          <div className="text-3xl font-extrabold text-green mb-3">
+            ₹{Number(stats?.mtdSales || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+          </div>
+          <div className="text-[10px] text-muted font-semibold">Current month to date</div>
+        </div>
+
+        <div className="glass-panel p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle,rgba(239,68,68,0.12)_0%,transparent_70%)] translate-x-8 -translate-y-8" />
+          <AlertTriangle className="absolute right-6 top-6 text-muted/30" size={28} />
+          <div className="text-xs text-muted font-bold uppercase tracking-wider mb-2">Expiring Soon</div>
+          <div className="text-3xl font-extrabold text-red mb-3">{stats?.expiringIn30 || 0}</div>
+          <div className="flex gap-3 text-[10px] text-muted font-semibold">
+            <span>30d: <strong className="text-text">{stats?.expiringIn30 || 0}</strong></span>
+            <span>60d: <strong className="text-text">{stats?.expiringIn60 || 0}</strong></span>
+            <span>90d: <strong className="text-text">{stats?.expiringIn90 || 0}</strong></span>
+          </div>
+        </div>
+
+        <div className="glass-panel p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle,rgba(245,158,11,0.12)_0%,transparent_70%)] translate-x-8 -translate-y-8" />
+          <IndianRupee className="absolute right-6 top-6 text-muted/30" size={28} />
+          <div className="text-xs text-muted font-bold uppercase tracking-wider mb-2">Outstanding Credit</div>
+          <div className="text-3xl font-extrabold text-amber mb-3">
+            ₹{Number(stats?.outstandingCredit || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+          </div>
+          <div className="text-[10px] text-muted font-semibold">Pending customer credit</div>
+        </div>
+
+        <div className="glass-panel p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle,rgba(14,165,233,0.12)_0%,transparent_70%)] translate-x-8 -translate-y-8" />
+          <Activity className="absolute right-6 top-6 text-muted/30" size={28} />
+          <div className="text-xs text-muted font-bold uppercase tracking-wider mb-2">Total Stock Value</div>
+          <div className="text-3xl font-extrabold text-sky mb-3">
+            ₹{Number(stats?.totalStockValue || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+          </div>
+          <div className="text-[10px] text-muted font-semibold">At cost price</div>
+        </div>
+      </div>
+
       {/* Fallback System Alerts Panel */}
       {stats?.alerts && stats.alerts.length > 0 && (
         <div className="glass-panel border-amber-500/20 bg-amber-500/5 overflow-hidden">
