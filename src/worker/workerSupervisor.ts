@@ -41,6 +41,11 @@ export class WorkerSupervisor {
       scriptPath: path.resolve(__dirname, `runOcrWorker${ext}`),
       restartCount: 0,
     },
+    sync: {
+      name: 'Sync Worker',
+      scriptPath: path.resolve(__dirname, `runSyncWorker${ext}`),
+      restartCount: 0,
+    },
   };
   private healthCheckInterval: NodeJS.Timeout | null = null;
 

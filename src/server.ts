@@ -57,6 +57,7 @@ import enrichmentRouter from './routes/enrichment.js';
 import distributorsRouter from './routes/distributors.js';
 import notificationsRouter from './routes/notifications.js';
 import investigationRouter from './routes/investigation.js';
+import syncRouter from './routes/sync.js';
 import './services/pushNotificationService.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
@@ -199,6 +200,7 @@ app.use('/api', enrichmentRouter);
 app.use('/api', distributorsRouter);
 app.use('/api', notificationsRouter);
 app.use('/api/investigation', investigationRouter);
+app.use('/api/sync', syncRouter);
 
 
 

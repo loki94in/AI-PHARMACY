@@ -561,6 +561,35 @@ export async function ensureSchema(dbPath: string) {
       completed_at DATETIME
     );
 
+    -- Sync engine: outbound + inbound job queue
+    CREATE TABLE IF NOT EXISTS sync_jobs (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id           TEXT UNIQUE NOT NULL,
+      entity_type      TEXT NOT NULL DEFAULT 'email',
+      entity_id        TEXT NOT NULL,
+      payload          TEXT NOT NULL,
+      checksum         TEXT NOT NULL,
+      transfer_version INTEGER NOT NULL DEFAULT 1,
+      direction        TEXT NOT NULL DEFAULT 'outbound',
+      status           TEXT NOT NULL DEFAULT 'pending',
+      target_device    TEXT,
+      retries          INTEGER NOT NULL DEFAULT 0,
+      error            TEXT,
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+      synced_at        DATETIME
+    );
+
+    -- Sync engine: registered LAN peers
+    CREATE TABLE IF NOT EXISTS sync_peers (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id   TEXT UNIQUE NOT NULL,
+      label       TEXT,
+      ip_address  TEXT NOT NULL,
+      port        INTEGER NOT NULL DEFAULT 3030,
+      last_seen   DATETIME,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Expiry returns tracking and credit notes reconciliation
     CREATE TABLE IF NOT EXISTS expiry_returns_tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
