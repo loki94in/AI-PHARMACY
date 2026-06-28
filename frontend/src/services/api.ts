@@ -571,4 +571,6 @@ export const api = {
   exportSettingsJson: () => apiClient.get('/settings/export', { responseType: 'blob' }).then(res => res.data),
   importSettingsJson: (settings: { key: string; value: string }[]) =>
     apiClient.post('/settings/import', { settings }).then(res => res.data),
+  triggerAdbReverse: () =>
+    apiClient.post('/settings/adb-reverse').then(res => res.data),
 };

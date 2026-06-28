@@ -14,6 +14,10 @@
     "watch-catalog": "tsx ./src/cli/watchCatalog.ts",
     "build:exe": "pkg . --targets node18-win-x64 --output dist/PharmacyOS.exe"
   },
+  "optionalDependencies": {
+    "@abandonware/bleno": "^0.6.1",
+    "bonjour-hap": "^3.8.0"
+  },
   "dependencies": {
     "adm-zip": "^0.5.17",
     "aws-sdk": "^2.1693.0",

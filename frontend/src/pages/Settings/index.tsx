@@ -19,6 +19,7 @@ import {
   X,
   QrCode,
   History,
+  Usb,
 } from 'lucide-react';
 import { toastEvent } from '../../services/events';
 import { MobileConnectionModal } from '../../components/MobileConnectionModal';
@@ -238,6 +239,19 @@ const Settings = () => {
     } finally {
       setSettingsImportLoading(false);
       e.target.value = '';
+    }
+  };
+
+  const [adbReverseLoading, setAdbReverseLoading] = useState(false);
+  const handleAdbReverse = async () => {
+    setAdbReverseLoading(true);
+    try {
+      const res = await api.triggerAdbReverse();
+      toastEvent.trigger(res.message ?? 'ADB tunnels set', 'success');
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'ADB reverse failed. Is adb on PATH?', 'error');
+    } finally {
+      setAdbReverseLoading(false);
     }
   };
 
@@ -1537,6 +1551,55 @@ const Settings = () => {
                 <input type="file" accept=".json" className="hidden" onChange={handleImportSettings} disabled={settingsImportLoading} />
               </label>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── USB / Transport Alternatives ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-4">
+          <Usb size={18} className="text-amber-400" />
+          Mobile Transport Alternatives
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* USB */}
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">USB Cable</div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              Tunnels phone localhost ports to this PC so the mobile app works over USB.
+              Requires ADB (Android Platform Tools) installed and USB debugging enabled on device.
+            </p>
+            <button
+              onClick={handleAdbReverse}
+              disabled={adbReverseLoading}
+              className="btn-primary text-sm w-full flex items-center justify-center gap-2"
+            >
+              {adbReverseLoading ? <span className="animate-spin">⟳</span> : null}
+              Run ADB Reverse
+            </button>
+            <p className="text-[10px] text-muted">Sets: adb reverse tcp:3000 tcp:3000 and tcp:3030 tcp:3030</p>
+          </div>
+
+          {/* mDNS */}
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-sky-400 uppercase tracking-wider">mDNS Auto-Discover</div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              This server automatically advertises itself via mDNS (_aipharmacy._tcp) on port 3030
+              when the desktop app starts — no action needed here.
+              Mobile uses "Discover via mDNS" in the Sync screen.
+            </p>
+            <div className="text-[11px] text-sky-400 font-semibold">Active on startup (bonjour-hap)</div>
+          </div>
+
+          {/* BLE */}
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-purple-400 uppercase tracking-wider">Bluetooth (BLE)</div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              Desktop advertises as a GATT peripheral so the mobile can push AIMAIL payloads
+              over BLE when Wi-Fi is absent. Requires <code className="bg-bg2 px-1 rounded">@abandonware/bleno</code> to be installed
+              and Bluetooth hardware on this PC.
+            </p>
+            <div className="text-[11px] text-purple-400 font-semibold">Auto-starts if bleno is installed</div>
           </div>
         </div>
       </div>

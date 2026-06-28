@@ -14,7 +14,26 @@ let cachedBaseUrl: string | null = null;
 
 // ─── Server URL Management ──────────────────────────────────────────────────
 
+// USB mode: when enabled, adb reverse tunnels phone localhost → PC ports,
+// so the server URL becomes http://localhost:<port> regardless of Wi-Fi.
+const USB_MODE_KEY = 'usb_sync_mode';
+const USB_SERVER_URL = 'http://localhost:3000';
+
+export async function setUsbMode(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(USB_MODE_KEY, enabled ? 'true' : 'false');
+  cachedBaseUrl = null; // invalidate cache so next call re-resolves
+}
+
+export async function getUsbMode(): Promise<boolean> {
+  const val = await AsyncStorage.getItem(USB_MODE_KEY);
+  return val === 'true';
+}
+
 export async function getServerUrl(): Promise<string | null> {
+  // USB mode overrides Wi-Fi server URL
+  const usbMode = await AsyncStorage.getItem(USB_MODE_KEY);
+  if (usbMode === 'true') return USB_SERVER_URL;
+
   if (cachedBaseUrl) return cachedBaseUrl;
   const url = await SecureStore.getItemAsync(SERVER_KEY);
   if (url) cachedBaseUrl = url;

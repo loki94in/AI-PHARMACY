@@ -65,6 +65,18 @@ export class WorkerSupervisor {
       this.spawnWorker(key);
     }
     this.startHealthCheckLoop();
+    this.startTransports();
+  }
+
+  /** Starts optional transport services (mDNS, BLE) — each degrades gracefully if unavailable */
+  private startTransports(): void {
+    import('../transport/mdnsAdvertiser.js')
+      .then(({ startMdnsAdvertiser }) => startMdnsAdvertiser())
+      .catch(err => console.warn('[WorkerSupervisor] mDNS advertiser failed to load:', err.message));
+
+    import('../transport/bleTransport.js')
+      .then(({ startBleTransport }) => startBleTransport())
+      .catch(err => console.warn('[WorkerSupervisor] BLE transport failed to load:', err.message));
   }
 
   /** Gracefully stops all workers and loops */
@@ -82,6 +94,12 @@ export class WorkerSupervisor {
         console.log(`[WorkerSupervisor] Terminated ${config.name}.`);
       }
     }
+    import('../transport/mdnsAdvertiser.js')
+      .then(({ stopMdnsAdvertiser }) => stopMdnsAdvertiser())
+      .catch(() => {});
+    import('../transport/bleTransport.js')
+      .then(({ stopBleTransport }) => stopBleTransport())
+      .catch(() => {});
   }
 
   /** Send an IPC message to a specific named worker */

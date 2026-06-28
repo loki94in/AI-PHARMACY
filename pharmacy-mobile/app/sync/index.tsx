@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Switch,
   Clipboard,
   Platform,
 } from 'react-native';
@@ -25,10 +26,15 @@ import {
   pingPeer,
   pushTestAimail,
   getServerUrl,
+  setServerUrl,
+  setUsbMode,
+  getUsbMode,
   SyncStatus,
   SyncPeer,
   SyncJob,
 } from '../../lib/api';
+import { discoverPharmacyServers, type DiscoveredServer } from '../../lib/mdnsDiscovery';
+import { syncViaBle } from '../../lib/bleSync';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -113,6 +119,21 @@ export default function SyncNowScreen() {
   // Ping per-peer state
   const [pingMap, setPingMap]   = useState<Record<number, 'pinging' | 'ok' | 'fail'>>({});
 
+  // ── Transport alternatives ─────────────────────────────────────────────────
+  // mDNS discovery
+  const [discovering, setDiscovering]             = useState(false);
+  const [discoveredServers, setDiscoveredServers] = useState<DiscoveredServer[]>([]);
+  const mdnsStopRef                               = useRef<(() => void) | null>(null);
+
+  // BLE sync
+  const [bleSyncing, setBleSyncing]     = useState(false);
+  const [bleProgress, setBleProgress]   = useState('');
+  const [bleResult, setBleResult]       = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // USB mode
+  const [usbMode, setUsbModeState]      = useState(false);
+  const [adbRunning, setAdbRunning]     = useState(false);
+
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -129,7 +150,78 @@ export default function SyncNowScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    // Restore USB mode state
+    getUsbMode().then(setUsbModeState).catch(() => {});
+  }, [load]));
+
+  // ── mDNS discovery ─────────────────────────────────────────────────────────
+  const handleDiscoverMdns = () => {
+    if (discovering) {
+      mdnsStopRef.current?.();
+      setDiscovering(false);
+      return;
+    }
+    setDiscoveredServers([]);
+    setDiscovering(true);
+    const stop = discoverPharmacyServers((servers) => setDiscoveredServers([...servers]), 10000);
+    mdnsStopRef.current = stop;
+    setTimeout(() => { setDiscovering(false); mdnsStopRef.current = null; }, 11000);
+  };
+
+  const handleConnectDiscovered = async (server: DiscoveredServer) => {
+    const url = `http://${server.host}:3000`;
+    Alert.alert(
+      'Connect to Server',
+      `Set server URL to ${url}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Connect',
+          onPress: async () => {
+            await setServerUrl(url);
+            await load(true);
+            Alert.alert('Connected', `Server URL set to ${url}`);
+          },
+        },
+      ]
+    );
+  };
+
+  // ── BLE sync ───────────────────────────────────────────────────────────────
+  const handleBleSync = async () => {
+    if (bleSyncing) return;
+    setBleSyncing(true);
+    setBleProgress('');
+    setBleResult(null);
+    try {
+      const serverUrl = await getServerUrl();
+      if (!serverUrl) throw new Error('Server URL not configured');
+      const doc = await getTestAimail();
+      const ok = await syncViaBle(
+        JSON.stringify(doc),
+        (msg) => setBleProgress(msg)
+      );
+      setBleResult({ ok, msg: ok ? 'BLE sync delivered successfully.' : bleProgress || 'BLE sync failed.' });
+    } catch (err: any) {
+      setBleResult({ ok: false, msg: err.message ?? 'BLE sync error.' });
+    } finally {
+      setBleSyncing(false);
+    }
+  };
+
+  // ── USB mode ───────────────────────────────────────────────────────────────
+  const handleToggleUsb = async (value: boolean) => {
+    await setUsbMode(value);
+    setUsbModeState(value);
+    if (value) {
+      Alert.alert(
+        'USB Mode Enabled',
+        'The app will now connect via http://localhost:3000.\nMake sure "Run ADB Reverse" was pressed on the PC\'s Settings page first, and USB debugging is enabled on this device.',
+      );
+    }
+  };
 
   // ── Add & Verify Peer ──────────────────────────────────────────────────────
   const handleAddPeer = async () => {
@@ -309,6 +401,125 @@ export default function SyncNowScreen() {
             </Text>
           </View>
         )}
+      </View>
+
+      {/* ── Transport Alternatives ────────────────────────────────────────── */}
+      <View style={styles.card}>
+        <SectionHeader icon="git-network-outline" title="Transport Alternatives" />
+        <Text style={[typography.bodySmall, { marginBottom: spacing.md }]}>
+          Fallback transports when Wi-Fi is unavailable or the server IP is unknown.
+          Each delivers to the same sync engine on the PC — no data format changes.
+        </Text>
+
+        {/* ── mDNS Auto-Discovery ──────────────────────────────────────────── */}
+        <View style={tStyles.section}>
+          <View style={tStyles.header}>
+            <Ionicons name="radio-outline" size={16} color={colors.info} />
+            <Text style={[typography.label, { marginLeft: 6, color: colors.info }]}>mDNS AUTO-DISCOVER</Text>
+          </View>
+          <Text style={[typography.bodySmall, { marginBottom: spacing.sm }]}>
+            Scans LAN for AI-Pharmacy desktop without manual IP entry.
+            Requires custom dev client (not Expo Go) and react-native-zeroconf.
+          </Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: colors.info }, discovering && styles.primaryBtnDisabled]}
+            onPress={handleDiscoverMdns}
+            activeOpacity={0.8}
+          >
+            {discovering
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="search-outline" size={16} color="#fff" />}
+            <Text style={styles.primaryBtnText}>{discovering ? 'Scanning… (tap to stop)' : 'Discover via mDNS'}</Text>
+          </TouchableOpacity>
+
+          {discoveredServers.length > 0 && (
+            <View style={{ marginTop: spacing.sm }}>
+              {discoveredServers.map((s, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={tStyles.discoveredRow}
+                  onPress={() => handleConnectDiscovered(s)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="desktop-outline" size={16} color={colors.accent} />
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={[typography.body, { fontSize: 13 }]}>{s.name}</Text>
+                    <Text style={typography.bodySmall}>{s.host}:{s.port}</Text>
+                  </View>
+                  <Text style={[typography.bodySmall, { color: colors.accent }]}>Use</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {discovering && discoveredServers.length === 0 && (
+            <Text style={[typography.caption, { marginTop: spacing.sm, color: colors.textMuted }]}>
+              No servers found yet…
+            </Text>
+          )}
+        </View>
+
+        {/* ── BLE Sync ─────────────────────────────────────────────────────── */}
+        <View style={[tStyles.section, { marginTop: spacing.md }]}>
+          <View style={tStyles.header}>
+            <Ionicons name="bluetooth-outline" size={16} color="#A855F7" />
+            <Text style={[typography.label, { marginLeft: 6, color: '#A855F7' }]}>BLUETOOTH SYNC</Text>
+          </View>
+          <Text style={[typography.bodySmall, { marginBottom: spacing.sm }]}>
+            Pushes a test AIMAIL document to the desktop via BLE GATT when there is no
+            Wi-Fi. Requires custom dev client + @abandonware/bleno on the PC.
+          </Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: '#A855F7' }, bleSyncing && styles.primaryBtnDisabled]}
+            onPress={handleBleSync}
+            disabled={bleSyncing}
+            activeOpacity={0.8}
+          >
+            {bleSyncing
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="bluetooth-outline" size={16} color="#fff" />}
+            <Text style={styles.primaryBtnText}>
+              {bleSyncing ? (bleProgress || 'Connecting…') : 'Sync via BLE'}
+            </Text>
+          </TouchableOpacity>
+          {bleResult && (
+            <View style={[styles.resultBanner, bleResult.ok ? styles.resultOk : styles.resultFail]}>
+              <Ionicons
+                name={bleResult.ok ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+                size={16}
+                color={bleResult.ok ? colors.success : colors.danger}
+              />
+              <Text style={[styles.resultText, { color: bleResult.ok ? colors.success : colors.danger }]}>
+                {bleResult.msg}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── USB Mode ─────────────────────────────────────────────────────── */}
+        <View style={[tStyles.section, { marginTop: spacing.md }]}>
+          <View style={tStyles.header}>
+            <Ionicons name="hardware-chip-outline" size={16} color={colors.warning} />
+            <Text style={[typography.label, { marginLeft: 6, color: colors.warning }]}>USB CABLE MODE</Text>
+          </View>
+          <Text style={[typography.bodySmall, { marginBottom: spacing.sm }]}>
+            Connect via USB cable with ADB reverse tunnelling. Works in Expo Go — no
+            custom dev client required. Run "ADB Reverse" in PC Settings first.
+          </Text>
+          <View style={tStyles.usbRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={typography.body}>USB Mode</Text>
+              <Text style={typography.bodySmall}>
+                {usbMode ? 'Active — connecting via localhost:3000' : 'Inactive — using Wi-Fi server URL'}
+              </Text>
+            </View>
+            <Switch
+              value={usbMode}
+              onValueChange={handleToggleUsb}
+              trackColor={{ false: colors.divider, true: colors.warning }}
+              thumbColor={usbMode ? '#fff' : '#f4f3f4'}
+            />
+          </View>
+        </View>
       </View>
 
       {/* ── Peers ─────────────────────────────────────────────────────────── */}
@@ -620,4 +831,36 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   statusText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+});
+
+const tStyles = StyleSheet.create({
+  section: {
+    borderTopWidth: 1,
+    borderColor: colors.divider,
+    paddingTop: spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  discoveredRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  usbRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
 });

@@ -2,6 +2,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dbManager } from '../database/connection.js';
 import { telegramBotService } from '../telegramBot.js';
@@ -422,6 +423,38 @@ router.post('/import', async (req, res) => {
     console.error('Settings import error:', err);
     res.status(500).json({ error: 'Import failed: ' + err.message });
   }
+});
+
+// ── Transport: USB (adb reverse) ────────────────────────────────────────────
+// Tunnels phone's localhost ports to the PC so the mobile app can connect via
+// http://localhost:3000 and http://localhost:3030 over a USB cable.
+// Requires 'adb' on PATH (installed with Android Platform Tools).
+router.post('/adb-reverse', async (_req, res) => {
+  const API_PORT  = process.env.PORT ?? '3000';
+  const SYNC_PORT = process.env.SYNC_PORT ?? '3030';
+  const cmd = `adb reverse tcp:${API_PORT} tcp:${API_PORT} && adb reverse tcp:${SYNC_PORT} tcp:${SYNC_PORT}`;
+
+  exec(cmd, { timeout: 10000 }, async (err, stdout, stderr) => {
+    if (err) {
+      console.error('[USB] adb reverse failed:', err.message);
+      return res.status(500).json({
+        error: 'adb reverse failed. Ensure adb is on PATH and the device is connected with USB debugging enabled.',
+        detail: err.message,
+      });
+    }
+    try {
+      const db = await dbManager.getConnection();
+      await db.run(
+        "INSERT INTO action_logs (action_type, description) VALUES ('USB_ADB_REVERSE', ?)",
+        [`ADB USB tunnels set: localhost:${API_PORT} (API) and localhost:${SYNC_PORT} (sync)`]
+      );
+    } catch {}
+    res.json({
+      success: true,
+      message: `USB tunnels active — phone localhost:${API_PORT} → PC:${API_PORT}, localhost:${SYNC_PORT} → PC:${SYNC_PORT}`,
+      stdout: stdout.trim(),
+    });
+  });
 });
 
 export default router;
