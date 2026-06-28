@@ -1504,3 +1504,19 @@ export const getDoctor = (id: number): Promise<any> =>
 
 export const searchDoctors = (q: string): Promise<any[]> =>
   request(`/doctors?q=${encodeURIComponent(q)}`);
+
+// ── Phase 8.5: Manufacturer Master ───────────────────────────────────────────
+export const getManufacturers = (q?: string): Promise<any[]> =>
+  request(`/manufacturers/master${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+
+export const getManufacturer = (id: number): Promise<any> =>
+  request(`/manufacturers/master/${id}`);
+
+export const createManufacturer = (payload: Record<string, any>): Promise<{ success: boolean; data: any }> =>
+  request('/manufacturers/master', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateManufacturer = (id: number, payload: Record<string, any>): Promise<{ success: boolean; data: any }> =>
+  request(`/manufacturers/master/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteManufacturer = (id: number): Promise<{ success: boolean }> =>
+  request(`/manufacturers/master/${id}`, { method: 'DELETE' });

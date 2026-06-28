@@ -865,6 +865,24 @@ export async function ensureSchema(dbPath: string) {
       triggered_by_uid INTEGER,
       created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Phase 8.5: Manufacturer Master
+    CREATE TABLE IF NOT EXISTS manufacturers (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      name           TEXT NOT NULL UNIQUE,
+      contact_person TEXT,
+      phone          TEXT,
+      email          TEXT,
+      address        TEXT,
+      city           TEXT,
+      state          TEXT,
+      gstin          TEXT,
+      drug_license   TEXT,
+      website        TEXT,
+      notes          TEXT,
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_manufacturers_name ON manufacturers (name);
   `);
 
   // Insert default settings if they don't exist

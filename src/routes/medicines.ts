@@ -480,6 +480,133 @@ router.get('/manufacturers', async (req, res) => {
   }
 });
 
+// ── Phase 8.5: Manufacturer Master ──────────────────────────────────────────
+router.get('/manufacturers/master', async (req, res) => {
+  const { q } = req.query;
+  try {
+    const db = await dbManager.getConnection();
+    let rows;
+    if (q) {
+      rows = await db.all(
+        `SELECT * FROM manufacturers WHERE name LIKE ? OR city LIKE ? OR gstin LIKE ? ORDER BY name ASC`,
+        [`%${q}%`, `%${q}%`, `%${q}%`]
+      );
+    } else {
+      rows = await db.all('SELECT * FROM manufacturers ORDER BY name ASC');
+    }
+    await dbManager.close();
+    res.json(rows);
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch manufacturers:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/manufacturers/master/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const mfr = await db.get('SELECT * FROM manufacturers WHERE id = ?', [id]);
+    if (!mfr) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Manufacturer not found' });
+    }
+    const medicineCount = await db.get(
+      `SELECT COUNT(*) AS cnt FROM medicines WHERE LOWER(TRIM(manufacturer)) = LOWER(TRIM(?))`,
+      [mfr.name]
+    );
+    await dbManager.close();
+    res.json({ ...mfr, medicine_count: medicineCount?.cnt ?? 0 });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch manufacturer:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/manufacturers/master', async (req, res) => {
+  const { name, contact_person, phone, email, address, city, state, gstin, drug_license, website, notes } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Manufacturer name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    const result = await db.run(
+      `INSERT INTO manufacturers (name, contact_person, phone, email, address, city, state, gstin, drug_license, website, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name.trim(), contact_person || '', phone || '', email || '', address || '',
+       city || '', state || '', gstin || '', drug_license || '', website || '', notes || '']
+    );
+    const saved = await db.get('SELECT * FROM manufacturers WHERE id = ?', [result.lastID]);
+    await dbManager.close();
+    res.status(201).json({ success: true, data: saved });
+  } catch (error: any) {
+    await dbManager.close();
+    if (error?.message?.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ error: 'A manufacturer with this name already exists' });
+    }
+    console.error('Failed to create manufacturer:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.put('/manufacturers/master/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, contact_person, phone, email, address, city, state, gstin, drug_license, website, notes } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Manufacturer name is required' });
+  try {
+    const db = await dbManager.getConnection();
+    const result = await db.run(
+      `UPDATE manufacturers SET name=?, contact_person=?, phone=?, email=?, address=?, city=?,
+         state=?, gstin=?, drug_license=?, website=?, notes=? WHERE id=?`,
+      [name.trim(), contact_person || '', phone || '', email || '', address || '',
+       city || '', state || '', gstin || '', drug_license || '', website || '', notes || '', id]
+    );
+    if (result.changes === 0) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Manufacturer not found' });
+    }
+    const updated = await db.get('SELECT * FROM manufacturers WHERE id = ?', [id]);
+    await dbManager.close();
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    await dbManager.close();
+    if (error?.message?.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ error: 'A manufacturer with this name already exists' });
+    }
+    console.error('Failed to update manufacturer:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/manufacturers/master/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const mfr = await db.get('SELECT name FROM manufacturers WHERE id = ?', [id]);
+    if (!mfr) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Manufacturer not found' });
+    }
+    const medicineCount = await db.get(
+      `SELECT COUNT(*) AS cnt FROM medicines WHERE LOWER(TRIM(manufacturer)) = LOWER(TRIM(?))`,
+      [mfr.name]
+    );
+    if (medicineCount && medicineCount.cnt > 0) {
+      await dbManager.close();
+      return res.status(400).json({
+        error: `Cannot delete: ${medicineCount.cnt} medicine(s) reference this manufacturer`,
+      });
+    }
+    await db.run('DELETE FROM manufacturers WHERE id = ?', [id]);
+    await dbManager.close();
+    res.json({ success: true });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to delete manufacturer:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
 
 
