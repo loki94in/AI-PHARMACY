@@ -296,7 +296,7 @@ router.delete('/medicines/:id', async (req, res) => {
   }
 });
 
-// Dynamic Online Search using OpenFDA API fallback
+// Dynamic Online Search — 1mg primary, Pharmeasy fallback, OpenFDA last resort
 router.get('/online-search', async (req, res) => {
   const query = (req.query.q as string || '').trim();
   if (!query || query.length < 2) {
@@ -308,17 +308,27 @@ router.get('/online-search', async (req, res) => {
     if (!isOnline) {
       return res.json([]);
     }
-    const { OpenFdaClient } = await import('../services/apiClients/openFdaClient.js');
-    const client = new OpenFdaClient();
-    const result = await client.queryMedicine(query);
-    if (!result) {
-      return res.json([]);
+    const { OneMgClient } = await import('../services/apiClients/oneMgClient.js');
+    const client = new OneMgClient();
+    const results = await client.searchSuggestions(query);
+    if (results.length > 0) {
+      return res.json(results);
     }
-    res.json([{
-      name: result.medicineName,
-      api_reference: result.activeIngredients?.join(' + ') || '',
-      manufacturer: result.manufacturer || ''
-    }]);
+    // Final fallback: OpenFDA (covers edge cases like rare generics)
+    const { OpenFdaClient } = await import('../services/apiClients/openFdaClient.js');
+    const fdaClient = new OpenFdaClient();
+    const fdaResult = await fdaClient.queryMedicine(query);
+    if (fdaResult) {
+      return res.json([{
+        name: fdaResult.medicineName,
+        api_reference: fdaResult.activeIngredients?.join(' + ') || '',
+        manufacturer: fdaResult.manufacturer || '',
+        mrp: 0,
+        packaging: '',
+        source: 'OpenFDA'
+      }]);
+    }
+    res.json([]);
   } catch (error) {
     console.error('Online search endpoint failed:', error);
     res.status(500).json({ error: 'Internal server error during online search' });

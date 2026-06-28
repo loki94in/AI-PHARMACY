@@ -833,9 +833,21 @@ const POS = () => {
               }
             }
 
-            setSearchResults(consolidateSearchResults(data));
-            setOnlineResults([]);
-            setSearchingOnline(false);
+            const consolidated = consolidateSearchResults(data);
+            setSearchResults(consolidated);
+            if (consolidated.length === 0) {
+              setSearchingOnline(true);
+              setOnlineResults([]);
+              api.onlineSearch(searchTerm)
+                .then((online: any[]) => {
+                  setOnlineResults(online || []);
+                  setSearchingOnline(false);
+                })
+                .catch(() => setSearchingOnline(false));
+            } else {
+              setOnlineResults([]);
+              setSearchingOnline(false);
+            }
           }
         })
         .catch(err => {
