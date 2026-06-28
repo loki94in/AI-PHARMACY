@@ -276,4 +276,152 @@ router.put('/distributors/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to update distributor' });
   }
 });
+
+// ── Phase 12: System Administration ──────────────────────────────────────────
+
+const SECRET_KEYS = new Set([
+  'gmail_pass', 'admin_password', 'wa_business_access_token',
+  'pr_password', 'google_client_secret', 'admin_unique_key',
+]);
+
+// Audit log viewer — paginated action_logs with optional filters
+router.get('/audit-logs', async (req, res) => {
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '20'), 10)));
+  const offset = (page - 1) * limit;
+  const type = req.query.type ? String(req.query.type) : null;
+  const from = req.query.from ? String(req.query.from) : null;
+  const to = req.query.to ? String(req.query.to) : null;
+  const q = req.query.q ? `%${String(req.query.q)}%` : null;
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+  if (type) { conditions.push('action_type = ?'); params.push(type); }
+  if (from)  { conditions.push('date(created_at) >= date(?)'); params.push(from); }
+  if (to)    { conditions.push('date(created_at) <= date(?)'); params.push(to); }
+  if (q)     { conditions.push('(description LIKE ? OR action_type LIKE ?)'); params.push(q, q); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  try {
+    const db = await dbManager.getConnection();
+    const [totalRow, rows, types] = await Promise.all([
+      db.get(`SELECT COUNT(*) as cnt FROM action_logs ${where}`, params),
+      db.all(`SELECT id, action_type, description, created_at FROM action_logs ${where} ORDER BY id DESC LIMIT ? OFFSET ?`, [...params, limit, offset]),
+      db.all(`SELECT DISTINCT action_type FROM action_logs ORDER BY action_type`),
+    ]);
+    const total = totalRow.cnt;
+    res.json({ rows, total, page, pages: Math.ceil(total / limit), types: types.map((r: any) => r.action_type) });
+  } catch (err) {
+    console.error('Audit log error:', err);
+    res.status(500).json({ error: 'Failed to fetch audit logs' });
+  }
+});
+
+// System status — uptime, memory, DB file size, app version
+router.get('/system-status', async (_req, res) => {
+  try {
+    const mem = process.memoryUsage();
+    let dbSizeBytes = 0;
+    try { dbSizeBytes = fs.statSync(DB_PATH).size; } catch { /* db not yet created */ }
+
+    let appVersion = '0.1.0';
+    try {
+      const pkgPath = path.resolve(__dirname, '..', '..', 'package.json');
+      appVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || appVersion;
+    } catch { /* ignore */ }
+
+    const db = await dbManager.getConnection();
+    const workerRow = await db.get(`SELECT COUNT(*) as cnt FROM action_logs WHERE action_type LIKE 'WORKER_%' AND created_at >= datetime('now', '-5 minutes')`);
+
+    res.json({
+      uptimeSeconds: Math.floor(process.uptime()),
+      memoryRssMb: Math.round(mem.rss / 1024 / 1024),
+      memoryHeapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      memoryHeapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+      dbSizeBytes,
+      dbSizeMb: Math.round(dbSizeBytes / 1024 / 1024 * 10) / 10,
+      appVersion,
+      recentWorkerEvents: workerRow.cnt,
+      nodeVersion: process.version,
+      platform: process.platform,
+    });
+  } catch (err) {
+    console.error('System status error:', err);
+    res.status(500).json({ error: 'Failed to get system status' });
+  }
+});
+
+// DB VACUUM — reclaims disk space, safe for WAL mode
+router.post('/db/vacuum', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const before = fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0;
+    await db.run('PRAGMA wal_checkpoint(FULL)');
+    await db.run('VACUUM');
+    const after = fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0;
+    await db.run(`INSERT INTO action_logs (action_type, description) VALUES ('DB_VACUUM', ?)`,
+      [`Database vacuumed. Size: ${Math.round(before/1024)}KB → ${Math.round(after/1024)}KB`]);
+    res.json({ success: true, freedBytes: before - after, beforeBytes: before, afterBytes: after });
+  } catch (err: any) {
+    console.error('VACUUM error:', err);
+    res.status(500).json({ error: 'VACUUM failed: ' + err.message });
+  }
+});
+
+// DB ANALYZE — rebuilds query planner statistics
+router.post('/db/analyze', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    await db.run('PRAGMA optimize');
+    await db.run('ANALYZE');
+    await db.run(`INSERT INTO action_logs (action_type, description) VALUES ('DB_ANALYZE', 'Database analyzed and query stats rebuilt')`);
+    res.json({ success: true, message: 'Database analyzed successfully' });
+  } catch (err: any) {
+    console.error('ANALYZE error:', err);
+    res.status(500).json({ error: 'ANALYZE failed: ' + err.message });
+  }
+});
+
+// Export all non-secret app_settings as JSON
+router.get('/export', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows: { key: string; value: string }[] = await db.all('SELECT key, value FROM app_settings');
+    const safe = rows.filter(r => !SECRET_KEYS.has(r.key));
+    const json = JSON.stringify({ exportedAt: new Date().toISOString(), settings: safe }, null, 2);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="settings_export_${Date.now()}.json"`);
+    res.send(json);
+  } catch (err: any) {
+    console.error('Settings export error:', err);
+    res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+// Import app_settings from JSON body (skips secret keys)
+router.post('/import', async (req, res) => {
+  const { settings: incoming } = req.body as { settings?: { key: string; value: string }[] };
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return res.status(400).json({ error: 'settings array required' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    let imported = 0;
+    let skipped = 0;
+    for (const { key, value } of incoming) {
+      if (!key || typeof key !== 'string') { skipped++; continue; }
+      if (SECRET_KEYS.has(key)) { skipped++; continue; }
+      await db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value ?? '']);
+      imported++;
+    }
+    await db.run(`INSERT INTO action_logs (action_type, description) VALUES ('SETTINGS_IMPORT', ?)`,
+      [`Settings imported: ${imported} keys (${skipped} skipped)`]);
+    res.json({ success: true, imported, skipped });
+  } catch (err: any) {
+    console.error('Settings import error:', err);
+    res.status(500).json({ error: 'Import failed: ' + err.message });
+  }
+});
+
 export default router;
