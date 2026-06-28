@@ -1614,3 +1614,42 @@ export const updateBarcode = (id: number, payload: {
 
 export const deleteBarcode = (id: number): Promise<{ success: boolean }> =>
   request(`/barcode/${id}`, { method: 'DELETE' });
+
+// ── Phase 9: Import/Export ────────────────────────────────────────────────────
+export async function importModule(
+  module: string,
+  formData: FormData
+): Promise<{ success: boolean; jobId: number }> {
+  const base = await getServerUrl();
+  if (!base) throw new Error('Server URL not configured');
+  let deviceUuid = await SecureStore.getItemAsync('admin_device_uuid');
+  if (!deviceUuid) deviceUuid = 'DEV-' + Math.random().toString(36).substring(2);
+  const sessionToken = await SecureStore.getItemAsync('admin_session_token');
+  const res = await fetch(`${base}/api/import/${module}`, {
+    method: 'POST',
+    headers: {
+      ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+      'x-device-id': deviceUuid,
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+export const getImportJobStatus = (jobId: number): Promise<any> =>
+  request(`/import/status/${jobId}`);
+
+export async function getExportUrl(
+  module: 'inventory' | 'medicines' | 'suppliers' | 'customers' | 'purchases' | 'sales' |
+          'stock-report' | 'expiry-report' | 'sales-report' | 'purchase-report',
+  params?: Record<string, string>
+): Promise<string> {
+  const base = await getServerUrl();
+  if (!base) throw new Error('Server URL not configured');
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  return `${base}/api/export/${module}.csv${qs}`;
+}
