@@ -249,6 +249,11 @@ const Settings = () => {
 
   const [adbReverseLoading, setAdbReverseLoading] = useState(false);
 
+  // Plugin Ecosystem (Phase 15-C)
+  const [plugins, setPlugins] = useState<any[]>([]);
+  const [pluginsLoading, setPluginsLoading] = useState(false);
+  const [pluginReloading, setPluginReloading] = useState(false);
+
   // Cloud Sync Relay (Phase 15-B)
   const [relayStatus, setRelayStatus] = useState<any>(null);
   const [relayUrl, setRelayUrl] = useState('');
@@ -744,6 +749,25 @@ const Settings = () => {
     } catch { /* non-critical */ }
   };
 
+  const fetchPlugins = async () => {
+    setPluginsLoading(true);
+    try {
+      const { data } = await apiClient.get('/plugins');
+      setPlugins(data.plugins ?? []);
+    } catch { /* non-critical */ } finally { setPluginsLoading(false); }
+  };
+
+  const handleReloadPlugins = async () => {
+    setPluginReloading(true);
+    try {
+      const { data } = await apiClient.post('/plugins/reload');
+      setPlugins(data.plugins ?? []);
+      toastEvent.trigger(`Reloaded: ${data.loaded} ok, ${data.errors} error(s)`, data.errors > 0 ? 'error' : 'success');
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Reload failed', 'error');
+    } finally { setPluginReloading(false); }
+  };
+
   const fetchRelayStatus = async () => {
     try {
       const { data } = await apiClient.get('/sync/relay-status');
@@ -827,6 +851,7 @@ const Settings = () => {
     fetchDrStatus();
     fetchBranches();
     fetchRelayStatus();
+    fetchPlugins();
   }, []);
 
   const handleBackupNow = async () => {
@@ -1815,6 +1840,69 @@ const Settings = () => {
             <div className="text-[11px] text-purple-400 font-semibold">Auto-starts if bleno is installed</div>
           </div>
         </div>
+      </div>
+
+      {/* ─── Plugin Ecosystem (Phase 15-C) ─── */}
+      <div className="glass-panel p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Zap size={16} className="text-pink-400" />
+            Plugin Ecosystem
+            {plugins.length > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300">
+                {plugins.length} loaded
+              </span>
+            )}
+          </h2>
+          <button onClick={handleReloadPlugins} disabled={pluginReloading}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-pink-500/15 text-pink-300 hover:bg-pink-500/25 transition-all flex items-center gap-1.5 disabled:opacity-50">
+            <RefreshCw size={12} className={pluginReloading ? 'animate-spin' : ''} />
+            {pluginReloading ? 'Reloading…' : 'Reload Plugins'}
+          </button>
+        </div>
+
+        {plugins.length === 0 && !pluginsLoading && (
+          <div className="text-center py-8 text-muted text-xs italic">
+            No plugins found in <code className="bg-bg2 px-1 rounded">/plugins</code> directory.
+            Drop a .js file there and click Reload.
+          </div>
+        )}
+
+        {plugins.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-3 py-2 font-bold text-muted">Name</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Version</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Hooks</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Status</th>
+                  <th className="text-left px-3 py-2 font-bold text-muted">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {plugins.map((p, i) => (
+                  <tr key={i} className="border-b border-border/40 hover:bg-bg2/30 transition-all">
+                    <td className="px-3 py-2 font-semibold">{p.name}</td>
+                    <td className="px-3 py-2 font-mono text-muted">{p.version}</td>
+                    <td className="px-3 py-2 text-muted">{(p.hookNames ?? []).join(', ') || '—'}</td>
+                    <td className="px-3 py-2">
+                      {p.error
+                        ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red/20 text-red" title={p.error}>Error</span>
+                        : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green/20 text-green">OK</span>}
+                    </td>
+                    <td className="px-3 py-2 text-muted">{p.description ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-[10px] text-muted mt-3">
+          Plugins run in a sandboxed VM context — no filesystem, network, or process access.
+          Place <code className="bg-bg2 px-1 rounded">.js</code> files in the <code className="bg-bg2 px-1 rounded">plugins/</code> directory.
+        </p>
       </div>
 
       {/* ─── Cloud Sync Relay (Phase 15-B) ─── */}

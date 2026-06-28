@@ -60,6 +60,8 @@ import investigationRouter from './routes/investigation.js';
 import syncRouter from './routes/sync.js';
 import branchesRouter, { initBranchSchema } from './routes/branches.js';
 import v1Router from './routes/v1/index.js';
+import pluginsRouter from './routes/plugins.js';
+import { loadAllPlugins } from './plugins/pluginHost.js';
 import taxConfigRouter from './routes/taxConfig.js';
 import unitsRouter from './routes/units.js';
 import barcodeRouter from './routes/barcode.js';
@@ -213,6 +215,7 @@ app.use('/api/barcode', barcodeRouter);
 app.use('/api', importExportRouter);
 app.use('/api', branchesRouter);
 app.use('/api/v1', v1Router);
+app.use('/api', pluginsRouter);
 
 // Initialize services that need startup logic
 // These would be initialized via dependency injection in a complete refactor
@@ -242,6 +245,14 @@ ensureSchema(DB_PATH).then(async () => {
     console.log('[Boot] Branch schema initialized.');
   } catch (err) {
     console.error('[Boot] Branch schema init failed (non-fatal):', err);
+  }
+
+  // Load plugins from /plugins directory
+  try {
+    const pluginResult = loadAllPlugins();
+    console.log(`[Boot] Plugins loaded: ${pluginResult.loaded} ok, ${pluginResult.errors} error(s).`);
+  } catch (err) {
+    console.error('[Boot] Plugin load failed (non-fatal):', err);
   }
 
   app.listen(PORT, async () => {
