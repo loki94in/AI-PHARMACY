@@ -1580,3 +1580,37 @@ export const updateUnit = (id: number, payload: { name: string; abbreviation?: s
 
 export const deleteUnit = (id: number): Promise<{ success: boolean }> =>
   request(`/units/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.10: Barcode Master ────────────────────────────────────────────────
+export const getBarcodes = (params?: { q?: string; medicine_id?: number }): Promise<any[]> => {
+  const qs = params?.medicine_id
+    ? `?medicine_id=${params.medicine_id}`
+    : params?.q
+    ? `?q=${encodeURIComponent(params.q)}`
+    : '';
+  return request(`/barcode${qs}`);
+};
+
+export const lookupBarcode = (barcode: string): Promise<any> =>
+  request(`/barcode/lookup/${encodeURIComponent(barcode)}`);
+
+export const createBarcode = (payload: {
+  barcode: string;
+  medicine_id: number;
+  batch_no?: string;
+  expiry_date?: string;
+  notes?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request('/barcode', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateBarcode = (id: number, payload: {
+  barcode: string;
+  medicine_id: number;
+  batch_no?: string;
+  expiry_date?: string;
+  notes?: string;
+}): Promise<{ success: boolean; data: any }> =>
+  request(`/barcode/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteBarcode = (id: number): Promise<{ success: boolean }> =>
+  request(`/barcode/${id}`, { method: 'DELETE' });

@@ -866,6 +866,20 @@ export async function ensureSchema(dbPath: string) {
       created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Phase 8.10: Barcode Master
+    CREATE TABLE IF NOT EXISTS barcode_master (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      barcode     TEXT NOT NULL UNIQUE,
+      medicine_id INTEGER NOT NULL,
+      batch_no    TEXT,
+      expiry_date DATETIME,
+      notes       TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_barcode_master_barcode ON barcode_master (barcode);
+    CREATE INDEX IF NOT EXISTS idx_barcode_master_medicine_id ON barcode_master (medicine_id);
+
     -- Phase 8.9: Units Master
     CREATE TABLE IF NOT EXISTS units_master (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,

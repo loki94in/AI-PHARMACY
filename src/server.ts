@@ -60,6 +60,7 @@ import investigationRouter from './routes/investigation.js';
 import syncRouter from './routes/sync.js';
 import taxConfigRouter from './routes/taxConfig.js';
 import unitsRouter from './routes/units.js';
+import barcodeRouter from './routes/barcode.js';
 import './services/pushNotificationService.js';
 import { whatsappQueue } from './services/whatsappQueue.js';
 import cron from 'node-cron';
@@ -205,6 +206,7 @@ app.use('/api/investigation', investigationRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api/tax-config', taxConfigRouter);
 app.use('/api/units', unitsRouter);
+app.use('/api/barcode', barcodeRouter);
 
 
 
