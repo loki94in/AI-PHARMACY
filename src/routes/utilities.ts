@@ -20,6 +20,8 @@ import {
   restoreBackup,
   getScheduleConfig,
   setScheduleConfig,
+  verifyBackupIntegrity,
+  getDrStatus,
 } from '../services/backupService.js';
 import { backupRecoveryService } from '../services/backupRecoveryService.js';
 import { closeMessageDAO } from '../database/messageDAO.js';
@@ -68,6 +70,26 @@ router.get('/backup/schedule', async (_req, res) => {
   } catch (error) {
     console.error('Get schedule failed:', error);
     res.status(500).json({ error: 'Failed to get backup schedule' });
+  }
+});
+
+// Verify integrity of an existing backup without touching the live DB
+router.post('/backup/verify/:filename', async (req, res) => {
+  try {
+    const result = await verifyBackupIntegrity(req.params.filename);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// DR status: RPO gap, disk usage, latest backup info
+router.get('/backup/dr-status', async (_req, res) => {
+  try {
+    const status = getDrStatus();
+    res.json({ success: true, data: status });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

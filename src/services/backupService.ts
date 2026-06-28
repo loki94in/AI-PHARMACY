@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 import cron, { type ScheduledTask } from 'node-cron';
 import { dbManager } from '../database/connection.js';
 import Database from 'better-sqlite3';
@@ -265,4 +266,78 @@ function enforceRetention(): void {
 export async function initBackupScheduler(): Promise<void> {
   const freq = await getScheduleConfig();
   startScheduler(freq);
+}
+
+/**
+ * Run PRAGMA integrity_check on a backup file without touching the live DB.
+ * Decompresses .gz backups to a temp file, checks, then cleans up.
+ * Returns { ok, result } — result is 'ok' for a clean file, or the first error row.
+ */
+export async function verifyBackupIntegrity(
+  filename: string
+): Promise<{ ok: boolean; result: string }> {
+  const sanitized = path.basename(filename);
+  if (!sanitized.match(/\.(db|db\.gz)$/)) {
+    throw new Error('Invalid backup filename');
+  }
+
+  const filePath = path.join(BACKUP_DIR, sanitized);
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(BACKUP_DIR + path.sep)) {
+    throw new Error('Invalid backup path');
+  }
+  if (!fs.existsSync(filePath)) {
+    throw new Error('Backup file not found');
+  }
+
+  let tempPath: string | null = null;
+  try {
+    if (sanitized.endsWith('.gz')) {
+      tempPath = path.join(os.tmpdir(), `verify_${Date.now()}_${sanitized.replace('.gz', '')}`);
+      const gunzip = zlib.createGunzip();
+      const src = fs.createReadStream(filePath);
+      const dst = fs.createWriteStream(tempPath);
+      await pipeline(src, gunzip, dst);
+    } else {
+      tempPath = filePath;
+    }
+
+    const checkDb = new Database(tempPath, { readonly: true });
+    const rows = checkDb.prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>;
+    checkDb.close();
+
+    const first = rows[0]?.integrity_check ?? 'unknown';
+    return { ok: first === 'ok', result: first };
+  } finally {
+    if (tempPath && tempPath !== filePath && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+  }
+}
+
+/**
+ * Return DR status: latest backup metadata and RPO gap in minutes.
+ */
+export function getDrStatus(): {
+  backupCount: number;
+  latestFilename: string | null;
+  latestCreatedAt: string | null;
+  rpoGapMinutes: number | null;
+  totalDiskBytes: number;
+  backupDirectory: string;
+} {
+  const backups = listBackups();
+  const latest = backups[0] ?? null;
+  const rpoGapMinutes = latest
+    ? Math.floor((Date.now() - new Date(latest.createdAt).getTime()) / 60_000)
+    : null;
+  const totalDiskBytes = backups.reduce((s, b) => s + b.sizeBytes, 0);
+  return {
+    backupCount: backups.length,
+    latestFilename: latest?.filename ?? null,
+    latestCreatedAt: latest?.createdAt ?? null,
+    rpoGapMinutes,
+    totalDiskBytes,
+    backupDirectory: BACKUP_DIR,
+  };
 }

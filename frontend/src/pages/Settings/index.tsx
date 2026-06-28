@@ -148,6 +148,9 @@ const Settings = () => {
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [verifyingFile, setVerifyingFile] = useState<string | null>(null);
+  const [verifyResults, setVerifyResults] = useState<Record<string, { ok: boolean; result: string }>>({});
+  const [drStatus, setDrStatus] = useState<{ rpoGapMinutes: number | null; backupCount: number; totalDiskBytes: number } | null>(null);
 
   // Phase 12: System Administration state
   const [systemStatus, setSystemStatus] = useState<any>(null);
@@ -714,9 +717,17 @@ const Settings = () => {
     }
   };
 
+  const fetchDrStatus = async () => {
+    try {
+      const { data } = await apiClient.get('/utilities/backup/dr-status');
+      setDrStatus(data.data);
+    } catch { /* non-critical */ }
+  };
+
   useEffect(() => {
     fetchBackupList();
     fetchBackupSchedule();
+    fetchDrStatus();
   }, []);
 
   const handleBackupNow = async () => {
@@ -766,6 +777,19 @@ const Settings = () => {
       toastEvent.trigger('Failed to restore backup', 'error');
     } finally {
       setRestoringFile(null);
+    }
+  };
+
+  const handleVerifyBackup = async (filename: string) => {
+    setVerifyingFile(filename);
+    try {
+      const { data } = await apiClient.post(`/utilities/backup/verify/${encodeURIComponent(filename)}`);
+      setVerifyResults(prev => ({ ...prev, [filename]: { ok: data.ok, result: data.result } }));
+      toastEvent.trigger(data.ok ? 'Integrity check passed' : `Integrity check FAILED: ${data.result}`, data.ok ? 'success' : 'error');
+    } catch (err: any) {
+      toastEvent.trigger(err?.response?.data?.error ?? 'Verify failed', 'error');
+    } finally {
+      setVerifyingFile(null);
     }
   };
 
@@ -1382,6 +1406,7 @@ const Settings = () => {
                     <th className="text-right px-4 py-2.5 font-bold">Size</th>
                     <th className="text-right px-4 py-2.5 font-bold">Date & Time</th>
                     <th className="text-right px-4 py-2.5 font-bold">Actions</th>
+                    <th className="text-right px-4 py-2.5 font-bold">Integrity</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1393,6 +1418,16 @@ const Settings = () => {
                       </td>
                       <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatFileSize(b.sizeBytes)}</td>
                       <td className="px-4 py-3 text-right text-muted whitespace-nowrap">{formatDate(b.createdAt)}</td>
+                      {/* Integrity result cell (before actions) — shown after verify is run */}
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {verifyResults[b.filename] ? (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${verifyResults[b.filename].ok ? 'bg-green/20 text-green' : 'bg-red/20 text-red'}`}>
+                            {verifyResults[b.filename].ok ? '✓ OK' : '✗ Corrupt'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           {/* Restore */}
@@ -1422,6 +1457,17 @@ const Settings = () => {
                               <RotateCcw size={10} /> Restore
                             </button>
                           )}
+
+                          {/* Verify */}
+                          <button
+                            onClick={() => handleVerifyBackup(b.filename)}
+                            disabled={verifyingFile === b.filename}
+                            className="text-[10px] font-bold bg-green/10 text-green/80 px-2.5 py-1 rounded-full hover:bg-green/20 transition-all flex items-center gap-1 disabled:opacity-50"
+                            title="Run integrity check on this backup"
+                          >
+                            {verifyingFile === b.filename ? <RefreshCw size={10} className="animate-spin" /> : <Shield size={10} />}
+                            {verifyingFile === b.filename ? '…' : 'Verify'}
+                          </button>
 
                           {/* Delete */}
                           {confirmDelete === b.filename ? (
