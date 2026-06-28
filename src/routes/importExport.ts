@@ -119,7 +119,8 @@ router.get('/export/medicines.csv', async (_req, res) => {
     const db = await dbManager.getConnection();
     const rows = await db.all(`
       SELECT m.name, m.generic_name, m.manufacturer, m.marketed_by, m.pack_unit, m.strength,
-             m.mrp, m.hsn_code, m.cgst_per, m.sgst_per, m.igst_per, m.schedule_type,
+             m.mrp, m.hsn_code, m.cgst_per, m.sgst_per,
+             (m.cgst_per + m.sgst_per) AS igst_per, m.schedule_type,
              m.rack, m.item_code, m.category,
              lp.cost_price AS last_purchase_rate, lp.last_distributor_name
       FROM medicines m
@@ -212,7 +213,7 @@ router.get('/export/sales.csv', async (req, res) => {
       SELECT si.invoice_no, si.date,
              c.name AS customer_name, doc.name AS doctor_name,
              m.name AS medicine_name,
-             sa.quantity, sa.mrp, sa.discount, si.total_amount
+             sa.quantity, sa.mrp, sa.discount_per AS discount, si.total_amount
       FROM sale_items sa
       JOIN sales_invoices si ON sa.invoice_id = si.id
       JOIN inventory_master im ON sa.inventory_id = im.id

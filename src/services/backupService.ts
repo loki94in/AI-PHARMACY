@@ -4,7 +4,6 @@ import { fileURLToPath } from 'url';
 import os from 'os';
 import cron, { type ScheduledTask } from 'node-cron';
 import { dbManager } from '../database/connection.js';
-import Database from 'better-sqlite3';
 import zlib from 'zlib';
 import { pipeline } from 'stream/promises';
 
@@ -31,11 +30,11 @@ export async function createBackup(reason: string = 'Manual'): Promise<{ filenam
   const filename = `app_backup_${timestamp}.db.gz`;
   const backupPath = path.join(BACKUP_DIR, filename);
 
-  // Use native better-sqlite3 backup API to safely checkpoint WAL and clone live SQLite database
+  // Flush WAL frames back to main DB file, then copy — avoids native binary ABI issues.
   const tempDbPath = backupPath.replace('.gz', '');
-  const tempDb = new Database(DB_PATH);
-  await tempDb.backup(tempDbPath);
-  tempDb.close();
+  const db = await dbManager.getConnection();
+  await db.run('PRAGMA wal_checkpoint(TRUNCATE)');
+  fs.copyFileSync(DB_PATH, tempDbPath);
 
   // Compress the backup using gzip (ponytail: native stdlib zlib)
   const gzip = zlib.createGzip();

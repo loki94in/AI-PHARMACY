@@ -721,7 +721,9 @@ router.post('/manual', async (req, res) => {
       const rawExpiry = item.expiry !== undefined ? item.expiry : (expiry_date || '');
       const rawQty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
       const rawFreeQty = parseFloat(free_qty !== undefined ? free_qty : (item.free_quantity !== undefined ? item.free_quantity : 0)) || 0;
-      const rawRate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
+      const rawRate = parseFloat(
+        item.rate ?? item.cost_price ?? item.purchase_price ?? item.price ?? 0
+      ) || 0;
       const rawCgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
       const rawSgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
       const rawDiscPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
@@ -967,7 +969,9 @@ router.put('/:id/full', async (req, res) => {
       const rawExpiry = item.expiry !== undefined ? item.expiry : (expiry_date || '');
       const rawQty = parseFloat(item.qty !== undefined ? item.qty : item.quantity) || 0;
       const rawFreeQty = parseFloat(free_qty !== undefined ? free_qty : (item.free_quantity !== undefined ? item.free_quantity : 0)) || 0;
-      const rawRate = parseFloat(item.rate !== undefined ? item.rate : item.price) || 0;
+      const rawRate = parseFloat(
+        item.rate ?? item.cost_price ?? item.purchase_price ?? item.price ?? 0
+      ) || 0;
       const rawCgst = parseFloat(item.cgst !== undefined ? item.cgst : (item.cgst_per !== undefined ? item.cgst_per : 0)) || 0;
       const rawSgst = parseFloat(item.sgst !== undefined ? item.sgst : (item.sgst_per !== undefined ? item.sgst_per : 0)) || 0;
       const rawDiscPer = parseFloat(item.discPer !== undefined ? item.discPer : (item.cd_per !== undefined ? item.cd_per : 0)) || 0;
