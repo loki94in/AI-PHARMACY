@@ -1520,3 +1520,10 @@ export const updateManufacturer = (id: number, payload: Record<string, any>): Pr
 
 export const deleteManufacturer = (id: number): Promise<{ success: boolean }> =>
   request(`/manufacturers/master/${id}`, { method: 'DELETE' });
+
+// ── Phase 8.6: Company Master ─────────────────────────────────────────────────
+export const getCompany = (): Promise<Record<string, string>> =>
+  request('/settings/company');
+
+export const saveCompany = (payload: Record<string, string>): Promise<{ success: boolean; message: string }> =>
+  request('/settings/company', { method: 'POST', body: JSON.stringify(payload) });

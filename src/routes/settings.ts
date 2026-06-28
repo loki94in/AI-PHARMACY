@@ -176,6 +176,60 @@ router.post('/upload-signature', async (req, res) => {
   }
 });
 
+// ── Phase 8.6: Company Master ───────────────────────────────────────────────
+const COMPANY_FIELDS = [
+  'medical_name', 'owner_name', 'address', 'city', 'state', 'pincode',
+  'phone', 'mobile', 'email', 'gstin', 'drug_license_no', 'drug_license_no2',
+  'fssai_no', 'pan_no', 'bank_name', 'bank_account_no', 'bank_ifsc',
+  'bank_branch', 'website', 'state_code',
+];
+
+router.get('/company', async (_req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+    const placeholders = COMPANY_FIELDS.map(() => '?').join(',');
+    const rows = await db.all(
+      `SELECT key, value FROM app_settings WHERE key IN (${placeholders})`,
+      COMPANY_FIELDS
+    );
+    await dbManager.close();
+    const company: Record<string, string> = {};
+    rows.forEach(r => { company[r.key] = r.value; });
+    res.json(company);
+  } catch (error) {
+    await dbManager.close();
+    console.error('Company fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch company details' });
+  }
+});
+
+router.post('/company', async (req, res) => {
+  const payload = req.body;
+  if (!payload || typeof payload !== 'object') {
+    return res.status(400).json({ error: 'payload required' });
+  }
+  const allowed = Object.fromEntries(
+    Object.entries(payload).filter(([k]) => COMPANY_FIELDS.includes(k))
+  );
+  if (Object.keys(allowed).length === 0) {
+    return res.status(400).json({ error: 'No valid company fields provided' });
+  }
+  try {
+    const db = await dbManager.getConnection();
+    await db.run('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)');
+    for (const [k, v] of Object.entries(allowed)) {
+      await db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [k, v ?? '']);
+    }
+    await dbManager.close();
+    res.json({ success: true, message: 'Company details saved' });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Company save error:', error);
+    res.status(500).json({ error: 'Failed to save company details' });
+  }
+});
+
 // Create a new distributor
 router.post('/distributors', async (req, res) => {
   const { name, phone, email, address, state_code } = req.body;
