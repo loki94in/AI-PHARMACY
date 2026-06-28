@@ -561,4 +561,14 @@ export const api = {
   getReportsAnalytics: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/analytics', { params }).then(res => res.data),
   exportReportsPDF: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-pdf', { params, responseType: 'blob' }).then(res => res.data),
   exportReportsExcel: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-excel', { params, responseType: 'blob' }).then(res => res.data),
+
+  // System Administration (Phase 12)
+  getAuditLogs: (params: { page?: number; limit?: number; type?: string; from?: string; to?: string; q?: string }) =>
+    apiClient.get('/settings/audit-logs', { params }).then(res => res.data),
+  getSystemStatus: () => apiClient.get('/settings/system-status').then(res => res.data),
+  vacuumDb: () => apiClient.post('/settings/db/vacuum').then(res => res.data),
+  analyzeDb: () => apiClient.post('/settings/db/analyze').then(res => res.data),
+  exportSettingsJson: () => apiClient.get('/settings/export', { responseType: 'blob' }).then(res => res.data),
+  importSettingsJson: (settings: { key: string; value: string }[]) =>
+    apiClient.post('/settings/import', { settings }).then(res => res.data),
 };

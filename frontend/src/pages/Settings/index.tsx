@@ -148,6 +148,99 @@ const Settings = () => {
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  // Phase 12: System Administration state
+  const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [systemStatusLoading, setSystemStatusLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLogsTotal, setAuditLogsTotal] = useState(0);
+  const [auditLogsPage, setAuditLogsPage] = useState(1);
+  const [auditLogsPages, setAuditLogsPages] = useState(1);
+  const [auditLogsTypes, setAuditLogsTypes] = useState<string[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
+  const [auditFilter, setAuditFilter] = useState({ type: '', from: '', to: '', q: '' });
+  const [dbMaintenanceLoading, setDbMaintenanceLoading] = useState(false);
+  const [settingsImportLoading, setSettingsImportLoading] = useState(false);
+
+  const fetchSystemStatus = async () => {
+    setSystemStatusLoading(true);
+    try {
+      const data = await api.getSystemStatus();
+      setSystemStatus(data);
+    } catch { /* ignore */ }
+    finally { setSystemStatusLoading(false); }
+  };
+
+  const fetchAuditLogs = async (page = 1) => {
+    setAuditLogsLoading(true);
+    try {
+      const data = await api.getAuditLogs({
+        page,
+        limit: 20,
+        type: auditFilter.type || undefined,
+        from: auditFilter.from || undefined,
+        to: auditFilter.to || undefined,
+        q: auditFilter.q || undefined,
+      } as any);
+      setAuditLogs(data.rows || []);
+      setAuditLogsTotal(data.total || 0);
+      setAuditLogsPage(data.page || 1);
+      setAuditLogsPages(data.pages || 1);
+      setAuditLogsTypes(data.types || []);
+    } catch { /* ignore */ }
+    finally { setAuditLogsLoading(false); }
+  };
+
+  const handleDbVacuum = async () => {
+    if (!confirm('Run VACUUM? This will reclaim unused disk space. The operation is safe but may take a few seconds.')) return;
+    setDbMaintenanceLoading(true);
+    try {
+      const res = await api.vacuumDb();
+      toastEvent.trigger(`VACUUM complete. Freed ${Math.round((res.freedBytes || 0) / 1024)} KB.`, 'success');
+      fetchSystemStatus();
+    } catch (e: any) {
+      toastEvent.trigger('VACUUM failed: ' + (e?.response?.data?.error || e?.message), 'error');
+    } finally { setDbMaintenanceLoading(false); }
+  };
+
+  const handleDbAnalyze = async () => {
+    setDbMaintenanceLoading(true);
+    try {
+      await api.analyzeDb();
+      toastEvent.trigger('ANALYZE complete. Query stats rebuilt.', 'success');
+    } catch (e: any) {
+      toastEvent.trigger('ANALYZE failed: ' + (e?.response?.data?.error || e?.message), 'error');
+    } finally { setDbMaintenanceLoading(false); }
+  };
+
+  const handleExportSettings = async () => {
+    try {
+      const blob = await api.exportSettingsJson();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `settings_export_${Date.now()}.json`;
+      document.body.appendChild(a); a.click();
+      URL.revokeObjectURL(url); document.body.removeChild(a);
+    } catch { toastEvent.trigger('Settings export failed', 'error'); }
+  };
+
+  const handleImportSettings = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSettingsImportLoading(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const settings = Array.isArray(parsed) ? parsed : (parsed.settings || []);
+      const res = await api.importSettingsJson(settings);
+      toastEvent.trigger(`Imported ${res.imported} settings (${res.skipped} skipped).`, 'success');
+    } catch (e: any) {
+      toastEvent.trigger('Import failed: ' + e.message, 'error');
+    } finally {
+      setSettingsImportLoading(false);
+      e.target.value = '';
+    }
+  };
+
   // Generic helper to update settings fields
   const updateSetting = <K extends keyof SettingsData>(key: K, value: SettingsData[K] | ((prevVal: SettingsData[K]) => SettingsData[K])) => {
     setSettings(prev => ({
@@ -1362,6 +1455,176 @@ const Settings = () => {
             <span className="text-sm font-semibold text-sky">v2.0.0</span>
           </div>
         </div>
+      </div>
+
+      {/* ─── System Status ─── */}
+      <div className="glass-panel p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-bold flex items-center gap-2">
+            <Shield size={18} className="text-sky" />
+            System Status
+          </h3>
+          <button
+            onClick={fetchSystemStatus}
+            disabled={systemStatusLoading}
+            className="px-3 py-1.5 bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={systemStatusLoading ? 'animate-spin' : ''} />
+            {systemStatus ? 'Refresh' : 'Load Status'}
+          </button>
+        </div>
+
+        {systemStatus ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Uptime', value: (() => { const s = systemStatus.uptimeSeconds; const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; })(), sub: 'Process uptime', color: 'text-green' },
+              { label: 'Memory (RSS)', value: `${systemStatus.memoryRssMb} MB`, sub: `Heap ${systemStatus.memoryHeapUsedMb}/${systemStatus.memoryHeapTotalMb} MB`, color: 'text-amber' },
+              { label: 'DB Size', value: `${systemStatus.dbSizeMb} MB`, sub: `${(systemStatus.dbSizeBytes / 1024).toFixed(0)} KB total`, color: 'text-sky' },
+              { label: 'Version', value: `v${systemStatus.appVersion}`, sub: `Node ${systemStatus.nodeVersion} · ${systemStatus.platform}`, color: 'text-primary' },
+            ].map(card => (
+              <div key={card.label} className="bg-bg3 border border-glass-border rounded-xl p-4">
+                <div className="text-[9px] text-muted font-bold uppercase tracking-wider mb-1">{card.label}</div>
+                <div className={`text-xl font-black ${card.color}`}>{card.value}</div>
+                <div className="text-[10px] text-muted mt-1">{card.sub}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted">Click "Load Status" to fetch live system information.</p>
+        )}
+      </div>
+
+      {/* ─── Database Maintenance + Settings Export/Import ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-5">
+          <Database size={18} className="text-amber" />
+          Database Maintenance &amp; Settings
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-muted uppercase tracking-wider">SQLite Maintenance</div>
+            <p className="text-[11px] text-muted leading-relaxed">VACUUM reclaims disk space from deleted rows. ANALYZE rebuilds query planner statistics for faster queries.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDbVacuum}
+                disabled={dbMaintenanceLoading}
+                className="flex-1 px-3 py-2 bg-green/10 hover:bg-green/20 border border-green/20 text-green rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <HardDrive size={13} />VACUUM
+              </button>
+              <button
+                onClick={handleDbAnalyze}
+                disabled={dbMaintenanceLoading}
+                className="flex-1 px-3 py-2 bg-sky/10 hover:bg-sky/20 border border-sky/20 text-sky rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <Zap size={13} />ANALYZE
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-bg3/50 border border-glass-border rounded-xl p-4 space-y-3">
+            <div className="text-xs font-bold text-muted uppercase tracking-wider">Settings Backup</div>
+            <p className="text-[11px] text-muted leading-relaxed">Export all non-sensitive settings to a JSON file, or restore from a previous export. Passwords are never exported.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleExportSettings}
+                className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+              >
+                <Download size={13} />Export JSON
+              </button>
+              <label className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${settingsImportLoading ? 'opacity-50 cursor-not-allowed bg-bg3 border-glass-border text-muted' : 'bg-amber/10 hover:bg-amber/20 border-amber/20 text-amber active:scale-95'}`}>
+                <RotateCcw size={13} />{settingsImportLoading ? 'Importing…' : 'Import JSON'}
+                <input type="file" accept=".json" className="hidden" onChange={handleImportSettings} disabled={settingsImportLoading} />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Audit Log Viewer ─── */}
+      <div className="glass-panel p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-bold flex items-center gap-2">
+            <History size={18} className="text-primary" />
+            Audit Log
+          </h3>
+          <button
+            onClick={() => fetchAuditLogs(1)}
+            disabled={auditLogsLoading}
+            className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={auditLogsLoading ? 'animate-spin' : ''} />
+            {auditLogs.length ? 'Refresh' : 'Load Logs'}
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <select
+            value={auditFilter.type}
+            onChange={e => setAuditFilter(f => ({ ...f, type: e.target.value }))}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">All types</option>
+            {auditLogsTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <input type="date" value={auditFilter.from} onChange={e => setAuditFilter(f => ({ ...f, from: e.target.value }))}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary" />
+          <input type="date" value={auditFilter.to} onChange={e => setAuditFilter(f => ({ ...f, to: e.target.value }))}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary" />
+          <input type="text" placeholder="Search…" value={auditFilter.q} onChange={e => setAuditFilter(f => ({ ...f, q: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && fetchAuditLogs(1)}
+            className="bg-bg3 border border-glass-border rounded-lg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary flex-1 min-w-[140px]" />
+          <button onClick={() => fetchAuditLogs(1)} className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-semibold transition-all">
+            Apply
+          </button>
+          <button onClick={() => { setAuditFilter({ type: '', from: '', to: '', q: '' }); }} className="px-3 py-1.5 bg-bg3 hover:bg-bg3/80 border border-glass-border text-muted rounded-lg text-xs transition-all">
+            Clear
+          </button>
+        </div>
+
+        {auditLogs.length === 0 ? (
+          <p className="text-xs text-muted py-6 text-center">{auditLogsLoading ? 'Loading…' : 'No logs loaded. Click "Load Logs" to start.'}</p>
+        ) : (
+          <>
+            <div className="overflow-auto rounded-xl border border-glass-border">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 bg-bg2 border-b border-glass-border">
+                  <tr className="text-muted">
+                    <th className="px-3 py-2 font-semibold w-40">Timestamp</th>
+                    <th className="px-3 py-2 font-semibold w-44">Type</th>
+                    <th className="px-3 py-2 font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.map(row => (
+                    <tr key={row.id} className="border-b border-glass-border/30 hover:bg-bg3/20 transition-colors">
+                      <td className="px-3 py-2 text-muted font-mono text-[10px] whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
+                      <td className="px-3 py-2">
+                        <span className="inline-block bg-primary/10 text-primary border border-primary/20 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide truncate max-w-[160px]">{row.action_type}</span>
+                      </td>
+                      <td className="px-3 py-2 text-text">{row.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[10px] text-muted">{auditLogsTotal} total entries</span>
+              <div className="flex gap-2">
+                <button disabled={auditLogsPage <= 1 || auditLogsLoading} onClick={() => fetchAuditLogs(auditLogsPage - 1)}
+                  className="px-3 py-1 bg-bg3 border border-glass-border text-muted rounded-lg text-xs disabled:opacity-40 hover:text-text transition-all">
+                  Prev
+                </button>
+                <span className="text-xs text-muted self-center">Page {auditLogsPage} / {auditLogsPages}</span>
+                <button disabled={auditLogsPage >= auditLogsPages || auditLogsLoading} onClick={() => fetchAuditLogs(auditLogsPage + 1)}
+                  className="px-3 py-1 bg-bg3 border border-glass-border text-muted rounded-lg text-xs disabled:opacity-40 hover:text-text transition-all">
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ─── Factory Reset Confirmation Modal ─── */}
