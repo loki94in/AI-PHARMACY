@@ -1442,3 +1442,10 @@ export const linkEmailOrder = (uid: number): Promise<EmailLinkResult> =>
 
 export const batchLinkOrders = (): Promise<{ processed: number; linked: number; missed: number }> =>
   request('/email/batch-link-orders', { method: 'POST' });
+
+// 7c — email → purchase invoice (additive only)
+export const linkEmailInvoice = (uid: number): Promise<EmailLinkResult> =>
+  request(`/email/${uid}/link-invoice`, { method: 'POST' });
+
+export const batchLinkInvoices = (): Promise<{ processed: number; linked: number; missed: number }> =>
+  request('/email/batch-link-invoices', { method: 'POST' });

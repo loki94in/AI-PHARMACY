@@ -778,4 +778,99 @@ router.post('/batch-link-orders', async (req, res) => {
   }
 });
 
+// ── Phase 7c: email → purchase invoice linking (additive only) ───────────────
+
+function extractInvoiceNo(subject: string, body: string): string | null {
+  // Ordered patterns — first match in subject wins, then body
+  const patterns = [
+    /(INV|BILL|PO)[-#\s:]*([\w/-]+)/i,
+    /invoice[#:\s]*([\w/-]+)/i,
+    /bill[#:\s]*([\w/-]+)/i,
+  ];
+  for (const text of [subject, body ?? '']) {
+    for (const pat of patterns) {
+      const m = text.match(pat);
+      // Last capture group holds the number part; skip pure whitespace
+      const candidate = (m?.[2] ?? m?.[1] ?? '').trim();
+      if (candidate && /\w/.test(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/** POST /api/email/:uid/link-invoice — tag one email with a purchases row (read + additive only) */
+router.post('/:uid/link-invoice', async (req, res) => {
+  const uid = parseInt(req.params.uid as string, 10);
+  if (isNaN(uid)) return res.status(400).json({ success: false, error: 'Invalid uid' });
+  try {
+    const db = await dbManager.getConnection();
+    const email = await db.get(
+      'SELECT uid, subject, body, linked_purchase_id FROM emails WHERE uid = ?', [uid]
+    );
+    if (!email) return res.status(404).json({ success: false, error: 'Email not found' });
+    if (email.linked_purchase_id != null) {
+      return res.json({ linked: true, skipped: true, purchase_id: email.linked_purchase_id });
+    }
+
+    const invoiceNo = extractInvoiceNo(email.subject ?? '', email.body ?? '');
+    if (!invoiceNo) {
+      await db.run(
+        `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+        ['email_link_miss_purchase', `uid=${uid} reason=no_invoice_extracted`]
+      );
+      return res.json({ linked: false, reason: 'no_invoice_extracted' });
+    }
+
+    const purchase = await db.get(
+      `SELECT id FROM purchases WHERE LOWER(TRIM(invoice_no)) = LOWER(TRIM(?))`,
+      [invoiceNo]
+    );
+    if (!purchase) {
+      await db.run(
+        `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+        ['email_link_miss_purchase', `uid=${uid} invoice_no="${invoiceNo}"`]
+      );
+      return res.json({ linked: false, reason: 'no_purchase_match', extracted_invoice_no: invoiceNo });
+    }
+
+    // Additive only: write only emails.linked_purchase_id — purchases row is never touched
+    await db.run(`UPDATE emails SET linked_purchase_id = ? WHERE uid = ?`, [purchase.id, uid]);
+    return res.json({ linked: true, purchase_id: purchase.id, extracted_invoice_no: invoiceNo });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
+/** POST /api/email/batch-link-invoices — link all emails with no linked_purchase_id */
+router.post('/batch-link-invoices', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT uid, subject, body FROM emails WHERE linked_purchase_id IS NULL`
+    );
+    let linked = 0, missed = 0;
+    for (const email of rows) {
+      const invoiceNo = extractInvoiceNo(email.subject ?? '', email.body ?? '');
+      if (!invoiceNo) { missed++; continue; }
+      const purchase = await db.get(
+        `SELECT id FROM purchases WHERE LOWER(TRIM(invoice_no)) = LOWER(TRIM(?))`,
+        [invoiceNo]
+      );
+      if (purchase) {
+        await db.run(`UPDATE emails SET linked_purchase_id = ? WHERE uid = ?`, [purchase.id, email.uid]);
+        linked++;
+      } else {
+        await db.run(
+          `INSERT INTO action_logs (action_type, description) VALUES (?, ?)`,
+          ['email_link_miss_purchase', `uid=${email.uid} invoice_no="${invoiceNo}"`]
+        );
+        missed++;
+      }
+    }
+    res.json({ processed: rows.length, linked, missed });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: String(err?.message ?? err) });
+  }
+});
+
 export default router;
