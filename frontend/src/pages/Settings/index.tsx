@@ -253,6 +253,9 @@ const Settings = () => {
   const [plugins, setPlugins] = useState<any[]>([]);
   const [pluginsLoading, setPluginsLoading] = useState(false);
   const [pluginReloading, setPluginReloading] = useState(false);
+  const [hookName, setHookName] = useState('');
+  const [hookRunning, setHookRunning] = useState(false);
+  const [hookResult, setHookResult] = useState<string | null>(null);
 
   // Cloud Sync Relay (Phase 15-B)
   const [relayStatus, setRelayStatus] = useState<any>(null);
@@ -766,6 +769,21 @@ const Settings = () => {
     } catch (err: any) {
       toastEvent.trigger(err?.response?.data?.error ?? 'Reload failed', 'error');
     } finally { setPluginReloading(false); }
+  };
+
+  const handleRunHook = async () => {
+    if (!hookName.trim()) return;
+    setHookRunning(true);
+    setHookResult(null);
+    try {
+      const { data } = await apiClient.post('/plugins/run-hook', { hookName: hookName.trim(), ctx: {} });
+      setHookResult(JSON.stringify(data.result, null, 2));
+      toastEvent.trigger(`Hook "${hookName}" executed`, 'success');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error ?? 'Hook failed';
+      setHookResult(`Error: ${msg}`);
+      toastEvent.trigger(msg, 'error');
+    } finally { setHookRunning(false); }
   };
 
   const fetchRelayStatus = async () => {
@@ -1896,6 +1914,32 @@ const Settings = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Run Hook tester */}
+        {plugins.some(p => !p.error) && (
+          <div className="border-t border-border mt-4 pt-4">
+            <h3 className="text-xs font-bold text-muted mb-2 uppercase tracking-wider">Run Hook</h3>
+            <div className="flex gap-2 items-center mb-2">
+              <select value={hookName} onChange={e => setHookName(e.target.value)}
+                className="input-field text-xs px-2.5 py-1.5 flex-1">
+                <option value="">— select a hook —</option>
+                {Array.from(new Set(plugins.flatMap(p => p.hookNames ?? []))).map(h => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
+              <button onClick={handleRunHook} disabled={hookRunning || !hookName}
+                className="text-xs font-bold px-4 py-1.5 rounded-lg bg-pink-500/20 text-pink-300 hover:bg-pink-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5">
+                {hookRunning ? <RefreshCw size={11} className="animate-spin" /> : <Zap size={11} />}
+                {hookRunning ? 'Running…' : 'Run'}
+              </button>
+            </div>
+            {hookResult && (
+              <pre className="text-[10px] bg-bg3/60 rounded-lg p-3 overflow-x-auto max-h-40 font-mono text-muted whitespace-pre-wrap">
+                {hookResult}
+              </pre>
+            )}
           </div>
         )}
 
