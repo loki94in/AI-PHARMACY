@@ -388,8 +388,8 @@ router.post('/auto-enrich', async (req, res) => {
              category      = COALESCE(NULLIF(category, ''), ?),
              packaging     = COALESCE(NULLIF(packaging, ''), ?),
              mrp           = CASE WHEN mrp = 0 OR mrp IS NULL THEN ? ELSE mrp END,
-             enrichment_status     = ?,
-             enrichment_confidence = ?
+             enrichment_status     = CASE WHEN enrichment_status = 'manual' THEN enrichment_status ELSE ? END,
+             enrichment_confidence = CASE WHEN enrichment_status = 'manual' THEN enrichment_confidence ELSE ? END
          WHERE id = ?`,
         [adjustedName, cleanApi, cleanMfr, cleanCategory, cleanPackaging, cleanMrp,
          enrichmentStatus, enrichmentConfidence, existing.id]
@@ -400,7 +400,7 @@ router.post('/auto-enrich', async (req, res) => {
         `INSERT INTO medicines (name, api_reference, manufacturer, category, packaging, mrp, enrichment_status, enrichment_confidence)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [adjustedName, cleanApi || null, cleanMfr || null, cleanCategory || null,
-         cleanPackaging || null, cleanMrp || null, enrichmentStatus, enrichmentConfidence]
+         cleanPackaging || null, cleanMrp, enrichmentStatus, enrichmentConfidence]
       );
       medId = result.lastID as number;
       isNew = true;

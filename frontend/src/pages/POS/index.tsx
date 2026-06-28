@@ -803,10 +803,12 @@ const POS = () => {
       setSearchingOnline(false);
       return;
     }
-    
+
+    let cancelled = false;
     const delayDebounce = setTimeout(() => {
       api.searchMedicine(searchTerm)
         .then(data => {
+          if (cancelled) return;
           if (Array.isArray(data)) {
             // Premium Barcode Auto-Add Feature:
             // If there is exactly one result, and the search term exactly matches its barcode (item_code),
@@ -841,10 +843,14 @@ const POS = () => {
               setOnlineResults([]);
               api.onlineSearch(searchTerm)
                 .then((online: any[]) => {
-                  setOnlineResults(online || []);
-                  setSearchingOnline(false);
+                  if (!cancelled) {
+                    setOnlineResults(online || []);
+                    setSearchingOnline(false);
+                  }
                 })
-                .catch(() => setSearchingOnline(false));
+                .catch(() => {
+                  if (!cancelled) setSearchingOnline(false);
+                });
             } else {
               setOnlineResults([]);
               setSearchingOnline(false);
@@ -852,12 +858,17 @@ const POS = () => {
           }
         })
         .catch(err => {
-          console.error('Error searching medicines:', err);
-          setSearchingOnline(false);
+          if (!cancelled) {
+            console.error('Error searching medicines:', err);
+            setSearchingOnline(false);
+          }
         });
     }, 300);
-    
-    return () => clearTimeout(delayDebounce);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(delayDebounce);
+    };
   }, [searchTerm]);
 
   // Universal Edit state
