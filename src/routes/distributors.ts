@@ -58,6 +58,56 @@ router.post('/returns/reconcile-credit', async (req, res) => {
   }
 });
 
+router.get('/distributors/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const distributor = await db.get('SELECT * FROM distributors WHERE id = ?', [id]);
+    if (!distributor) {
+      await dbManager.close();
+      return res.status(404).json({ error: 'Distributor not found' });
+    }
+    const stats = await db.get(
+      `SELECT COUNT(*) AS total_purchases,
+              COALESCE(SUM(total_amount), 0) AS total_value,
+              MAX(date) AS last_purchase_date
+       FROM purchases WHERE distributor_id = ?`,
+      [id]
+    );
+    await dbManager.close();
+    res.json({ ...distributor, stats });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to fetch distributor:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/distributors/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    const purchaseCount = await db.get(
+      'SELECT COUNT(*) AS cnt FROM purchases WHERE distributor_id = ?',
+      [id]
+    );
+    if (purchaseCount && purchaseCount.cnt > 0) {
+      await dbManager.close();
+      return res.status(400).json({
+        error: `Cannot delete: distributor has ${purchaseCount.cnt} purchase record(s)`,
+      });
+    }
+    const result = await db.run('DELETE FROM distributors WHERE id = ?', [id]);
+    await dbManager.close();
+    if (result.changes === 0) return res.status(404).json({ error: 'Distributor not found' });
+    res.json({ success: true });
+  } catch (error) {
+    await dbManager.close();
+    console.error('Failed to delete distributor:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/:id/pending-returns', async (req, res) => {
   const { id } = req.params;
   try {

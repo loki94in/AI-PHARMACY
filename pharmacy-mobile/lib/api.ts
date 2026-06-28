@@ -1456,3 +1456,25 @@ export const getMedicine = (id: number): Promise<any> =>
 
 export const updateMedicine = (id: number, payload: Record<string, any>): Promise<{ success: boolean; data: any }> =>
   request(`/medicines/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+// ── Phase 8.2: Supplier Master ───────────────────────────────────────────────
+export const getDistributor = (id: number): Promise<any> =>
+  request(`/distributors/${id}`);
+
+export const updateDistributor = (
+  id: number,
+  payload: {
+    name: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    state_code?: string;
+    gstin?: string;
+    dl_no?: string;
+    city?: string;
+  }
+): Promise<{ success: boolean; data: any }> =>
+  request(`/distributors/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteDistributor = (id: number): Promise<{ success: boolean }> =>
+  request(`/distributors/${id}`, { method: 'DELETE' });
