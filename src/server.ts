@@ -220,6 +220,20 @@ app.use('/api', pluginsRouter);
 // Initialize services that need startup logic
 // These would be initialized via dependency injection in a complete refactor
 
+// Serve the built React app in Electron / production mode.
+// ELECTRON env var is set by the Electron main process; FRONTEND_DIST points to frontend/dist.
+if (process.env.ELECTRON === 'true' || process.env.NODE_ENV === 'production') {
+  const frontendDist = process.env.FRONTEND_DIST
+    || path.resolve(__dirname, '..', 'frontend', 'dist');
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist, { index: 'index.html' }));
+    // Catch-all: hand non-API requests to React Router (express.static() won't handle them)
+    app.use((_req, res) => {
+      res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+  }
+}
+
 // Error handling middleware - should be last
 app.use(notFoundHandler);
 app.use(errorHandler);

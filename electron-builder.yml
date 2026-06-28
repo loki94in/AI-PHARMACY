@@ -1,0 +1,72 @@
+appId: com.aipharmacy.app
+productName: AI Pharmacy
+copyright: "Copyright © 2024 AI Pharmacy"
+
+# Electron 42 shares the same Node.js ABI as our system Node 22.
+# Pre-compiled native modules work as-is — no rebuild needed.
+npmRebuild: false
+
+# Keep files as a real directory tree (not a compressed asar archive).
+# This is required because the Express server runs in a spawned child process
+# that cannot read files from inside an .asar archive.
+asar: false
+
+directories:
+  output: dist-release
+  buildResources: build-resources
+
+# Files included in the package
+files:
+  - dist-electron/**
+  - dist-server/**
+  - frontend/dist/**
+  - node_modules/**
+  - data/**
+  - eng.traineddata
+  - package.json
+  - "!node_modules/**/{CHANGELOG.md,README.md,readme.md,.travis.yml}"
+  - "!node_modules/**/{test,tests,spec,__tests__,example,examples,benchmark,benchmarks}"
+  - "!node_modules/.cache/**"
+  - "!node_modules/.bin/**"
+  - "!src/**"
+  - "!electron/*.cjs"
+  - "!frontend/src/**"
+  - "!frontend/node_modules/**"
+  - "!**/*.map"
+  - "!**/*.ts"
+  - "!**/*.tsx"
+
+# ── Windows NSIS installer ──────────────────────────────────
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AI Pharmacy
+  deleteAppDataOnUninstall: false
+
+# ── Linux zip (no external tools needed) ────────────────────
+linux:
+  target:
+    - target: zip
+      arch: [x64]
+  category: Office
+  description: AI-powered Pharmacy Management System
+
+# ── macOS DMG ───────────────────────────────────────────────
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.business
+  minimumSystemVersion: "12.0"
+
+dmg:
+  writeUpdateInfo: false
