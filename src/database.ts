@@ -547,6 +547,20 @@ export async function ensureSchema(dbPath: string) {
       retries INTEGER DEFAULT 0
     );
 
+    -- OCR job queue: main process submits, OCR worker processes
+    CREATE TABLE IF NOT EXISTS pending_ocr_jobs (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id       TEXT UNIQUE NOT NULL,
+      image_data   TEXT NOT NULL,
+      job_type     TEXT NOT NULL DEFAULT 'processImage',
+      skip_enrichment INTEGER NOT NULL DEFAULT 0,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      result       TEXT,
+      error        TEXT,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME
+    );
+
     -- Expiry returns tracking and credit notes reconciliation
     CREATE TABLE IF NOT EXISTS expiry_returns_tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

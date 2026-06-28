@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'url';
-import { aiCameraService } from '../services/aiCameraService.js';
+import { submitOcrJob } from '../services/ocrJobQueue.js';
 import { extractMedicineNameFromText } from '../utils/ocrCleaner.js';
 
 
@@ -213,7 +213,7 @@ router.post('/ai-camera/process', async (req, res) => {
     const imageData = req.body.image;
 
     // Process the image with Tesseract OCR (offline capable)
-    const result = await aiCameraService.processImage(imageData);
+    const result = await submitOcrJob(imageData, 'processImage');
 
     // Extract potential medicine information (prioritize service structured results)
     const medicineInfo = result.medicineInfo || extractMedicineInfo(result.text);

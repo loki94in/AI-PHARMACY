@@ -36,6 +36,11 @@ export class WorkerSupervisor {
       scriptPath: path.resolve(__dirname, `runWhatsappWorker${ext}`),
       restartCount: 0,
     },
+    ocr: {
+      name: 'OCR Worker',
+      scriptPath: path.resolve(__dirname, `runOcrWorker${ext}`),
+      restartCount: 0,
+    },
   };
   private healthCheckInterval: NodeJS.Timeout | null = null;
 

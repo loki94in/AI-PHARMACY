@@ -9,7 +9,7 @@ import pdfParse from 'pdf-parse';
 import { parse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
-import { aiCameraService } from '../services/aiCameraService.js';
+import { submitOcrJob } from '../services/ocrJobQueue.js';
 import { productNameFilterService } from '../services/productNameFilterService.js';
 import { emailService } from '../services/emailService.js';
 import { onlineDataEnricher } from '../services/onlineDataEnricher.js';
@@ -497,7 +497,7 @@ async function parseInvoiceBuffer(fileBuffer: Buffer, filename: string): Promise
   }
 
   try {
-    const ocrResult = await aiCameraService.processImage(fileBuffer, true);
+    const ocrResult = await submitOcrJob(fileBuffer, 'processImage', true);
     if (ocrResult && ocrResult.text) {
       return parseTextInvoice(ocrResult.text, filename);
     }
