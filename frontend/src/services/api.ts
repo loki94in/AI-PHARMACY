@@ -548,7 +548,7 @@ export const api = {
   
   // Online enrichment & search
   onlineSearch: (q: string) => apiClient.get('/medicines/online-search', { params: { q } }).then(res => res.data),
-  autoEnrich: (data: { name: string; api_reference: string; manufacturer?: string }) => apiClient.post('/medicines/auto-enrich', data).then(res => res.data),
+  autoEnrich: (data: { name: string; api_reference: string; manufacturer?: string; category?: string; packaging?: string; mrp?: number }) => apiClient.post('/medicines/auto-enrich', data).then(res => res.data),
   
   // Reports
   getReportsSummary: (params: { fromDate?: string; toDate?: string }) => apiClient.get('/reports', { params }).then(res => res.data),

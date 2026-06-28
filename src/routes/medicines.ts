@@ -335,9 +335,9 @@ router.get('/online-search', async (req, res) => {
   }
 });
 
-// Auto-enrich composition by saving to database
+// Auto-enrich: save internet-fetched medicine to DB with composition cross-check
 router.post('/auto-enrich', async (req, res) => {
-  const { name, api_reference, manufacturer } = req.body;
+  const { name, api_reference, manufacturer, category, packaging, mrp } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Medicine name is required' });
   }
@@ -347,26 +347,79 @@ router.post('/auto-enrich', async (req, res) => {
     const cleanName = name.trim();
     const cleanApi = (api_reference || '').trim();
     const cleanMfr = (manufacturer || '').trim();
+    const cleanCategory = (category || '').trim();
+    const cleanPackaging = (packaging || '').trim();
+    const cleanMrp = parseFloat(mrp) || 0;
     const adjustedName = normalizeMedicineName(cleanName, cleanMfr);
+
+    // Cross-check fetched composition against local reference table
+    const firstWord = cleanName.split(/\s+/)[0];
+    const refRow = await db.get(
+      `SELECT composition1, composition2 FROM medicine_reference WHERE name LIKE ? LIMIT 1`,
+      [`%${firstWord}%`]
+    );
+    const refComposition = refRow
+      ? [refRow.composition1, refRow.composition2].filter(Boolean).join(' + ')
+      : null;
+
+    let enrichmentStatus: string;
+    let enrichmentConfidence: number;
+    if (!refComposition) {
+      enrichmentStatus = 'needs_review';
+      enrichmentConfidence = 0.5;
+    } else if (cleanApi && refComposition.toLowerCase().includes(cleanApi.toLowerCase().split(/\s+/)[0])) {
+      enrichmentStatus = 'matched';
+      enrichmentConfidence = 0.92;
+    } else {
+      enrichmentStatus = 'needs_review';
+      enrichmentConfidence = 0.6;
+    }
+
+    let medId: number;
+    let isNew = false;
 
     let existing = await db.get('SELECT * FROM medicines WHERE LOWER(name) = LOWER(?)', [cleanName]);
     if (existing) {
       await db.run(
-        "UPDATE medicines SET name = ?, api_reference = COALESCE(NULLIF(api_reference, ''), ?), manufacturer = COALESCE(NULLIF(manufacturer, ''), ?) WHERE id = ?",
-        [adjustedName, cleanApi, cleanMfr, existing.id]
+        `UPDATE medicines
+         SET name = ?,
+             api_reference = COALESCE(NULLIF(api_reference, ''), ?),
+             manufacturer  = COALESCE(NULLIF(manufacturer, ''), ?),
+             category      = COALESCE(NULLIF(category, ''), ?),
+             packaging     = COALESCE(NULLIF(packaging, ''), ?),
+             mrp           = CASE WHEN mrp = 0 OR mrp IS NULL THEN ? ELSE mrp END,
+             enrichment_status     = ?,
+             enrichment_confidence = ?
+         WHERE id = ?`,
+        [adjustedName, cleanApi, cleanMfr, cleanCategory, cleanPackaging, cleanMrp,
+         enrichmentStatus, enrichmentConfidence, existing.id]
       );
-      const updated = await db.get('SELECT * FROM medicines WHERE id = ?', [existing.id]);
-      await dbManager.close();
-      return res.json({ success: true, data: updated, isNew: false });
+      medId = existing.id;
     } else {
       const result = await db.run(
-        "INSERT INTO medicines (name, api_reference, manufacturer) VALUES (?, ?, ?)",
-        [adjustedName, cleanApi || null, cleanMfr || null]
+        `INSERT INTO medicines (name, api_reference, manufacturer, category, packaging, mrp, enrichment_status, enrichment_confidence)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [adjustedName, cleanApi || null, cleanMfr || null, cleanCategory || null,
+         cleanPackaging || null, cleanMrp || null, enrichmentStatus, enrichmentConfidence]
       );
-      const newMed = await db.get('SELECT * FROM medicines WHERE id = ?', [result.lastID]);
-      await dbManager.close();
-      return res.json({ success: true, data: newMed, isNew: true });
+      medId = result.lastID as number;
+      isNew = true;
     }
+
+    const savedMed = await db.get('SELECT * FROM medicines WHERE id = ?', [medId]);
+    await dbManager.close();
+
+    // SSE notification so the pharmacist sees a badge on the Composition Queue page
+    if (enrichmentStatus === 'needs_review') {
+      const { eventService } = await import('../services/eventService.js');
+      eventService.broadcast('notification', {
+        type: 'internet_medicine_staged',
+        message: `"${adjustedName}" imported from internet — composition needs review`,
+        link: '/composition-queue'
+      });
+    }
+
+    return res.json({ success: true, data: savedMed, isNew, enrichmentStatus, enrichmentConfidence });
   } catch (error) {
     await dbManager.close();
     console.error('Auto enrichment save failed:', error);

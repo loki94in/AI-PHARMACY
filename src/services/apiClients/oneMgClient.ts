@@ -6,6 +6,7 @@ export interface OnlineMedicineSuggestion {
   manufacturer: string;
   mrp: number;
   packaging: string;
+  category: string;
   source: '1mg' | 'Pharmeasy' | 'OpenFDA';
 }
 
@@ -30,6 +31,7 @@ export class OneMgClient extends BaseApiClient {
       manufacturer: item.manufacturer_name || item.marketer_name || '',
       mrp: parseFloat(item.price || item.mrp || '0') || 0,
       packaging: item.pack_size_label || item.pack_info || '',
+      category: item.category || item.therapeutic_class || item.sub_category || '',
       source: '1mg'
     };
   }
@@ -41,6 +43,7 @@ export class OneMgClient extends BaseApiClient {
       manufacturer: item.manufacturer || item.manufacturerName || '',
       mrp: parseFloat(item.mrp || item.price || '0') || 0,
       packaging: item.packForm || item.packSize || '',
+      category: item.category || item.therapeuticClass || '',
       source: 'Pharmeasy'
     };
   }

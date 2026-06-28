@@ -6,6 +6,7 @@ import { Search, ShoppingCart, Trash2, CheckCircle, Camera, Plus, X, Phone, Cale
 import AICamera from '../../components/AICamera';
 import BrandBanner from '../../components/POS/BrandBanner';
 import { api, apiClient } from '../../services/api';
+import { toastEvent } from '../../services/events';
 import { clearExpiryCache } from '../Expiry';
 
 // We will fetch common combinations dynamically instead of using hardcoded constants
@@ -997,26 +998,39 @@ const POS = () => {
       const res = await api.autoEnrich({
         name: sug.name,
         api_reference: sug.api_reference,
-        manufacturer: sug.manufacturer
+        manufacturer: sug.manufacturer,
+        category: sug.category,
+        packaging: sug.packaging,
+        mrp: sug.mrp
       });
-      
+
       const newMed = res.data;
-      
+
       addToCart({
         id: Date.now(),
         medicine_id: newMed.id,
         name: newMed.name,
         batch: 'B-GEN',
         expiry: '12/28',
-        mrp: 0,
+        mrp: sug.mrp || 0,
         costPrice: 0,
         salts: newMed.api_reference || 'Generic',
         packSize: 10
       });
-      
+
       setSearchTerm('');
       setOnlineResults([]);
       setSearchResults([]);
+
+      if (res.enrichmentStatus === 'needs_review') {
+        toastEvent.trigger(
+          `"${newMed.name}" added — composition needs review in Composition Queue`,
+          'info',
+          '/composition-queue'
+        );
+      } else {
+        toastEvent.trigger(`"${newMed.name}" imported & added to cart`, 'success');
+      }
     } catch (err: any) {
       alert(`Failed to auto-enrich medicine: ${err.message || 'Unknown error'}`);
     }
