@@ -31,6 +31,11 @@ export class WorkerSupervisor {
       scriptPath: path.resolve(__dirname, `runEmailPoller${ext}`),
       restartCount: 0,
     },
+    whatsapp: {
+      name: 'WhatsApp Worker',
+      scriptPath: path.resolve(__dirname, `runWhatsappWorker${ext}`),
+      restartCount: 0,
+    },
   };
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
@@ -69,6 +74,20 @@ export class WorkerSupervisor {
     }
   }
 
+  /** Send an IPC message to a specific named worker */
+  public sendToWorker(key: string, msg: any): void {
+    const config = this.workers[key];
+    if (!config?.instance) {
+      console.warn(`[WorkerSupervisor] Cannot send to ${key}: worker not running`);
+      return;
+    }
+    try {
+      config.instance.send(msg);
+    } catch (err) {
+      console.error(`[WorkerSupervisor] Failed to send message to ${config.name}:`, err);
+    }
+  }
+
   private spawnWorker(key: string): void {
     const config = this.workers[key];
     if (config.instance) return;
@@ -86,10 +105,15 @@ export class WorkerSupervisor {
 
       config.instance = child;
 
-      // Handle message from child (heartbeat pongs)
+      // Handle message from child (heartbeat pongs + worker-specific routing)
       child.on('message', (msg: any) => {
         if (msg && msg.type === 'PONG') {
           config.lastPongTime = Date.now();
+        }
+        if (key === 'whatsapp' && msg && msg.type !== 'PONG') {
+          import('../services/whatsappWorkerBridge.js')
+            .then(({ whatsappWorkerBridge }) => whatsappWorkerBridge.handleWorkerMessage(msg))
+            .catch(err => console.error('[WorkerSupervisor] Failed to route WA message:', err));
         }
       });
 

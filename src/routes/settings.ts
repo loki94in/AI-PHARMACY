@@ -80,21 +80,22 @@ router.post('/save', async (req, res) => {
       });
     }
 
-    // If WhatsApp settings changed, hot-reload WhatsApp connection state
+    // If WhatsApp settings changed, hot-reload WhatsApp connection state via worker
     const hasWhatsappKey = keys.some(k => k === 'whatsapp_enabled' || k === 'whatsapp_preferred_system' || k === 'wa_business_enabled');
     if (hasWhatsappKey) {
       (async () => {
         try {
-          const { initClient, destroyClient, shouldRouteToBusiness } = await import('../whatsappClient.js');
+          const { shouldRouteToBusiness } = await import('../whatsappClient.js');
+          const { whatsappWorkerBridge } = await import('../services/whatsappWorkerBridge.js');
           const enabled = payload['whatsapp_enabled'] === 'true';
           const useBusiness = await shouldRouteToBusiness();
 
           if (useBusiness || !enabled) {
             console.log('[Settings] WhatsApp Business API preferred or WhatsApp Web disabled. Shutting down automated client...');
-            await destroyClient();
+            whatsappWorkerBridge.sendCommand('WA_DESTROY');
           } else {
-            console.log('[Settings] Automated WhatsApp Web enabled. Re-initializing client...');
-            await initClient().catch(err => console.error('[Settings] WhatsApp Web initialization failed:', err));
+            console.log('[Settings] Automated WhatsApp Web enabled. Re-initializing client via worker...');
+            whatsappWorkerBridge.sendCommand('WA_INIT');
           }
         } catch (err) {
           console.error('[Settings] Failed to hot-reload WhatsApp config:', err);

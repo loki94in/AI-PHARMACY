@@ -246,19 +246,8 @@ ensureSchema(DB_PATH).then(async () => {
         if (isAutoEnabled) {
           console.log('Background automation is ENABLED in settings at startup. Running startup catch-up tasks...');
           
-          // 1. WhatsApp Pre-initialization
-          const waRow = await db.get("SELECT value FROM app_settings WHERE key = 'whatsapp_enabled'");
-          if (waRow && waRow.value === 'true') {
-            const { shouldRouteToBusiness } = await import('./whatsappClient.js');
-            const useBusiness = await shouldRouteToBusiness();
-            if (!useBusiness) {
-              console.log('WhatsApp Web (automated) is enabled, pre-initializing client in the background...');
-              const { initClient } = await import('./whatsappClient.js');
-              await initClient().catch(err => console.error('Background WhatsApp init failed:', err));
-            } else {
-              console.log('WhatsApp Business API is active. Skipping automated client pre-initialization.');
-            }
-          }
+          // 1. WhatsApp client is now managed by the WhatsApp worker process (runWhatsappWorker.ts).
+          //    The worker auto-initializes based on settings at startup; no main-process init needed.
 
           // 3. Startup catch-up expiry scan (checks for downtime near-expiry alerts)
           import('./services/expiryAlertService.js')
