@@ -22,8 +22,11 @@ import {
   Settings,
   Copy,
   Receipt,
+  Phone,
+  Package,
+  CheckCheck,
 } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, apiClient } from '../../services/api';
 import type { Refill, AutomationNotification } from '../../services/api';
 import { toastEvent } from '../../services/events';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
@@ -31,6 +34,36 @@ import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 // Module-level cache to persist data across page navigation (unmount/remount)
 let cachedRefills: Refill[] = [];
 let cachedLogs: AutomationNotification[] = [];
+
+function composeRefillMessage(refill: any): string {
+  const medNames = (refill.items || [])
+    .map((it: any) => it.medicine_name || it.name || '')
+    .filter(Boolean)
+    .join(', ') || refill.medicine_name || 'your prescription';
+  return `Hello ${refill.patient_name}, your prescription refill for ${medNames} is now ready and in stock! Please visit the pharmacy to collect it.`;
+}
+
+function openWhatsAppManual(phone: string, message: string) {
+  const cleaned = phone.replace(/\D/g, '');
+  const number = cleaned.startsWith('91') ? cleaned : `91${cleaned}`;
+  window.open(`https://wa.me/${number}?text=${encodeURIComponent(message)}`, '_blank');
+}
+
+function getStockStatus(refill: any): { label: string; cls: string } {
+  if (refill.is_ready === 1)
+    return { label: 'Ready', cls: 'bg-green/15 text-green border-green/25' };
+  if (refill.hold_for_stock === 1)
+    return { label: 'Waiting Stock', cls: 'bg-amber/15 text-amber border-amber/25' };
+  const due = refill.next_refill_date ? new Date(refill.next_refill_date) : null;
+  if (due) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = Math.floor((due.getTime() - today.getTime()) / 86400000);
+    if (diff < 0) return { label: 'Overdue', cls: 'bg-red/15 text-red border-red/25' };
+    if (diff <= 3) return { label: 'Due Soon', cls: 'bg-sky/15 text-sky border-sky/25' };
+  }
+  return { label: 'Scheduled', cls: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/25' };
+}
 
 const AutomationCenter = () => {
   const navigate = useNavigate();
@@ -64,16 +97,29 @@ const AutomationCenter = () => {
   // Manual Send Details Dialog State
   const [manualSendNotification, setManualSendNotification] = useState<AutomationNotification | null>(null);
 
+  // Stock check & manual message preview
+  const [expandedMessageId, setExpandedMessageId] = useState<number | null>(null);
+  const [checkingStock, setCheckingStock] = useState(false);
+  const [stockFilter, setStockFilter] = useState<'all' | 'ready' | 'waiting' | 'overdue'>('all');
+
   const filteredRefills = useMemo(() => {
     const term = refillSearch.toLowerCase();
-    if (!term) return refills;
-    return refills.filter(r =>
-      r.patient_name.toLowerCase().includes(term) ||
-      r.patient_phone.includes(term) ||
-      (r.items && r.items.some(it => (it.medicine_name || it.name || '').toLowerCase().includes(term))) ||
-      (r.medicine_name && r.medicine_name.toLowerCase().includes(term))
-    );
-  }, [refills, refillSearch]);
+    let result = term
+      ? refills.filter(r =>
+          r.patient_name.toLowerCase().includes(term) ||
+          r.patient_phone.includes(term) ||
+          (r.items && r.items.some(it => (it.medicine_name || it.name || '').toLowerCase().includes(term))) ||
+          (r.medicine_name && r.medicine_name.toLowerCase().includes(term))
+        )
+      : refills;
+    if (stockFilter === 'ready') result = result.filter(r => r.is_ready === 1);
+    if (stockFilter === 'waiting') result = result.filter(r => r.hold_for_stock === 1);
+    if (stockFilter === 'overdue') {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      result = result.filter(r => r.next_refill_date && new Date(r.next_refill_date) < today && r.is_ready !== 1);
+    }
+    return result;
+  }, [refills, refillSearch, stockFilter]);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
     toastEvent.trigger(message, type === 'success' ? 'automation' : type, '/automation-center');
@@ -383,6 +429,19 @@ const AutomationCenter = () => {
     showToast('Copied to clipboard!', 'success');
   }, [showToast]);
 
+  const handleCheckStock = useCallback(async () => {
+    setCheckingStock(true);
+    try {
+      await apiClient.post('/refills/check');
+      await fetchRefills();
+      showToast('Stock check complete! Patient statuses updated.', 'success');
+    } catch {
+      showToast('Stock check failed.', 'error');
+    } finally {
+      setCheckingStock(false);
+    }
+  }, [fetchRefills, showToast]);
+
   const getLogTypeLabel = useCallback((type: string) => {
     switch (type) {
       case 'refill_reminder':
@@ -454,41 +513,81 @@ const AutomationCenter = () => {
 
       {activeTab === 'reminders' && (
         <div className="flex-1 flex flex-col min-h-0 glass-panel bg-white/5 border-glass-border">
-          <div className="p-4 border-b border-glass-border bg-black/10 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="absolute left-3 top-2.5 text-muted" size={14} />
-              <input
-                type="text"
-                value={refillSearch}
-                onChange={e => setRefillSearch(e.target.value)}
-                placeholder="Search patient, phone, medicine..."
-                className="premium-input pl-9 pr-4 py-1.5 text-xs w-full"
-              />
+          <div className="p-4 border-b border-glass-border bg-black/10 shrink-0 space-y-3">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative w-full sm:max-w-xs">
+                <Search className="absolute left-3 top-2.5 text-muted" size={14} />
+                <input
+                  type="text"
+                  value={refillSearch}
+                  onChange={e => setRefillSearch(e.target.value)}
+                  placeholder="Search patient, phone, medicine..."
+                  className="premium-input pl-9 pr-4 py-1.5 text-xs w-full"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  onClick={fetchRefills}
+                  className="p-2 rounded-xl bg-white/5 border border-glass-border hover:bg-white/10 hover:text-text text-muted transition-all"
+                  title="Refresh List"
+                >
+                  <RefreshCw size={14} />
+                </button>
+                <button
+                  onClick={handleCheckStock}
+                  disabled={checkingStock}
+                  className="premium-btn bg-amber/20 border border-amber/40 text-amber hover:bg-amber/30 px-3 py-2 text-xs flex items-center gap-1.5 disabled:opacity-50"
+                  title="Run stock check — updates Ready / Waiting status for all patients"
+                >
+                  {checkingStock ? <RefreshCw size={13} className="animate-spin" /> : <Package size={13} />}
+                  Check Stock
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingRefillId(null);
+                    setPatientName('');
+                    setPatientPhone('');
+                    setRefillInterval(30);
+                    setMedicineQuery('');
+                    setSelectedMedicines([]);
+                    setShowReminderModal(true);
+                  }}
+                  className="premium-btn bg-primary text-white shadow-[0_4px_14px_rgba(14,165,233,0.35)] px-4 py-2 text-xs flex items-center gap-1.5"
+                >
+                  <Plus size={14} />
+                  Create Refill reminder
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <button
-                onClick={fetchRefills}
-                className="p-2 rounded-xl bg-white/5 border border-glass-border hover:bg-white/10 hover:text-text text-muted transition-all"
-                title="Refresh List"
-              >
-                <RefreshCw size={14} />
-              </button>
-              <button
-                onClick={() => {
-                  setEditingRefillId(null);
-                  setPatientName('');
-                  setPatientPhone('');
-                  setRefillInterval(30);
-                  setMedicineQuery('');
-                  setSelectedMedicines([]);
-                  setShowReminderModal(true);
-                }}
-                className="premium-btn bg-primary text-white shadow-[0_4px_14px_rgba(14,165,233,0.35)] px-4 py-2 text-xs flex items-center gap-1.5"
-              >
-                <Plus size={14} />
-                Create Refill reminder
-              </button>
+            {/* Stock filter chips */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-muted font-bold uppercase tracking-wider shrink-0">Show:</span>
+              {([
+                { key: 'all', label: 'All Patients' },
+                { key: 'ready', label: '✓ Ready to Notify' },
+                { key: 'waiting', label: 'Waiting for Stock' },
+                { key: 'overdue', label: 'Overdue' },
+              ] as const).map(({ key, label }) => {
+                const count = key === 'all' ? refills.length
+                  : key === 'ready' ? refills.filter(r => r.is_ready === 1).length
+                  : key === 'waiting' ? refills.filter(r => r.hold_for_stock === 1).length
+                  : refills.filter(r => { const t = new Date(); t.setHours(0,0,0,0); return r.next_refill_date && new Date(r.next_refill_date) < t && r.is_ready !== 1; }).length;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setStockFilter(key)}
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all ${
+                      stockFilter === key
+                        ? 'bg-primary/20 border-primary text-primary'
+                        : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
+                    }`}
+                  >
+                    {label} <span className="font-mono opacity-70">({count})</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -500,6 +599,7 @@ const AutomationCenter = () => {
                   <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Medicines</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Refill Cycles</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Next Due</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Stock</th>
                   <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Status</th>
                   <th className="p-4 text-xs font-bold text-muted border-b border-glass-border text-right">Actions</th>
                 </tr>
@@ -520,94 +620,147 @@ const AutomationCenter = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredRefills.map(refill => (
-                    <tr key={refill.id} className="hover:bg-white/5 border-b border-glass-border/30 transition-all align-top">
-                      <td className="p-4">
-                        <div className="font-bold text-text">{refill.patient_name}</div>
-                        <div className="text-[10px] text-muted font-mono mt-0.5">{refill.patient_phone}</div>
-                        <div className="text-[10px] text-muted mt-1">{(refill.items || []).length} medicine{(refill.items || []).length !== 1 ? 's' : ''}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex flex-col gap-1.5">
-                          {(refill.items || []).map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${refill.is_active === 1 ? 'bg-green' : 'bg-zinc-500'}`} />
-                              <div className="min-w-0">
-                                <span className="font-semibold text-text truncate max-w-[180px] block" title={item.medicine_name || item.name || `Medicine ID: ${item.medicine_id}`}>
-                                  {item.medicine_name || item.name || `Medicine ID: ${item.medicine_id}`}
-                                </span>
-                                <span className="text-[10px] text-muted">qty: {item.qty || 10} units</span>
-                              </div>
+                  filteredRefills.map(refill => {
+                    const stock = getStockStatus(refill);
+                    const msg = composeRefillMessage(refill);
+                    const isExpanded = expandedMessageId === refill.id;
+                    return (
+                      <React.Fragment key={refill.id}>
+                        <tr className={`border-b border-glass-border/30 transition-all align-top ${isExpanded ? 'bg-white/[0.08]' : 'hover:bg-white/5'}`}>
+                          <td className="p-4">
+                            <div className="font-bold text-text">{refill.patient_name}</div>
+                            <div className="text-[10px] text-muted font-mono mt-0.5">{refill.patient_phone}</div>
+                            <div className="text-[10px] text-muted mt-1">{(refill.items || []).length} medicine{(refill.items || []).length !== 1 ? 's' : ''}</div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col gap-1.5">
+                              {(refill.items || []).map((item, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${refill.is_active === 1 ? 'bg-green' : 'bg-zinc-500'}`} />
+                                  <div className="min-w-0">
+                                    <span className="font-semibold text-text truncate max-w-[180px] block" title={item.medicine_name || item.name || `Medicine ID: ${item.medicine_id}`}>
+                                      {item.medicine_name || item.name || `Medicine ID: ${item.medicine_id}`}
+                                    </span>
+                                    <span className="text-[10px] text-muted">qty: {item.qty || 10} units</span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-4 text-center">
-                        <input
-                          type="number"
-                          min="0"
-                          max="180"
-                          value={refill.refill_interval_days}
-                          onChange={e => handleSaveIntervalInline(refill.id, parseInt(e.target.value) || 30)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                          }}
-                          className="w-16 text-center font-mono font-bold bg-black/40 border border-glass-border/60 rounded px-1.5 py-0.5 text-text focus:outline-none focus:border-primary/50"
-                        />
-                      </td>
-                      <td className="p-4 font-mono font-medium text-text select-none">
-                        {refill.next_refill_date ? new Date(refill.next_refill_date).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td className="p-4 text-center">
-                        <button
-                          onClick={() => handleToggleActive(refill)}
-                          className={`px-2.5 py-0.5 rounded-xl text-[10px] font-bold border inline-flex items-center justify-center gap-1 transition-all ${
-                            refill.is_active === 1
-                              ? 'bg-green/10 border-green/30 text-green hover:bg-green/20'
-                              : 'bg-zinc-500/10 border-glass-border text-muted hover:bg-white/5'
-                          }`}
-                        >
-                          {refill.is_active === 1 ? <Play size={9} /> : <Pause size={9} />}
-                          {refill.is_active === 1 ? 'Active' : 'Paused'}
-                        </button>
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex gap-1 justify-end">
-                          <button
-                            onClick={() => {
-                              navigate(`/pos?refillId=${refill.id}`);
-                            }}
-                            className="p-1.5 rounded-lg bg-green/10 border border-green/30 text-green hover:bg-green/20 transition-all flex items-center gap-1"
-                            title="Bill Refill"
-                          >
-                            <Receipt size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleSendNow(refill.id)}
-                            disabled={refill.is_active !== 1}
-                            className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky hover:bg-sky-500/20 disabled:opacity-40 transition-all flex items-center gap-1"
-                            title="Send WhatsApp now"
-                          >
-                            <Send size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleEditReminderClick(refill)}
-                            className="p-1.5 rounded-lg bg-white/5 border border-glass-border hover:bg-white/10 text-muted hover:text-text transition-all"
-                            title="Edit reminder"
-                          >
-                            <Settings size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteReminder(refill.id)}
-                            className="p-1.5 rounded-lg bg-red/10 border border-red/20 hover:bg-red/20 text-red transition-all"
-                            title="Delete"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                          </td>
+                          <td className="p-4 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max="180"
+                              value={refill.refill_interval_days}
+                              onChange={e => handleSaveIntervalInline(refill.id, parseInt(e.target.value) || 30)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              }}
+                              className="w-16 text-center font-mono font-bold bg-black/40 border border-glass-border/60 rounded px-1.5 py-0.5 text-text focus:outline-none focus:border-primary/50"
+                            />
+                          </td>
+                          <td className="p-4 font-mono font-medium text-text select-none">
+                            {refill.next_refill_date ? new Date(refill.next_refill_date).toLocaleDateString() : 'N/A'}
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${stock.cls}`}>
+                              {stock.label === 'Ready' && <CheckCheck size={9} className="mr-1" />}
+                              {stock.label}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                            <button
+                              onClick={() => handleToggleActive(refill)}
+                              className={`px-2.5 py-0.5 rounded-xl text-[10px] font-bold border inline-flex items-center justify-center gap-1 transition-all ${
+                                refill.is_active === 1
+                                  ? 'bg-green/10 border-green/30 text-green hover:bg-green/20'
+                                  : 'bg-zinc-500/10 border-glass-border text-muted hover:bg-white/5'
+                              }`}
+                            >
+                              {refill.is_active === 1 ? <Play size={9} /> : <Pause size={9} />}
+                              {refill.is_active === 1 ? 'Active' : 'Paused'}
+                            </button>
+                          </td>
+                          <td className="p-4 text-right">
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => navigate(`/pos?refillId=${refill.id}`)}
+                                className="p-1.5 rounded-lg bg-green/10 border border-green/30 text-green hover:bg-green/20 transition-all"
+                                title="Bill Refill"
+                              >
+                                <Receipt size={12} />
+                              </button>
+                              <button
+                                onClick={() => setExpandedMessageId(isExpanded ? null : refill.id)}
+                                className={`p-1.5 rounded-lg border transition-all ${
+                                  isExpanded
+                                    ? 'bg-primary/20 border-primary text-primary'
+                                    : 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20'
+                                }`}
+                                title="Preview message — copy or open in WhatsApp manually"
+                              >
+                                <MessageSquare size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleSendNow(refill.id)}
+                                disabled={refill.is_active !== 1}
+                                className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky hover:bg-sky-500/20 disabled:opacity-40 transition-all"
+                                title="Auto-send via WhatsApp"
+                              >
+                                <Send size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleEditReminderClick(refill)}
+                                className="p-1.5 rounded-lg bg-white/5 border border-glass-border hover:bg-white/10 text-muted hover:text-text transition-all"
+                                title="Edit reminder"
+                              >
+                                <Settings size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteReminder(refill.id)}
+                                className="p-1.5 rounded-lg bg-red/10 border border-red/20 hover:bg-red/20 text-red transition-all"
+                                title="Delete"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="border-b border-primary/20 bg-primary/5">
+                            <td colSpan={7} className="px-5 pb-4 pt-2">
+                              <div className="flex flex-col gap-2.5">
+                                <p className="text-[10px] font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                                  <MessageSquare size={10} /> Message to share manually — after physical stock check
+                                </p>
+                                <div className="bg-black/30 border border-primary/20 rounded-xl p-3 text-sm text-text/90 leading-relaxed font-medium select-all cursor-text">
+                                  {msg}
+                                </div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                    onClick={() => { navigator.clipboard.writeText(msg); showToast('Message copied!', 'success'); }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-700/60 border border-glass-border text-xs font-semibold text-text hover:bg-zinc-700 transition-all"
+                                  >
+                                    <Copy size={11} /> Copy Text
+                                  </button>
+                                  <button
+                                    onClick={() => openWhatsAppManual(refill.patient_phone, msg)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green/15 border border-green/30 text-xs font-semibold text-green hover:bg-green/25 transition-all"
+                                  >
+                                    <Phone size={11} /> Open in WhatsApp
+                                  </button>
+                                  <span className="text-[10px] text-muted">
+                                    → <span className="font-mono text-text/60">{refill.patient_phone}</span>
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
