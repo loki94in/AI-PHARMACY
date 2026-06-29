@@ -59,6 +59,7 @@ interface SettingsData {
   prToken: string;
   prMode: string;
   firecrawlApiKeys: string[];
+  firecrawlDailyLimit: number;
   defaultTaxRate: number;
   invoicePrefix: string;
   autoPrint: boolean;
@@ -109,6 +110,7 @@ const Settings = () => {
     prToken: '',
     prMode: 'Live',
     firecrawlApiKeys: [],
+    firecrawlDailyLimit: 30,
     defaultTaxRate: 18,
     invoicePrefix: 'INV-',
     autoPrint: false,
@@ -152,6 +154,7 @@ const Settings = () => {
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [firecrawlExhaustedKeys, setFirecrawlExhaustedKeys] = useState<string[]>([]);
+  const [firecrawlDailyUsage, setFirecrawlDailyUsage] = useState<Record<string, { date: string; count: number }>>({});
   const [newFirecrawlKey, setNewFirecrawlKey] = useState('');
 
   // Generic helper to update settings fields
@@ -188,6 +191,7 @@ const Settings = () => {
   const setPrToken = (val: string | ((p: string) => string)) => updateSetting('prToken', val);
   const setPrMode = (val: string | ((p: string) => string)) => updateSetting('prMode', val);
   const setFirecrawlApiKeys = (val: string[] | ((p: string[]) => string[])) => updateSetting('firecrawlApiKeys', val as any);
+  const setFirecrawlDailyLimit = (val: number | ((p: number) => number)) => updateSetting('firecrawlDailyLimit', val);
   const setDefaultTaxRate = (val: number | ((p: number) => number)) => updateSetting('defaultTaxRate', val);
   const setInvoicePrefix = (val: string | ((p: string) => string)) => updateSetting('invoicePrefix', val);
   const setAutoPrint = (val: boolean | ((p: boolean) => boolean)) => updateSetting('autoPrint', val);
@@ -236,6 +240,7 @@ const Settings = () => {
     prToken,
     prMode,
     firecrawlApiKeys,
+    firecrawlDailyLimit,
     defaultTaxRate,
     invoicePrefix,
     autoPrint,
@@ -353,6 +358,13 @@ const Settings = () => {
               if (Array.isArray(ex)) setFirecrawlExhaustedKeys(ex);
             } catch {}
           }
+          setFirecrawlDailyLimit(Number(data.firecrawl_daily_limit) || 30);
+          if (data.firecrawl_daily_usage) {
+            try {
+              const usage = JSON.parse(data.firecrawl_daily_usage);
+              if (usage && typeof usage === 'object') setFirecrawlDailyUsage(usage);
+            } catch {}
+          }
         }
       } catch (error) {
         console.error('Failed to load settings', error);
@@ -450,6 +462,7 @@ const Settings = () => {
       // Internet Data Sources
       firecrawl_api_keys: JSON.stringify(firecrawlApiKeys),
       firecrawl_exhausted_keys: JSON.stringify(firecrawlExhaustedKeys),
+      firecrawl_daily_limit: firecrawlDailyLimit.toString(),
     };
 
     try {
@@ -1123,7 +1136,45 @@ const Settings = () => {
           Pharmarack is always tried first if logged in. Firecrawl is the HTML-scrape fallback for other Indian pharmacy sites.
         </p>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {/* Daily credit limit */}
+          <div className="space-y-2">
+            <label htmlFor="fcDailyLimit" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Daily Credit Limit per Key
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                id="fcDailyLimit"
+                type="number"
+                min={0}
+                max={1000}
+                className="premium-input w-32 text-center font-mono text-sm"
+                value={firecrawlDailyLimit}
+                onChange={(e) => setFirecrawlDailyLimit(Math.max(0, Number(e.target.value)))}
+              />
+              <span className="text-xs text-muted">
+                scrapes / day per key
+              </span>
+            </div>
+            <p className="text-[11px] text-muted leading-relaxed">
+              {firecrawlDailyLimit > 0
+                ? <>
+                    <span className="text-green font-semibold">{firecrawlDailyLimit} scrapes/day</span>
+                    {' '}× 31 days ={' '}
+                    <span className={firecrawlDailyLimit * 31 > 1000 ? 'text-red font-semibold' : 'text-green font-semibold'}>
+                      {firecrawlDailyLimit * 31} credits/month
+                    </span>
+                    {firecrawlDailyLimit * 31 > 1000
+                      ? ' — exceeds the 1,000 credit free tier! Lower the limit.'
+                      : ' — safely within the 1,000 credit free tier.'}
+                    {' '}When a key hits its daily budget the app rotates to the next key automatically.
+                  </>
+                : <span className="text-amber font-semibold">No daily limit set — keys will run until monthly quota is hit.</span>
+              }
+            </p>
+          </div>
+
+          {/* API key list */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-muted uppercase tracking-wider">
@@ -1143,14 +1194,34 @@ const Settings = () => {
             {firecrawlApiKeys.length > 0 ? (
               <div className="space-y-2">
                 {firecrawlApiKeys.map((key, idx) => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const usageEntry = firecrawlDailyUsage[key];
+                  const usedToday = usageEntry?.date === today ? usageEntry.count : 0;
                   const isExhausted = firecrawlExhaustedKeys.includes(key);
+                  const atDailyLimit = firecrawlDailyLimit > 0 && usedToday >= firecrawlDailyLimit;
                   const masked = key.length > 10 ? `${key.slice(0, 3)}...${key.slice(-6)}` : key;
+
+                  let badgeLabel: string;
+                  let badgeClass: string;
+                  if (isExhausted) {
+                    badgeLabel = 'Exhausted';
+                    badgeClass = 'bg-red/15 text-red';
+                  } else if (atDailyLimit) {
+                    badgeLabel = `Paused · ${usedToday}/${firecrawlDailyLimit} today`;
+                    badgeClass = 'bg-amber/15 text-amber';
+                  } else {
+                    badgeLabel = firecrawlDailyLimit > 0 && usedToday > 0
+                      ? `Active · ${usedToday}/${firecrawlDailyLimit} today`
+                      : 'Active';
+                    badgeClass = 'bg-green/15 text-green';
+                  }
+
                   return (
                     <div key={idx} className="flex items-center gap-2 p-2.5 rounded-lg bg-zinc-900/40 border border-glass-border/30">
                       <Key size={13} className="text-muted shrink-0" />
                       <span className="flex-1 font-mono text-sm text-text/80 truncate">{masked}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isExhausted ? 'bg-red/15 text-red' : 'bg-green/15 text-green'}`}>
-                        {isExhausted ? 'Exhausted' : 'Active'}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${badgeClass}`}>
+                        {badgeLabel}
                       </span>
                       <button
                         type="button"
@@ -1197,8 +1268,9 @@ const Settings = () => {
 
             <p className="text-xs text-muted leading-relaxed">
               Free tier: <span className="text-green font-semibold">1,000 credits/month per key</span>.
-              When a key runs out the app auto-rotates to the next active key — just add another.
-              Get free keys at <span className="text-primary font-mono">firecrawl.dev</span> → Sign Up → Dashboard → API Keys.
+              Add as many keys as you need — the app automatically rotates when a key's daily budget is reached
+              or when the monthly quota runs out. Get free keys at{' '}
+              <span className="text-primary font-mono">firecrawl.dev</span> → Sign Up → Dashboard → API Keys.
             </p>
           </div>
         </div>

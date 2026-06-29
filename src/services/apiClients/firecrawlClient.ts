@@ -3,6 +3,8 @@ import { BaseApiClient, EnrichedProductData } from './baseApiClient.js';
 import type { OnlineMedicineSuggestion } from './oneMgClient.js';
 import { dbManager } from '../../database/connection.js';
 
+const TODAY = () => new Date().toISOString().slice(0, 10);
+
 async function getFirecrawlKeys(): Promise<string[]> {
   try {
     const db = await dbManager.getConnection();
@@ -47,6 +49,52 @@ async function markKeyExhausted(key: string): Promise<void> {
     }
   } catch (err) {
     console.error('[Firecrawl] Failed to persist exhausted key:', err);
+  }
+}
+
+async function getDailyLimit(): Promise<number> {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_daily_limit'");
+    if (row?.value) {
+      const n = parseInt(row.value, 10);
+      if (!isNaN(n) && n >= 0) return n;
+    }
+  } catch {}
+  return 30;
+}
+
+type DailyUsageMap = Record<string, { date: string; count: number }>;
+
+async function getDailyUsage(key: string): Promise<number> {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_daily_usage'");
+    if (row?.value) {
+      const usage = JSON.parse(row.value) as DailyUsageMap;
+      const entry = usage[key];
+      if (entry && entry.date === TODAY()) return entry.count;
+    }
+  } catch {}
+  return 0;
+}
+
+async function incrementDailyUsage(key: string): Promise<void> {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_daily_usage'");
+    const usage: DailyUsageMap = row?.value ? JSON.parse(row.value) : {};
+    const today = TODAY();
+    if (!usage[key] || usage[key].date !== today) {
+      usage[key] = { date: today, count: 0 };
+    }
+    usage[key].count++;
+    await db.run(
+      "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('firecrawl_daily_usage', ?)",
+      JSON.stringify(usage)
+    );
+  } catch (err) {
+    console.error('[Firecrawl] Failed to update daily usage:', err);
   }
 }
 
@@ -104,7 +152,8 @@ export class FirecrawlClient extends BaseApiClient {
     const allKeys = await getFirecrawlKeys();
     if (!allKeys.length) return [];
 
-    const exhausted = await getExhaustedKeys();
+    const [exhausted, dailyLimit] = await Promise.all([getExhaustedKeys(), getDailyLimit()]);
+
     const activeKeys = allKeys.filter(k => !exhausted.has(k));
     if (!activeKeys.length) {
       console.warn('[Firecrawl] All API keys are exhausted — add a new key in Settings > Internet Data Sources');
@@ -114,6 +163,15 @@ export class FirecrawlClient extends BaseApiClient {
     const encoded = encodeURIComponent(medicineName);
 
     for (const apiKey of activeKeys) {
+      // Soft daily budget: rotate before hitting the monthly hard cap
+      if (dailyLimit > 0) {
+        const usedToday = await getDailyUsage(apiKey);
+        if (usedToday >= dailyLimit) {
+          console.log(`[Firecrawl] Key ...${apiKey.slice(-6)} at daily limit (${usedToday}/${dailyLimit}) — rotating to next key`);
+          continue;
+        }
+      }
+
       const app = new Firecrawl({ apiKey });
       let quotaHit = false;
 
@@ -126,6 +184,7 @@ export class FirecrawlClient extends BaseApiClient {
             onlyMainContent: true,
             timeout: 15000,
           });
+          await incrementDailyUsage(apiKey);
           const raw = doc.json as { suggestions?: any[] } | undefined;
           const items: any[] = raw?.suggestions || [];
           if (items.length > 0) {
@@ -147,13 +206,14 @@ export class FirecrawlClient extends BaseApiClient {
             await markKeyExhausted(apiKey);
             quotaHit = true;
           } else {
+            await incrementDailyUsage(apiKey); // failed scrape may still count as a credit
             console.warn(`[Firecrawl] Scrape failed for ${url.split('?')[0]}:`, err.message);
           }
         }
       }
 
       if (!quotaHit) {
-        // Key is active but returned no results from any target site
+        // Key is active and within budget but no results from any target site
         return [];
       }
       // quotaHit — try the next key
