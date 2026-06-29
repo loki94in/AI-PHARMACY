@@ -308,6 +308,13 @@ router.get('/online-search', async (req, res) => {
     if (!isOnline) {
       return res.json([]);
     }
+    // Primary: Pharmarack (official credentials, real Indian medicine data)
+    const { PharmarackClient } = await import('../services/apiClients/pharmarackClient.js');
+    const prResults = await new PharmarackClient().searchSuggestions(query);
+    if (prResults.length > 0) {
+      return res.json(prResults);
+    }
+    // Secondary: 1mg + Pharmeasy JSON APIs
     const { OneMgClient } = await import('../services/apiClients/oneMgClient.js');
     const client = new OneMgClient();
     const results = await client.searchSuggestions(query);
