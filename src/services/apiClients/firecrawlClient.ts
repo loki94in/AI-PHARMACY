@@ -1,6 +1,16 @@
 import { Firecrawl } from 'firecrawl';
 import { BaseApiClient, EnrichedProductData } from './baseApiClient.js';
 import type { OnlineMedicineSuggestion } from './oneMgClient.js';
+import { dbManager } from '../../database/connection.js';
+
+async function getFirecrawlApiKey(): Promise<string> {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_api_key'");
+    if (row?.value) return row.value as string;
+  } catch {}
+  return process.env.FIRECRAWL_API_KEY || '';
+}
 
 const MEDICINE_SCHEMA = {
   type: 'object',
@@ -38,22 +48,19 @@ const EXTRACT_PROMPT =
 
 export class FirecrawlClient extends BaseApiClient {
   name = 'Firecrawl';
-  private app: Firecrawl | null = null;
-
-  constructor() {
-    super();
-    const apiKey = process.env.FIRECRAWL_API_KEY;
-    if (apiKey) this.app = new Firecrawl({ apiKey });
-  }
 
   async searchSuggestions(medicineName: string): Promise<OnlineMedicineSuggestion[]> {
-    if (!this.app || !medicineName || medicineName.length < 2) return [];
+    if (!medicineName || medicineName.length < 2) return [];
+    const apiKey = await getFirecrawlApiKey();
+    if (!apiKey) return [];
+
+    const app = new Firecrawl({ apiKey });
     const encoded = encodeURIComponent(medicineName);
 
     for (const urlFn of SCRAPE_TARGETS) {
       const url = urlFn(encoded);
       try {
-        const doc = await this.app.scrape(url, {
+        const doc = await app.scrape(url, {
           formats: [{ type: 'json', prompt: EXTRACT_PROMPT, schema: MEDICINE_SCHEMA }],
           onlyMainContent: true,
           timeout: 15000,

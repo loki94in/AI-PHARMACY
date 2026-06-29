@@ -56,6 +56,7 @@ interface SettingsData {
   prPassword: string;
   prToken: string;
   prMode: string;
+  firecrawlApiKey: string;
   defaultTaxRate: number;
   invoicePrefix: string;
   autoPrint: boolean;
@@ -105,6 +106,7 @@ const Settings = () => {
     prPassword: '',
     prToken: '',
     prMode: 'Live',
+    firecrawlApiKey: '',
     defaultTaxRate: 18,
     invoicePrefix: 'INV-',
     autoPrint: false,
@@ -181,6 +183,7 @@ const Settings = () => {
   const setPrPassword = (val: string | ((p: string) => string)) => updateSetting('prPassword', val);
   const setPrToken = (val: string | ((p: string) => string)) => updateSetting('prToken', val);
   const setPrMode = (val: string | ((p: string) => string)) => updateSetting('prMode', val);
+  const setFirecrawlApiKey = (val: string | ((p: string) => string)) => updateSetting('firecrawlApiKey', val);
   const setDefaultTaxRate = (val: number | ((p: number) => number)) => updateSetting('defaultTaxRate', val);
   const setInvoicePrefix = (val: string | ((p: string) => string)) => updateSetting('invoicePrefix', val);
   const setAutoPrint = (val: boolean | ((p: boolean) => boolean)) => updateSetting('autoPrint', val);
@@ -228,6 +231,7 @@ const Settings = () => {
     prPassword,
     prToken,
     prMode,
+    firecrawlApiKey,
     defaultTaxRate,
     invoicePrefix,
     autoPrint,
@@ -329,6 +333,9 @@ const Settings = () => {
           setPrPassword(data.pharmarack_password || '');
           setPrToken(data.pharmarack_session_token || '');
           setPrMode(data.pharmarack_mode || 'Live');
+
+          // Internet Data Sources
+          setFirecrawlApiKey(data.firecrawl_api_key || '');
         }
       } catch (error) {
         console.error('Failed to load settings', error);
@@ -422,6 +429,9 @@ const Settings = () => {
       pharmarack_password: prPassword,
       pharmarack_session_token: prToken,
       pharmarack_mode: prMode,
+
+      // Internet Data Sources
+      firecrawl_api_key: firecrawlApiKey,
     };
 
     try {
@@ -1083,6 +1093,66 @@ const Settings = () => {
 
 
 
+
+      {/* ─── Internet Data Sources ─── */}
+      <div className="glass-panel p-6">
+        <h3 className="font-bold flex items-center gap-2 mb-1">
+          <Database size={18} className="text-sky" />
+          Internet Data Sources
+        </h3>
+        <p className="text-xs text-muted mb-6">
+          Used to fetch medicine info (composition, manufacturer, MRP) when a product isn't found locally.
+          Pharmarack is always tried first if logged in. Firecrawl is the HTML-scrape fallback for other Indian pharmacy sites.
+        </p>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="firecrawlApiKey" className="text-xs font-bold text-muted uppercase tracking-wider">
+              Firecrawl API Key
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="firecrawlApiKey"
+                type="password"
+                className="premium-input flex-1 font-mono text-sm"
+                placeholder="fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                value={firecrawlApiKey}
+                onChange={(e) => setFirecrawlApiKey(e.target.value)}
+              />
+              {firecrawlApiKey && (
+                <button
+                  type="button"
+                  onClick={() => setFirecrawlApiKey('')}
+                  className="premium-btn bg-zinc-700 hover:bg-red-600/80 text-white px-3"
+                  title="Clear API key"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              Free tier: <span className="text-green font-semibold">1,000 credits/month</span> — enough for a pharmacy.
+              Get your free key at{' '}
+              <span className="text-primary font-mono">firecrawl.dev</span>
+              {' '}→ Sign Up → Dashboard → API Keys.
+              {firecrawlApiKey
+                ? <span className="ml-2 text-green font-semibold">✓ Key configured</span>
+                : <span className="ml-2 text-amber font-semibold">No key — Firecrawl fallback disabled</span>
+              }
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={handleSaveSettings}
+            className="premium-btn bg-green text-white shadow-[0_4px_14px_rgba(16,185,129,0.4)] hover:bg-emerald-600 flex items-center gap-2"
+          >
+            <Save size={16} />
+            Save Data Sources
+          </button>
+        </div>
+      </div>
 
       {/* ─── Background Automations ─── */}
       <div className="glass-panel p-6">
