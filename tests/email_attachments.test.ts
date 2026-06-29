@@ -91,4 +91,111 @@ describe('Email Attachments API', () => {
     expect(res.body.type).toBe('text');
     expect(res.body.content).toContain('Paracetamol 650mg');
   });
+
+  describe('isRealMedicineName validation', () => {
+    let emailServiceInstance: any;
+    
+    beforeAll(async () => {
+      const { emailService } = await import('../src/services/emailService.js');
+      emailServiceInstance = emailService;
+    });
+
+    test('accepts valid medicine names', () => {
+      expect(emailServiceInstance.isRealMedicineName('Paracetamol 650mg')).toBe(true);
+      expect(emailServiceInstance.isRealMedicineName('Amoxicillin 500mg')).toBe(true);
+      expect(emailServiceInstance.isRealMedicineName('Piracetam 800mg')).toBe(true);
+      expect(emailServiceInstance.isRealMedicineName('Crocin')).toBe(true);
+    });
+
+    test('rejects junk layout and billing names', () => {
+      expect(emailServiceInstance.isRealMedicineName('GRAND TOTAL')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('GST 18%')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('CGST 9%')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('Subtotal')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('Invoice Total')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('Discount 10%')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('ROUND OFF')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('Bank Details')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('Terms & Conditions')).toBe(false);
+      expect(emailServiceInstance.isRealMedicineName('18%')).toBe(false);
+    });
+
+    test('extractOrderInfo filters out junk lines from body text', () => {
+      const sampleEmail = {
+        subject: 'Order from Nitin Agency',
+        body: 'Here is the order summary:\n' +
+              'Paracetamol 650mg Qty: 10\n' +
+              'Amoxicillin 500mg Qty: 5\n' +
+              'Subtotal: 1200\n' +
+              'GST 18% Qty: 1\n' +
+              'Grand Total Qty: 1',
+        from: 'nitin@agency.com',
+        attachments: []
+      };
+      
+      const orderInfo = emailServiceInstance.extractOrderInfo(sampleEmail);
+      const medicineNames = orderInfo.medicines.map((m: any) => m.name);
+      
+      expect(medicineNames).toContain('Paracetamol 650mg');
+      expect(medicineNames).toContain('Amoxicillin 500mg');
+      expect(medicineNames).not.toContain('GST 18%');
+      expect(medicineNames).not.toContain('Grand Total');
+      expect(medicineNames).not.toContain('Subtotal');
+    });
+
+    test('cleanupIgnoredEmailsInDb deletes matching emails and attachments', async () => {
+      // 1. Initialize DB
+      const { open } = await import('sqlite');
+      const sqlite3 = await import('sqlite3');
+      const db = await open({ filename: dbPath, driver: sqlite3.default.Database });
+      
+      // 2. Insert ignored_emails setting
+      await db.run(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('ignored_emails', 'spam@distributor.com, block@sender.org')"
+      );
+
+      // 3. Insert mock emails (one to keep, one to ignore)
+      await db.run(
+        `INSERT INTO emails (uid, from_addr, subject, body, is_order) 
+         VALUES (2001, 'legit@distributor.com', 'Valid Order', 'Paracetamol 650mg x10', 1)`
+      );
+      await db.run(
+        `INSERT INTO emails (uid, from_addr, subject, body, is_order) 
+         VALUES (2002, 'spam@distributor.com', 'Junk Mail', 'Buy viagra', 0)`
+      );
+      await db.run(
+        `INSERT INTO emails (uid, from_addr, subject, body, is_order) 
+         VALUES (2003, 'other@block@sender.org', 'Blocked Address', 'Ignore me', 0)`
+      );
+
+      // 4. Insert mock attachments
+      await db.run(
+        `INSERT INTO email_attachments (uid, filename, local_path) 
+         VALUES (2002, 'spam.pdf', 'dummy_path_spam.pdf')`
+      );
+      await db.run(
+        `INSERT INTO email_attachments (uid, filename, local_path) 
+         VALUES (2001, 'invoice.pdf', 'dummy_path_invoice.pdf')`
+      );
+
+      // 5. Run the cleanup method
+      await emailServiceInstance.cleanupIgnoredEmailsInDb(db);
+
+      // 6. Verify that spam@distributor.com and block@sender.org emails and their attachments were deleted, but legit@distributor.com was preserved
+      const remainingEmails = await db.all('SELECT uid FROM emails WHERE uid IN (2001, 2002, 2003)');
+      const remainingAttachments = await db.all('SELECT id FROM email_attachments WHERE uid IN (2001, 2002, 2003)');
+
+      expect(remainingEmails.map(e => e.uid)).toContain(2001);
+      expect(remainingEmails.map(e => e.uid)).not.toContain(2002);
+      expect(remainingEmails.map(e => e.uid)).not.toContain(2003);
+
+      expect(remainingAttachments.length).toBe(1);
+
+      // Cleanup
+      await db.run("DELETE FROM emails WHERE uid IN (2001, 2002, 2003)");
+      await db.run("DELETE FROM email_attachments WHERE uid IN (2001, 2002, 2003)");
+      await db.run("DELETE FROM app_settings WHERE key = 'ignored_emails'");
+      await db.close();
+    });
+  });
 });

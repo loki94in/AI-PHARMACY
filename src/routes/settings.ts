@@ -99,6 +99,15 @@ router.post('/save', async (req, res) => {
         } catch (err) {
           console.error('[Settings] Failed to hot-reload WhatsApp config:', err);
         }
+    // If ignored emails changed, clean them up from the database immediately
+    if (payload['ignored_emails'] !== undefined) {
+      (async () => {
+        try {
+          const { emailService } = await import('../services/emailService.js');
+          await emailService.cleanupIgnoredEmailsInDb();
+        } catch (err) {
+          console.error('[Settings] Failed to cleanup ignored emails after save:', err);
+        }
       })();
     }
 

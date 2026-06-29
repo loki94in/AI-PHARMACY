@@ -1205,6 +1205,44 @@ export class EmailService {
   }
 
   /**
+   * Validates if a string is a real medicine name (excluding invoice headers/footers/billing keywords)
+   */
+  public isRealMedicineName(name: string): boolean {
+    if (!name || typeof name !== 'string') return false;
+    const cleaned = name.trim();
+    if (cleaned.length < 3 || cleaned.length > 100) return false;
+    
+    // Check if it's purely numeric or special characters (e.g., just numbers, spaces, percentages, dots)
+    if (/^[^a-zA-Z]+$/.test(cleaned)) return false;
+
+    const lower = cleaned.toLowerCase();
+    
+    // Comprehensive blocklist of billing, total, tax, and layout terms
+    const blocklist = [
+      'total', 'subtotal', 'grandtotal', 'discount', 'disc', 'gst', 'cgst', 'sgst', 'igst', 'tax', 
+      'taxable', 'vat', 'invoice', 'inv', 'bill', 'voucher', 'vou', 'net', 'gross', 'payment', 
+      'cash', 'bank', 'cheque', 'cheq', 'upi', 'credit', 'debit', 'terms', 'conditions', 
+      'address', 'phone', 'mobile', 'email', 'website', 'hsn', 'mrp', 'rate', 'price', 
+      'amount', 'amt', 'qty', 'quantity', 'pcs', 'units', 'items', 'page', 'date', 'lr', 
+      'freight', 'charges', 'balance', 'sign', 'signature', 'received', 'checked', 'prepared', 
+      'authorized', 'copy', 'original', 'duplicate', 'triplicate', 'customer', 'distributor', 
+      'supplier', 'subject', 'body', 'from', 'to', 'dear', 'sir', 'madam', 'regards', 
+      'thanks', 'thank you', 'hello', 'hi', 'info', 'mail', 'attachment', 'attached', 
+      'pdf', 'excel', 'csv', 'file', 'download', 'order', 'status', 'pending', 'failed', 
+      'error', 'system', 'notification', 'alert', 'message', 'roundoff', 'round off'
+    ];
+
+    for (const keyword of blocklist) {
+      const regex = new RegExp('\\b' + keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '\\b', 'i');
+      if (regex.test(lower)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
    * Extracts order info from email
    */
   public extractOrderInfo(email: ProcessedEmail) {
@@ -1267,7 +1305,7 @@ export class EmailService {
       if (qtyMatch) {
         const qty = qtyMatch[1] || qtyMatch[2];
         let name = trimmed.replace(qtyMatch[0], '').replace(/[:\-\t\r\n]/g, ' ').trim();
-        if (name && name.length > 3 && isNaN(Number(name))) {
+        if (name && name.length > 3 && isNaN(Number(name)) && this.isRealMedicineName(name)) {
           medicines.push({ name, quantity: qty });
         }
       }
@@ -2844,6 +2882,75 @@ export class EmailService {
   }
 
   /**
+   * Cleans up/deletes any emails from ignored senders in the database and filesystem.
+   */
+  public async cleanupIgnoredEmailsInDb(customDb?: any): Promise<void> {
+    try {
+      const db = customDb || await dbManager.getConnection();
+      
+      // Load ignored emails setting
+      let ignoredEmailsList: string[] = ['info@pharmarack'];
+      const ignoredSetting = await db.get("SELECT value FROM app_settings WHERE key = 'ignored_emails'");
+      if (ignoredSetting && ignoredSetting.value) {
+        const list = ignoredSetting.value.split(',')
+          .map((email: string) => email.trim().toLowerCase())
+          .filter(Boolean);
+        if (list.length > 0) {
+          ignoredEmailsList = list;
+        }
+      }
+
+      // Fetch all emails from database to filter
+      const emails = await db.all('SELECT uid, from_addr FROM emails');
+      const toDeleteUids: number[] = [];
+      for (const email of emails) {
+        const fromAddr = (email.from_addr || '').toLowerCase();
+        const matches = ignoredEmailsList.some(ignored => fromAddr.includes(ignored));
+        if (matches) {
+          toDeleteUids.push(email.uid);
+        }
+      }
+
+      if (toDeleteUids.length === 0) return;
+
+      const placeholders = toDeleteUids.map(() => '?').join(',');
+      
+      // Find attachments to delete from disk
+      const attachmentsToDelete = await db.all(
+        `SELECT local_path FROM email_attachments WHERE uid IN (${placeholders})`,
+        toDeleteUids
+      );
+      for (const att of attachmentsToDelete) {
+        if (att.local_path && fs.existsSync(att.local_path)) {
+          try {
+            fs.unlinkSync(att.local_path);
+          } catch (e) {
+            console.warn(`[Sync] Failed to delete ignored email attachment: ${att.local_path}`, e);
+          }
+        }
+      }
+
+      // Delete attachment records
+      await db.run(
+        `DELETE FROM email_attachments WHERE uid IN (${placeholders})`,
+        toDeleteUids
+      );
+
+      // Delete email records
+      const deleteResult = await db.run(
+        `DELETE FROM emails WHERE uid IN (${placeholders})`,
+        toDeleteUids
+      );
+      
+      if (deleteResult.changes && deleteResult.changes > 0) {
+        console.log(`[Sync] Cleaned up ${deleteResult.changes} ignored emails from database.`);
+      }
+    } catch (err) {
+      console.warn('[Sync] Failed in cleanupIgnoredEmailsInDb:', err);
+    }
+  }
+
+  /**
    * Delta sync: fetch only emails with UID > last stored UID from IMAP.
    * Stores new emails + attachments in the local SQLite database.
    * Returns the count of newly synced emails.
@@ -2943,6 +3050,15 @@ export class EmailService {
               contentType: a.contentType || 'application/octet-stream'
             }))
           };
+
+          // Skip/ignore emails matching ignored list
+          const fromAddr = (processedEmail.from || '').toLowerCase();
+          const shouldIgnore = ignoredEmailsList.some(ignored => fromAddr.includes(ignored));
+          if (shouldIgnore) {
+            console.log(`[Sync] Skipping ignored email UID ${uid} from: ${processedEmail.from}`);
+            await db.run('INSERT OR IGNORE INTO processed_emails (uid) VALUES (?)', [uid]);
+            continue;
+          }
 
           const orderInfo = this.extractOrderInfo(processedEmail);
           const isOrder = this.isOrderRelatedEmail(processedEmail) ? 1 : 0;
