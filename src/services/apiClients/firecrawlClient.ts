@@ -3,13 +3,62 @@ import { BaseApiClient, EnrichedProductData } from './baseApiClient.js';
 import type { OnlineMedicineSuggestion } from './oneMgClient.js';
 import { dbManager } from '../../database/connection.js';
 
-async function getFirecrawlApiKey(): Promise<string> {
+async function getFirecrawlKeys(): Promise<string[]> {
   try {
     const db = await dbManager.getConnection();
-    const row = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_api_key'");
-    if (row?.value) return row.value as string;
+    const multiRow = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_api_keys'");
+    if (multiRow?.value) {
+      try {
+        const keys = JSON.parse(multiRow.value) as string[];
+        if (Array.isArray(keys) && keys.length > 0) return keys;
+      } catch {}
+    }
+    const singleRow = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_api_key'");
+    if (singleRow?.value) return [singleRow.value as string];
   } catch {}
-  return process.env.FIRECRAWL_API_KEY || '';
+  const envKey = process.env.FIRECRAWL_API_KEY;
+  return envKey ? [envKey] : [];
+}
+
+async function getExhaustedKeys(): Promise<Set<string>> {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_exhausted_keys'");
+    if (row?.value) {
+      const arr = JSON.parse(row.value) as string[];
+      return new Set(Array.isArray(arr) ? arr : []);
+    }
+  } catch {}
+  return new Set();
+}
+
+async function markKeyExhausted(key: string): Promise<void> {
+  try {
+    const db = await dbManager.getConnection();
+    const row = await db.get("SELECT value FROM app_settings WHERE key = 'firecrawl_exhausted_keys'");
+    const current: string[] = row?.value ? JSON.parse(row.value) : [];
+    if (!current.includes(key)) {
+      current.push(key);
+      await db.run(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('firecrawl_exhausted_keys', ?)",
+        JSON.stringify(current)
+      );
+      console.warn(`[Firecrawl] Key ...${key.slice(-6)} exhausted — add a new key in Settings > Internet Data Sources`);
+    }
+  } catch (err) {
+    console.error('[Firecrawl] Failed to persist exhausted key:', err);
+  }
+}
+
+function isQuotaError(err: any): boolean {
+  const msg = (err?.message || String(err)).toLowerCase();
+  return (
+    msg.includes('402') ||
+    msg.includes('quota') ||
+    msg.includes('credit') ||
+    msg.includes('limit exceeded') ||
+    msg.includes('insufficient')
+  );
 }
 
 const MEDICINE_SCHEMA = {
@@ -51,40 +100,65 @@ export class FirecrawlClient extends BaseApiClient {
 
   async searchSuggestions(medicineName: string): Promise<OnlineMedicineSuggestion[]> {
     if (!medicineName || medicineName.length < 2) return [];
-    const apiKey = await getFirecrawlApiKey();
-    if (!apiKey) return [];
 
-    const app = new Firecrawl({ apiKey });
+    const allKeys = await getFirecrawlKeys();
+    if (!allKeys.length) return [];
+
+    const exhausted = await getExhaustedKeys();
+    const activeKeys = allKeys.filter(k => !exhausted.has(k));
+    if (!activeKeys.length) {
+      console.warn('[Firecrawl] All API keys are exhausted — add a new key in Settings > Internet Data Sources');
+      return [];
+    }
+
     const encoded = encodeURIComponent(medicineName);
 
-    for (const urlFn of SCRAPE_TARGETS) {
-      const url = urlFn(encoded);
-      try {
-        const doc = await app.scrape(url, {
-          formats: [{ type: 'json', prompt: EXTRACT_PROMPT, schema: MEDICINE_SCHEMA }],
-          onlyMainContent: true,
-          timeout: 15000,
-        });
-        const raw = doc.json as { suggestions?: any[] } | undefined;
-        const items: any[] = raw?.suggestions || [];
-        if (items.length > 0) {
-          return items
-            .filter(i => i.name)
-            .slice(0, 8)
-            .map(i => ({
-              name: i.name,
-              api_reference: i.composition || '',
-              manufacturer: i.manufacturer || '',
-              mrp: typeof i.mrp === 'number' ? i.mrp : 0,
-              packaging: i.packaging || '',
-              category: i.category || '',
-              source: 'Firecrawl' as const,
-            }));
+    for (const apiKey of activeKeys) {
+      const app = new Firecrawl({ apiKey });
+      let quotaHit = false;
+
+      for (const urlFn of SCRAPE_TARGETS) {
+        if (quotaHit) break;
+        const url = urlFn(encoded);
+        try {
+          const doc = await app.scrape(url, {
+            formats: [{ type: 'json', prompt: EXTRACT_PROMPT, schema: MEDICINE_SCHEMA }],
+            onlyMainContent: true,
+            timeout: 15000,
+          });
+          const raw = doc.json as { suggestions?: any[] } | undefined;
+          const items: any[] = raw?.suggestions || [];
+          if (items.length > 0) {
+            return items
+              .filter(i => i.name)
+              .slice(0, 8)
+              .map(i => ({
+                name: i.name,
+                api_reference: i.composition || '',
+                manufacturer: i.manufacturer || '',
+                mrp: typeof i.mrp === 'number' ? i.mrp : 0,
+                packaging: i.packaging || '',
+                category: i.category || '',
+                source: 'Firecrawl' as const,
+              }));
+          }
+        } catch (err: any) {
+          if (isQuotaError(err)) {
+            await markKeyExhausted(apiKey);
+            quotaHit = true;
+          } else {
+            console.warn(`[Firecrawl] Scrape failed for ${url.split('?')[0]}:`, err.message);
+          }
         }
-      } catch (err: any) {
-        console.warn(`[Firecrawl] Scrape failed for ${url.split('?')[0]}:`, err.message);
       }
+
+      if (!quotaHit) {
+        // Key is active but returned no results from any target site
+        return [];
+      }
+      // quotaHit — try the next key
     }
+
     return [];
   }
 

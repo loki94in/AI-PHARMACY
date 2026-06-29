@@ -19,6 +19,8 @@ import {
   X,
   QrCode,
   History,
+  Plus,
+  Key,
 } from 'lucide-react';
 import { toastEvent } from '../../services/events';
 import { MobileConnectionModal } from '../../components/MobileConnectionModal';
@@ -56,7 +58,7 @@ interface SettingsData {
   prPassword: string;
   prToken: string;
   prMode: string;
-  firecrawlApiKey: string;
+  firecrawlApiKeys: string[];
   defaultTaxRate: number;
   invoicePrefix: string;
   autoPrint: boolean;
@@ -106,7 +108,7 @@ const Settings = () => {
     prPassword: '',
     prToken: '',
     prMode: 'Live',
-    firecrawlApiKey: '',
+    firecrawlApiKeys: [],
     defaultTaxRate: 18,
     invoicePrefix: 'INV-',
     autoPrint: false,
@@ -149,6 +151,8 @@ const Settings = () => {
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [firecrawlExhaustedKeys, setFirecrawlExhaustedKeys] = useState<string[]>([]);
+  const [newFirecrawlKey, setNewFirecrawlKey] = useState('');
 
   // Generic helper to update settings fields
   const updateSetting = <K extends keyof SettingsData>(key: K, value: SettingsData[K] | ((prevVal: SettingsData[K]) => SettingsData[K])) => {
@@ -183,7 +187,7 @@ const Settings = () => {
   const setPrPassword = (val: string | ((p: string) => string)) => updateSetting('prPassword', val);
   const setPrToken = (val: string | ((p: string) => string)) => updateSetting('prToken', val);
   const setPrMode = (val: string | ((p: string) => string)) => updateSetting('prMode', val);
-  const setFirecrawlApiKey = (val: string | ((p: string) => string)) => updateSetting('firecrawlApiKey', val);
+  const setFirecrawlApiKeys = (val: string[] | ((p: string[]) => string[])) => updateSetting('firecrawlApiKeys', val as any);
   const setDefaultTaxRate = (val: number | ((p: number) => number)) => updateSetting('defaultTaxRate', val);
   const setInvoicePrefix = (val: string | ((p: string) => string)) => updateSetting('invoicePrefix', val);
   const setAutoPrint = (val: boolean | ((p: boolean) => boolean)) => updateSetting('autoPrint', val);
@@ -231,7 +235,7 @@ const Settings = () => {
     prPassword,
     prToken,
     prMode,
-    firecrawlApiKey,
+    firecrawlApiKeys,
     defaultTaxRate,
     invoicePrefix,
     autoPrint,
@@ -334,8 +338,21 @@ const Settings = () => {
           setPrToken(data.pharmarack_session_token || '');
           setPrMode(data.pharmarack_mode || 'Live');
 
-          // Internet Data Sources
-          setFirecrawlApiKey(data.firecrawl_api_key || '');
+          // Internet Data Sources — multi-key with backward compat
+          if (data.firecrawl_api_keys) {
+            try {
+              const keys = JSON.parse(data.firecrawl_api_keys);
+              if (Array.isArray(keys)) setFirecrawlApiKeys(keys);
+            } catch {}
+          } else if (data.firecrawl_api_key) {
+            setFirecrawlApiKeys([data.firecrawl_api_key]);
+          }
+          if (data.firecrawl_exhausted_keys) {
+            try {
+              const ex = JSON.parse(data.firecrawl_exhausted_keys);
+              if (Array.isArray(ex)) setFirecrawlExhaustedKeys(ex);
+            } catch {}
+          }
         }
       } catch (error) {
         console.error('Failed to load settings', error);
@@ -431,7 +448,8 @@ const Settings = () => {
       pharmarack_mode: prMode,
 
       // Internet Data Sources
-      firecrawl_api_key: firecrawlApiKey,
+      firecrawl_api_keys: JSON.stringify(firecrawlApiKeys),
+      firecrawl_exhausted_keys: JSON.stringify(firecrawlExhaustedKeys),
     };
 
     try {
@@ -1106,39 +1124,81 @@ const Settings = () => {
         </p>
 
         <div className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="firecrawlApiKey" className="text-xs font-bold text-muted uppercase tracking-wider">
-              Firecrawl API Key
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="firecrawlApiKey"
-                type="password"
-                className="premium-input flex-1 font-mono text-sm"
-                placeholder="fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                value={firecrawlApiKey}
-                onChange={(e) => setFirecrawlApiKey(e.target.value)}
-              />
-              {firecrawlApiKey && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-muted uppercase tracking-wider">
+                Firecrawl API Keys
+              </label>
+              {firecrawlExhaustedKeys.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setFirecrawlApiKey('')}
-                  className="premium-btn bg-zinc-700 hover:bg-red-600/80 text-white px-3"
-                  title="Clear API key"
+                  onClick={() => setFirecrawlExhaustedKeys([])}
+                  className="text-xs font-semibold text-amber hover:text-amber/80 transition-colors flex items-center gap-1"
                 >
-                  <X size={14} />
+                  <RefreshCw size={11} /> Clear All Exhausted
                 </button>
               )}
             </div>
+
+            {firecrawlApiKeys.length > 0 ? (
+              <div className="space-y-2">
+                {firecrawlApiKeys.map((key, idx) => {
+                  const isExhausted = firecrawlExhaustedKeys.includes(key);
+                  const masked = key.length > 10 ? `${key.slice(0, 3)}...${key.slice(-6)}` : key;
+                  return (
+                    <div key={idx} className="flex items-center gap-2 p-2.5 rounded-lg bg-zinc-900/40 border border-glass-border/30">
+                      <Key size={13} className="text-muted shrink-0" />
+                      <span className="flex-1 font-mono text-sm text-text/80 truncate">{masked}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isExhausted ? 'bg-red/15 text-red' : 'bg-green/15 text-green'}`}>
+                        {isExhausted ? 'Exhausted' : 'Active'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFirecrawlApiKeys((prev: string[]) => prev.filter((_: string, i: number) => i !== idx))}
+                        className="shrink-0 text-muted hover:text-red transition-colors p-0.5 rounded"
+                        title="Remove key"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-amber font-semibold py-1">No keys configured — Firecrawl fallback disabled</p>
+            )}
+
+            <div className="flex gap-2">
+              <input
+                type="password"
+                className="premium-input flex-1 font-mono text-sm"
+                placeholder="fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                value={newFirecrawlKey}
+                onChange={(e) => setNewFirecrawlKey(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newFirecrawlKey.trim()) {
+                    setFirecrawlApiKeys((prev: string[]) => [...prev, newFirecrawlKey.trim()]);
+                    setNewFirecrawlKey('');
+                  }
+                }}
+              />
+              <button
+                type="button"
+                disabled={!newFirecrawlKey.trim()}
+                onClick={() => {
+                  setFirecrawlApiKeys((prev: string[]) => [...prev, newFirecrawlKey.trim()]);
+                  setNewFirecrawlKey('');
+                }}
+                className="premium-btn bg-primary text-white px-4 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={14} /> Add Key
+              </button>
+            </div>
+
             <p className="text-xs text-muted leading-relaxed">
-              Free tier: <span className="text-green font-semibold">1,000 credits/month</span> — enough for a pharmacy.
-              Get your free key at{' '}
-              <span className="text-primary font-mono">firecrawl.dev</span>
-              {' '}→ Sign Up → Dashboard → API Keys.
-              {firecrawlApiKey
-                ? <span className="ml-2 text-green font-semibold">✓ Key configured</span>
-                : <span className="ml-2 text-amber font-semibold">No key — Firecrawl fallback disabled</span>
-              }
+              Free tier: <span className="text-green font-semibold">1,000 credits/month per key</span>.
+              When a key runs out the app auto-rotates to the next active key — just add another.
+              Get free keys at <span className="text-primary font-mono">firecrawl.dev</span> → Sign Up → Dashboard → API Keys.
             </p>
           </div>
         </div>
