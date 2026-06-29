@@ -2,43 +2,74 @@ import { Dimensions } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
 
-// ─── Color Palette ───────────────────────────────────────────────────────────
-export const colors = {
-  // Primary gradient
+// ─── Color palettes ──────────────────────────────────────────────────────────
+
+export const darkColors = {
+  // Brand
   primary: '#6C63FF',
   primaryLight: '#8B85FF',
   primaryDark: '#4A42E0',
-
-  // Accent
   accent: '#00D9A6',
   accentLight: '#33E4BC',
   accentDark: '#00B88A',
-
   // Status
   success: '#22C55E',
   warning: '#F59E0B',
   danger: '#EF4444',
   info: '#3B82F6',
-
-  // Dark theme surfaces
+  // Surfaces
   bg: '#0F0F1A',
   surface: '#1A1A2E',
   surfaceLight: '#242440',
   surfaceElevated: '#2A2A4A',
   card: 'rgba(30, 30, 55, 0.85)',
   cardBorder: 'rgba(108, 99, 255, 0.15)',
-
   // Text
   textPrimary: '#F0F0FF',
   textSecondary: '#9CA3AF',
   textMuted: '#6B7280',
   textInverse: '#0F0F1A',
-
   // Misc
   divider: 'rgba(255, 255, 255, 0.06)',
   overlay: 'rgba(0, 0, 0, 0.5)',
   shimmer: 'rgba(108, 99, 255, 0.08)',
 };
+
+export type ColorScheme = typeof darkColors;
+
+export const lightColors: ColorScheme = {
+  // Brand
+  primary: '#6C63FF',
+  primaryLight: '#8B85FF',
+  primaryDark: '#4A42E0',
+  accent: '#00B88A',
+  accentLight: '#00D9A6',
+  accentDark: '#009070',
+  // Status
+  success: '#16A34A',
+  warning: '#D97706',
+  danger: '#DC2626',
+  info: '#2563EB',
+  // Surfaces
+  bg: '#F4F4F8',
+  surface: '#FFFFFF',
+  surfaceLight: '#EDEDF5',
+  surfaceElevated: '#E6E6F0',
+  card: 'rgba(255,255,255,0.92)',
+  cardBorder: 'rgba(108, 99, 255, 0.18)',
+  // Text
+  textPrimary: '#1A1A2E',
+  textSecondary: '#4B5563',
+  textMuted: '#9CA3AF',
+  textInverse: '#F0F0FF',
+  // Misc
+  divider: 'rgba(0, 0, 0, 0.07)',
+  overlay: 'rgba(0, 0, 0, 0.4)',
+  shimmer: 'rgba(108, 99, 255, 0.06)',
+};
+
+// Backward-compat — existing imports of `colors` keep working (dark default)
+export const colors = darkColors;
 
 // ─── Spacing ─────────────────────────────────────────────────────────────────
 export const spacing = {

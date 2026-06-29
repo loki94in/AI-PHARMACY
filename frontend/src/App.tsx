@@ -1933,8 +1933,8 @@ const Layout = ({
           setConnectedDevices={setConnectedDevices}
           setCatalogJob={setCatalogJob}
         />
-        <div className="flex-1 flex flex-row overflow-hidden relative z-10">
-          <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-3 pt-1.5 pb-3' : 'overflow-y-auto p-4 pt-3 pb-4'} relative z-10 transition-all duration-200`}>
+        <div className="flex-1 flex flex-row overflow-hidden relative">
+          <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-3 pt-1.5 pb-3' : 'overflow-y-auto p-4 pt-3 pb-4'} relative transition-all duration-200`}>
             {children}
           </main>
           

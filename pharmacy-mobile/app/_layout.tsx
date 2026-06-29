@@ -1,4 +1,5 @@
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { ThemeProvider as PharmacyThemeProvider } from '../lib/ThemeContext';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -359,6 +360,7 @@ export default function RootLayout() {
   };
 
   return (
+    <PharmacyThemeProvider>
     <ConnectionContext.Provider value={connectionValue}>
     <ThemeProvider value={PharmacyDark}>
       <StatusBar style="light" />
@@ -451,6 +453,7 @@ export default function RootLayout() {
       )}
     </ThemeProvider>
     </ConnectionContext.Provider>
+    </PharmacyThemeProvider>
   );
 }
 
@@ -501,13 +504,12 @@ const styles = StyleSheet.create({
   },
   toastTitleText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#F0F0FF',
-    flex: 1,
+    fontWeight: '700' as const,
+    color: '#fff',
   },
   toastBodyText: {
     fontSize: 11,
-    color: '#9CA3AF',
-    lineHeight: 15,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 16,
   },
 });

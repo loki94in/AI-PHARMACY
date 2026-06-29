@@ -495,13 +495,65 @@ export async function searchMedicine(q: string): Promise<SearchMedicineResult[]>
 }
 
 export interface SalePayload {
-  items: { inventory_id: number; quantity: number; unit_price: number }[];
+  items: {
+    inventory_id: number;
+    quantity: number;
+    unit_price: number;
+    loose_qty?: number;   // individual tablets (not full strips)
+    discount?: number;    // per-item discount %
+  }[];
   patient_name?: string;
   patient_phone?: string;
   discount?: number;
   payment_medium?: string;
   payment_status?: string;
   sale_date?: string;
+}
+
+// ─── Patient / CRM ──────────────────────────────────────────────────────────
+
+export interface PatientRecord {
+  id: number;
+  name: string;
+  phone: string;
+  address?: string;
+  notes?: string;
+  lastMeds: SearchMedicineResult[];   // top medicines from last invoice
+}
+
+export async function getPatientByPhone(phone: string): Promise<PatientRecord | null> {
+  try {
+    const patients = await request<any[]>('/crm/patients?q=' + encodeURIComponent(phone));
+    if (!patients || patients.length === 0) return null;
+    const p = patients[0];
+
+    // Fetch last invoice to get previous medicines
+    let lastMeds: SearchMedicineResult[] = [];
+    try {
+      const history = await request<any[]>(`/crm/${p.id}/history`);
+      if (history && history.length > 0) {
+        const lastInvoice = history[0];
+        const detail = await request<any>(`/sales/${lastInvoice.id}`);
+        if (detail?.items) {
+          lastMeds = detail.items.map((item: any) => ({
+            inventory_id: item.inventory_id,
+            medicine_id: item.medicine_id || 0,
+            medicine_name: item.medicine_name || item.name || '',
+            batch_no: item.batch_no || '',
+            expiry_date: item.expiry_date || '',
+            quantity: item.quantity || 0,
+            mrp: item.mrp || item.unit_price || 0,
+            unit_price: item.unit_price || item.mrp || 0,
+            cost_price: item.cost_price || 0,
+          }));
+        }
+      }
+    } catch { /* history fetch failure is non-fatal */ }
+
+    return { id: p.id, name: p.name, phone: p.phone, address: p.address, notes: p.notes, lastMeds };
+  } catch {
+    return null;
+  }
 }
 
 export async function createSale(payload: SalePayload): Promise<{ success: boolean; invoice_no: string; total: number; tax: number }> {
@@ -666,6 +718,23 @@ export function getAuditQueue() {
 export function triggerBackup() {
   return request<{ success: boolean; message: string; backupFilename: string }>('/utilities/backup', {
     method: 'POST',
+  });
+}
+
+// ─── Special Orders (short products) ────────────────────────────────────────
+
+export interface SpecialOrderPayload {
+  product: string;
+  requester: string;
+  phone: string;
+  qty: number;
+  priority?: 'normal' | 'urgent';
+}
+
+export async function createSpecialOrder(payload: SpecialOrderPayload): Promise<{ id: number }> {
+  return request<{ id: number }>('/orders', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, status: 'ordered' }),
   });
 }
 
@@ -1174,7 +1243,8 @@ export async function markServerNotificationManual(id: number | string): Promise
   }
 }
 
-export async function getEmailsFromServer(limit = 50): Promise<any[]> {
+}
+port async function getEmailsFromServer(limit = 50): Promise<any[]> {
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     return await request<any[]>(`/email/inbox?limit=${limit}&since=${encodeURIComponent(since)}`);

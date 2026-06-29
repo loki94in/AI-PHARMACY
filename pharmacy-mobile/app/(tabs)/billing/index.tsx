@@ -8,6 +8,7 @@ import { searchMedicine, createSale, SearchMedicineResult } from '../../../lib/a
 import { cartEvents } from '../../../lib/cartEvents';
 import SearchBar from '../../../components/SearchBar';
 import CartItem from '../../../components/CartItem';
+import PatientStageModal from '../../../components/PatientStageModal';
 import { useConnection } from '../../../lib/ConnectionContext';
 
 interface CartEntry extends SearchMedicineResult {
@@ -22,6 +23,7 @@ export default function BillingScreen() {
   const [patientPhone, setPatientPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [invoiceResult, setInvoiceResult] = useState<{ invoice_no: string; total: number } | null>(null);
+  const [stageModalVisible, setStageModalVisible] = useState(false);
   // Read live state from shared context — no local polling
   const { isOnline, pendingSyncCount: pendingQueueCount } = useConnection();
 
@@ -141,6 +143,68 @@ export default function BillingScreen() {
           </Text>
         </View>
       )}
+
+      {/* ── Patient Stage Button ── */}
+      <View style={styles.stageBar}>
+        <TouchableOpacity
+          style={[
+            styles.stageButton,
+            patientName ? styles.stageButtonActive : null,
+          ]}
+          onPress={() => setStageModalVisible(true)}
+          activeOpacity={0.75}
+        >
+          <Ionicons
+            name={patientName ? 'person-circle' : 'person-circle-outline'}
+            size={18}
+            color={patientName ? colors.primary : colors.textMuted}
+          />
+          <Text style={[styles.stageButtonText, patientName && styles.stageButtonTextActive]} numberOfLines={1}>
+            {patientName || 'Walk-in  ·  Tap to set patient'}
+          </Text>
+          {patientPhone ? (
+            <Text style={styles.stagePhone}>{patientPhone}</Text>
+          ) : null}
+          <View style={{ flex: 1 }} />
+          <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        {/* Quick-bill button — opens modal pre-filled with current patient */}
+        <TouchableOpacity
+          style={styles.quickBillBtn}
+          onPress={() => setStageModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={['rgba(108,99,255,0.2)', 'rgba(74,66,224,0.2)']}
+            style={styles.quickBillGradient}
+          >
+            <Ionicons name="flash" size={15} color={colors.primary} />
+            <Text style={styles.quickBillText}>Quick Bill</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
+      {/* Patient Stage Modal */}
+      <PatientStageModal
+        visible={stageModalVisible}
+        initialName={patientName}
+        initialPhone={patientPhone}
+        onClose={() => setStageModalVisible(false)}
+        onSaved={(invoiceNo, total, name) => {
+          setStageModalVisible(false);
+          setInvoiceResult({ invoice_no: invoiceNo, total });
+          // Fire notification
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: '⚡ Bill Saved Successfully',
+              body: `Invoice ${invoiceNo} created for ₹${total.toFixed(2)} (${name || 'Walk-in Customer'}).`,
+            },
+            trigger: null,
+          }).catch(() => {});
+        }}
+      />
+
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Search */}
         <SearchBar value={query} onChangeText={handleSearch} placeholder="Search medicine by name, batch, MRP..." />
@@ -216,6 +280,66 @@ const styles = StyleSheet.create({
   statusOffline: { backgroundColor: '#DC2626' },
   statusPending: { backgroundColor: '#D97706' },
   statusText: { color: '#fff', fontSize: 12, fontWeight: '600', flex: 1 },
+
+  // Stage bar
+  stageBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
+  stageButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  stageButtonActive: {
+    borderColor: 'rgba(108,99,255,0.4)',
+    backgroundColor: 'rgba(108,99,255,0.06)',
+  },
+  stageButtonText: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  stageButtonTextActive: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  stagePhone: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  quickBillBtn: {
+    borderRadius: radius.md,
+    overflow: 'hidden',
+  },
+  quickBillGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(108,99,255,0.25)',
+    borderRadius: radius.md,
+  },
+  quickBillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+
   content: { padding: spacing.md, paddingBottom: 100 },
   successContainer: { alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   successIcon: { marginBottom: spacing.lg },

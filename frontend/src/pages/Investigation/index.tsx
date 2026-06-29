@@ -1650,7 +1650,7 @@ const InvestigationCenter = () => {
 
       {showFloatingFilters && (
         <div 
-          className="fixed inset-0 z-40 bg-black/5" 
+          className="fixed inset-0 z-[9999] bg-black/5"
           onClick={() => setShowFloatingFilters(false)}
         />
       )}

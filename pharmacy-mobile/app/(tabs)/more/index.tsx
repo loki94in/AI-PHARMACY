@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import * as SecureStore from '../../../lib/secureStore';
 import { colors, spacing, typography, radius, shadows } from '../../../lib/theme';
 import { clearServerUrl } from '../../../lib/api';
+import { useTheme } from '../../../lib/ThemeContext';
 
 const menuItems = [
   { icon: 'camera-outline', label: 'AI Camera', desc: 'Scan medicine packaging', route: '/camera', color: '#F59E0B' },
@@ -15,6 +16,7 @@ const menuItems = [
 
 export default function MoreScreen() {
   const router = useRouter();
+  const { isDark, pref, toggleTheme } = useTheme();
   const [appLockEnabled, setAppLockEnabled] = useState(false);
 
   // Gmail Direct Config state
@@ -114,6 +116,27 @@ export default function MoreScreen() {
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
       ))}
+
+      <Text style={[typography.label, { marginTop: spacing.xl, marginBottom: spacing.md }]}>APPEARANCE</Text>
+      <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={toggleTheme}>
+        <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(108,99,255,0.15)' : 'rgba(255,200,50,0.15)' }]}>
+          <Ionicons name={isDark ? 'moon-outline' : 'sunny-outline'} size={24}
+            color={isDark ? colors.primary : '#F59E0B'} />
+        </View>
+        <View style={styles.cardText}>
+          <Text style={typography.body}>
+            {pref === 'dark' ? 'Dark Mode' : pref === 'light' ? 'Light Mode' : 'System Default'}
+          </Text>
+          <Text style={typography.bodySmall}>Tap to cycle: Dark → Light → System</Text>
+        </View>
+        <View style={{ backgroundColor: isDark ? 'rgba(108,99,255,0.12)' : 'rgba(255,200,50,0.12)',
+          borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700',
+            color: isDark ? colors.primary : '#D97706' }}>
+            {pref.toUpperCase()}
+          </Text>
+        </View>
+      </TouchableOpacity>
 
       <Text style={[typography.label, { marginTop: spacing.xl, marginBottom: spacing.md }]}>SECURITY</Text>
       
@@ -298,29 +321,97 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
     marginBottom: spacing.md,
   },
-  modalSubtitle: { ...typography.bodySmall, color: colors.textMuted },
-  modalScroll: { flex: 1 },
-  formCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, gap: spacing.md },
-  inputGroup: { gap: 4 },
-  inputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
-  textInput: {
-    backgroundColor: colors.bg,
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: colors.textPrimary,
+  },
+  modalInput: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    fontSize: 14,
     color: colors.textPrimary,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    fontSize: 14,
+    marginBottom: spacing.sm,
   },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.lg },
-  modalBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  modalBtnCancel: { backgroundColor: colors.surfaceLight },
-  modalBtnSave: { backgroundColor: colors.accent },
-  modalBtnTextCancel: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
-  modalBtnTextSave: { ...typography.bodySmall, color: colors.textInverse, fontWeight: '700' },
+  modalSaveBtn: {
+    borderRadius: radius.md,
+    overflow: 'hidden' as const,
+    marginTop: spacing.sm,
+  },
+  modalSaveGradient: {
+    paddingVertical: 14,
+    alignItems: 'center' as const,
+  },
+  modalSaveText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#fff',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  modalScroll: { flex: 1 },
+  formCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  inputGroup: { marginBottom: spacing.sm },
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: colors.textMuted,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  textInput: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    fontSize: 14,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  modalActions: {
+    flexDirection: 'row' as const,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  modalBtn: {
+    flex: 1,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    alignItems: 'center' as const,
+    borderWidth: 1,
+  },
+  modalBtnCancel: {
+    backgroundColor: colors.surfaceLight,
+    borderColor: colors.cardBorder,
+  },
+  modalBtnSave: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primaryDark,
+  },
+  modalBtnTextCancel: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: colors.textSecondary,
+  },
+  modalBtnTextSave: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#fff',
+  },
 });
