@@ -257,7 +257,7 @@ const Sells = () => {
       setEditCustomerPhone(full.customer_phone || '');
       setEditPaymentMedium(full.payment_medium || 'CASH');
       
-      const sub = full.subtotal || (full.items || []).reduce((sum, item) => {
+      const sub = full.subtotal || (full.items || []).reduce((sum: number, item: any) => {
         const packSize = item.pack_size || 10;
         const looseQty = item.loose_qty || 0;
         const discPer = item.discount_per || 0;

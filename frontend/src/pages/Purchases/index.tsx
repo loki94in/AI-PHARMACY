@@ -1427,49 +1427,33 @@ const Purchases: React.FC = () => {
       }
 
       // Auto-resolve medicine IDs and names for the uploaded items
-      for (let i = 0; i < newItems.length; i++) {
-        const mName = newItems[i].original_name;
-        if (!mName) continue;
+      const namesToResolve = newItems.map((item: any) => item.original_name).filter(Boolean);
+      if (namesToResolve.length > 0) {
         try {
-          // 1. Check for learned mapping first
-          const learned = await api.getLearnedMapping(mName);
-          if (learned && learned.success && learned.mapped && learned.medicine) {
-            const match = learned.medicine;
-            newItems[i].medicine_id = match.id;
-            newItems[i].medicine_name = match.name;
-            newItems[i].manufacturer = match.manufacturer;
-            newItems[i].mrp = newItems[i].mrp || match.mrp || 0;
-            newItems[i].rate = newItems[i].rate || match.rate || 0;
-            newItems[i].cgst_per = newItems[i].cgst_per || match.cgst_per || 0;
-            newItems[i].sgst_per = newItems[i].sgst_per || match.sgst_per || 0;
-            continue;
-          }
-
-          // 2. Fallback to catalog search for EXACT matches
-          const res = await api.catalogSearch(mName);
-          const matchedList = res || [];
-          if (matchedList.length > 0) {
-            const match = matchedList.find((m: any) => m.name && m.name.toLowerCase() === mName.toLowerCase());
-            if (match) {
-              newItems[i].medicine_id = match.id;
-              newItems[i].medicine_name = match.name;
-              newItems[i].manufacturer = match.manufacturer;
-              newItems[i].mrp = newItems[i].mrp || match.mrp || 0;
-              newItems[i].rate = newItems[i].rate || match.rate || 0;
-              newItems[i].cgst_per = newItems[i].cgst_per || match.cgst_per || 0;
-              newItems[i].sgst_per = newItems[i].sgst_per || match.sgst_per || 0;
-            } else {
-              newItems[i].medicine_id = null;
-              newItems[i].medicine_name = mName;
-              newItems[i].manufacturer = '';
+          const resolveResponse = await api.batchResolveMedicines(namesToResolve);
+          if (resolveResponse && resolveResponse.success && resolveResponse.resolutions) {
+            for (let i = 0; i < newItems.length; i++) {
+              const mName = newItems[i].original_name;
+              if (!mName) continue;
+              
+              const match = resolveResponse.resolutions[mName];
+              if (match) {
+                newItems[i].medicine_id = match.id;
+                newItems[i].medicine_name = match.name;
+                newItems[i].manufacturer = match.manufacturer || '';
+                newItems[i].mrp = newItems[i].mrp || match.mrp || 0;
+                newItems[i].rate = newItems[i].rate || match.rate || 0;
+                newItems[i].cgst_per = newItems[i].cgst_per || match.cgst_per || 0;
+                newItems[i].sgst_per = newItems[i].sgst_per || match.sgst_per || 0;
+              } else {
+                newItems[i].medicine_id = null;
+                newItems[i].medicine_name = mName;
+                newItems[i].manufacturer = '';
+              }
             }
-          } else {
-            newItems[i].medicine_id = null;
-            newItems[i].medicine_name = mName;
-            newItems[i].manufacturer = '';
           }
         } catch (err) {
-          console.error('Error auto-resolving uploaded medicine:', mName, err);
+          console.error('Error auto-resolving uploaded medicines:', err);
         }
       }
 

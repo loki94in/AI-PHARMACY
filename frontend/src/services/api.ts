@@ -238,6 +238,7 @@ export const api = {
   batchLastPurchase: (medicines: Array<{name: string}>, distributorId?: number) =>
     apiClient.post('/purchases/batch-last-purchase', { medicines, distributor_id: distributorId }).then(res => res.data),
   catalogSearch: (q: string) => apiClient.get('/inventory/catalog-search', { params: { q } }).then(res => res.data),
+  batchResolveMedicines: (names: string[]) => apiClient.post('/inventory/batch-resolve', { names }).then(res => res.data),
   createMedicineAlias: (aliasName: string, medicineId: number) => apiClient.post('/inventory/medicines/alias', { alias_name: aliasName, medicine_id: medicineId }).then(res => res.data),
   getLearnedMapping: (name: string) => apiClient.get('/learning/mapping', { params: { name } }).then(res => res.data),
   getManufacturers: (q: string) => apiClient.get('/manufacturers', { params: { q } }).then(res => res.data),

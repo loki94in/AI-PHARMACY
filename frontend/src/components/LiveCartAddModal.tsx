@@ -605,7 +605,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
     let pipDoc: Document | null = null;
     const activePip = (window as any).activePipWindow;
     if (activePip) {
-      pipDoc = activePip.document;
+      pipDoc = activePip.document as Document;
       pipDoc.addEventListener('mousedown', handleOutsideClick);
     }
 
@@ -959,7 +959,7 @@ export const LiveCartAddModal: React.FC<{ onClose: () => void }> = ({ onClose })
           inCart
         };
       });
-      const allInCart = medicines.length > 0 && medicines.every(m => m.inCart);
+      const allInCart = medicines.length > 0 && medicines.every((m: { inCart: boolean }) => m.inCart);
       return {
         key: `recon-group-${recon.email_uid}`,
         type: 'reconcile' as const,

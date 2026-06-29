@@ -391,9 +391,9 @@ const PurchaseHistory = () => {
         {activeTab === 'history' && (
           <button 
             onClick={exportToCSV}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-primary to-blue-600 hover:shadow-[0_0_15px_rgba(37,99,235,0.3)] px-4 py-1.5 rounded-lg text-white text-xs font-bold transition-all hover:scale-105 active:scale-95 border border-white/10 mb-1"
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-1.5 bg-bg2/80 backdrop-blur-md hover:bg-primary/20 hover:shadow-[0_0_15px_rgba(37,99,235,0.3)] px-5 py-3 rounded-full text-primary text-sm font-bold transition-all hover:scale-105 active:scale-95 border border-primary/30 shadow-2xl"
           >
-            <Download size={14} />
+            <Download size={16} />
             Export CSV
           </button>
         )}
@@ -403,127 +403,23 @@ const PurchaseHistory = () => {
         <>
           {/* Purchase History Tab */}
           {/* Purchase Analytics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 bg-bg2/40 border border-glass-border rounded-2xl z-30 relative select-none">
-            <div className="p-5 border-r border-glass-border/30">
-              <p className="text-muted text-sm mb-1">Total Purchases</p>
-              <p className="text-2xl font-bold text-text">{totalPurchases}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 bg-bg2/20 border border-glass-border/50 rounded-xl z-30 relative select-none text-center divide-x divide-glass-border/30">
+            <div className="py-2 px-4 flex items-center justify-between">
+              <span className="text-muted text-xs font-semibold uppercase tracking-wider">Total Purchases</span>
+              <span className="text-lg font-bold text-text">{totalPurchases}</span>
             </div>
-            <div className="p-5 border-r border-glass-border/30">
-              <p className="text-muted text-sm mb-1">Total Value</p>
-              <p className="text-2xl font-bold text-primary">₹{totalAmount.toFixed(2)}</p>
+            <div className="py-2 px-4 flex items-center justify-between">
+              <span className="text-muted text-xs font-semibold uppercase tracking-wider">Total Value</span>
+              <span className="text-lg font-bold text-primary">₹{totalAmount.toFixed(2)}</span>
             </div>
-            <div className="p-5">
-              <p className="text-muted text-sm mb-1">Total Paid</p>
-              <p className="text-2xl font-bold text-green">₹{paidAmount.toFixed(2)}</p>
+            <div className="py-2 px-4 flex items-center justify-between">
+              <span className="text-muted text-xs font-semibold uppercase tracking-wider">Total Paid</span>
+              <span className="text-lg font-bold text-green">₹{paidAmount.toFixed(2)}</span>
             </div>
           </div>
 
           {/* Table */}
-          <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative z-10 shadow-2xl animate-in fade-in duration-300">
-            
-            {/* Range Selector and Pagination Header */}
-            <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
-              <div className="flex items-center gap-2.5">
-                <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
-                {!isDateFiltered ? (
-                  <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
-                    <span className="text-muted">Show from row</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max={Math.max(0, filteredData.length - 1)}
-                      value={filteredData.length === 0 ? 0 : (currentPage - 1) * pageSize}
-                      onChange={e => {
-                        const val = Math.max(0, parseInt(e.target.value) || 0);
-                        const newPage = Math.floor(val / pageSize) + 1;
-                        setCurrentPage(Math.min(totalPages, newPage));
-                      }}
-                      className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
-                    />
-                    <span className="text-muted">to</span>
-                    <span className="text-text font-mono font-bold">
-                      {filteredData.length === 0 ? 0 : Math.min(filteredData.length, currentPage * pageSize)}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
-                    <span className="text-muted">Showing all</span>
-                    <span className="text-text font-mono font-bold">
-                      {filteredData.length}
-                    </span>
-                  </div>
-                )}
-                <span className="text-muted">
-                  of <strong className="text-text font-bold">{filteredData.length.toLocaleString()}</strong> transactions
-                </span>
-              </div>
-
-              {!isDateFiltered && (
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted">Rows:</span>
-                    <select
-                      value={pageSize}
-                      onChange={e => {
-                        const newSize = parseInt(e.target.value);
-                        setPageSize(newSize);
-                        setCurrentPage(1);
-                      }}
-                      className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
-                    >
-                      <option value="15">15 rows</option>
-                      <option value="50">50 rows</option>
-                      <option value="100">100 rows</option>
-                      <option value="250">250 rows</option>
-                      <option value="500">500 rows</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(1)}
-                      disabled={currentPage === 1 || loading}
-                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                      title="First Page"
-                    >
-                      <ChevronsLeft size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1 || loading}
-                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                      title="Previous Page"
-                    >
-                      <ChevronLeft size={14} /> Prev
-                    </button>
-                    <div className="px-3 text-muted">
-                      Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages || loading}
-                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                      title="Next Page"
-                    >
-                      Next <ChevronRight size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(totalPages)}
-                      disabled={currentPage === totalPages || loading}
-                      className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                      title="Last Page"
-                    >
-                      <ChevronsRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
+          <div className="flex-1 bg-glass-bg rounded-2xl flex flex-col min-h-0 overflow-hidden relative z-10 animate-in fade-in duration-300">
             <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15">
               {loading ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted">
@@ -541,117 +437,105 @@ const PurchaseHistory = () => {
                     <thead className="sticky top-0 z-20 bg-bg2 shadow-sm">
                       <tr className="bg-bg2 border-b border-glass-border/30 text-muted font-bold text-[10px] align-top">
                         <th className="p-2 border-r border-glass-border/20 min-w-[100px]">
-                          <div className="flex flex-col gap-1">
-                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Purchase ID</span>
+                          <div className="flex flex-col gap-1.5">
+                            <span className="uppercase text-[9px] tracking-wider text-muted font-black">Purchase ID</span>
+                            <input
+                              type="text"
+                              placeholder="Search ID..."
+                              value={colFilterId}
+                              onChange={e => setColFilterId(e.target.value)}
+                              className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                            />
                           </div>
                         </th>
                         <th className="p-2 border-r border-glass-border/20 min-w-[180px]">
-                          <div className="flex flex-col gap-1">
-                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Distributor Name</span>
+                          <div className="flex flex-col gap-1.5">
+                            <span className="uppercase text-[9px] tracking-wider text-muted font-black">Distributor Name</span>
+                            <input
+                              type="text"
+                              placeholder="Search distributor..."
+                              value={colFilterDistributor}
+                              onChange={e => setColFilterDistributor(e.target.value)}
+                              className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                            />
                           </div>
                         </th>
                         <th className="p-2 border-r border-glass-border/20 min-w-[120px]">
-                          <div className="flex flex-col gap-1">
-                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Invoice No.</span>
+                          <div className="flex flex-col gap-1.5">
+                            <span className="uppercase text-[9px] tracking-wider text-muted font-black">Invoice No.</span>
+                            <input
+                              type="text"
+                              placeholder="Search invoice..."
+                              value={colFilterInvoiceNo}
+                              onChange={e => setColFilterInvoiceNo(e.target.value)}
+                              className="w-full px-2 py-1 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                            />
                           </div>
                         </th>
                         <th className="p-2 border-r border-glass-border/20 min-w-[120px]">
-                          <div className="flex flex-col gap-1">
-                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Date</span>
+                          <div className="flex flex-col gap-1.5">
+                            <span className="uppercase text-[9px] tracking-wider text-muted font-black">Date</span>
+                            <input
+                              type="date"
+                              value={colFilterDate}
+                              onChange={e => setColFilterDate(e.target.value)}
+                              className="w-full px-1.5 py-1 bg-bg3 border border-glass-border rounded text-[9px] text-text font-normal focus:outline-none focus:border-primary/50"
+                            />
                           </div>
                         </th>
                         <th className="p-2 border-r border-glass-border/20 min-w-[150px] text-right">
-                          <div className="flex flex-col gap-1 items-end">
-                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Amount</span>
+                          <div className="flex flex-col gap-1.5 items-end">
+                            <span className="uppercase text-[9px] tracking-wider text-muted font-black">Amount</span>
+                            <div className="flex gap-1 w-full justify-end">
+                              <input
+                                type="number"
+                                placeholder="Min"
+                                value={colFilterMinAmount}
+                                onChange={e => setColFilterMinAmount(e.target.value)}
+                                className="w-16 px-1 py-1 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                              />
+                              <input
+                                type="number"
+                                placeholder="Max"
+                                value={colFilterMaxAmount}
+                                onChange={e => setColFilterMaxAmount(e.target.value)}
+                                className="w-16 px-1 py-1 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
+                              />
+                            </div>
                           </div>
                         </th>
-                        <th className="p-2 text-center min-w-[100px]">
-                          <div className="flex flex-col gap-1 items-center justify-center">
-                            <span className="uppercase text-[10px] tracking-wider text-muted font-black">Actions</span>
+                        <th className="p-2 text-center min-w-[100px] align-bottom">
+                          <div className="flex flex-col gap-1.5 items-center justify-end h-full">
+                            <span className="uppercase text-[9px] tracking-wider text-muted font-black">Actions</span>
+                            {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) ? (
+                              <button
+                                onClick={() => {
+                                  setColFilterId('');
+                                  setColFilterDistributor('');
+                                  setColFilterInvoiceNo('');
+                                  setColFilterDate('');
+                                  setColFilterMinAmount('');
+                                  setColFilterMaxAmount('');
+                                }}
+                                className="px-2 py-1 rounded bg-red/15 border border-red/30 text-red-400 hover:bg-red hover:text-white transition-all text-[9px] font-extrabold cursor-pointer h-[26px] w-full"
+                                title="Clear Filters"
+                              >
+                                Reset
+                              </button>
+                            ) : (
+                               <div className="h-[26px]"></div>
+                            )}
                           </div>
                         </th>
-                      </tr>
-                      <tr className="bg-bg2 border-b border-glass-border/30">
-                        <td className="p-2 border-r border-glass-border/20">
-                          <input
-                            type="text"
-                            placeholder="Search ID..."
-                            value={colFilterId}
-                            onChange={e => setColFilterId(e.target.value)}
-                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                          />
-                        </td>
-                        <td className="p-2 border-r border-glass-border/20">
-                          <input
-                            type="text"
-                            placeholder="Search distributor..."
-                            value={colFilterDistributor}
-                            onChange={e => setColFilterDistributor(e.target.value)}
-                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                          />
-                        </td>
-                        <td className="p-2 border-r border-glass-border/20">
-                          <input
-                            type="text"
-                            placeholder="Search invoice..."
-                            value={colFilterInvoiceNo}
-                            onChange={e => setColFilterInvoiceNo(e.target.value)}
-                            className="w-full px-2 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                          />
-                        </td>
-                        <td className="p-2 border-r border-glass-border/20">
-                          <input
-                            type="date"
-                            value={colFilterDate}
-                            onChange={e => setColFilterDate(e.target.value)}
-                            className="w-full px-1.5 py-0.5 bg-bg3 border border-glass-border rounded text-[9px] text-text font-normal focus:outline-none focus:border-primary/50"
-                          />
-                        </td>
-                        <td className="p-2 border-r border-glass-border/20">
-                          <div className="flex gap-1">
-                            <input
-                              type="number"
-                              placeholder="Min"
-                              value={colFilterMinAmount}
-                              onChange={e => setColFilterMinAmount(e.target.value)}
-                              className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                            />
-                            <input
-                              type="number"
-                              placeholder="Max"
-                              value={colFilterMaxAmount}
-                              onChange={e => setColFilterMaxAmount(e.target.value)}
-                              className="w-1/2 px-1 py-0.5 bg-bg3 border border-glass-border rounded text-[10px] text-text font-normal placeholder:text-muted/40 focus:outline-none focus:border-primary/50"
-                            />
-                          </div>
-                        </td>
-                        <td className="p-2 text-center flex items-center justify-center">
-                          {(colFilterId || colFilterDistributor || colFilterInvoiceNo || colFilterDate || colFilterMinAmount || colFilterMaxAmount) && (
-                            <button
-                              onClick={() => {
-                                setColFilterId('');
-                                setColFilterDistributor('');
-                                setColFilterInvoiceNo('');
-                                setColFilterDate('');
-                                setColFilterMinAmount('');
-                                setColFilterMaxAmount('');
-                              }}
-                              className="px-2 py-0.5 rounded bg-red/15 border border-red/30 text-red-400 hover:bg-red hover:text-white transition-all text-[9px] font-extrabold cursor-pointer"
-                              title="Clear Filters"
-                            >
-                              Reset
-                            </button>
-                          )}
-                        </td>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-glass-border/30 text-[11px]">
-                      {paginatedData.length === 0 ? (
+                      {filteredData.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="p-8 text-center text-muted">No purchase transactions matching the filters.</td>
                         </tr>
                       ) : (
-                        paginatedData.map((tx) => (
+                        filteredData.map((tx) => (
                           <tr key={tx.id} className="hover:bg-white/10 transition-all duration-300 group hover:shadow-lg hover:-translate-y-0.5 border-b border-glass-border/30">
                             <td className="p-4 relative">
                               <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-blue-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>

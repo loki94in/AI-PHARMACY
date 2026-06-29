@@ -47,6 +47,8 @@ export const PipPortal: React.FC<PipPortalProps> = ({
           height,
         });
 
+        if (!newWin) { onClose(); return; }
+
         if (!isMounted) {
           newWin.close();
           return;

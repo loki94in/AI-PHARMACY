@@ -426,6 +426,63 @@ router.get('/catalog-search', async (req, res) => {
   }
 });
 
+// Batch resolve medicine names for uploads
+router.post('/batch-resolve', async (req, res) => {
+  const { names } = req.body;
+  if (!Array.isArray(names)) return res.status(400).json({ error: 'names array is required' });
+  
+  let db;
+  try {
+    db = await dbManager.getConnection();
+    const resolutions: Record<string, any> = {};
+
+    for (const name of names) {
+      if (!name) continue;
+      const lowerName = name.trim().toLowerCase();
+      
+      // 1. Check for learned mapping
+      const correction = await db.get('SELECT correct FROM ocr_corrections WHERE LOWER(ocr) = ?', [lowerName]);
+      if (correction) {
+        const medicine = await db.get('SELECT id, name, manufacturer, mrp, rate, cgst_per, sgst_per FROM medicines WHERE LOWER(name) = ?', [correction.correct.toLowerCase()]);
+        if (medicine) {
+          resolutions[name] = medicine;
+          continue;
+        }
+      }
+
+      // 2. Exact match check from medicines or aliases
+      const medicine = await db.get(
+        `SELECT id, name, manufacturer, mrp, rate, cgst_per, sgst_per 
+         FROM medicines WHERE LOWER(name) = ?`,
+        [lowerName]
+      );
+      if (medicine) {
+        resolutions[name] = medicine;
+        continue;
+      }
+      
+      const aliasMatch = await db.get(
+        `SELECT m.id, m.name, m.manufacturer, m.mrp, m.rate, m.cgst_per, m.sgst_per 
+         FROM medicine_aliases a
+         JOIN medicines m ON a.medicine_id = m.id
+         WHERE LOWER(a.alias_name) = ?`,
+        [lowerName]
+      );
+      
+      if (aliasMatch) {
+        resolutions[name] = aliasMatch;
+      } else {
+        resolutions[name] = null;
+      }
+    }
+
+    res.json({ success: true, resolutions });
+  } catch (error: any) {
+    console.error('Batch resolve error:', error.message);
+    res.status(500).json({ error: 'Batch resolve failed' });
+  }
+});
+
 
 // Generate QR Code for an inventory item (Barcode/QR feature)
 import QRCode from 'qrcode';

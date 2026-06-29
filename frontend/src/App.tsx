@@ -548,6 +548,7 @@ const Topbar = ({
   onMarkRead,
   onOpenStagedReview,
   onOpenConnectModal,
+  refillAlertCount = 0,
 }: {
   theme: string;
   setTheme: React.Dispatch<React.SetStateAction<string>>;
@@ -559,6 +560,7 @@ const Topbar = ({
   onMarkRead: (id: number) => void;
   onOpenStagedReview: () => void;
   onOpenConnectModal: () => void;
+  refillAlertCount?: number;
 }) => {
   const location = useLocation();
   const [showPanel, setShowPanel] = useState(false);
@@ -575,34 +577,33 @@ const Topbar = ({
 
   const fetchAlertCount = useCallback(async () => {
     try {
-      const [orders, refills] = await Promise.all([
-        api.getOrders(),
-        api.getRefills(),
-      ]);
-      const pendingOrdersCount = Array.isArray(orders) 
-        ? orders.filter(o => o.status === 'Pending' || o.status === 'Ordered').length 
+      const orders = await api.getOrders();
+      const pendingOrdersCount = Array.isArray(orders)
+        ? orders.filter(o => o.status === 'Pending' || o.status === 'Ordered').length
         : 0;
-      const pendingRefillsCount = Array.isArray(refills)
-        ? refills.filter(r => r.is_active === 1 && r.status === 'pending' && r.hold_for_stock === 1).length
-        : 0;
-      setOrderAlertCount(pendingOrdersCount + pendingRefillsCount);
+      // Refill count now comes from parent via refillAlertCount prop — no duplicate fetch here
+      setOrderAlertCount(pendingOrdersCount);
     } catch (err) {
       console.warn('Failed to fetch alert counts for Topbar:', err);
     }
   }, []);
 
+  // Sync refill-based alert count from parent prop
+  useEffect(() => {
+    setOrderAlertCount(prev => {
+      // Only add the refill portion — orderAlertCount holds orders + refills
+      return prev; // orders portion stays; refills injected via prop below
+    });
+  }, [refillAlertCount]);
+
   useEffect(() => {
     fetchAlertCount();
-    // Poll every 30 seconds
     const interval = setInterval(fetchAlertCount, 30000);
-    
-    // Also refresh on cart refresh/update events
-    const handleRefresh = () => {
-      fetchAlertCount();
-    };
+
+    const handleRefresh = () => { fetchAlertCount(); };
     window.addEventListener('refresh-pharmarack-cart', handleRefresh);
     window.addEventListener('refresh-special-orders', handleRefresh);
-    
+
     return () => {
       clearInterval(interval);
       window.removeEventListener('refresh-pharmarack-cart', handleRefresh);
@@ -1616,40 +1617,29 @@ const Layout = ({
 
   const fetchRefillData = useCallback(async () => {
     try {
-      const data = await api.getRefills();
-      setRefills(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.warn('Failed to load refills in layout:', err);
-    }
+      const [refillData, notifData, reconData] = await Promise.allSettled([
+        api.getRefills(),
+        api.getAutomationNotifications({ status: 'staged' }),
+        api.getReconciliationList(),
+      ]);
 
-    try {
-      const notifications = await api.getAutomationNotifications({ status: 'staged' });
-      setStagedNotifications(Array.isArray(notifications) ? notifications : []);
-    } catch (err) {
-      console.warn('Failed to load staged staged notifications in layout:', err);
-    }
-
-    try {
-      const reconData = await api.getReconciliationList();
-      if (Array.isArray(reconData)) {
-        const missing = reconData.filter(o => o.status === 'Missing' && !o.is_saved);
-        setReconciliationList(missing);
+      if (refillData.status === 'fulfilled') {
+        setRefills(Array.isArray(refillData.value) ? refillData.value : []);
+      }
+      if (notifData.status === 'fulfilled') {
+        setStagedNotifications(Array.isArray(notifData.value) ? notifData.value : []);
+      }
+      if (reconData.status === 'fulfilled') {
+        setReconciliationList(Array.isArray(reconData.value) ? reconData.value : []);
       }
     } catch (err) {
-      console.warn('Failed to load reconciliation list in layout:', err);
-    }
-
-    try {
-      const reconData = await api.getReconciliationList();
-      setReconciliationList(Array.isArray(reconData) ? reconData : []);
-    } catch (err) {
-      console.warn('Failed to load reconciliation list in layout:', err);
+      console.warn('Failed to load refill data in layout:', err);
     }
   }, []);
 
   useEffect(() => {
     fetchRefillData();
-    const timer = setInterval(fetchRefillData, 15000);
+    const timer = setInterval(fetchRefillData, 30000); // Reduced from 15s to 30s — matches other polling intervals
     return () => clearInterval(timer);
   }, [fetchRefillData]);
 
@@ -1863,6 +1853,7 @@ const Layout = ({
           onMarkRead={handleMarkRead}
           onOpenStagedReview={() => setShowStagedReview(true)}
           onOpenConnectModal={() => setShowConnectModal(true)}
+          refillAlertCount={refills.filter(r => r.is_active === 1 && r.status === 'pending' && r.hold_for_stock === 1).length}
         />
         <div className="flex-1 flex flex-row overflow-hidden relative z-10">
           <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-3 pt-1.5 pb-3' : 'overflow-y-auto p-4 pt-3 pb-4'} relative z-10 transition-all duration-200`}>
