@@ -101,6 +101,7 @@ const AutomationCenter = () => {
   const [expandedMessageId, setExpandedMessageId] = useState<number | null>(null);
   const [checkingStock, setCheckingStock] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'ready' | 'waiting' | 'overdue'>('all');
+  const [sendingId, setSendingId] = useState<number | null>(null);
 
   const filteredRefills = useMemo(() => {
     const term = refillSearch.toLowerCase();
@@ -342,17 +343,22 @@ const AutomationCenter = () => {
   }, [fetchRefills, showToast]);
 
   const handleSendNow = useCallback(async (id: number) => {
+    setSendingId(id);
     try {
-      showToast('Triggering manual message dispatch...', 'info');
+      showToast('Sending message to patient...', 'info');
       await api.sendRefillNow(id);
-      showToast('Refill reminder dispatched via WhatsApp!', 'success');
+      showToast('Refill reminder sent via WhatsApp!', 'success');
+      setExpandedMessageId(null);
       fetchRefills();
       if (activeTab === 'logs') fetchLogs();
     } catch (err: any) {
       console.error('Failed to trigger send:', err);
-      showToast('WhatsApp dispatch failed: ' + (err.response?.data?.error || err.message), 'error');
+      showToast('Auto-send failed — use the manual options below to reach the patient.', 'error');
+      setExpandedMessageId(id); // auto-expand fallback panel
       fetchRefills();
       if (activeTab === 'logs') fetchLogs();
+    } finally {
+      setSendingId(null);
     }
   }, [activeTab, fetchRefills, fetchLogs, showToast]);
 
@@ -704,11 +710,14 @@ const AutomationCenter = () => {
                               </button>
                               <button
                                 onClick={() => handleSendNow(refill.id)}
-                                disabled={refill.is_active !== 1}
+                                disabled={refill.is_active !== 1 || sendingId === refill.id}
                                 className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky hover:bg-sky-500/20 disabled:opacity-40 transition-all"
-                                title="Auto-send via WhatsApp"
+                                title="Send via WhatsApp automatically"
                               >
-                                <Send size={12} />
+                                {sendingId === refill.id
+                                  ? <RefreshCw size={12} className="animate-spin" />
+                                  : <Send size={12} />
+                                }
                               </button>
                               <button
                                 onClick={() => handleEditReminderClick(refill)}
@@ -729,14 +738,39 @@ const AutomationCenter = () => {
                         </tr>
                         {isExpanded && (
                           <tr className="border-b border-primary/20 bg-primary/5">
-                            <td colSpan={7} className="px-5 pb-4 pt-2">
-                              <div className="flex flex-col gap-2.5">
-                                <p className="text-[10px] font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
-                                  <MessageSquare size={10} /> Message to share manually — after physical stock check
-                                </p>
+                            <td colSpan={7} className="px-5 pb-4 pt-3">
+                              <div className="flex flex-col gap-3">
+                                {/* Primary: direct send */}
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => handleSendNow(refill.id)}
+                                    disabled={refill.is_active !== 1 || sendingId === refill.id}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky/20 border border-sky/40 text-sm font-bold text-sky hover:bg-sky/30 disabled:opacity-40 transition-all shadow-[0_2px_10px_rgba(14,165,233,0.2)]"
+                                  >
+                                    {sendingId === refill.id
+                                      ? <RefreshCw size={13} className="animate-spin" />
+                                      : <Send size={13} />
+                                    }
+                                    {sendingId === refill.id ? 'Sending…' : 'Send via WhatsApp'}
+                                  </button>
+                                  <span className="text-[10px] text-muted">
+                                    Auto-sends to <span className="font-mono text-text/70">{refill.patient_phone}</span>
+                                  </span>
+                                </div>
+
+                                {/* Divider */}
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 h-px bg-glass-border/40" />
+                                  <span className="text-[10px] text-muted font-bold uppercase tracking-wider">If auto-send fails — share manually</span>
+                                  <div className="flex-1 h-px bg-glass-border/40" />
+                                </div>
+
+                                {/* Message preview */}
                                 <div className="bg-black/30 border border-primary/20 rounded-xl p-3 text-sm text-text/90 leading-relaxed font-medium select-all cursor-text">
                                   {msg}
                                 </div>
+
+                                {/* Manual fallback actions */}
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <button
                                     onClick={() => { navigator.clipboard.writeText(msg); showToast('Message copied!', 'success'); }}
