@@ -345,7 +345,7 @@ const PurchaseHistory = () => {
     const url = URL.createObjectURL(blob);
     
     link.setAttribute('href', url);
-    link.setAttribute('download', `Purchase_History_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Purchase_History_${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();

@@ -138,13 +138,29 @@ const getPackSizeFromPackaging = (packaging?: string): number => {
 };
 
 const consolidateSearchResults = (rawResults: any[]): any[] => {
-  const consolidatedMap = new Map<number, any>();
+  const consolidatedMap = new Map<string | number, any>();
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   for (const item of rawResults) {
-    const medId = item.medicine_id;
+    // Filter out expired medicines
+    if (item.expiry_date) {
+      const exp = new Date(item.expiry_date);
+      if (exp < today) {
+        continue;
+      }
+    }
+
+    // Use medicine_id if available, otherwise fallback to normalized name to prevent duplicates
+    const medName = (item.medicine_name || item.name || '').trim().toUpperCase();
+    const medKey = item.medicine_id || medName;
+    
+    if (!medKey) continue;
+
     if (item.is_out_of_stock) {
-      if (!consolidatedMap.has(medId)) {
-        consolidatedMap.set(medId, {
+      if (!consolidatedMap.has(medKey)) {
+        consolidatedMap.set(medKey, {
           ...item,
           total_quantity: 0,
           total_loose_quantity: 0,
@@ -152,7 +168,7 @@ const consolidateSearchResults = (rawResults: any[]): any[] => {
           alternatives: item.alternatives || []
         });
       } else {
-        const existing = consolidatedMap.get(medId);
+        const existing = consolidatedMap.get(medKey);
         const altIds = new Set(existing.alternatives.map((a: any) => a.medicine_id));
         for (const alt of (item.alternatives || [])) {
           if (!altIds.has(alt.medicine_id)) {
@@ -164,8 +180,8 @@ const consolidateSearchResults = (rawResults: any[]): any[] => {
       continue;
     }
 
-    if (!consolidatedMap.has(medId)) {
-      consolidatedMap.set(medId, {
+    if (!consolidatedMap.has(medKey)) {
+      consolidatedMap.set(medKey, {
         medicine_id: item.medicine_id,
         medicine_name: item.medicine_name,
         api_reference: item.api_reference,
@@ -203,7 +219,7 @@ const consolidateSearchResults = (rawResults: any[]): any[] => {
         alternatives: item.alternatives || []
       });
     } else {
-      const existing = consolidatedMap.get(medId);
+      const existing = consolidatedMap.get(medKey);
       existing.total_quantity += (item.quantity || 0);
       existing.total_loose_quantity += (item.loose_quantity || 0);
       
@@ -422,7 +438,7 @@ const POS = () => {
   const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
   const [patientHighlightIndex, setPatientHighlightIndex] = useState(-1);
   const [discount, setDiscount] = useState(initialActiveTab.discount || 0);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
   const [cart, setCart] = useState<any[]>(initialActiveTab.items || []);
   const [sendWhatsApp, setSendWhatsApp] = useState(initialActiveTab.sendWhatsApp || false); // DEFAULT: OFF
   const [paymentMedium, setPaymentMedium] = useState<string>(initialActiveTab.paymentMedium || 'CASH'); // DEFAULT: CASH
@@ -899,18 +915,18 @@ const POS = () => {
         );
       }
       return [...prevCart, { 
-        id: med.id, 
-        medicine_id: med.medicine_id || med.id,
-        name: med.name, 
-        batch: med.batch || 'B-GEN', 
-        expiry: med.expiry || '12/28', 
+        id: med.id || med.inventory_id, 
+        medicine_id: med.medicine_id || med.id || med.inventory_id,
+        name: med.name || med.medicine_name, 
+        batch: med.batch || med.batch_no || 'B-GEN', 
+        expiry: med.expiry || med.expiry_date || '12/28', 
         qty: incQty, 
         looseQty: incLooseQty,
         discount: med.discount !== undefined ? med.discount : 0,
         packSize: med.packSize || 10,
         mrp: med.mrp, 
         unitPrice: med.unitPrice || med.unit_price || med.mrp,
-        costPrice: med.costPrice || (med.mrp * 0.7),
+        costPrice: med.costPrice || med.cost_price || (med.mrp * 0.7),
         availableStock: med.quantity !== undefined ? med.quantity : (med.availableStock !== undefined ? med.availableStock : 0)
       }];
     });
@@ -962,7 +978,7 @@ const POS = () => {
           patient_phone: patientPhone.trim(),
           items: [{ medicine_id: medId, name: medName, qty: 10 }],
           refill_interval_days: 30,
-          next_refill_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+          next_refill_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000 - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]
         });
         alert(`✅ Created new refill reminder profile for "${patientName.trim()}" with "${medName}"!`);
       }
@@ -1049,38 +1065,44 @@ const POS = () => {
       if (item.id !== id) return item;
       
       let updatedItem = { ...item, [field]: value };
+
+      if (field === 'qty' || field === 'looseQty' || field === 'packSize') {
+        const pSize = Math.max(1, field === 'packSize' ? Number(value) : Number(updatedItem.packSize || 10));
+        let q = field === 'qty' ? Math.max(0, Number(value)) : Number(updatedItem.qty || 0);
+        let lq = field === 'looseQty' ? Math.max(0, Number(value)) : Number(updatedItem.looseQty || 0);
+
+        if (field === 'packSize') {
+          updatedItem.packSize = pSize;
+          if (typeof id === 'number' && id < 1000000) {
+            api.updateMedicine(id, { pack_size: String(pSize) })
+              .catch(err => console.error('Error updating pack size in DB:', err));
+          }
+        }
+
+        // Normalize loose to qty
+        if (lq >= pSize) {
+          q += Math.floor(lq / pSize);
+          lq = lq % pSize;
+        }
+
+        let maxQty = Infinity;
+        if (item.availableStock !== undefined && item.availableStock !== null && item.availableStock !== 'N/A') {
+          maxQty = Number(item.availableStock);
+        }
+
+        const maxTablets = Math.floor(maxQty * pSize);
+        let reqTablets = (q * pSize) + lq;
+
+        if (reqTablets > maxTablets) {
+          reqTablets = maxTablets;
+        }
+
+        updatedItem.qty = Math.floor(reqTablets / pSize);
+        updatedItem.looseQty = reqTablets % pSize;
+      }
       
       if (field === 'mrp') {
         updatedItem.unitPrice = Number(value);
-      }
-      
-      if (field === 'looseQty') {
-        const looseVal = Math.max(0, Number(value));
-        const pSize = updatedItem.packSize || 10;
-        if (looseVal >= pSize) {
-          const extraStrips = Math.floor(looseVal / pSize);
-          updatedItem.qty = (updatedItem.qty || 0) + extraStrips;
-          updatedItem.looseQty = looseVal % pSize;
-        } else {
-          updatedItem.looseQty = looseVal;
-        }
-      }
-
-      if (field === 'packSize') {
-        const pSize = Math.max(1, Number(value));
-        updatedItem.packSize = pSize;
-        const looseVal = updatedItem.looseQty || 0;
-        if (looseVal >= pSize) {
-          const extraStrips = Math.floor(looseVal / pSize);
-          updatedItem.qty = (updatedItem.qty || 0) + extraStrips;
-          updatedItem.looseQty = looseVal % pSize;
-        }
-        
-        // Trigger global SQLite database update for pack size if it is a saved inventory item
-        if (typeof id === 'number' && id < 1000000) {
-          api.updateMedicine(id, { pack_size: String(pSize) })
-            .catch(err => console.error('Error updating pack size in DB:', err));
-        }
       }
 
       if (field === 'mrp' && typeof id === 'number' && id < 1000000) {
@@ -1251,7 +1273,7 @@ const POS = () => {
       const salesItems = cart.map(item => {
         const itemDiscount = item.discount || item.discountPer || 0;
         return {
-          inventory_id: typeof item.id === 'number' && item.id < 1000000 ? item.id : undefined,
+          inventory_id: (item.id && Number(item.id) < 1000000) ? Number(item.id) : undefined,
           medicine_name: item.name,
           batch_no: item.batch,
           expiry_date: item.expiry,
@@ -1264,13 +1286,24 @@ const POS = () => {
         };
       });
 
+      const now = new Date();
+      const todayLocalDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+      
+      let finalSaleDateStr = date;
+      if (date === todayLocalDate) {
+        finalSaleDateStr = now.toISOString();
+      } else {
+        const timeStr = now.toISOString().split('T')[1]; 
+        finalSaleDateStr = `${date}T${timeStr}`;
+      }
+
       const payload = {
         items: salesItems,
         discount: discountAmount,
         patient_name: patientName || 'Walk-in Customer',
         patient_phone: patientPhone,
         doctor_name: doctor || undefined,
-        sale_date: date,
+        sale_date: finalSaleDateStr,
         paymentMedium: paymentMedium,
         paymentStatus: paymentMedium === 'CREDIT' ? 'UNPAID' : 'PAID',
         sendWhatsApp: paymentMedium === 'CREDIT' ? true : sendWhatsApp,
@@ -2371,8 +2404,14 @@ const POS = () => {
 
       {/* Patient Profile & Auto-Refills Modal */}
       {showPatientModal && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-fade-in">
-          <div className="glass-panel max-w-md w-full p-6 space-y-5 border-border bg-bg2/95 rounded-2xl relative shadow-2xl">
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-fade-in"
+          onClick={() => setShowPatientModal(false)}
+        >
+          <div 
+            className="glass-panel max-w-md w-full p-6 space-y-5 border-border bg-bg2/95 rounded-2xl relative shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
             {/* Modal Header */}
             <div className="flex justify-between items-center border-b border-border pb-3">
               <h3 className="font-bold flex items-center gap-2 text-lg text-text">
@@ -2520,8 +2559,14 @@ const POS = () => {
 
       {/* Doctor Registration Modal */}
       {showDoctorModal && createPortal(
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in">
-          <div className="bg-bg border border-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
+        <div 
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in"
+          onClick={() => setShowDoctorModal(false)}
+        >
+          <div 
+            className="bg-bg border border-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="px-5 py-4 border-b border-border bg-bg3/30 flex items-center justify-between">
               <h3 className="font-bold flex items-center gap-2 text-sky text-sm">
                 <Plus size={18} />
@@ -2614,8 +2659,14 @@ const POS = () => {
 
       {/* Barcode Print Prompt Modal */}
       {showBarcodeModal && createPortal(
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-md fade-in">
-          <div className="bg-bg border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6">
+        <div 
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-md fade-in"
+          onClick={() => setShowBarcodeModal(false)}
+        >
+          <div 
+            className="bg-bg border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-6 space-y-6"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="text-center space-y-2">
               <div className="inline-flex p-3 rounded-full bg-green/10 border border-green/20 text-green mb-2">
                 <CheckCircle size={32} className="animate-bounce" />

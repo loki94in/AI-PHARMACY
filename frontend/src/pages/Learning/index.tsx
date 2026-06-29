@@ -419,7 +419,7 @@ const Learning: React.FC = () => {
   const handleTriggerDoctorReport = async (docId: number) => {
     setTriggeringDoctorReport(docId);
     try {
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000 - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
       const res = await apiClient.post('/crm/doctors/send-daily-reports', {
         date: yesterday
       });

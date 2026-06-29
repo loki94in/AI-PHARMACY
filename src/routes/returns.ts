@@ -300,18 +300,18 @@ router.post('/process-returns', async (req, res) => {
     db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
 
-    const lastRet = await db.get("SELECT return_no FROM returns WHERE return_no LIKE 'PR-%' ORDER BY id DESC LIMIT 1");
-    let nextNum = 1;
+    const lastRet = await db.get("SELECT return_no FROM returns ORDER BY id DESC LIMIT 1");
+    let returnNo = 'PR-001';
     if (lastRet && lastRet.return_no) {
-      const match = lastRet.return_no.match(/PR-(\d+)/);
+      const match = lastRet.return_no.match(/^(.*?)(\d+)$/);
       if (match) {
-        nextNum = parseInt(match[1], 10) + 1;
-      } else {
-        const anyNum = lastRet.return_no.match(/\d+/);
-        if (anyNum) nextNum = parseInt(anyNum[0], 10) + 1;
+        const prefix = match[1];
+        const numStr = match[2];
+        const nextNum = parseInt(numStr, 10) + 1;
+        const padded = String(nextNum).padStart(numStr.length, '0');
+        returnNo = `${prefix}${padded}`;
       }
     }
-    const returnNo = `PR-${String(nextNum).padStart(3, '0')}`;
     
     // Group return items by distributor to create individual return references if needed,
     // or aggregate under one single return transaction. Let's create one master return record:
@@ -641,12 +641,28 @@ router.put('/:id', async (req, res) => {
     }
     db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
+    
+    // Reverse old stock
+    const oldItems = await db.all('SELECT medicine_id, batch_no, quantity FROM return_items WHERE return_id = ?', [id]);
+    for (const old of oldItems) {
+      const invItem = await db.get('SELECT id, quantity FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [old.medicine_id, old.batch_no]);
+      if (invItem) {
+        await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [old.quantity, invItem.id]);
+      }
+    }
+
     await db.run('DELETE FROM return_items WHERE return_id = ?', [id]);
     for (const item of items) {
       await db.run(
         `INSERT INTO return_items (return_id, medicine_id, batch_no, quantity, cost_price, mrp, total_price) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [id, item.medicine_id, item.batch_no, item.quantity, item.cost_price, item.mrp || 0, (item.cost_price || 0) * (item.quantity || 0)]
       );
+      // Subtract new stock
+      const invItem = await db.get('SELECT id, quantity FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [item.medicine_id, item.batch_no]);
+      if (invItem) {
+        const newQty = Math.max(0, invItem.quantity - item.quantity);
+        await db.run('UPDATE inventory_master SET quantity = ? WHERE id = ?', [newQty, invItem.id]);
+      }
     }
     const computed = items.reduce((s, i) => s + (i.cost_price || 0) * (i.quantity || 0), 0);
     await db.run('UPDATE returns SET total_amount = ? WHERE id = ?', [total_amount ?? computed, id]);
@@ -666,6 +682,16 @@ router.delete('/:id', async (req, res) => {
     const { id } = req.params;
     db = await dbManager.getConnection();
     await db.run('BEGIN TRANSACTION');
+
+    // Reverse old stock before deleting
+    const oldItems = await db.all('SELECT medicine_id, batch_no, quantity FROM return_items WHERE return_id = ?', [id]);
+    for (const old of oldItems) {
+      const invItem = await db.get('SELECT id, quantity FROM inventory_master WHERE medicine_id = ? AND batch_no = ?', [old.medicine_id, old.batch_no]);
+      if (invItem) {
+        await db.run('UPDATE inventory_master SET quantity = quantity + ? WHERE id = ?', [old.quantity, invItem.id]);
+      }
+    }
+
     await db.run('DELETE FROM return_items WHERE return_id = ?', [id]);
     await db.run('DELETE FROM returns WHERE id = ?', [id]);
     await db.run('COMMIT');

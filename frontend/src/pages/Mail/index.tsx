@@ -428,7 +428,7 @@ const Mail = () => {
           prefilledPurchase: {
             distributorName: parsedDistributorName || selectedEmail.distributorName || '',
             invoiceNo: parsedInvoiceNo || (invoiceNoMatch ? invoiceNoMatch[0] : ''),
-            date: parsedInvoiceDate || (selectedEmail.date ? new Date(selectedEmail.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            date: parsedInvoiceDate || (selectedEmail.date ? new Date(new Date(selectedEmail.date).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0] : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]),
             totalAmount: parsedTotalAmount || 0,
             globalCdPer: parsedGlobalCdPer || 0,
             source_filename: selectedFiles[0]?.filename || '',

@@ -65,18 +65,26 @@ async function queryAllWithRetry(db: Database, sql: string, params: any[] = []) 
   }
 }
 
-const generateInvoiceNo = async (db: Database) => {
-  const year = new Date().getFullYear();
-  const prefix = `S-${year}-`;
-  const row = await db.get('SELECT invoice_no FROM sales_invoices WHERE invoice_no LIKE ? ORDER BY invoice_no DESC LIMIT 1', `${prefix}%`);
-  let nextNum = 1;
+export const generateInvoiceNo = async (db: any) => {
+  const row = await db.get('SELECT invoice_no FROM sales_invoices ORDER BY id DESC LIMIT 1');
+  
   if (row && row.invoice_no) {
-    const parts = row.invoice_no.split('-');
-    const numPart = parts[2];
-    nextNum = parseInt(numPart, 10) + 1;
+    // Look for any trailing digits to increment, preserving whatever prefix came before it
+    const match = row.invoice_no.match(/^(.*?)(\d+)$/);
+    if (match) {
+      const prefix = match[1];
+      const numStr = match[2];
+      const nextNum = parseInt(numStr, 10) + 1;
+      // Preserve the padding width of the original sequence
+      const padded = String(nextNum).padStart(numStr.length, '0');
+      return `${prefix}${padded}`;
+    }
   }
-  const padded = String(nextNum).padStart(4, '0');
-  return `${prefix}${padded}`;
+  
+  // Fallback to fresh start if table is empty or format is unrecognizable
+  const d = new Date();
+  const year = d.getFullYear();
+  return `S-${year}-0001`;
 };
 
 // Get next sequential invoice number

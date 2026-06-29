@@ -701,22 +701,18 @@ router.post('/manual', async (req, res) => {
     const grandTotal = Math.max(0, originalAmount - cnAmountVal);
 
     // Generate app_invoice_no sequentially
-    const lastPur = await db.get(
-      `SELECT app_invoice_no FROM purchases 
-       WHERE app_invoice_no LIKE 'P-%' 
-       ORDER BY id DESC LIMIT 1`
-    );
-    let nextSeq = 1;
+    const lastPur = await db.get('SELECT app_invoice_no FROM purchases ORDER BY id DESC LIMIT 1');
+    let appInvoiceNo = 'P-001';
     if (lastPur && lastPur.app_invoice_no) {
-      const match = lastPur.app_invoice_no.match(/P-(\d+)/);
+      const match = lastPur.app_invoice_no.match(/^(.*?)(\d+)$/);
       if (match) {
-        nextSeq = parseInt(match[1], 10) + 1;
-      } else {
-        const anyNum = lastPur.app_invoice_no.match(/\d+/);
-        if (anyNum) nextSeq = parseInt(anyNum[0], 10) + 1;
+        const prefix = match[1];
+        const numStr = match[2];
+        const nextSeq = parseInt(numStr, 10) + 1;
+        const padded = String(nextSeq).padStart(numStr.length, '0');
+        appInvoiceNo = `${prefix}${padded}`;
       }
     }
-    const appInvoiceNo = `P-${nextSeq.toString().padStart(3, '0')}`;
 
     // 2. Insert into purchases
     const purchRes = await db.run(
@@ -1634,8 +1630,8 @@ router.get('/reconciliation', async (req, res) => {
 
       // Get or parse medicine names and their details
       let medNames: string[] = [];
-      const medDetails: Record<string, { mrp?: number; rate?: number }> = {};
-      const parsedItems = [];
+      const medDetails: Record<string, { mrp?: number; rate?: number; qty?: number }> = {};
+      const parsedItems: any[] = [];
 
       for (const att of attachments) {
         if (att.local_path && fs.existsSync(att.local_path)) {
@@ -1669,7 +1665,7 @@ router.get('/reconciliation', async (req, res) => {
       } else {
         if (parsedItems.length === 0) {
           for (const med of orderInfo.medicines) {
-            parsedItems.push({ name: med.name, quantity: med.quantity, rate: med.rate, mrp: med.mrp });
+            parsedItems.push({ name: med.name, quantity: med.quantity, rate: (med as any).rate, mrp: (med as any).mrp });
           }
         }
         medNames = Array.from(new Set(parsedItems.map(i => i.name).filter(Boolean)));
@@ -1817,22 +1813,18 @@ router.post('/reconciliation/reissue', async (req, res) => {
     distId = dbDist.id;
 
     // Generate app_invoice_no sequentially
-    const lastPur = await db.get(
-      `SELECT app_invoice_no FROM purchases 
-       WHERE app_invoice_no LIKE 'P-%' 
-       ORDER BY id DESC LIMIT 1`
-    );
-    let nextSeq = 1;
+    const lastPur = await db.get('SELECT app_invoice_no FROM purchases ORDER BY id DESC LIMIT 1');
+    let appInvoiceNo = 'P-001';
     if (lastPur && lastPur.app_invoice_no) {
-      const match = lastPur.app_invoice_no.match(/P-(\d+)/);
+      const match = lastPur.app_invoice_no.match(/^(.*?)(\d+)$/);
       if (match) {
-        nextSeq = parseInt(match[1], 10) + 1;
-      } else {
-        const anyNum = lastPur.app_invoice_no.match(/\d+/);
-        if (anyNum) nextSeq = parseInt(anyNum[0], 10) + 1;
+        const prefix = match[1];
+        const numStr = match[2];
+        const nextSeq = parseInt(numStr, 10) + 1;
+        const padded = String(nextSeq).padStart(numStr.length, '0');
+        appInvoiceNo = `${prefix}${padded}`;
       }
     }
-    const appInvoiceNo = `P-${nextSeq.toString().padStart(3, '0')}`;
     const invoiceNo = orderInfo.invoiceNumber !== 'N/A' ? orderInfo.invoiceNumber : appInvoiceNo;
 
     // Check for duplicate invoice number

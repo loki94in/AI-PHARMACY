@@ -2995,6 +2995,18 @@ export class EmailService {
 
       console.log(`[Sync] Last stored UID: ${lastStoredUid}. Connecting to IMAP for delta sync...`);
 
+      // Load ignored emails list for filtering
+      let ignoredEmailsList: string[] = ['info@pharmarack'];
+      const ignoredSetting = await db.get("SELECT value FROM app_settings WHERE key = 'ignored_emails'");
+      if (ignoredSetting && ignoredSetting.value) {
+        const list = ignoredSetting.value.split(',')
+          .map((email: string) => email.trim().toLowerCase())
+          .filter(Boolean);
+        if (list.length > 0) {
+          ignoredEmailsList = list;
+        }
+      }
+
       connection = await imap.connect({ imap: imapConfig });
       await connection.openBox('INBOX');
 
@@ -3135,11 +3147,6 @@ export class EmailService {
         }
       }
 
-      // Trigger background auto-delete cleanups for database and files
-      this.syncAndCleanAttachments().catch(err => {
-        console.error('[Sync] Background email cleanup failed:', err);
-      });
-
       console.log(`[Sync] Delta sync complete. Stored ${syncedCount} new email(s).`);
     } catch (err: any) {
       const errMsg = err.message || '';
@@ -3155,6 +3162,14 @@ export class EmailService {
       if (connection) {
         try { await connection.end(); } catch (e) {}
       }
+    }
+
+    // Trigger background auto-delete cleanups AFTER sync connection is closed
+    // to avoid stacking simultaneous IMAP connections
+    if (syncedCount > 0) {
+      this.syncAndCleanAttachments().catch(err => {
+        console.error('[Sync] Background email cleanup failed:', err);
+      });
     }
 
     return syncedCount;

@@ -99,7 +99,7 @@ const getInitialPurchasesTabs = () => {
       distributorSearch: '',
       invoiceNo: '',
       grnNo: `P-${Math.floor(100 + Math.random()*900)}`,
-      invoiceDate: new Date().toISOString().split('T')[0],
+      invoiceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       globalCdPer: '',
       extraCredit: '',
       cnAmount: '',
@@ -370,7 +370,7 @@ const Purchases: React.FC = () => {
       distributorSearch: '',
       invoiceNo: '',
       grnNo: `P-${Math.floor(100 + Math.random()*900)}`,
-      invoiceDate: new Date().toISOString().split('T')[0],
+      invoiceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       globalCdPer: '',
       extraCredit: '',
       cnAmount: '',
@@ -425,7 +425,7 @@ const Purchases: React.FC = () => {
         distributorSearch: '',
         invoiceNo: '',
         grnNo: `P-${Math.floor(100 + Math.random()*900)}`,
-        invoiceDate: new Date().toISOString().split('T')[0],
+        invoiceDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
         globalCdPer: '',
         extraCredit: '',
         cnAmount: '',
@@ -569,7 +569,7 @@ const Purchases: React.FC = () => {
   const [filterDistributor, setFilterDistributor] = useState('');
   const [filterInvoice, setFilterInvoice] = useState('');
   const [filterStartDate, setFilterStartDate] = useState(getNDaysAgo(13));
-  const [filterEndDate, setFilterEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterEndDate, setFilterEndDate] = useState(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
   const [filterMinAmount, setFilterMinAmount] = useState('');
   const [filterMaxAmount, setFilterMaxAmount] = useState('');
 
@@ -1303,10 +1303,21 @@ const Purchases: React.FC = () => {
 
     setSaving(true);
     try {
+      const now = new Date();
+      const todayLocalDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+      
+      let finalInvoiceDateStr = invoiceDate;
+      if (invoiceDate === todayLocalDate) {
+        finalInvoiceDateStr = now.toISOString();
+      } else {
+        const timeStr = now.toISOString().split('T')[1]; 
+        finalInvoiceDateStr = `${invoiceDate}T${timeStr}`;
+      }
+
       const payload = {
         distributor_id: selectedDistributor,
         invoice_no: invoiceNo,
-        date: invoiceDate,
+        date: finalInvoiceDateStr,
         cd_per: parseFloat(globalCdPer as any) || 0,
         extra_credit: parseFloat(cnAmount as any) || 0,
         cn_amount: parseFloat(cnAmount as any) || 0,
