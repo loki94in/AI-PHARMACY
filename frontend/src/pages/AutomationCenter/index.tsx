@@ -25,6 +25,8 @@ import {
   Phone,
   Package,
   CheckCheck,
+  ShoppingCart,
+  Users,
 } from 'lucide-react';
 import { api, apiClient } from '../../services/api';
 import type { Refill, AutomationNotification } from '../../services/api';
@@ -67,7 +69,7 @@ function getStockStatus(refill: any): { label: string; cls: string } {
 
 const AutomationCenter = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'reminders' | 'logs'>('reminders');
+  const [activeTab, setActiveTab] = useState<'reminders' | 'pending' | 'logs'>('reminders');
 
   // Reminders States
   const [refills, setRefills] = useState<Refill[]>(() => cachedRefills);
@@ -102,6 +104,11 @@ const AutomationCenter = () => {
   const [checkingStock, setCheckingStock] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'ready' | 'waiting' | 'overdue'>('all');
   const [sendingId, setSendingId] = useState<number | null>(null);
+
+  // Pending invoice items (from email invoices not yet in inventory)
+  const [pendingInvoiceItems, setPendingInvoiceItems] = useState<any[]>([]);
+  const [loadingPendingItems, setLoadingPendingItems] = useState(false);
+  const [dismissingItemId, setDismissingItemId] = useState<number | null>(null);
 
   const filteredRefills = useMemo(() => {
     const term = refillSearch.toLowerCase();
@@ -448,6 +455,34 @@ const AutomationCenter = () => {
     }
   }, [fetchRefills, showToast]);
 
+  const fetchPendingInvoiceItems = useCallback(async () => {
+    setLoadingPendingItems(true);
+    try {
+      const data = await api.getPendingInvoiceItems();
+      setPendingInvoiceItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch pending invoice items:', err);
+    } finally {
+      setLoadingPendingItems(false);
+    }
+  }, []);
+
+  const handleDismissPendingItem = useCallback(async (id: number) => {
+    setDismissingItemId(id);
+    try {
+      await api.dismissInvoiceItem(id);
+      setPendingInvoiceItems(prev => prev.filter(i => i.id !== id));
+    } catch {
+      showToast('Failed to dismiss item.', 'error');
+    } finally {
+      setDismissingItemId(null);
+    }
+  }, [showToast]);
+
+  useDeferredEffect(() => {
+    if (activeTab === 'pending') fetchPendingInvoiceItems();
+  }, [activeTab, fetchPendingInvoiceItems]);
+
   const getLogTypeLabel = useCallback((type: string) => {
     switch (type) {
       case 'refill_reminder':
@@ -491,7 +526,7 @@ const AutomationCenter = () => {
           <p className="text-xs text-muted mt-1">Manage patient refill intervals, monitor message delivery status logs, and configure manual retry controls.</p>
         </div>
 
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex gap-2 w-full sm:w-auto flex-wrap">
           <button
             onClick={() => setActiveTab('reminders')}
             className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase flex items-center justify-center gap-2 border ${
@@ -502,6 +537,22 @@ const AutomationCenter = () => {
           >
             <Clock size={14} />
             Refills & Reminders
+          </button>
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all uppercase flex items-center justify-center gap-2 border relative ${
+              activeTab === 'pending'
+                ? 'bg-amber/20 border-amber text-amber shadow-[inset_0_0_15px_rgba(245,158,11,0.15)]'
+                : 'bg-white/5 border-glass-border text-muted hover:text-text hover:bg-white/10'
+            }`}
+          >
+            <Package size={14} />
+            Pending Actions
+            {pendingInvoiceItems.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-amber text-black text-[9px] font-black flex items-center justify-center">
+                {pendingInvoiceItems.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('logs')}
@@ -630,6 +681,9 @@ const AutomationCenter = () => {
                     const stock = getStockStatus(refill);
                     const msg = composeRefillMessage(refill);
                     const isExpanded = expandedMessageId === refill.id;
+                    const refillMedIds = new Set((refill.items || []).map((it: any) => it.medicine_id).filter(Boolean));
+                    if (refill.medicine_id) refillMedIds.add(refill.medicine_id);
+                    const invoiceItems = pendingInvoiceItems.filter(pi => pi.medicine_id && refillMedIds.has(pi.medicine_id));
                     return (
                       <React.Fragment key={refill.id}>
                         <tr className={`border-b border-glass-border/30 transition-all align-top ${isExpanded ? 'bg-white/[0.08]' : 'hover:bg-white/5'}`}>
@@ -670,10 +724,18 @@ const AutomationCenter = () => {
                             {refill.next_refill_date ? new Date(refill.next_refill_date).toLocaleDateString() : 'N/A'}
                           </td>
                           <td className="p-4 text-center">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${stock.cls}`}>
-                              {stock.label === 'Ready' && <CheckCheck size={9} className="mr-1" />}
-                              {stock.label}
-                            </span>
+                            <div className="flex flex-col items-center gap-1">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${stock.cls}`}>
+                                {stock.label === 'Ready' && <CheckCheck size={9} className="mr-1" />}
+                                {stock.label}
+                              </span>
+                              {invoiceItems.length > 0 && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber/10 border border-amber/25 text-amber" title={`Invoice from ${invoiceItems[0].distributor_name || 'distributor'} — stock expected`}>
+                                  <Package size={8} />
+                                  Invoice Rcvd
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4 text-center">
                             <button
@@ -795,6 +857,118 @@ const AutomationCenter = () => {
                       </React.Fragment>
                     );
                   })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'pending' && (
+        <div className="flex-1 flex flex-col min-h-0 glass-panel bg-white/5 border-glass-border">
+          <div className="p-4 border-b border-glass-border bg-black/10 flex items-center justify-between shrink-0">
+            <div>
+              <h3 className="text-sm font-bold text-amber flex items-center gap-2">
+                <Package size={15} /> Pending Actions — Invoice Received, Stock Not Yet in Inventory
+              </h3>
+              <p className="text-[11px] text-muted mt-0.5">
+                Medicines that arrived via distributor email invoice but haven't been added to inventory. Auto-cleared once a purchase is saved.
+              </p>
+            </div>
+            <button
+              onClick={fetchPendingInvoiceItems}
+              className="p-2 rounded-xl bg-white/5 border border-glass-border hover:bg-white/10 hover:text-text text-muted transition-all"
+              title="Refresh"
+            >
+              <RefreshCw size={14} className={loadingPendingItems ? 'animate-spin' : ''} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto bg-black/10">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="sticky top-0 bg-bg2/95 backdrop-blur z-10">
+                <tr>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Medicine</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border text-center">Qty Expected</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Distributor</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Invoice Date</th>
+                  <th className="p-4 text-xs font-bold text-muted uppercase border-b border-glass-border">Patients Waiting</th>
+                  <th className="p-4 text-xs font-bold text-muted border-b border-glass-border text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingPendingItems ? (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-muted">
+                      <RefreshCw size={22} className="animate-spin mx-auto mb-3 text-amber opacity-60" />
+                      Loading pending invoice items...
+                    </td>
+                  </tr>
+                ) : pendingInvoiceItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-16 text-center text-muted font-medium">
+                      <CheckCheck size={36} className="mx-auto mb-3 text-green/40" />
+                      All clear — no pending invoice items. Everything has been added to inventory.
+                    </td>
+                  </tr>
+                ) : (
+                  pendingInvoiceItems.map(item => (
+                    <tr key={item.id} className="border-b border-glass-border/30 hover:bg-white/5 transition-all">
+                      <td className="p-4">
+                        <div className="font-bold text-text">{item.resolved_medicine_name || item.medicine_name}</div>
+                        {item.resolved_medicine_name && item.resolved_medicine_name !== item.medicine_name && (
+                          <div className="text-[10px] text-muted mt-0.5">From email: {item.medicine_name}</div>
+                        )}
+                        {!item.medicine_id && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/15 border border-orange-500/20 text-orange-400 font-bold mt-0.5 inline-block">Not in DB</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center font-mono font-bold text-amber">
+                        {item.qty_expected > 0 ? item.qty_expected : '—'}
+                      </td>
+                      <td className="p-4 text-text font-medium">{item.distributor_name || '—'}</td>
+                      <td className="p-4 font-mono text-muted text-[10px]">
+                        {item.email_received_at ? new Date(item.email_received_at).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="p-4">
+                        {item.waiting_patients && item.waiting_patients.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {item.waiting_patients.slice(0, 3).map((p: any) => (
+                              <span key={p.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-sky/10 border border-sky/20 text-sky">
+                                <Users size={8} />
+                                {p.patient_name}
+                              </span>
+                            ))}
+                            {item.waiting_patients.length > 3 && (
+                              <span className="text-[9px] text-muted">+{item.waiting_patients.length - 3}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted italic">No patient waiting</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex gap-1.5 justify-end items-center">
+                          {item.medicine_id && (
+                            <button
+                              onClick={() => navigate(`/pos?medicineId=${item.medicine_id}&medicineName=${encodeURIComponent(item.resolved_medicine_name || item.medicine_name)}`)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[10px] font-bold hover:bg-primary/25 transition-all"
+                              title="Open in POS cart"
+                            >
+                              <ShoppingCart size={10} /> Add to Cart
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDismissPendingItem(item.id)}
+                            disabled={dismissingItemId === item.id}
+                            className="p-1.5 rounded-lg bg-white/5 border border-glass-border text-muted hover:text-red hover:bg-red/10 hover:border-red/20 transition-all"
+                            title="Dismiss"
+                          >
+                            {dismissingItemId === item.id ? <RefreshCw size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>

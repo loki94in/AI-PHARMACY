@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../services/api';
-import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Package, Users, ShoppingCart, X } from 'lucide-react';
 
 interface PurchaseTransaction {
   id: number;
@@ -132,6 +132,11 @@ const PurchaseHistory = () => {
   const [resolvingUid, setResolvingUid] = useState<number | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
 
+  // Pending invoice items (medicine-level from email invoices)
+  const [pendingItems, setPendingItems] = useState<any[]>([]);
+  const [loadingPendingItems, setLoadingPendingItems] = useState(false);
+  const [dismissingItemId, setDismissingItemId] = useState<number | null>(null);
+
   const fetchHistory = async () => {
     try {
       setLoading(true);
@@ -153,6 +158,7 @@ const PurchaseHistory = () => {
 
   useEffect(() => {
     fetchReconciliation();
+    fetchPendingItems();
   }, []);
 
   const fetchReconciliation = async () => {
@@ -164,6 +170,30 @@ const PurchaseHistory = () => {
       console.error('Error fetching reconciliation list:', err);
     } finally {
       setLoadingRecon(false);
+    }
+  };
+
+  const fetchPendingItems = async () => {
+    try {
+      setLoadingPendingItems(true);
+      const data = await api.getPendingInvoiceItems();
+      setPendingItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error fetching pending invoice items:', err);
+    } finally {
+      setLoadingPendingItems(false);
+    }
+  };
+
+  const handleDismissItem = async (id: number) => {
+    try {
+      setDismissingItemId(id);
+      await api.dismissInvoiceItem(id);
+      setPendingItems(prev => prev.filter(item => item.id !== id));
+    } catch (err) {
+      console.error('Failed to dismiss item:', err);
+    } finally {
+      setDismissingItemId(null);
     }
   };
 
@@ -824,6 +854,120 @@ const PurchaseHistory = () => {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Medicine-level pending items from invoice emails */}
+          <div className="mt-4 bg-white/10 backdrop-blur-lg border border-amber-500/30 rounded-xl overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b border-amber-500/20 bg-amber-500/5">
+              <div>
+                <h4 className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                  <Package size={15} />
+                  Pending Medicines — Invoice Received, Not Yet in Inventory
+                  {pendingItems.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-[10px] font-mono">
+                      {pendingItems.length}
+                    </span>
+                  )}
+                </h4>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  These medicines appear in distributor invoice emails but have not been added to inventory yet. Auto-cleared when a purchase is saved.
+                </p>
+              </div>
+              <button
+                onClick={() => { fetchReconciliation(); fetchPendingItems(); }}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-glass-border text-gray-400 hover:text-white transition-all"
+                title="Refresh"
+              >
+                <RefreshCw size={13} className={loadingPendingItems ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
+            {loadingPendingItems ? (
+              <div className="p-8 text-center text-gray-400 text-xs">
+                <RefreshCw size={18} className="animate-spin mx-auto mb-2 text-amber-500 opacity-60" />
+                Loading pending items...
+              </div>
+            ) : pendingItems.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-xs">
+                <CheckCircle size={28} className="mx-auto mb-2 text-green-500 opacity-40" />
+                All clear — no pending invoice items found.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-black/30 border-b border-glass-border/40 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      <th className="px-4 py-3">Medicine</th>
+                      <th className="px-4 py-3 text-center">Qty Expected</th>
+                      <th className="px-4 py-3">Distributor</th>
+                      <th className="px-4 py-3">Invoice Date</th>
+                      <th className="px-4 py-3">Patients Waiting</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-glass-border/20">
+                    {pendingItems.map((item: any) => (
+                      <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="font-bold text-white">{item.resolved_medicine_name || item.medicine_name}</div>
+                          {item.resolved_medicine_name && item.resolved_medicine_name !== item.medicine_name && (
+                            <div className="text-[10px] text-gray-500 mt-0.5">Email: {item.medicine_name}</div>
+                          )}
+                          {!item.medicine_id && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/15 border border-orange-500/20 text-orange-400 font-bold">Not in DB</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center font-mono font-bold text-amber-300">
+                          {item.qty_expected > 0 ? item.qty_expected : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-300 font-medium">{item.distributor_name || '—'}</td>
+                        <td className="px-4 py-3 font-mono text-gray-400 text-[10px]">
+                          {item.email_received_at ? new Date(item.email_received_at).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {item.waiting_patients && item.waiting_patients.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {item.waiting_patients.slice(0, 3).map((p: any) => (
+                                <span key={p.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-sky/10 border border-sky/20 text-sky">
+                                  <Users size={8} />
+                                  {p.patient_name}
+                                </span>
+                              ))}
+                              {item.waiting_patients.length > 3 && (
+                                <span className="text-[9px] text-gray-500">+{item.waiting_patients.length - 3} more</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-gray-600 italic">None</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex gap-1.5 justify-end items-center">
+                            {item.medicine_id && (
+                              <button
+                                onClick={() => navigate(`/pos?medicineId=${item.medicine_id}&medicineName=${encodeURIComponent(item.resolved_medicine_name || item.medicine_name)}`)}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/15 border border-primary/30 text-primary text-[10px] font-bold hover:bg-primary/25 transition-all"
+                                title="Add to live cart in POS"
+                              >
+                                <ShoppingCart size={10} /> Add to Cart
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDismissItem(item.id)}
+                              disabled={dismissingItemId === item.id}
+                              className="p-1 rounded-lg bg-white/5 border border-glass-border/30 text-gray-500 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
+                              title="Dismiss"
+                            >
+                              {dismissingItemId === item.id ? <RefreshCw size={10} className="animate-spin" /> : <X size={10} />}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}

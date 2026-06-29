@@ -816,6 +816,14 @@ router.post('/manual', async (req, res) => {
 
     await db.run('COMMIT');
 
+    // Auto-mark email invoice items as received for all medicines just added to inventory
+    for (const medId of uniqueMedicineIds) {
+      db.run(
+        "UPDATE email_invoice_items SET status = 'received' WHERE medicine_id = ? AND status = 'pending'",
+        [medId]
+      ).catch(() => {});
+    }
+
     if (invoice_no) {
       notificationService.notifyDistributorAboutDeliveryBoy(invoice_no).catch(err => {
         console.error('Failed to notify distributor in background (manual purchase):', err);
@@ -1677,6 +1685,25 @@ router.get('/reconciliation', async (req, res) => {
         await db.run('UPDATE emails SET medicine_names = ? WHERE uid = ?', [JSON.stringify(medNames), email.uid]);
       }
 
+      // Persist individual items to email_invoice_items for cross-feature use (Missing invoices only)
+      if (status === 'Missing') {
+        try {
+          await db.run('CREATE TABLE IF NOT EXISTS email_invoice_items (id INTEGER PRIMARY KEY AUTOINCREMENT, email_uid TEXT NOT NULL, distributor_name TEXT, invoice_no TEXT, medicine_name TEXT NOT NULL, medicine_id INTEGER, qty_expected INTEGER DEFAULT 0, rate REAL DEFAULT 0, mrp REAL DEFAULT 0, status TEXT DEFAULT \'pending\', email_received_at TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(email_uid, medicine_name))');
+          const allItems = parsedItems.length > 0 ? parsedItems : medNames.map(n => ({ name: n, quantity: 0, rate: 0, mrp: 0 }));
+          for (const item of allItems) {
+            if (!item.name) continue;
+            const matched = await db.get('SELECT id FROM medicines WHERE LOWER(name) = LOWER(?)', [item.name.trim()]);
+            await db.run(
+              `INSERT OR IGNORE INTO email_invoice_items (email_uid, distributor_name, invoice_no, medicine_name, medicine_id, qty_expected, rate, mrp, email_received_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [email.uid, distributorName || email.distributor_name || email.from_addr, extractedInvoiceNo || null, item.name.trim(), matched?.id || null, item.quantity || item.qty || 0, item.rate || 0, item.mrp || 0, email.date || null]
+            );
+          }
+        } catch (persistErr) {
+          console.warn('[Reconciliation] Failed to persist invoice items:', persistErr);
+        }
+      }
+
       result.push({
         email_uid: email.uid,
         from: email.from_addr,
@@ -1959,6 +1986,66 @@ router.get('/staged', async (req, res) => {
     res.json(parsed);
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to retrieve staged purchases' });
+  }
+});
+
+// GET /reconciliation/pending-items - Return pending invoice items with patient refill cross-reference
+router.get('/reconciliation/pending-items', async (req, res) => {
+  try {
+    const db = await dbManager.getConnection();
+    await db.run('CREATE TABLE IF NOT EXISTS email_invoice_items (id INTEGER PRIMARY KEY AUTOINCREMENT, email_uid TEXT NOT NULL, distributor_name TEXT, invoice_no TEXT, medicine_name TEXT NOT NULL, medicine_id INTEGER, qty_expected INTEGER DEFAULT 0, rate REAL DEFAULT 0, mrp REAL DEFAULT 0, status TEXT DEFAULT \'pending\', email_received_at TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(email_uid, medicine_name))');
+
+    const items = await db.all(`
+      SELECT eii.*, m.name AS resolved_medicine_name
+      FROM email_invoice_items eii
+      LEFT JOIN medicines m ON eii.medicine_id = m.id
+      WHERE eii.status = 'pending'
+      ORDER BY eii.created_at DESC
+    `);
+
+    // Cross-reference with patient refills
+    const refills = await db.all(`
+      SELECT id, patient_name, patient_phone, medicine_id, items_json
+      FROM patient_refills
+      WHERE is_active = 1 OR is_active IS NULL
+    `);
+
+    const enriched = items.map((item: any) => {
+      const waitingPatients: Array<{ id: number; patient_name: string; patient_phone: string }> = [];
+      if (item.medicine_id) {
+        for (const refill of refills) {
+          let matched = refill.medicine_id === item.medicine_id;
+          if (!matched && refill.items_json) {
+            try {
+              const refillItems = JSON.parse(refill.items_json);
+              matched = refillItems.some((ri: any) => ri.medicine_id === item.medicine_id);
+            } catch {}
+          }
+          if (matched) {
+            waitingPatients.push({ id: refill.id, patient_name: refill.patient_name, patient_phone: refill.patient_phone });
+          }
+        }
+      }
+      return { ...item, waiting_patients: waitingPatients };
+    });
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('Fetch pending invoice items error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /reconciliation/items/:id/dismiss - Dismiss a pending invoice item
+router.post('/reconciliation/items/:id/dismiss', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+    await db.run("UPDATE email_invoice_items SET status = 'dismissed' WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Dismiss invoice item error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

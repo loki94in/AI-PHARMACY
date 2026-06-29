@@ -399,6 +399,12 @@ const POS = () => {
       };
       fetchAndAddMedicine();
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      const medicineNameParam = params.get('medicineName');
+      if (medicineNameParam) {
+        setSearchTerm(medicineNameParam);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     }
   }, []);
 
@@ -428,6 +434,7 @@ const POS = () => {
   const [sendWhatsApp, setSendWhatsApp] = useState(initialActiveTab.sendWhatsApp || false); // DEFAULT: OFF
   const [paymentMedium, setPaymentMedium] = useState<string>(initialActiveTab.paymentMedium || 'CASH'); // DEFAULT: CASH
   const [specialOrders, setSpecialOrders] = useState<any[]>(cachedSpecialOrders ? cachedSpecialOrders.filter(o => o.status === 'Pending' || o.status === 'Ordered') : []);
+  const [pendingInvoiceItems, setPendingInvoiceItems] = useState<any[]>([]);
   const [rowBatchesList, setRowBatchesList] = useState<any[]>([]);
   const [activeBatchRowId, setActiveBatchRowId] = useState<number | null>(null);
   const [commonCombinations, setCommonCombinations] = useState<any[]>(cachedCommonCombinations || []);
@@ -708,6 +715,9 @@ const POS = () => {
         }
       })
       .catch(err => console.error('Error fetching special orders:', err));
+    api.getPendingInvoiceItems()
+      .then(data => { if (Array.isArray(data)) setPendingInvoiceItems(data); })
+      .catch(() => {});
   }, []);
 
   const handleSavePatientProfile = async () => {
@@ -901,6 +911,16 @@ const POS = () => {
     );
     if (pendingMatches.length > 0) {
       alert(`🔔 Pending Out-of-Stock Request:\nCustomer "${pendingMatches[0].requester}" requested ${pendingMatches[0].qty} unit(s) of "${med.name}". Please ensure it is reserved or reconciled if needed!`);
+    }
+
+    // Check if this medicine has a pending invoice (email received, not yet in inventory)
+    const invoiceMatch = pendingInvoiceItems.find(pi =>
+      (pi.medicine_id && pi.medicine_id === (med.medicine_id || med.id)) ||
+      (pi.medicine_name && pi.medicine_name.toLowerCase().trim() === med.name.toLowerCase().trim()) ||
+      (pi.resolved_medicine_name && pi.resolved_medicine_name.toLowerCase().trim() === med.name.toLowerCase().trim())
+    );
+    if (invoiceMatch) {
+      alert(`📦 Invoice Received — Stock Expected\n\n"${med.name}" was ordered from ${invoiceMatch.distributor_name || 'distributor'}.\nInvoice arrived ${invoiceMatch.email_received_at ? new Date(invoiceMatch.email_received_at).toLocaleDateString() : 'recently'} but stock may not yet be in inventory.\n\nQty expected: ${invoiceMatch.qty_expected || '?'} units\n\nCheck with store staff before confirming this sale.`);
     }
     updateCart(prevCart => {
       const existing = prevCart.find(item => {

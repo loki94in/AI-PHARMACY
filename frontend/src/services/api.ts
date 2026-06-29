@@ -506,6 +506,8 @@ export const api = {
   getReconciliationList: () => apiClient.get('/purchases/reconciliation').then(res => res.data),
   reissueOrder: (emailUid: number) => apiClient.post('/purchases/reconciliation/reissue', { email_uid: emailUid }).then(res => res.data),
   resolveOrderManually: (emailUid: number) => apiClient.post('/purchases/reconciliation/resolve', { email_uid: emailUid }).then(res => res.data),
+  getPendingInvoiceItems: () => apiClient.get('/purchases/reconciliation/pending-items').then(res => res.data),
+  dismissInvoiceItem: (id: number) => apiClient.post(`/purchases/reconciliation/items/${id}/dismiss`).then(res => res.data),
 
   // Staged / Offline Sync Review
   getStagedSales: (all?: boolean) => apiClient.get(all ? '/sales/staged?all=true' : '/sales/staged').then(res => res.data),

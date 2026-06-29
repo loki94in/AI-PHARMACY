@@ -605,6 +605,27 @@ export async function ensureSchema(dbPath: string) {
       FOREIGN KEY(distributor_id) REFERENCES distributors(id)
     );
 
+    -- Email invoice line items: persisted medicine-level items from distributor invoice emails
+    CREATE TABLE IF NOT EXISTS email_invoice_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email_uid TEXT NOT NULL,
+      distributor_name TEXT,
+      invoice_no TEXT,
+      medicine_name TEXT NOT NULL,
+      medicine_id INTEGER,
+      qty_expected INTEGER DEFAULT 0,
+      rate REAL DEFAULT 0,
+      mrp REAL DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      email_received_at TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(email_uid, medicine_name),
+      FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_invoice_items_email_uid ON email_invoice_items (email_uid);
+    CREATE INDEX IF NOT EXISTS idx_email_invoice_items_medicine_id ON email_invoice_items (medicine_id);
+    CREATE INDEX IF NOT EXISTS idx_email_invoice_items_status ON email_invoice_items (status);
+
     -- Push Notification Registered Tokens Registry
     CREATE TABLE IF NOT EXISTS push_tokens (
       token TEXT PRIMARY KEY,
