@@ -58,12 +58,16 @@ async function initOrdersTable(db: any) {
 }
 
 // List special requests / orders
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
     const db = await dbManager.getConnection();
     await initOrdersTable(db);
-    const orders = await db.all('SELECT * FROM special_orders ORDER BY date DESC');
-        res.json(orders);
+    const limit  = req.query.limit  ? parseInt(req.query.limit  as string, 10) : 100;
+    const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+    const countRow = await db.get('SELECT COUNT(*) as total FROM special_orders');
+    const total = countRow?.total ?? 0;
+    const orders = await db.all('SELECT * FROM special_orders ORDER BY date DESC LIMIT ? OFFSET ?', limit, offset);
+    res.json({ data: orders, meta: { total, limit, offset } });
   } catch (err) {
     console.error('Orders fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });

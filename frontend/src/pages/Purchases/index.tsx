@@ -9,6 +9,7 @@ import { HoverPriceIntelTable } from '../../components/HoverPriceIntelTable';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { clearExpiryCache } from '../Expiry';
+import { cacheInvalidators, appCache } from '../../services/appCache';
 
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -704,15 +705,22 @@ const Purchases: React.FC = () => {
 
   const fetchPurchaseHistory = async () => {
     try {
-      const list = await api.getPurchases();
-      // STRICT RULE: Only show last 100
-      const historyList = Array.isArray(list) ? list.slice(0, 100) : [];
+      const data = await api.getPurchases({ limit: 100, offset: 0 });
+      const historyList: any[] = Array.isArray(data) ? data
+        : ((data as any)?.data ?? (data as any)?.purchases ?? []);
       setPurchaseHistory(historyList);
       cachedPurchaseHistory = historyList;
     } catch (err) {
       console.error('Error fetching purchase history:', err);
     }
   };
+
+  // Auto-refresh purchase history when another page invalidates 'purchases' cache
+  useEffect(() => {
+    return appCache.subscribe('purchases', (signal) => {
+      if (signal === null) fetchPurchaseHistory();
+    });
+  }, []);
 
   const saveDistributor = async () => {
     if (!newDistributor.name?.trim()) {
@@ -1357,6 +1365,12 @@ const Purchases: React.FC = () => {
         response = await api.createManualPurchase(payload);
       }
       clearExpiryCache();
+      // Distinguish edit vs create so cache label is accurate
+      if (editPurchaseId) {
+        cacheInvalidators.onPurchaseUpdated();
+      } else {
+        cacheInvalidators.onPurchaseCreated();
+      }
 
       const savedInvoiceNo = response?.app_invoice_no || invoiceNo;
       setLastSavedInvoiceNo(savedInvoiceNo);
@@ -1696,6 +1710,15 @@ const Purchases: React.FC = () => {
               <Plus size={14} />
             </button>
           </div>
+
+          {/* Refresh purchase history */}
+          <button
+            onClick={fetchPurchaseHistory}
+            title="Refresh purchase history"
+            className="flex items-center justify-center flex-shrink-0 p-1.5 rounded-lg border border-glass-border text-muted hover:text-primary hover:border-primary/40 transition-all bg-white/5 hover:bg-white/10 h-[30px] w-[30px]"
+          >
+            <RefreshCw size={13} />
+          </button>
         </div>
 
         <div className="flex flex-wrap items-end gap-3">

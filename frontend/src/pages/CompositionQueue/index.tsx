@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Beaker, Play, CheckCircle, AlertTriangle, XCircle, Save, ChevronLeft, ChevronRight, Loader2, Sparkles } from 'lucide-react';
+import { Beaker, Play, CheckCircle, AlertTriangle, XCircle, Save, Loader2, Sparkles, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
+import { appCache } from '../../services/appCache';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 
 interface EnrichmentStatus {
   total: number;
@@ -28,12 +30,7 @@ let cachedQueue: QueueItem[] = [];
 
 export default function CompositionQueue() {
   const [status, setStatus] = useState<EnrichmentStatus | null>(cachedStatus);
-  const [queue, setQueue] = useState<QueueItem[]>(cachedQueue);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
   const [filter, setFilter] = useState('all');
-  const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [editValues, setEditValues] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
@@ -48,28 +45,41 @@ export default function CompositionQueue() {
     }
   }, []);
 
-  const loadQueue = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.getEnrichmentQueue(page, 50, filter);
-      setQueue(data.data || []);
-      cachedQueue = data.data || [];
-      setTotalPages(data.totalPages || 1);
-      setTotalItems(data.totalItems || 0);
-    } catch (err) {
-      console.error('Failed to load queue:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, filter]);
+  // ── Infinite scroll ──────────────────────────────────────────────────────────
+  const BATCH_SIZE = 50;
+  const {
+    rows: queue,
+    total: totalItems,
+    loading,
+    loadingMore,
+    hasMore,
+    setFilters: setQueueFilters,
+    sentinelRef,
+    reset: loadQueue,
+  } = useInfiniteScroll<QueueItem, { filter: string }>({
+    cacheKey: 'composition_queue',
+    batchSize: BATCH_SIZE,
+    initialFilters: { filter },
+    fetcher: async (offset, filters) => {
+      const page = Math.floor(offset / BATCH_SIZE) + 1;
+      const data = await api.getEnrichmentQueue(page, BATCH_SIZE, filters.filter);
+      const list: QueueItem[] = data?.data ?? [];
+      const total: number = data?.totalItems ?? list.length;
+      return { data: list, meta: { total } };
+    },
+  });
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
-  useEffect(() => { loadQueue(); }, [loadQueue]);
+
+  // Re-fetch when filter changes
+  useEffect(() => {
+    setQueueFilters({ filter });
+  }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll status while enrichment is running
   useEffect(() => {
     if (!status?.isRunning) return;
-    const timer = setInterval(loadStatus, 3000);
+    const timer = setInterval(loadStatus, 5000); // 5s — was 3s; status doesn't change sub-second
     return () => clearInterval(timer);
   }, [status?.isRunning, loadStatus]);
 
@@ -203,7 +213,7 @@ export default function CompositionQueue() {
           ].map(f => (
             <button
               key={f.key}
-              onClick={() => { setFilter(f.key); setPage(1); }}
+              onClick={() => setFilter(f.key)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
                 filter === f.key
                   ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
@@ -312,25 +322,16 @@ export default function CompositionQueue() {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="p-3 border-t border-glass-border flex items-center justify-between">
-            <span className="text-xs text-muted">Page {page} of {totalPages}</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="p-1.5 rounded bg-bg3 text-muted hover:text-text disabled:opacity-30 transition-colors"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
-                className="p-1.5 rounded bg-bg3 text-muted hover:text-text disabled:opacity-30 transition-colors"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
+        {hasMore && (
+          <div ref={sentinelRef} className="p-3 text-center text-xs text-muted border-t border-glass-border">
+            {loadingMore
+              ? <span className="flex items-center justify-center gap-2"><RefreshCw size={12} className="animate-spin"/> Loading more…</span>
+              : <span className="opacity-30">scroll for more</span>}
+          </div>
+        )}
+        {!hasMore && queue.length > 0 && (
+          <div className="p-2 text-center text-[10px] text-muted opacity-40 border-t border-glass-border">
+            All {totalItems.toLocaleString()} items loaded
           </div>
         )}
       </div>

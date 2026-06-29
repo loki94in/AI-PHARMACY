@@ -351,7 +351,7 @@ const Settings = () => {
       };
 
       fetchQR(); // Initial fetch
-      timer = setInterval(fetchQR, 15000); // Poll every 15s (optimized from 5s)
+      timer = setInterval(fetchQR, 20000); // 20s — QR valid 20s, aligned with Learning page
 
       const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {

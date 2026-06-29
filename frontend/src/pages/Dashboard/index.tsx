@@ -1,28 +1,45 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
-import { IndianRupee, PackageOpen, ListTodo, Server, ArrowUpRight, AlertTriangle, Clock, CheckCircle, Activity, MessageCircle, Mail, Send } from 'lucide-react';
+import { IndianRupee, PackageOpen, ListTodo, Server, ArrowUpRight, AlertTriangle, Clock, CheckCircle, Activity, MessageCircle, Mail, Send, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
+import { appCache } from '../../services/appCache';
 import type { DashboardStats } from '../../services/api';
 
 const Dashboard = () => {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Check appCache first (populated by prefetchAll on app start)
+  const _cachedDash = appCache.get<DashboardStats>('dashboard');
+  const [stats, setStats] = useState<DashboardStats | null>(_cachedDash || null);
+  const [loading, setLoading] = useState(!_cachedDash);
   const [error, setError] = useState<string | null>(null);
   const [dateStr, setDateStr] = useState('');
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadDashboard = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const data = await api.getDashboard();
+      setStats(data);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+      setTimeout(() => setRefreshing(false), 600);
+    }
+  }, []);
+
   useDeferredEffect(() => {
     setDateStr(new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
-    
-    api.getDashboard()
-      .then(data => {
-        setStats(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        setError(err.message || 'Failed to load dashboard data');
-        setLoading(false);
-      });
+    loadDashboard();
   }, []);
+
+  // Auto-refresh when a sale or purchase invalidates the dashboard cache
+  useEffect(() => {
+    return appCache.subscribe('dashboard', (signal) => {
+      if (signal === null) loadDashboard();
+    });
+  }, [loadDashboard]);
 
   const handleDismissAlert = async (id: number) => {
     try {
@@ -57,8 +74,19 @@ const Dashboard = () => {
           <h2 className="text-3xl font-extrabold tracking-tight mb-1">Welcome back, Admin 👋</h2>
           <p className="text-muted">Here's what's happening at your pharmacy today.</p>
         </div>
-        <div className="text-sm font-semibold text-sky bg-sky-bg px-4 py-2 rounded-full border border-sky/20">
-          Today: {dateStr}
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-semibold text-sky bg-sky-bg px-4 py-2 rounded-full border border-sky/20">
+            Today: {dateStr}
+          </div>
+          <button
+            onClick={loadDashboard}
+            disabled={refreshing}
+            title="Refresh dashboard"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full border border-glass-border bg-glass-bg/30 text-muted text-xs font-semibold hover:text-primary hover:border-primary/40 transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={refreshing ? 'animate-spin text-primary' : ''} />
+            <span>Refresh</span>
+          </button>
         </div>
       </div>
 

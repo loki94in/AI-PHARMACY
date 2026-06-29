@@ -49,14 +49,19 @@ router.get('/', async (req, res) => {
       params.push(parseFloat(max_amount as string));
     }
     
-    const hasFilters = !!(search || date_from || date_to || min_amount || max_amount);
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : (hasFilters ? 5000 : 50);
-    
-    query += ` ORDER BY r.date DESC LIMIT ?`;
-    params.push(limit);
+    const limit  = req.query.limit  ? parseInt(req.query.limit  as string, 10) : 100;
+    const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+
+    // count total matching rows
+    const countQuery = query.replace(/SELECT r\.\*.*?FROM/, 'SELECT COUNT(*) as total FROM').split('ORDER BY')[0];
+    const countRow = await db.get(countQuery, params);
+    const total = countRow?.total ?? 0;
+
+    query += ` ORDER BY r.date DESC LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
     
     const rows = await db.all(query, params);
-    res.json(rows);
+    res.json({ data: rows, meta: { total, limit, offset } });
   } catch (err: any) {
     if (db)     console.error(JSON.stringify({
       message: 'Returns fetch error',

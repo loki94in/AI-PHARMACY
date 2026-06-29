@@ -1,12 +1,12 @@
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  PackageSearch, 
-  ShoppingCart, 
-  Receipt, 
-  Users, 
-  UserPlus, 
-  Settings as SettingsIcon, 
+import {
+  LayoutDashboard,
+  PackageSearch,
+  ShoppingCart,
+  Receipt,
+  Users,
+  UserPlus,
+  Settings as SettingsIcon,
   Activity,
   LogOut,
   Database,
@@ -25,6 +25,7 @@ import {
   ExternalLink,
   Info,
   ChevronRight,
+  ChevronLeft,
   Mail as MailIcon,
   Beaker,
   Smartphone,
@@ -32,7 +33,28 @@ import {
   RefreshCw,
   Building2,
   Clock,
+  ShieldCheck,
+  CheckSquare,
+  MessageSquare,
+  Play,
+  Pause,
+  Send,
 } from 'lucide-react';
+
+// Aliases for RefillControlSidebar — avoids mid-file import (invalid in TS6 strict mode)
+const ChevronLeftIcon = ChevronLeft;
+const ChevronRightIcon = ChevronRight;
+const ActivityIcon = Activity;
+const ShieldCheckIcon = ShieldCheck;
+const CheckSquareIcon = CheckSquare;
+const CartIcon = ShoppingCart;
+const ClockIcon = Clock;
+const AlertIcon = AlertTriangle;
+const MessageSquareIcon = MessageSquare;
+const PlayIcon = Play;
+const PauseIcon = Pause;
+const SendIcon = Send;
+const BuildingIcon = Building2;
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { toastEvent, quickOrderEvent, liveCartAddEvent } from './services/events';
 import type { ToastEventDetail } from './services/events';
@@ -40,7 +62,9 @@ import { QuickOrderModal } from './components/QuickOrderModal';
 import { LiveCartAddModal } from './components/LiveCartAddModal';
 import { StagedReviewModal } from './components/StagedReviewModal';
 import { MobileConnectionModal } from './components/MobileConnectionModal';
-import { api, apiClient } from './services/api';
+import { api, apiClient, prefetch } from './services/api';
+import { cacheInvalidators } from './services/appCache';
+import { prefetchAll } from './services/prefetchAll';
 import { Agentation } from 'agentation';
 import BackupCenterModal from './components/BackupCenterModal';
 
@@ -241,7 +265,8 @@ const Sidebar = ({
                 key={item.path}
                 to={item.path}
                 onMouseEnter={() => {
-                  pageImports[item.path]?.();
+                  pageImports[item.path]?.();           // preload JS chunk
+                  prefetch[item.path]?.();              // warm data cache
                 }}
                 className={`
                   flex items-center gap-3 px-5 py-2.5 mx-2 rounded-lg text-sm font-medium uppercase transition-all duration-200
@@ -549,6 +574,13 @@ const Topbar = ({
   onOpenStagedReview,
   onOpenConnectModal,
   refillAlertCount = 0,
+  orderAlertCount,
+  catalogJob,
+  isSyncing,
+  onManualSync,
+  connectedDevices,
+  setConnectedDevices,
+  setCatalogJob,
 }: {
   theme: string;
   setTheme: React.Dispatch<React.SetStateAction<string>>;
@@ -561,91 +593,27 @@ const Topbar = ({
   onOpenStagedReview: () => void;
   onOpenConnectModal: () => void;
   refillAlertCount?: number;
+  orderAlertCount: number;
+  catalogJob: any;
+  isSyncing: boolean;
+  onManualSync: () => void;
+  connectedDevices: any[];
+  setConnectedDevices: React.Dispatch<React.SetStateAction<any[]>>;
+  setCatalogJob: React.Dispatch<React.SetStateAction<any>>;
 }) => {
   const location = useLocation();
   const [showPanel, setShowPanel] = useState(false);
   const [flashToast, setFlashToast] = useState<(ToastEventDetail & { id: number }) | null>(null);
-  const [catalogJob, setCatalogJob] = useState<{
-    id: number;
-    status: string;
-    progress: number;
-    total_count?: number;
-    processed_count?: number;
-  } | null>(null);
-
-  const [orderAlertCount, setOrderAlertCount] = useState(0);
-
-  const fetchAlertCount = useCallback(async () => {
-    try {
-      const orders = await api.getOrders();
-      const pendingOrdersCount = Array.isArray(orders)
-        ? orders.filter(o => o.status === 'Pending' || o.status === 'Ordered').length
-        : 0;
-      // Refill count now comes from parent via refillAlertCount prop — no duplicate fetch here
-      setOrderAlertCount(pendingOrdersCount);
-    } catch (err) {
-      console.warn('Failed to fetch alert counts for Topbar:', err);
-    }
-  }, []);
-
-  // Sync refill-based alert count from parent prop
-  useEffect(() => {
-    setOrderAlertCount(prev => {
-      // Only add the refill portion — orderAlertCount holds orders + refills
-      return prev; // orders portion stays; refills injected via prop below
-    });
-  }, [refillAlertCount]);
-
-  useEffect(() => {
-    fetchAlertCount();
-    const interval = setInterval(fetchAlertCount, 30000);
-
-    const handleRefresh = () => { fetchAlertCount(); };
-    window.addEventListener('refresh-pharmarack-cart', handleRefresh);
-    window.addEventListener('refresh-special-orders', handleRefresh);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('refresh-pharmarack-cart', handleRefresh);
-      window.removeEventListener('refresh-special-orders', handleRefresh);
-    };
-  }, [fetchAlertCount]);
-
-  useEffect(() => {
-    const fetchActiveJob = async () => {
-      try {
-        const { data } = await apiClient.get('/jobs');
-        if (Array.isArray(data)) {
-          const activeJob = data.find(j => ['processing', 'pending', 'pending_analysis', 'processing_analysis'].includes(j.status));
-          if (activeJob) {
-            setCatalogJob({
-              id: activeJob.id,
-              status: activeJob.status,
-              progress: activeJob.progress || 0,
-              total_count: activeJob.total_count,
-              processed_count: activeJob.processed_count
-            });
-          } else {
-            setCatalogJob(null);
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to fetch active catalog job in Topbar:', err);
-      }
-    };
-    fetchActiveJob();
-    const timer = setInterval(fetchActiveJob, 30000); // Optimized: poll active catalog jobs every 30s instead of 8s
-    return () => clearInterval(timer);
-  }, []);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const [connectedDevices, setConnectedDevices] = useState<{ token: string; device_name: string; os: string; is_online: number; last_seen: string; offline_seconds?: number }[]>([]);
   const [showDevicesPopover, setShowDevicesPopover] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [renamingToken, setRenamingToken] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  const fetchingDevicesRef = useRef(false);
   const fetchDevices = useCallback(async () => {
+    if (document.hidden || fetchingDevicesRef.current) return;
+    fetchingDevicesRef.current = true;
     try {
       const { data } = await apiClient.get('/notifications/devices');
       if (data && Array.isArray(data.devices)) {
@@ -653,6 +621,8 @@ const Topbar = ({
       }
     } catch (err) {
       console.warn('Failed to fetch connected devices:', err);
+    } finally {
+      fetchingDevicesRef.current = false;
     }
   }, []);
 
@@ -669,11 +639,8 @@ const Topbar = ({
     }
   }, []);
 
-  useEffect(() => {
-    fetchDevices();
-    const interval = setInterval(fetchDevices, 30000); // Optimized: poll connected devices every 30s instead of 5s
-    return () => clearInterval(interval);
-  }, [fetchDevices]);
+  // fetchDevices is now called inside runGlobalSync (60s unified loop).
+  // Kept as a standalone function for on-demand calls (e.g. after rename).
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -724,7 +691,7 @@ const Topbar = ({
             );
           } else if (data.type === 'catalog_job_progress' && data.payload) {
             const payload = data.payload;
-            setCatalogJob(prev => {
+            setCatalogJob((prev: any) => {
               if (!prev || prev.id === payload.id) {
                 return {
                   id: payload.id,
@@ -742,7 +709,7 @@ const Topbar = ({
             if (status === 'done' || status === 'failed') {
               setCatalogJob(null);
             } else {
-              setCatalogJob(prev => {
+              setCatalogJob((prev: any) => {
                 if (!prev || prev.id === payload.id) {
                   return {
                     id: payload.id,
@@ -764,11 +731,15 @@ const Topbar = ({
             }
           } else if (data.type === 'sales_sync') {
             toastEvent.trigger(`Mobile synced ${data.payload.count || 1} offline sales bill(s) for review!`, 'info');
+            cacheInvalidators.onMobileSaleSync(); // auto-refresh Sells, Inventory, Dashboard
             if (typeof (window as any).refreshStagedCounts === 'function') {
               (window as any).refreshStagedCounts(true);
             }
+            // Tell PhoneSales page to refresh immediately via window event
+            window.dispatchEvent(new CustomEvent('new-staged-sale'));
           } else if (data.type === 'purchases_sync') {
             toastEvent.trigger(`Mobile synced ${data.payload.count || 1} offline purchase bill(s) for review!`, 'info');
+            cacheInvalidators.onMobilePurchaseSync(); // auto-refresh Purchases, Inventory, Dashboard
             if (typeof (window as any).refreshStagedCounts === 'function') {
               (window as any).refreshStagedCounts(true);
             }
@@ -917,6 +888,17 @@ const Topbar = ({
               <span>Test Mode — Auth Bypassed</span>
             </div>
           )}
+
+          {/* ── Global Sync Button ── */}
+          <button
+            onClick={onManualSync}
+            disabled={isSyncing}
+            title="Sync all data now"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-glass-border bg-glass-bg/30 text-muted text-xs font-semibold hover:bg-white/5 hover:text-primary transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={isSyncing ? 'animate-spin text-primary' : ''} />
+            <span className="text-[10px] uppercase tracking-wider font-bold hidden md:block">Sync</span>
+          </button>
 
           {/* ── Mobile Connection Status Indicators ── */}
           <div className="relative flex items-center gap-2" ref={popoverRef}>
@@ -1168,22 +1150,6 @@ let lastStagedCountsFetchTime = 0;
 // ──────────────────────────────────────────────
 // Refill Control Sidebar
 // ──────────────────────────────────────────────
-import { 
-  ChevronLeft as ChevronLeftIcon, 
-  ChevronRight as ChevronRightIcon, 
-  Activity as ActivityIcon, 
-  ShieldCheck as ShieldCheckIcon, 
-  CheckSquare as CheckSquareIcon, 
-  ShoppingCart as CartIcon, 
-  Clock as ClockIcon, 
-  AlertTriangle as AlertIcon, 
-  MessageSquare as MessageSquareIcon,
-  Play as PlayIcon,
-  Pause as PauseIcon,
-  Send as SendIcon,
-  Building2 as BuildingIcon
-} from 'lucide-react';
-
 const RefillControlSidebar = ({
   expanded,
   setExpanded,
@@ -1200,6 +1166,15 @@ const RefillControlSidebar = ({
   onActionComplete: () => void;
 }) => {
   const navigate = useNavigate();
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    orders: true,
+    reconcile: true,
+    alerts: true,
+    messages: true,
+    missing: true,
+  });
+  const toggleSection = (key: string) =>
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
 
   const handleAcknowledge = async (id: number) => {
     try {
@@ -1305,11 +1280,11 @@ const RefillControlSidebar = ({
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5 custom-scrollbar">
         <div>
-          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-sky-400">
-            <CartIcon size={14} />
-            <span>Live Order Requests ({liveOrders.length})</span>
-          </div>
-          {liveOrders.length === 0 ? (
+          <button onClick={() => toggleSection('orders')} className="flex items-center justify-between w-full mb-2 text-xs font-bold uppercase tracking-wider text-sky-400 hover:text-sky-300 transition-colors cursor-pointer">
+            <div className="flex items-center gap-2"><CartIcon size={14} /><span>Live Order Requests ({liveOrders.length})</span></div>
+            <ChevronRightIcon size={12} className={`transition-transform duration-200 ${openSections.orders ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.orders && (liveOrders.length === 0 ? (
             <p className="text-xs text-muted/60 pl-2">No active auto-orders</p>
           ) : (
             <div className="flex flex-col gap-2">
@@ -1329,15 +1304,15 @@ const RefillControlSidebar = ({
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </div>
 
         <div>
-          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-sky-400">
-            <CartIcon size={14} />
-            <span>Reconcile Orders ({reconciliationList.length})</span>
-          </div>
-          {reconciliationList.length === 0 ? (
+          <button onClick={() => toggleSection('reconcile')} className="flex items-center justify-between w-full mb-2 text-xs font-bold uppercase tracking-wider text-sky-400 hover:text-sky-300 transition-colors cursor-pointer">
+            <div className="flex items-center gap-2"><CartIcon size={14} /><span>Reconcile Orders ({reconciliationList.length})</span></div>
+            <ChevronRightIcon size={12} className={`transition-transform duration-200 ${openSections.reconcile ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.reconcile && (reconciliationList.length === 0 ? (
             <p className="text-xs text-muted/60 pl-2">No pending reconciliations</p>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -1345,12 +1320,22 @@ const RefillControlSidebar = ({
                 const validNames = (recon.medicine_names || []).filter((name: string) => {
                   if (!name || typeof name !== 'string') return false;
                   const trimmed = name.trim();
+                  if (trimmed.length < 3) return false;
+                  // Pure numbers (quantities, barcodes)
                   if (/^\d+$/.test(trimmed)) return false;
+                  // Invoice/order metadata rows
                   if (/^(inv|bill|invoice|id|order|ref|no)[\s\-:#]?\d+$/i.test(trimmed)) return false;
                   if (/^#\d+$/.test(trimmed)) return false;
-                  if (trimmed.length < 3) return false;
+                  // Drug-license metadata rows: "DL :", "DL NO :", "DL NO : 20-454028,"
+                  if (/^DL[\s\-]*(NO)?[\s\-]*:/i.test(trimmed)) return false;
+                  // Rows that are just a DL number value (e.g. "20-454028," or "454028")
+                  if (/^[\d\-]+,?$/.test(trimmed)) return false;
                   return true;
                 });
+                // Strip leading barcode digits fused to medicine names (e.g. "30049063IBUGESIC PLUS SUSP")
+                const cleanedNames = validNames.map((name: string) =>
+                  name.replace(/^\d{6,}([A-Za-z])/, '$1').trim()
+                );
                 return (
                   <div key={recon.email_uid} className="p-2.5 rounded-xl bg-white/[0.02] border border-glass-border flex flex-col gap-1.5 animate-pulse-subtle">
                     <div className="flex items-center justify-between">
@@ -1358,8 +1343,9 @@ const RefillControlSidebar = ({
                       <span className="px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[9px] uppercase font-bold">Email Order</span>
                     </div>
                     <div className="space-y-1 mt-0.5">
-                      {validNames.map((name: string) => {
-                        const qty = recon.medicine_details?.[name]?.qty || 1;
+                      {cleanedNames.map((name: string, idx: number) => {
+                        const originalName = validNames[idx];
+                        const qty = recon.medicine_details?.[originalName]?.qty || recon.medicine_details?.[name]?.qty || 1;
                         return (
                           <div key={name} className="flex justify-between items-center text-xs text-muted">
                             <span className="truncate flex-1 text-[11px]">{name}</span>
@@ -1376,15 +1362,15 @@ const RefillControlSidebar = ({
                 );
               })}
             </div>
-          )}
+          ))}
         </div>
 
         <div>
-          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-amber-500">
-            <AlertIcon size={14} />
-            <span>Stock Alerts ({stockAlerts.length})</span>
-          </div>
-          {stockAlerts.length === 0 ? (
+          <button onClick={() => toggleSection('alerts')} className="flex items-center justify-between w-full mb-2 text-xs font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400 transition-colors cursor-pointer">
+            <div className="flex items-center gap-2"><AlertIcon size={14} /><span>Stock Alerts ({stockAlerts.length})</span></div>
+            <ChevronRightIcon size={12} className={`transition-transform duration-200 ${openSections.alerts ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.alerts && (stockAlerts.length === 0 ? (
             <p className="text-xs text-muted/60 pl-2">No pending stock alerts</p>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -1443,15 +1429,15 @@ const RefillControlSidebar = ({
                 );
               })}
             </div>
-          )}
+          ))}
         </div>
 
         <div>
-          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-purple-400">
-            <MessageSquareIcon size={14} />
-            <span>Staged Messages ({notifications.length})</span>
-          </div>
-          {notifications.length === 0 ? (
+          <button onClick={() => toggleSection('messages')} className="flex items-center justify-between w-full mb-2 text-xs font-bold uppercase tracking-wider text-purple-400 hover:text-purple-300 transition-colors cursor-pointer">
+            <div className="flex items-center gap-2"><MessageSquareIcon size={14} /><span>Staged Messages ({notifications.length})</span></div>
+            <ChevronRightIcon size={12} className={`transition-transform duration-200 ${openSections.messages ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.messages && (notifications.length === 0 ? (
             <p className="text-xs text-muted/60 pl-2">No staged messages</p>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -1491,15 +1477,15 @@ const RefillControlSidebar = ({
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </div>
 
         <div>
-          <div className="flex items-center gap-2 mb-2 text-xs font-bold uppercase tracking-wider text-rose-400">
-            <BuildingIcon size={14} />
-            <span>Missing Invoice Orders ({unreconciledOrders.length})</span>
-          </div>
-          {unreconciledOrders.length === 0 ? (
+          <button onClick={() => toggleSection('missing')} className="flex items-center justify-between w-full mb-2 text-xs font-bold uppercase tracking-wider text-rose-400 hover:text-rose-300 transition-colors cursor-pointer">
+            <div className="flex items-center gap-2"><BuildingIcon size={14} /><span>Missing Invoice Orders ({unreconciledOrders.length})</span></div>
+            <ChevronRightIcon size={12} className={`transition-transform duration-200 ${openSections.missing ? 'rotate-90' : ''}`} />
+          </button>
+          {openSections.missing && (unreconciledOrders.length === 0 ? (
             <p className="text-xs text-muted/60 pl-2">No missing distributor orders</p>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -1538,7 +1524,7 @@ const RefillControlSidebar = ({
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </div>
       </div>
     </div>
@@ -1591,6 +1577,12 @@ const Layout = ({
     }
   }, [notifications]);
 
+  // ── Startup prefetch: warm all page caches 100ms after Layout mounts ──
+  useEffect(() => {
+    const t = setTimeout(() => { prefetchAll(); }, 100);
+    return () => clearTimeout(t);
+  }, []);
+
   const [showStagedReview, setShowStagedReview] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [pendingStagedSalesCount, setPendingStagedSalesCount] = useState(0);
@@ -1615,33 +1607,72 @@ const Layout = ({
     } catch {}
   }, [isSidebarExpanded]);
 
-  const fetchRefillData = useCallback(async () => {
+  const [catalogJob, setCatalogJob] = useState<{
+    id: number;
+    status: string;
+    progress: number;
+    total_count?: number;
+    processed_count?: number;
+  } | null>(null);
+  const [orderAlertCount, setOrderAlertCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const globalSyncingRef = useRef(false);
+  const [connectedDevices, setConnectedDevices] = useState<{ token: string; device_name: string; os: string; is_online: number; last_seen: string; offline_seconds?: number }[]>([]);
+
+  // ─── Unified background poll — 60 s ──────────────────────────────────────
+  const runGlobalSync = useCallback(async () => {
+    if (document.hidden || globalSyncingRef.current) return;
+    globalSyncingRef.current = true;
     try {
-      const [refillData, notifData, reconData] = await Promise.allSettled([
+      const [ordersRes, jobsRes, devicesRes, refillRes, notifRes, reconRes] = await Promise.allSettled([
+        api.getOrders(),
+        apiClient.get('/jobs'),
+        apiClient.get('/notifications/devices'),
         api.getRefills(),
         api.getAutomationNotifications({ status: 'staged' }),
         api.getReconciliationList(),
       ]);
 
-      if (refillData.status === 'fulfilled') {
-        setRefills(Array.isArray(refillData.value) ? refillData.value : []);
+      if (ordersRes.status === 'fulfilled') {
+        const orders = ordersRes.value;
+        setOrderAlertCount(Array.isArray(orders)
+          ? orders.filter((o: any) => o.status === 'Pending' || o.status === 'Ordered').length
+          : 0);
       }
-      if (notifData.status === 'fulfilled') {
-        setStagedNotifications(Array.isArray(notifData.value) ? notifData.value : []);
+      if (jobsRes.status === 'fulfilled') {
+        const { data } = jobsRes.value as any;
+        if (Array.isArray(data)) {
+          const activeJob = data.find((j: any) => ['processing', 'pending', 'pending_analysis', 'processing_analysis'].includes(j.status));
+          setCatalogJob(activeJob ? {
+            id: activeJob.id,
+            status: activeJob.status,
+            progress: activeJob.progress || 0,
+            total_count: activeJob.total_count,
+            processed_count: activeJob.processed_count
+          } : null);
+        }
       }
-      if (reconData.status === 'fulfilled') {
-        setReconciliationList(Array.isArray(reconData.value) ? reconData.value : []);
+      if (devicesRes.status === 'fulfilled') {
+        const { data } = devicesRes.value as any;
+        if (data && Array.isArray(data.devices)) setConnectedDevices(data.devices);
+      }
+      if (refillRes.status === 'fulfilled') {
+        setRefills(Array.isArray(refillRes.value) ? refillRes.value : []);
+      }
+      if (notifRes.status === 'fulfilled') {
+        setStagedNotifications(Array.isArray(notifRes.value) ? notifRes.value : []);
+      }
+      if (reconRes.status === 'fulfilled') {
+        setReconciliationList(Array.isArray(reconRes.value) ? reconRes.value : []);
       }
     } catch (err) {
-      console.warn('Failed to load refill data in layout:', err);
+      console.warn('Global sync error:', err);
+    } finally {
+      globalSyncingRef.current = false;
     }
   }, []);
 
-  useEffect(() => {
-    fetchRefillData();
-    const timer = setInterval(fetchRefillData, 30000); // Reduced from 15s to 30s — matches other polling intervals
-    return () => clearInterval(timer);
-  }, [fetchRefillData]);
+  const fetchRefillData = useCallback(() => runGlobalSync(), [runGlobalSync]);
 
 
   const [showBackupModal, setShowBackupModal] = useState(false);
@@ -1701,6 +1732,46 @@ const Layout = ({
       delete (window as any).refreshStagedCounts;
     };
   }, [fetchStagedCounts]);
+
+  const handleManualSync = useCallback(async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await runGlobalSync();
+      await fetchStagedCounts(true);
+    } finally {
+      setTimeout(() => setIsSyncing(false), 600);
+    }
+  }, [isSyncing, runGlobalSync, fetchStagedCounts]);
+
+  useEffect(() => {
+    runGlobalSync();
+    const interval = setInterval(runGlobalSync, 60_000);
+
+    const handleRefresh = () => { runGlobalSync(); };
+    window.addEventListener('refresh-pharmarack-cart', handleRefresh);
+    window.addEventListener('refresh-special-orders', handleRefresh);
+    (window as any).manualSync = handleManualSync;
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('refresh-pharmarack-cart', handleRefresh);
+      window.removeEventListener('refresh-special-orders', handleRefresh);
+      delete (window as any).manualSync;
+    };
+  }, [runGlobalSync, handleManualSync]);
+
+  // Page visibility: when user returns to the tab, run full sync immediately
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        runGlobalSync();
+        fetchStagedCounts();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [runGlobalSync, fetchStagedCounts]);
 
   // Subscribe to global open events for modals (G2)
   useEffect(() => {
@@ -1854,6 +1925,13 @@ const Layout = ({
           onOpenStagedReview={() => setShowStagedReview(true)}
           onOpenConnectModal={() => setShowConnectModal(true)}
           refillAlertCount={refills.filter(r => r.is_active === 1 && r.status === 'pending' && r.hold_for_stock === 1).length}
+          orderAlertCount={orderAlertCount}
+          catalogJob={catalogJob}
+          isSyncing={isSyncing}
+          onManualSync={handleManualSync}
+          connectedDevices={connectedDevices}
+          setConnectedDevices={setConnectedDevices}
+          setCatalogJob={setCatalogJob}
         />
         <div className="flex-1 flex flex-row overflow-hidden relative z-10">
           <main className={`flex-1 flex flex-col ${isFitPage ? 'overflow-hidden p-3 pt-1.5 pb-3' : 'overflow-y-auto p-4 pt-3 pb-4'} relative z-10 transition-all duration-200`}>
@@ -1925,8 +2003,7 @@ function App() {
       try { localStorage.setItem('feedback-toolbar-theme', 'light'); } catch { }
     } else {
       document.documentElement.classList.remove('light');
-      document.body.classList.remove('light');
-      try { localStorage.setItem('feedback-toolbar-theme', 'dark'); } catch { }
+      document.body.classList.remove('light');      try { localStorage.setItem('feedback-toolbar-theme', 'dark'); } catch { }
     }
     try { localStorage.setItem('theme', theme); } catch { }
   }, [theme]);

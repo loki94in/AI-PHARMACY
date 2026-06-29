@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, Fragment, useRef } from 'react';
-import { Edit3, Trash2, X, User, FileText, Save, AlertTriangle, BookOpen, RefreshCw, ShieldAlert, Factory, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Calendar, Search, Hash } from 'lucide-react';
+import { Edit3, Trash2, X, User, FileText, Save, AlertTriangle, BookOpen, RefreshCw, ShieldAlert, Factory, SlidersHorizontal, Calendar, Search, Hash } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { api } from '../../services/api';
+import { appCache, cacheInvalidators } from '../../services/appCache';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { toastEvent } from '../../services/events';
 
 interface SaleItem {
@@ -58,12 +60,7 @@ const getNDaysAgoString = (n: number) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
-// Module-level cache for instant re-mount
-let cachedInvoices: SaleInvoice[] | null = null;
-
 const Sells = () => {
-  const [invoices, setInvoices] = useState<SaleInvoice[]>(cachedInvoices || []);
-  const [loading, setLoading] = useState(!cachedInvoices);
   const [colFilterNo, setColFilterNo] = useState('');
   const [colFilterName, setColFilterName] = useState('');
   const [colFilterStartDate, setColFilterStartDate] = useState('');
@@ -144,14 +141,7 @@ const Sells = () => {
     return () => clearTimeout(handler);
   }, [colFilterNo, colFilterName, colFilterStartDate, colFilterEndDate, colFilterDrName]);
 
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
 
-  // Reset pagination when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedFilters]);
 
   // Edit modal state
   const [editInvoice, setEditInvoice] = useState<SaleInvoice | null>(null);
@@ -195,48 +185,42 @@ const Sells = () => {
     }
   };
 
-  const isInitial = useRef(true);
-
-  const fetchInvoices = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      // ponytail: only filter by date if debouncedFilters.startDate or debouncedFilters.endDate is selected. If empty, load latest invoices across all dates.
-      const params: { limit: number; date_from?: string; date_to?: string; search?: string } = { limit: 500 };
-      if (debouncedFilters.startDate) {
-        params.date_from = debouncedFilters.startDate;
-      }
-      if (debouncedFilters.endDate) {
-        params.date_to = debouncedFilters.endDate;
-      }
-      const searchVal = debouncedFilters.customerName || debouncedFilters.invoiceNo;
-      if (searchVal) {
-        params.search = searchVal;
-      }
+  // ── Infinite scroll — replaces fetchInvoices + pagination ────────────────
+  const BATCH_SIZE = 100;
+  const {
+    rows: invoices,
+    total: totalInvoices,
+    loading,
+    loadingMore,
+    hasMore,
+    setFilters: setSellsFilters,
+    sentinelRef,
+    reset: resetSells,
+  } = useInfiniteScroll<SaleInvoice, typeof debouncedFilters>({
+    cacheKey: 'sells',
+    batchSize: BATCH_SIZE,
+    initialFilters: debouncedFilters,
+    fetcher: async (offset, filters) => {
+      const params: Record<string, any> = { limit: BATCH_SIZE, offset };
+      if (filters.startDate) params.date_from = filters.startDate;
+      if (filters.endDate) params.date_to = filters.endDate;
+      const searchVal = filters.customerName || filters.invoiceNo || filters.doctorName;
+      if (searchVal) params.search = searchVal;
       const data = await api.listSales(params);
-      const invoicesList = Array.isArray(data) ? data : (data && Array.isArray(data.invoices) ? data.invoices : []);
-      cachedInvoices = invoicesList;
-      setInvoices(invoicesList);
-    } catch (err) {
-      console.error('Failed to load sales:', err);
-      toastEvent.trigger('Failed to load sales', 'error');
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [debouncedFilters.startDate, debouncedFilters.endDate, debouncedFilters.invoiceNo, debouncedFilters.customerName]);
+      // Handle both paginated {invoices, meta} and legacy array responses
+      const list: SaleInvoice[] = Array.isArray(data) ? data
+        : (data?.invoices ?? data?.data ?? []);
+      const total = data?.meta?.total ?? (Array.isArray(data) ? 99999 : list.length);
+      return { data: list, meta: { total } };
+    },
+  });
 
-  // Handle mount fetch
+  // Re-run when debounced filters change
   useEffect(() => {
-    fetchInvoices(!!cachedInvoices);
-  }, []);
+    setSellsFilters(debouncedFilters);
+  }, [debouncedFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle filter changes that query the server (skip initial mount)
-  useEffect(() => {
-    if (isInitial.current) {
-      isInitial.current = false;
-      return;
-    }
-    fetchInvoices(false);
-  }, [debouncedFilters.startDate, debouncedFilters.endDate, debouncedFilters.invoiceNo, debouncedFilters.customerName]);
+  const fetchInvoices = resetSells; // keep mutation sites working
 
   const openView = async (invoice: SaleInvoice) => {
     try {
@@ -288,6 +272,7 @@ const Sells = () => {
         discount: editDiscount,
         paymentMedium: editPaymentMedium,
       });
+      cacheInvalidators.onSaleUpdated(); // invalidate Sells, Inventory, Dashboard
       toastEvent.trigger('Invoice updated successfully', 'success');
       setEditInvoice(null);
       fetchInvoices(true);
@@ -301,6 +286,7 @@ const Sells = () => {
   const handleDelete = async (id: number) => {
     try {
       await api.deleteSale(id);
+      cacheInvalidators.onSaleDeleted(); // stock restored — invalidate Inventory too
       toastEvent.trigger('Invoice deleted, stock restored', 'success');
       setDeleteConfirm(null);
       fetchInvoices(true);
@@ -345,6 +331,7 @@ const Sells = () => {
     }
   };
 
+  // Client-side filter on already-loaded rows (fast, no server call)
   const filteredInvoices = invoices.filter(inv => {
     const total = Number(inv.total_amount) || 0;
 
@@ -370,8 +357,6 @@ const Sells = () => {
   });
 
   const isDateFiltered = !!(colFilterStartDate || colFilterEndDate || debouncedFilters.startDate || debouncedFilters.endDate);
-  const totalPages = Math.ceil(filteredInvoices.length / pageSize);
-  const paginatedInvoices = isDateFiltered ? filteredInvoices : filteredInvoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const activeFiltersCount = [colFilterNo, colFilterName, colFilterStartDate, colFilterEndDate, colFilterDrName].filter(Boolean).length;
 
@@ -381,107 +366,23 @@ const Sells = () => {
       {/* Invoices Table */}
       <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative animate-in fade-in duration-300">
         
-        {/* Range Selector and Pagination Header */}
-        <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
-          <div className="flex items-center gap-2.5">
-            <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
-            {!isDateFiltered ? (
-              <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
-                <span className="text-muted">Show from row</span>
-                <input
-                  type="number"
-                  min="0"
-                  max={Math.max(0, filteredInvoices.length - 1)}
-                  value={filteredInvoices.length === 0 ? 0 : (currentPage - 1) * pageSize}
-                  onChange={e => {
-                    const val = Math.max(0, parseInt(e.target.value) || 0);
-                    const newPage = Math.floor(val / pageSize) + 1;
-                    setCurrentPage(Math.min(totalPages, newPage));
-                  }}
-                  className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
-                />
-                <span className="text-muted">to</span>
-                <span className="text-text font-mono font-bold">
-                  {filteredInvoices.length === 0 ? 0 : Math.min(filteredInvoices.length, currentPage * pageSize)}
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
-                <span className="text-muted">Showing all</span>
-                <span className="text-text font-mono font-bold">
-                  {filteredInvoices.length}
-                </span>
-              </div>
-            )}
-            <span className="text-muted">
-              of <strong className="text-text font-bold">{filteredInvoices.length.toLocaleString()}</strong> invoices
-            </span>
-          </div>
-
-          {!isDateFiltered && (
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-muted">Rows:</span>
-                <select
-                  value={pageSize}
-                  onChange={e => {
-                    const newSize = parseInt(e.target.value);
-                    setPageSize(newSize);
-                    setCurrentPage(1);
-                  }}
-                  className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
-                >
-                  <option value="15">15 rows</option>
-                  <option value="50">50 rows</option>
-                  <option value="100">100 rows</option>
-                  <option value="250">250 rows</option>
-                  <option value="500">500 rows</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1 || loading}
-                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                  title="First Page"
-                >
-                  <ChevronsLeft size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1 || loading}
-                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                  title="Previous Page"
-                >
-                  <ChevronLeft size={14} /> Prev
-                </button>
-                <div className="px-3 text-muted">
-                  Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages || loading}
-                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                  title="Next Page"
-                >
-                  Next <ChevronRight size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages || loading}
-                  className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                  title="Last Page"
-                >
-                  <ChevronsRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
+        {/* Count bar + Sync */}
+        <div className="p-3 border-b border-glass-border/30 flex items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
+          <span className="text-muted">
+            Showing <strong className="text-text font-mono">{filteredInvoices.length.toLocaleString()}</strong>
+            {totalInvoices > filteredInvoices.length && (
+              <> of <strong className="text-text font-mono">{totalInvoices.toLocaleString()}</strong></>
+            )} invoices
+          </span>
+          <button
+            onClick={resetSells}
+            disabled={loading}
+            title="Refresh sales data"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-glass-border bg-bg text-muted hover:text-primary hover:border-primary/40 transition-all disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw size={12} className={loading ? 'animate-spin text-primary' : ''} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Sync</span>
+          </button>
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15 gap-3">
@@ -650,7 +551,7 @@ const Sells = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedInvoices.map((inv, idx) => (
+                  {filteredInvoices.map((inv, idx) => (
                     <tr key={inv.id} className="hover:bg-white/10 transition-all duration-300 group relative z-10 hover:shadow-lg hover:-translate-y-0.5">
                       <td className="p-4 border-b border-glass-border/50 relative cursor-pointer">
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-purple-500 scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>
@@ -721,6 +622,23 @@ const Sells = () => {
                   ))}
                 </tbody>
               </table>
+              {/* Infinite scroll sentinel */}
+              {hasMore && (
+                <div ref={sentinelRef} className="py-4 text-center text-xs text-muted">
+                  {loadingMore ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw size={12} className="animate-spin" /> Loading more...
+                    </span>
+                  ) : (
+                    <span className="opacity-30">scroll for more</span>
+                  )}
+                </div>
+              )}
+              {!hasMore && filteredInvoices.length > 0 && (
+                <div className="py-3 text-center text-[10px] text-muted opacity-40">
+                  All {totalInvoices.toLocaleString()} invoices loaded
+                </div>
+              )}
             </div>
           )}
         </div>

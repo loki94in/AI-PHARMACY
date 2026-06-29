@@ -115,15 +115,35 @@ export default function PhoneSales() {
     }
   }, []);
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchStagedSales(), fetchDeviceData()]);
+    } finally {
+      setTimeout(() => setRefreshing(false), 600);
+    }
+  }, [refreshing, fetchStagedSales, fetchDeviceData]);
+
   useEffect(() => {
     fetchStagedSales();
     fetchDeviceData();
-    // Poll data every 8 seconds
+    // Background safety poll at 30s — SSE handles real-time new sales
     const interval = setInterval(() => {
       fetchStagedSales();
       fetchDeviceData();
-    }, 8000);
-    return () => clearInterval(interval);
+    }, 30_000);
+
+    // Real-time: App.tsx dispatches this when SSE fires sales_sync
+    const onNewSale = () => { fetchStagedSales(); };
+    window.addEventListener('new-staged-sale', onNewSale);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('new-staged-sale', onNewSale);
+    };
   }, [fetchStagedSales, fetchDeviceData]);
 
   const handleSelectSale = (sale: StagedSale) => {
@@ -309,6 +329,17 @@ export default function PhoneSales() {
               className="premium-input pl-9 pr-4 py-1.5 text-xs w-full bg-bg border border-border rounded-xl focus:outline-none text-text focus:border-primary"
             />
           </div>
+
+          {/* Manual refresh */}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh now"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-glass-border bg-bg text-muted text-xs font-semibold hover:text-primary hover:border-primary/40 transition-all disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw size={13} className={refreshing ? 'animate-spin text-primary' : ''} />
+            <span className="hidden sm:block">Refresh</span>
+          </button>
 
           {/* Status filter selection */}
           <select

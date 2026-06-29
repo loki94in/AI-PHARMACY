@@ -8,6 +8,7 @@ import { searchMedicine, createSale, SearchMedicineResult } from '../../../lib/a
 import { cartEvents } from '../../../lib/cartEvents';
 import SearchBar from '../../../components/SearchBar';
 import CartItem from '../../../components/CartItem';
+import { useConnection } from '../../../lib/ConnectionContext';
 
 interface CartEntry extends SearchMedicineResult {
   cart_qty: number;
@@ -21,6 +22,8 @@ export default function BillingScreen() {
   const [patientPhone, setPatientPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [invoiceResult, setInvoiceResult] = useState<{ invoice_no: string; total: number } | null>(null);
+  // Read live state from shared context — no local polling
+  const { isOnline, pendingSyncCount: pendingQueueCount } = useConnection();
 
   useEffect(() => {
     const unsubscribe = cartEvents.subscribe((item: any, quantity: number) => {
@@ -35,6 +38,7 @@ export default function BillingScreen() {
     });
     return unsubscribe;
   }, []);
+
 
   const handleSearch = useCallback(async (text: string) => {
     setQuery(text);
@@ -121,6 +125,22 @@ export default function BillingScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Offline / Sync Status Bar */}
+      {(!isOnline || pendingQueueCount > 0) && (
+        <View style={[styles.statusBar, !isOnline ? styles.statusOffline : styles.statusPending]}>
+          <Ionicons
+            name={!isOnline ? 'cloud-offline-outline' : 'sync-outline'}
+            size={14}
+            color="#fff"
+            style={{ marginRight: 6 }}
+          />
+          <Text style={styles.statusText}>
+            {!isOnline
+              ? `Offline — using cached inventory${pendingQueueCount > 0 ? ` · ${pendingQueueCount} bill${pendingQueueCount > 1 ? 's' : ''} queued` : ''}`
+              : `${pendingQueueCount} bill${pendingQueueCount > 1 ? 's' : ''} waiting to sync`}
+          </Text>
+        </View>
+      )}
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Search */}
         <SearchBar value={query} onChangeText={handleSearch} placeholder="Search medicine by name, batch, MRP..." />
@@ -192,6 +212,10 @@ export default function BillingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  statusBar: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 14 },
+  statusOffline: { backgroundColor: '#DC2626' },
+  statusPending: { backgroundColor: '#D97706' },
+  statusText: { color: '#fff', fontSize: 12, fontWeight: '600', flex: 1 },
   content: { padding: spacing.md, paddingBottom: 100 },
   successContainer: { alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   successIcon: { marginBottom: spacing.lg },

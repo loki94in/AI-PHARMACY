@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { cached, invalidate, TTL } from './apiCache';
 
 // Vite handles the proxy in dev mode to http://localhost:3000
 const API_URL = '/api';
@@ -175,9 +176,9 @@ export interface AutomationNotification {
 
 // API methods mapping
 export const api = {
-  getDashboard: () => apiClient.get<DashboardStats>('/dashboard').then(res => res.data),
-  dismissDashboardAlert: (id: number) => apiClient.delete(`/dashboard/alerts/${id}`).then(res => res.data),
-  
+  getDashboard: () => cached('dashboard', () => apiClient.get<DashboardStats>('/dashboard').then(res => res.data), TTL.MEDIUM),
+  dismissDashboardAlert: (id: number) => apiClient.delete(`/dashboard/alerts/${id}`).then(res => { invalidate('dashboard'); return res.data; }),
+
   // Inventory
   getInventory: (params?: {
     search?: string;
@@ -190,36 +191,47 @@ export const api = {
     loose?: string;
     mrp?: string;
     rack?: string;
-  }) => apiClient.get<any>('/inventory', { params }).then(res => res.data),
-  addMedicine: (data: Partial<InventoryItem>) => apiClient.post('/inventory', data).then(res => res.data),
-  updateMedicine: (id: number, data: Partial<InventoryItem>) => apiClient.put(`/inventory/${id}`, data).then(res => res.data),
+  }) => {
+    // Only cache unfiltered / paginated requests; skip cache when actively searching
+    const key = params?.search ? '' : `inventory:${JSON.stringify(params ?? {})}`;
+    const fetch = () => apiClient.get<any>('/inventory', { params }).then(res => res.data);
+    return key ? cached(key, fetch, TTL.LONG) : fetch();
+  },
+  addMedicine: (data: Partial<InventoryItem>) => apiClient.post('/inventory', data).then(res => { invalidate('inventory'); return res.data; }),
+  updateMedicine: (id: number, data: Partial<InventoryItem>) => apiClient.put(`/inventory/${id}`, data).then(res => { invalidate('inventory'); return res.data; }),
   getEnrichedMedicine: (id: number) => apiClient.get(`/inventory/medicines/${id}/enriched`).then(res => res.data),
   getQuickEditMedicine: (id: number) => apiClient.get(`/inventory/medicines/${id}/quick-edit`).then(res => res.data),
   updateQuickEditMedicine: (id: number, data: any) => apiClient.put(`/inventory/medicines/${id}/quick-edit`, data).then(res => res.data),
   
   // Sales / POS
-  getSalesHistory: () => apiClient.get('/sales/history').then(res => res.data),
-  createSale: (data: any) => apiClient.post('/sales', data).then(res => res.data),
+  getSalesHistory: () => cached('sales:history', () => apiClient.get('/sales/history').then(res => res.data), TTL.MEDIUM),
+  createSale: (data: any) => apiClient.post('/sales', data).then(res => { invalidate('sales'); invalidate('inventory'); return res.data; }),
   holdBill: (data: any) => apiClient.post('/sales/hold', data).then(res => res.data),
-  getHeldBills: () => apiClient.get('/sales/hold').then(res => res.data),
+  getHeldBills: () => cached('sales:hold', () => apiClient.get('/sales/hold').then(res => res.data), TTL.SHORT),
   restoreHeldBill: (id: number) => apiClient.post(`/sales/hold/${id}/restore`).then(res => res.data),
   searchMedicine: (q: string) => apiClient.get('/sales/search-medicine', { params: { q } }).then(res => res.data),
   
   // Sells (invoice list/edit)
-  listSales: (params?: { search?: string; date_from?: string; date_to?: string; batch?: string; limit?: number }) =>
-    apiClient.get('/sales/list', { params }).then(res => res.data),
-  getSale: (id: number) => apiClient.get(`/sales/${id}`).then(res => res.data),
-  updateSale: (id: number, data: any) => apiClient.put(`/sales/${id}`, data).then(res => res.data),
-  deleteSale: (id: number) => apiClient.delete(`/sales/${id}`).then(res => res.data),
+  listSales: (params?: { search?: string; date_from?: string; date_to?: string; batch?: string; limit?: number }) => {
+    const key = params?.search || params?.date_from ? '' : `sales:list:${JSON.stringify(params ?? {})}`;
+    const fetch = () => apiClient.get('/sales/list', { params }).then(res => res.data);
+    return key ? cached(key, fetch, TTL.MEDIUM) : fetch();
+  },
+  getSale: (id: number) => cached(`sales:${id}`, () => apiClient.get(`/sales/${id}`).then(res => res.data), TTL.LONG),
+  updateSale: (id: number, data: any) => apiClient.put(`/sales/${id}`, data).then(res => { invalidate('sales'); return res.data; }),
+  deleteSale: (id: number) => apiClient.delete(`/sales/${id}`).then(res => { invalidate('sales'); return res.data; }),
   
   // Purchases
-  getPurchases: (params?: { limit?: number; start?: string; end?: string; months?: number; search?: string }) => apiClient.get('/purchases', { params }).then(res => res.data),
-  getEarliestPurchaseDate: () => apiClient.get<{ earliest: string | null }>('/purchases/earliest-date').then(res => res.data),
-  getPurchaseItems: () => apiClient.get('/purchases/items/all').then(res => res.data),
-  getPurchase: (id: number) => apiClient.get(`/purchases/${id}`).then(res => res.data),
-  updatePurchase: (id: number, data: any) => apiClient.put(`/purchases/${id}/full`, data).then(res => res.data),
-  deletePurchase: (id: number) => apiClient.delete(`/purchases/${id}`).then(res => res.data),
-  createPurchase: (data: any) => apiClient.post('/purchases', data).then(res => res.data),
+  getPurchases: (params?: { limit?: number; offset?: number; start?: string; end?: string; months?: number; search?: string }) => {
+    // Always bypass old cache — appCache manages purchases now
+    return apiClient.get('/purchases', { params }).then(res => res.data);
+  },
+  getEarliestPurchaseDate: () => cached('purchases:earliest-date', () => apiClient.get<{ earliest: string | null }>('/purchases/earliest-date').then(res => res.data), TTL.XLONG),
+  getPurchaseItems: () => cached('purchases:items-all', () => apiClient.get('/purchases/items/all').then(res => res.data), TTL.MEDIUM),
+  getPurchase: (id: number) => cached(`purchases:${id}`, () => apiClient.get(`/purchases/${id}`).then(res => res.data), TTL.LONG),
+  updatePurchase: (id: number, data: any) => apiClient.put(`/purchases/${id}/full`, data).then(res => { invalidate('purchases'); invalidate('inventory'); return res.data; }),
+  deletePurchase: (id: number) => apiClient.delete(`/purchases/${id}`).then(res => { invalidate('purchases'); invalidate('inventory'); return res.data; }),
+  createPurchase: (data: any) => apiClient.post('/purchases', data).then(res => { invalidate('purchases'); invalidate('inventory'); return res.data; }),
 
   // Customer Returns
   searchInvoiceForReturn: (invoice_no: string) => apiClient.get('/customer-returns/search-invoice', { params: { invoice_no } }).then(res => res.data),
@@ -228,7 +240,7 @@ export const api = {
   
   // Returns (Supplier)
   createManualPurchase: (data: any) => apiClient.post('/purchases/manual', data).then(res => res.data),
-  getDistributors: () => apiClient.get('/distributors').then(res => res.data),
+  getDistributors: () => cached('distributors', () => apiClient.get('/distributors').then(res => res.data), TTL.LONG),
   getPendingReturns: (distributorId: number) => apiClient.get(`/distributors/${distributorId}/pending-returns`).then(res => res.data),
   getLastPurchase: (name: string, distributorId?: number) => {
     const params: any = { name };
@@ -245,7 +257,11 @@ export const api = {
 
 
   
-  getPatients: (params?: { q?: string; limit?: number }) => apiClient.get('/crm/patients', { params }).then(r => r.data),
+  getPatients: (params?: { q?: string; limit?: number }) => {
+    const key = params?.q ? '' : `crm:patients:${params?.limit ?? ''}`;
+    const fetch = () => apiClient.get('/crm/patients', { params }).then(r => r.data);
+    return key ? cached(key, fetch, TTL.MEDIUM) : fetch();
+  },
   
   // Migration Endpoints
   uploadMigrationFile: (file: File) => {
@@ -315,9 +331,9 @@ export const api = {
 
   
   addPatient: (data: any) => apiClient.post('/crm/patients', data).then(res => res.data),
-  getDoctors: () => apiClient.get('/crm/doctors').then(res => res.data),
-  addDoctor: (data: any) => apiClient.post('/crm/doctors', data).then(res => res.data),
-  updateDoctor: (id: number | string, data: any) => apiClient.put(`/crm/doctors/${id}`, data).then(res => res.data),
+  getDoctors: () => cached('crm:doctors', () => apiClient.get('/crm/doctors').then(res => res.data), TTL.LONG),
+  addDoctor: (data: any) => apiClient.post('/crm/doctors', data).then(res => { invalidate('crm:doctors'); return res.data; }),
+  updateDoctor: (id: number | string, data: any) => apiClient.put(`/crm/doctors/${id}`, data).then(res => { invalidate('crm:doctors'); return res.data; }),
   sendDailyDoctorReports: (date?: string) => apiClient.post('/crm/doctors/send-daily-reports', { date }).then(res => res.data),
   
   // Email / Mail Parser
@@ -433,7 +449,7 @@ export const api = {
   getWhatsappMessageMedia: (chatId: string, messageId: string) => apiClient.get(`/messaging/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/media`).then(res => res.data),
   
   // Returns
-  getReturns: (params?: { search?: string; date_from?: string; date_to?: string; min_amount?: number; max_amount?: number; limit?: number }) => apiClient.get('/returns', { params }).then(res => res.data),
+  getReturns: (params?: { search?: string; date_from?: string; date_to?: string; min_amount?: number; max_amount?: number; limit?: number; offset?: number }) => apiClient.get('/returns', { params }).then(res => res.data),
   getReturnItems: (id: number) => apiClient.get(`/returns/${id}/items`).then(res => res.data),
   resolveReturnMissing: (id: number) => apiClient.get(`/returns/${id}/resolve-missing`).then(res => res.data),
   deleteReturn: (id: number) => apiClient.delete(`/returns/${id}`).then(res => res.data),
@@ -452,29 +468,29 @@ export const api = {
   getPurchasePDF: (id: number) => apiClient.get(`/purchases/${id}/pdf`, { responseType: 'blob' }).then(res => res.data),
 
   // Orders & Special Requests
-  getOrders: () => apiClient.get<SpecialOrder[]>('/orders').then(res => res.data),
-  createOrder: (data: Partial<SpecialOrder>) => apiClient.post('/orders', data).then(res => res.data),
-  updateOrder: (id: number, data: Partial<SpecialOrder>) => apiClient.put(`/orders/${id}`, data).then(res => res.data),
-  deleteOrder: (id: number) => apiClient.delete(`/orders/${id}`).then(res => res.data),
-  getUncollectedAlerts: () => apiClient.get<SpecialOrder[]>('/orders/uncollected-alerts').then(res => res.data),
+  getOrders: (params?: { limit?: number; offset?: number }) => apiClient.get('/orders', { params }).then(res => res.data),
+  createOrder: (data: Partial<SpecialOrder>) => apiClient.post('/orders', data).then(res => { invalidate('orders'); return res.data; }),
+  updateOrder: (id: number, data: Partial<SpecialOrder>) => apiClient.put(`/orders/${id}`, data).then(res => { invalidate('orders'); return res.data; }),
+  deleteOrder: (id: number) => apiClient.delete(`/orders/${id}`).then(res => { invalidate('orders'); return res.data; }),
+  getUncollectedAlerts: () => cached('orders:uncollected', () => apiClient.get<SpecialOrder[]>('/orders/uncollected-alerts').then(res => res.data), TTL.SHORT),
   convertToRefill: (orderId: number, refillIntervalDays: number) =>
     apiClient.post('/orders/convert-to-refill', { orderId, refillIntervalDays }).then(res => res.data),
 
   // Expiry Monitor
-  getExpiryList: (days?: number) => apiClient.get('/expiry', { params: { days } }).then(res => res.data),
+  getExpiryList: (params?: { days?: number; limit?: number; offset?: number }) => apiClient.get('/expiry', { params }).then(res => res.data),
   sendExpiryAlerts: (data: { phone?: string, days?: number }) => apiClient.post('/expiry/send-alerts', data).then(res => res.data),
 
   // Dispatch Orders
-  getDispatchOrders: () => apiClient.get('/dispatch/orders').then(res => res.data),
-  createDispatchOrder: (data: any) => apiClient.post('/dispatch/orders', data).then(res => res.data),
-  updateDispatchOrder: (id: number, data: any) => apiClient.put(`/dispatch/orders/${id}`, data).then(res => res.data),
-  deleteDispatchOrder: (id: number) => apiClient.delete(`/dispatch/orders/${id}`).then(res => res.data),
-  getDeliveryBoys: () => apiClient.get('/dispatch/delivery-boys').then(res => res.data),
+  getDispatchOrders: () => cached('dispatch:orders', () => apiClient.get('/dispatch/orders').then(res => res.data), TTL.SHORT),
+  createDispatchOrder: (data: any) => apiClient.post('/dispatch/orders', data).then(res => { invalidate('dispatch'); return res.data; }),
+  updateDispatchOrder: (id: number, data: any) => apiClient.put(`/dispatch/orders/${id}`, data).then(res => { invalidate('dispatch'); return res.data; }),
+  deleteDispatchOrder: (id: number) => apiClient.delete(`/dispatch/orders/${id}`).then(res => { invalidate('dispatch'); return res.data; }),
+  getDeliveryBoys: () => cached('dispatch:delivery-boys', () => apiClient.get('/dispatch/delivery-boys').then(res => res.data), TTL.LONG),
   addDeliveryBoy: (data: { name: string; whatsapp_number?: string; telegram_chat_id?: string; is_active?: number }) =>
-    apiClient.post('/dispatch/delivery-boys', data).then(res => res.data),
+    apiClient.post('/dispatch/delivery-boys', data).then(res => { invalidate('dispatch:delivery-boys'); return res.data; }),
   updateDeliveryBoy: (id: number, data: { name?: string; whatsapp_number?: string; telegram_chat_id?: string; is_active?: number }) =>
-    apiClient.put(`/dispatch/delivery-boys/${id}`, data).then(res => res.data),
-  deleteDeliveryBoy: (id: number) => apiClient.delete(`/dispatch/delivery-boys/${id}`).then(res => res.data),
+    apiClient.put(`/dispatch/delivery-boys/${id}`, data).then(res => { invalidate('dispatch:delivery-boys'); return res.data; }),
+  deleteDeliveryBoy: (id: number) => apiClient.delete(`/dispatch/delivery-boys/${id}`).then(res => { invalidate('dispatch:delivery-boys'); return res.data; }),
 
   // CRM — extended
   updatePatient: (id: number, data: any) => apiClient.put(`/crm/patients/${id}`, data).then(res => res.data),
@@ -504,7 +520,7 @@ export const api = {
   getGoogleSearchStatus: () => apiClient.get(`/catalog/search-status`).then(res => res.data),
   
   // Reconciliation
-  getReconciliationList: () => apiClient.get('/purchases/reconciliation').then(res => res.data),
+  getReconciliationList: () => cached('purchases:reconciliation', () => apiClient.get('/purchases/reconciliation').then(res => res.data), TTL.MEDIUM),
   reissueOrder: (emailUid: number) => apiClient.post('/purchases/reconciliation/reissue', { email_uid: emailUid }).then(res => res.data),
   resolveOrderManually: (emailUid: number) => apiClient.post('/purchases/reconciliation/resolve', { email_uid: emailUid }).then(res => res.data),
 
@@ -522,18 +538,21 @@ export const api = {
   clearAssistantChatLogs: () => apiClient.post('/notifications/chat-logs/clear').then(res => res.data),
 
   // Refills
-  getRefills: () => apiClient.get<Refill[]>('/refills').then(res => res.data),
-  getRefill: (id: number) => apiClient.get<Refill>(`/refills/${id}`).then(res => res.data),
-  createRefill: (data: Partial<Refill>) => apiClient.post('/refills', data).then(res => res.data),
-  updateRefill: (id: number, data: Partial<Refill>) => apiClient.put(`/refills/${id}`, data).then(res => res.data),
-  deleteRefill: (id: number) => apiClient.delete(`/refills/${id}`).then(res => res.data),
-  sendRefillNow: (id: number) => apiClient.post(`/refills/${id}/send`).then(res => res.data),
-  acknowledgeRefill: (id: number) => apiClient.post(`/refills/${id}/acknowledge`).then(res => res.data),
-  skipRefill: (id: number) => apiClient.post(`/refills/${id}/skip`).then(res => res.data),
+  getRefills: () => cached('refills', () => apiClient.get<Refill[]>('/refills').then(res => res.data), TTL.SHORT),
+  getRefill: (id: number) => cached(`refills:${id}`, () => apiClient.get<Refill>(`/refills/${id}`).then(res => res.data), TTL.MEDIUM),
+  createRefill: (data: Partial<Refill>) => apiClient.post('/refills', data).then(res => { invalidate('refills'); return res.data; }),
+  updateRefill: (id: number, data: Partial<Refill>) => apiClient.put(`/refills/${id}`, data).then(res => { invalidate('refills'); return res.data; }),
+  deleteRefill: (id: number) => apiClient.delete(`/refills/${id}`).then(res => { invalidate('refills'); return res.data; }),
+  sendRefillNow: (id: number) => apiClient.post(`/refills/${id}/send`).then(res => { invalidate('refills'); return res.data; }),
+  acknowledgeRefill: (id: number) => apiClient.post(`/refills/${id}/acknowledge`).then(res => { invalidate('refills'); return res.data; }),
+  skipRefill: (id: number) => apiClient.post(`/refills/${id}/skip`).then(res => { invalidate('refills'); return res.data; }),
 
   // Automation / Communication logs
-  getAutomationNotifications: (params?: { type?: string; status?: string; search?: string; limit?: number }) =>
-    apiClient.get<AutomationNotification[]>('/automation/notifications', { params }).then(res => res.data),
+  getAutomationNotifications: (params?: { type?: string; status?: string; search?: string; limit?: number }) => {
+    const key = params?.search ? '' : `automation:notifications:${JSON.stringify(params ?? {})}`;
+    const fetch = () => apiClient.get<AutomationNotification[]>('/automation/notifications', { params }).then(res => res.data);
+    return key ? cached(key, fetch, TTL.SHORT) : fetch();
+  },
   retryNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/retry`).then(res => res.data),
   cancelNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/cancel`).then(res => res.data),
   manualNotification: (id: number) => apiClient.post(`/automation/notifications/${id}/manual`).then(res => res.data),
@@ -557,3 +576,22 @@ export const api = {
   exportReportsPDF: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-pdf', { params, responseType: 'blob' }).then(res => res.data),
   exportReportsExcel: (params: { type: string; fromDate?: string; toDate?: string }) => apiClient.get('/reports/export-excel', { params, responseType: 'blob' }).then(res => res.data),
 };
+
+/**
+ * prefetch — warm the cache for a page before the user navigates to it.
+ * Called on nav-link mouseenter. Already-cached entries are instant no-ops.
+ */
+export const prefetch: Record<string, () => void> = {
+  '/dashboard':        () => { api.getDashboard(); },
+  '/inventory':        () => { api.getInventory(); },
+  '/sells':            () => { api.listSales(); },
+  '/purchases':        () => { api.getPurchases(); },
+  '/purchase-history': () => { api.getPurchases(); api.getReconciliationList(); },
+  '/orders':           () => { api.getOrders(); },
+  '/expiry':           () => { api.getExpiryList(); },
+  '/returns':          () => { api.getReturns(); },
+  '/dispatch':         () => { api.getDispatchOrders(); api.getDeliveryBoys(); },
+  '/crm':              () => { api.getPatients(); api.getDoctors(); },
+};
+
+export { invalidate, invalidateAll } from './apiCache';

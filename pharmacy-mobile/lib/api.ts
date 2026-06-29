@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 
 const SERVER_KEY = 'pharmacy_server_url';
 const INVENTORY_CACHE_KEY = 'cached_inventory_master';
+const INVENTORY_CACHE_TIME_KEY = 'inventory_cache_time';
 const OFFLINE_QUEUE_KEY = 'offline_sales_queue';
 const PURCHASES_QUEUE_KEY = 'offline_purchases_queue';
 const OFFLINE_STOCK_KEY = 'offline_stock_updates';
@@ -362,28 +363,33 @@ export interface InventoryItem {
   batch_no?: string;
   expiry_date?: string;
   item_code?: string;
+  mrp?: number;
+  unit_price?: number;
+  cost_price?: number;
 }
 
 export async function getInventory(search?: string): Promise<InventoryItem[]> {
   try {
     const endpoint = search ? `/inventory?search=${encodeURIComponent(search.trim())}` : '/inventory';
-    const items = await request<InventoryItem[]>(endpoint);
-    // Save to cache mapped to SearchMedicineResult format
-    const mapped: SearchMedicineResult[] = items.map(item => ({
-      inventory_id: item.id,
-      medicine_id: item.medicine_id,
-      medicine_name: item.medicine_name,
-      batch_no: item.batch_no || '',
-      expiry_date: item.expiry_date || '',
-      quantity: item.quantity,
-      mrp: 0,
-      unit_price: 0,
-      cost_price: 0,
-      item_code: item.item_code || ''
-    }));
-    // Only cache full list to avoid overwriting cache with partial search results
-    if (!search) {
+    // Backend returns paginated { data: rows[], totalPages, currentPage, totalItems }
+    const response = await request<{ data: InventoryItem[] } | InventoryItem[]>(endpoint);
+    const items: InventoryItem[] = Array.isArray(response) ? response : ((response as any).data || []);
+    // Save to cache mapped to SearchMedicineResult format (only full list, not filtered search)
+    if (!search && items.length > 0) {
+      const mapped: SearchMedicineResult[] = items.map(item => ({
+        inventory_id: item.id,
+        medicine_id: item.medicine_id,
+        medicine_name: item.medicine_name,
+        batch_no: item.batch_no || '',
+        expiry_date: item.expiry_date || '',
+        quantity: item.quantity,
+        mrp: item.mrp || 0,
+        unit_price: item.unit_price || item.mrp || 0,
+        cost_price: item.cost_price || 0,
+        item_code: item.item_code || ''
+      }));
       await cacheInventory(mapped);
+      await AsyncStorage.setItem(INVENTORY_CACHE_TIME_KEY, Date.now().toString());
     }
     return items;
   } catch (err) {
@@ -396,17 +402,59 @@ export async function getInventory(search?: string): Promise<InventoryItem[]> {
       quantity: c.quantity,
       batch_no: c.batch_no,
       expiry_date: c.expiry_date,
-      item_code: c.item_code
+      item_code: c.item_code,
+      mrp: c.mrp,
+      unit_price: c.unit_price,
+      cost_price: c.cost_price,
     }));
     if (search) {
       const q = search.toLowerCase();
-      result = result.filter(item => 
-        item.medicine_name?.toLowerCase().includes(q) || 
+      result = result.filter(item =>
+        item.medicine_name?.toLowerCase().includes(q) ||
         item.batch_no?.toLowerCase().includes(q) ||
         item.item_code?.toLowerCase().includes(q)
       );
     }
     return result;
+  }
+}
+
+/** Fetches the full inventory with all pricing fields and warms the local cache.
+ *  Uses limit=0 to get every record from inventory_master in one shot.
+ *  Safe to call on app startup and on a periodic timer — no-ops silently on failure. */
+export async function warmInventoryCache(): Promise<void> {
+  try {
+    const response = await request<{ data: any[] } | any[]>('/inventory?limit=0');
+    const rows: any[] = Array.isArray(response) ? response : ((response as any).data || []);
+    if (rows.length === 0) return;
+    const mapped: SearchMedicineResult[] = rows.map(item => ({
+      inventory_id: item.id,
+      medicine_id: item.medicine_id,
+      medicine_name: item.medicine_name || item.name || '',
+      batch_no: item.batch_no || item.batch_number || '',
+      expiry_date: item.expiry_date || '',
+      quantity: item.quantity || item.stock_quantity || 0,
+      mrp: item.mrp || 0,
+      unit_price: item.unit_price || item.mrp || 0,
+      cost_price: item.cost_price || 0,
+      item_code: item.item_code || ''
+    }));
+    await cacheInventory(mapped);
+    await AsyncStorage.setItem(INVENTORY_CACHE_TIME_KEY, Date.now().toString());
+    console.log(`warmInventoryCache: cached ${mapped.length} items with pricing.`);
+  } catch (err) {
+    console.warn('warmInventoryCache failed (offline?):', err);
+  }
+}
+
+/** Returns the age of the inventory cache in milliseconds, or Infinity if never cached. */
+export async function getInventoryCacheAge(): Promise<number> {
+  try {
+    const ts = await AsyncStorage.getItem(INVENTORY_CACHE_TIME_KEY);
+    if (!ts) return Infinity;
+    return Date.now() - parseInt(ts, 10);
+  } catch {
+    return Infinity;
   }
 }
 

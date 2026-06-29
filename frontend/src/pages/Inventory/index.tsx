@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
-import { PackageSearch, Package, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { PackageSearch, Package, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save } from 'lucide-react';
 import { api, type InventoryItem } from '../../services/api';
 import { UniversalMedicineEditModal } from '../../components/UniversalMedicineEditModal';
 import { createPortal } from 'react-dom';
 import { clearExpiryCache } from '../Expiry';
+import { cacheInvalidators, appCache } from '../../services/appCache';
 
 const formatExpiryToMMYY = (val: string): string => {
   if (!val) return '';
@@ -38,8 +40,8 @@ let cachedItems: any[] | null = null;
 let cachedSpecialOrders: any[] | null = null;
 
 const Inventory = () => {
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Check appCache first (populated by prefetchAll on app start)
+  // items, loading, totalItems now come from useInfiniteScroll hook below
   const [colFilters, setColFilters] = useState({
     medicine: '', batch: '', expiry: '', packs: '', loose: '', mrp: '', rack: ''
   });
@@ -58,11 +60,8 @@ const Inventory = () => {
 
   const [specialOrders, setSpecialOrders] = useState<any[]>(cachedSpecialOrders || []);
 
-  // Pagination and Range Filter States
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
-  const [totalItems, setTotalItems] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  // Infinite scroll managed by useInfiniteScroll hook
+  const BATCH_SIZE = 100;
 
   // Debounced column filter states
   const [debouncedFilters, setDebouncedFilters] = useState(colFilters);
@@ -105,47 +104,51 @@ const Inventory = () => {
     return () => clearTimeout(handler);
   }, [colFilters]);
 
-  // Reset page to 1 when filters are updated
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedFilters]);
 
-  const loadInventory = useCallback(() => {
-    setLoading(true);
-    api.getInventory({ 
-      page: currentPage, 
-      limit: pageSize,
-      medicine: debouncedFilters.medicine,
-      batch: debouncedFilters.batch,
-      expiry: debouncedFilters.expiry,
-      packs: debouncedFilters.packs,
-      loose: debouncedFilters.loose,
-      mrp: debouncedFilters.mrp,
-      rack: debouncedFilters.rack
-    })
-      .then(data => {
-        const fetchedItems = data && (data as any).data ? (data as any).data : data;
-        const list = Array.isArray(fetchedItems) ? fetchedItems : [];
-        setItems(list);
-        
-        if (data && (data as any).totalItems !== undefined) {
-          setTotalItems((data as any).totalItems);
-          setTotalPages((data as any).totalPages || 1);
-        } else {
-          setTotalItems(list.length);
-          setTotalPages(1);
-        }
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
+
+
+
+
+
+  // ── Infinite scroll hook — replaces loadInventory + pagination ────────────
+  const {
+    rows: items,
+    total: totalItems,
+    loading,
+    loadingMore,
+    hasMore,
+    setFilters: setInvFilters,
+    sentinelRef,
+    reset: resetInventory,
+  } = useInfiniteScroll<InventoryItem, typeof debouncedFilters>({
+    cacheKey: 'inventory',
+    batchSize: BATCH_SIZE,
+    initialFilters: debouncedFilters,
+    fetcher: async (offset, filters) => {
+      const data = await api.getInventory({
+        page: Math.floor(offset / BATCH_SIZE) + 1,
+        limit: BATCH_SIZE,
+        medicine: filters.medicine,
+        batch: filters.batch,
+        expiry: filters.expiry,
+        packs: filters.packs,
+        loose: filters.loose,
+        mrp: filters.mrp,
+        rack: filters.rack,
       });
-  }, [currentPage, pageSize, debouncedFilters]);
+      const list = data && (data as any).data ? (data as any).data : (Array.isArray(data) ? data : []);
+      const total = (data as any).totalItems ?? list.length;
+      return { data: list, meta: { total } };
+    },
+  });
 
+  // Re-run infinite scroll when debounced filters change
   useEffect(() => {
-    loadInventory();
-  }, [loadInventory]);
+    setInvFilters(debouncedFilters);
+  }, [debouncedFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refreshing = loadingMore;
+  const handleRefresh = resetInventory;
 
   useDeferredEffect(() => {
     api.getOrders()
@@ -195,6 +198,7 @@ const Inventory = () => {
     api.updateMedicine(selectedItem.id, editForm)
       .then(() => {
         clearExpiryCache();
+        cacheInvalidators.onInventoryUpdated(); // invalidate Inventory + Expiry caches
         setIsSaving(false);
         setIsEditing(false);
         setSelectedItem({ ...selectedItem, ...editForm } as InventoryItem);
@@ -212,95 +216,23 @@ const Inventory = () => {
     <div className="h-full flex flex-col gap-4 overflow-hidden relative">
       <div className="flex-1 bg-glass-bg border border-glass-border rounded-2xl flex flex-col min-h-0 overflow-hidden relative animate-in fade-in duration-300">
         
-        {/* Range Selector and Pagination Header */}
-        <div className="p-3 border-b border-glass-border flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
-          <div className="flex items-center gap-2.5">
-            <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
-            <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
-              <span className="text-muted">Show from row</span>
-              <input
-                type="number"
-                min="0"
-                max={Math.max(0, totalItems - 1)}
-                value={totalItems === 0 ? 0 : (currentPage - 1) * pageSize}
-                onChange={e => {
-                  const val = Math.max(0, parseInt(e.target.value) || 0);
-                  const newPage = Math.floor(val / pageSize) + 1;
-                  setCurrentPage(Math.min(totalPages, newPage));
-                }}
-                className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
-              />
-              <span className="text-muted">to</span>
-              <span className="text-text font-mono font-bold">
-                {totalItems === 0 ? 0 : Math.min(totalItems, currentPage * pageSize)}
-              </span>
-            </div>
-            <span className="text-muted">
-              of <strong className="text-text font-bold">{totalItems.toLocaleString()}</strong> medicines in inventory
-            </span>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-muted">Packs:</span>
-              <select
-                value={pageSize}
-                onChange={e => {
-                  const newSize = parseInt(e.target.value);
-                  setPageSize(newSize);
-                  setCurrentPage(1);
-                }}
-                className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
-              >
-                <option value="50">50 rows</option>
-                <option value="100">100 rows</option>
-                <option value="250">250 rows</option>
-                <option value="500">500 rows</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
-              <button
-                type="button"
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1 || loading}
-                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
-                title="First Page"
-              >
-                <ChevronsLeft size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1 || loading}
-                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
-                title="Previous Page"
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <div className="px-3 text-muted">
-                Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages || loading}
-                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider"
-                title="Next Page"
-              >
-                Next <ChevronRight size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage === totalPages || loading}
-                className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all"
-                title="Last Page"
-              >
-                <ChevronsRight size={14} />
-              </button>
-            </div>
-          </div>
+        {/* Inventory count bar + Sync button */}
+        <div className="p-3 border-b border-glass-border flex items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
+          <span className="text-muted">
+            Showing <strong className="text-text font-mono">{items.length.toLocaleString()}</strong>
+            {totalItems > items.length && (
+              <> of <strong className="text-text font-mono">{totalItems.toLocaleString()}</strong></>
+            )} medicines
+          </span>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            title="Sync inventory from server"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-glass-border bg-bg text-muted hover:text-primary hover:border-primary/40 transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={refreshing ? 'animate-spin text-primary' : ''} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">{refreshing ? 'Syncing...' : 'Sync'}</span>
+          </button>
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15">
@@ -501,6 +433,23 @@ const Inventory = () => {
                   })}
                 </tbody>
               </table>
+              {/* Infinite scroll sentinel */}
+              {hasMore && (
+                <div ref={sentinelRef} className="py-4 text-center text-xs text-muted">
+                  {loadingMore ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw size={12} className="animate-spin" /> Loading more...
+                    </span>
+                  ) : (
+                    <span className="opacity-30">scroll for more</span>
+                  )}
+                </div>
+              )}
+              {!hasMore && items.length > 0 && (
+                <div className="py-3 text-center text-[10px] text-muted opacity-40">
+                  All {totalItems.toLocaleString()} medicines loaded
+                </div>
+              )}
             </div>
           )}
         </div>

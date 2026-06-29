@@ -591,9 +591,16 @@ router.get('/', async (req, res) => {
       filterQuery = 'WHERE ' + conditions.join(' AND ');
     }
     
-    const hasFilters = !!(start || end || months > 0 || search);
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : (hasFilters ? 5000 : 50);
-    
+    // Default 100 rows — prevents 5000-row freeze. Client uses offset for infinite scroll.
+    const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10), 500) : 100;
+    const offset = req.query.offset ? Math.max(0, parseInt(req.query.offset as string, 10)) : 0;
+
+    const countRow = await (db as any).get(`
+      SELECT COUNT(*) as total FROM purchases p
+      LEFT JOIN distributors d ON p.distributor_id = d.id
+      ${filterQuery}
+    `, params) as { total: number };
+
     const purchases = await db.all(`
       SELECT p.id, p.invoice_no, p.date, p.total_amount, p.cn_amount, p.cn_number, p.original_amount, d.name as distributor_name,
              COALESCE((SELECT SUM(quantity) FROM purchase_items WHERE purchase_id = p.id), 0) as total_qty
@@ -601,9 +608,10 @@ router.get('/', async (req, res) => {
       LEFT JOIN distributors d ON p.distributor_id = d.id 
       ${filterQuery}
       ORDER BY p.date DESC 
-      LIMIT ?
-    `, [...params, limit]);
-    res.json(purchases);
+      LIMIT ? OFFSET ?
+    `, [...params, limit, offset]);
+
+    res.json({ data: purchases, meta: { total: countRow.total, limit, offset } });
   } catch (err) {
     console.error('Purchases fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });

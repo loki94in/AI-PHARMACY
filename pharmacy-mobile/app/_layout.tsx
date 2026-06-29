@@ -11,9 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import 'react-native-reanimated';
 import { colors } from '../lib/theme';
-import { getServerUrl, testConnection, getOfflineSalesQueue, getOfflinePurchasesQueue, getOfflineStockQueue, syncOfflineSalesAndRefresh, registerPushToken, saveNotification, getMobileAutomationTasks, retryMobileFallbackTask, autoDiscoverServer } from '../lib/api';
+import { getServerUrl, testConnection, getOfflineSalesQueue, getOfflinePurchasesQueue, getOfflineStockQueue, syncOfflineSalesAndRefresh, registerPushToken, saveNotification, getMobileAutomationTasks, retryMobileFallbackTask, autoDiscoverServer, warmInventoryCache, getInventoryCacheAge } from '../lib/api';
 import ServerSetup from '../components/ServerSetup';
 import AppLock from '../components/AppLock';
+import { ConnectionContext, ConnectionState } from '../lib/ConnectionContext';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -58,6 +59,9 @@ export default function RootLayout() {
   const [isServerOnline, setIsServerOnline] = useState(true);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [syncingOffline, setSyncingOffline] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [activeServerUrl, setActiveServerUrl] = useState('');
+  const pushTokenRegisteredRef = useRef(false); // register only once per session
 
   // Toast Notification State & Animated Values
   const [toast, setToast] = useState<{ title: string; body: string } | null>(null);
@@ -120,10 +124,12 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Connection checking & offline synchronizer background process
-  // ponytail: stable interval — no deps that cause teardown on every sync
+  // ─── Main background loop — 60 s ──────────────────────────────────────────
+  // Handles: connection test, offline sync, inventory cache warm.
+  // registerPushToken is NOT here — it runs once on startup (see init useEffect).
+  // getMobileAutomationTasks has its own slower 120 s loop below.
   useEffect(() => {
-    let syncingRef = false; // local ref avoids state-dep in interval
+    let syncingRef = false;
 
     const checkConnectionAndSync = async () => {
       const url = await getServerUrl();
@@ -131,15 +137,14 @@ export default function RootLayout() {
 
       let online = await testConnection(url);
       if (!online) {
-        // If connection is lost, attempt to auto-discover (IP might have changed)
+        // IP may have changed — attempt auto-discover before giving up
         const discovered = await autoDiscoverServer();
-        if (discovered) {
-          online = true;
-        }
+        if (discovered) online = true;
       }
       setIsServerOnline(online);
+      setActiveServerUrl(online ? url : '');
 
-      // Check current offline queues size
+      // Read queue sizes from AsyncStorage (local — no API call)
       const salesQueue = await getOfflineSalesQueue();
       const purchasesQueue = await getOfflinePurchasesQueue();
       const stockQueue = await getOfflineStockQueue();
@@ -151,11 +156,12 @@ export default function RootLayout() {
         setSyncingOffline(true);
         try {
           const res = await syncOfflineSalesAndRefresh();
-          console.log(`Synced ${res.syncedCount} offline item(s) successfully.`);
-          const updatedSales = await getOfflineSalesQueue();
-          const updatedPurchases = await getOfflinePurchasesQueue();
-          const updatedStock = await getOfflineStockQueue();
-          setPendingSyncCount(updatedSales.length + updatedPurchases.length + updatedStock.length);
+          console.log(`Synced ${res.syncedCount} offline item(s).`);
+          const s = await getOfflineSalesQueue();
+          const p = await getOfflinePurchasesQueue();
+          const k = await getOfflineStockQueue();
+          setPendingSyncCount(s.length + p.length + k.length);
+          setLastSyncTime(new Date());
         } catch (syncErr) {
           console.warn('Background sync failed:', syncErr);
         } finally {
@@ -164,42 +170,42 @@ export default function RootLayout() {
         }
       }
 
-      // Auto-retry pending/failed mobile automation tasks (WhatsApp/Email) when online
+      // Warm inventory cache if stale (> 5 min) — fire-and-forget
       if (online) {
-        try {
-          const tasks = await getMobileAutomationTasks();
-          const failedTasks = tasks.filter(t => t.status === 'failed');
-          for (const task of failedTasks) {
-            console.log(`Retrying failed mobile automation task ${task.id} in background...`);
-            await retryMobileFallbackTask(task.id);
-          }
-        } catch (err) {
-          console.warn('Failed to retry automation tasks in background:', err);
-        }
-      }
-
-      // If online, send a registration ping — use ref if ready, else read from SecureStore
-      if (online) {
-        try {
-          let token = deviceTokenRef.current;
-          if (!token) {
-            // Token may not be set yet if push-token setup is still in progress
-            token = await SecureStore.getItemAsync('admin_device_uuid');
-          }
-          if (token) {
-            await registerPushToken(token, deviceNameRef.current, deviceOsRef.current);
-          }
-        } catch (pingErr) {
-          console.warn('Background status ping failed:', pingErr);
+        const cacheAgeMs = await getInventoryCacheAge();
+        if (cacheAgeMs > 5 * 60 * 1000) {
+          warmInventoryCache().catch(() => {});
         }
       }
     };
 
     checkConnectionAndSync();
-    const intervalId = setInterval(checkConnectionAndSync, 15000);
+    const mainId = setInterval(checkConnectionAndSync, 60_000); // 60 s — was 15 s
+    return () => clearInterval(mainId);
+  }, []);
 
-    return () => clearInterval(intervalId);
-  }, []); // stable — no reactive deps needed
+  // ─── Automation-task retry loop — 120 s ───────────────────────────────────
+  // Runs independently so it doesn't inflate the main loop frequency.
+  useEffect(() => {
+    const retryAutomationTasks = async () => {
+      const url = await getServerUrl();
+      if (!url) return;
+      const online = await testConnection(url);
+      if (!online) return;
+      try {
+        const tasks = await getMobileAutomationTasks();
+        for (const task of tasks.filter(t => t.status === 'failed')) {
+          await retryMobileFallbackTask(task.id);
+        }
+      } catch (err) {
+        console.warn('Automation task retry failed:', err);
+      }
+    };
+
+    retryAutomationTasks();
+    const autoId = setInterval(retryAutomationTasks, 120_000); // 120 s — was 15 s
+    return () => clearInterval(autoId);
+  }, []);
 
   useEffect(() => {
     if ((fontsLoaded || fontError) && !initRef.current) {
@@ -208,6 +214,8 @@ export default function RootLayout() {
         // Try to automatically discover the server (checks cache first, then scans WiFi)
         const url = await autoDiscoverServer();
         setHasServer(!!url);
+        // Warm inventory cache on first launch so offline sales have real pricing
+        if (url) warmInventoryCache().catch(() => {});
 
         // Check if App Lock is enabled
         const lockEnabled = await SecureStore.getItemAsync('app_lock_enabled');
@@ -269,8 +277,12 @@ export default function RootLayout() {
           deviceNameRef.current = deviceName;
           deviceOsRef.current = os;
 
-          await registerPushToken(token, deviceName, os);
-          console.log('Device status registered successfully. ID:', token);
+          // Register once on startup — NOT on every polling interval
+          if (!pushTokenRegisteredRef.current) {
+            await registerPushToken(token, deviceName, os);
+            pushTokenRegisteredRef.current = true;
+            console.log('Device registered. ID:', token);
+          }
         } catch (tokenErr) {
           console.log('Failed to register device connection status:', tokenErr);
         }
@@ -338,7 +350,16 @@ export default function RootLayout() {
     );
   }
 
+  const connectionValue: ConnectionState = {
+    isOnline: isServerOnline,
+    pendingSyncCount,
+    lastSyncTime,
+    syncingOffline,
+    serverUrl: activeServerUrl,
+  };
+
   return (
+    <ConnectionContext.Provider value={connectionValue}>
     <ThemeProvider value={PharmacyDark}>
       <StatusBar style="light" />
       
@@ -429,6 +450,7 @@ export default function RootLayout() {
         </Animated.View>
       )}
     </ThemeProvider>
+    </ConnectionContext.Provider>
   );
 }
 

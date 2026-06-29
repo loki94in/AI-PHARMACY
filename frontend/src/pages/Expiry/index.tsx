@@ -10,13 +10,11 @@ import {
   RefreshCw, 
   CheckCircle2,
   RotateCcw,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Package
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { appCache } from '../../services/appCache';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { toastEvent } from '../../services/events';
 
 interface ExpiryItem {
@@ -54,17 +52,13 @@ export const clearExpiryCache = () => {
 
 const Expiry = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<ExpiryItem[]>(cachedExpiryItems || []);
-  const [loading, setLoading] = useState(!cachedExpiryItems);
   const [refreshing, setRefreshing] = useState(false);
   const [daysFilter, setDaysFilter] = useState(90);
   const [customPhone, setCustomPhone] = useState('');
   const [sendingAlerts, setSendingAlerts] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
+  // pagination replaced by useInfiniteScroll
   
   // Custom Filters (Column filters)
   const [colFilterId, setColFilterId] = useState('');
@@ -143,35 +137,39 @@ const Expiry = () => {
     return () => clearTimeout(handler);
   }, [colFilterId, colFilterMedName, colFilterBatchNo, colFilterDate, colFilterMinQty, colFilterMaxQty, colFilterMinMrp, colFilterMaxMrp, colFilterLocation]);
 
-  // Reset pagination when filters or scope days change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedFilters, daysFilter]);
 
-  const fetchExpiryItems = async (days = 180, showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-    if (!cachedExpiryItems && !showRefresh) setLoading(true);
-    try {
-      const data = await api.getExpiryList(days);
-      if (Array.isArray(data)) {
-        setItems(data);
-        cachedExpiryItems = data;
-      }
-    } catch (err) {
-      console.error('Error fetching near-expiry items:', err);
-      showNotification('Failed to load near-expiry inventory data.', 'error');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+
+  // ── Infinite scroll ─────────────────────────────────────────────────────────
+  const BATCH_SIZE = 100;
+  const {
+    rows: items,
+    total: totalExpiryItems,
+    loading,
+    loadingMore,
+    hasMore,
+    setFilters: setExpiryFilters,
+    sentinelRef,
+    reset: fetchExpiryItems,
+  } = useInfiniteScroll<ExpiryItem, { days: number }>({
+    cacheKey: 'expiry',
+    batchSize: BATCH_SIZE,
+    initialFilters: { days: daysFilter },
+    fetcher: async (offset, filters) => {
+      const data = await api.getExpiryList({ days: filters.days, limit: BATCH_SIZE, offset });
+      const list: ExpiryItem[] = data?.data ?? (Array.isArray(data) ? data : []);
+      const total: number = data?.meta?.total ?? list.length;
+      return { data: list, meta: { total } };
+    },
+  });
+
+  // Re-fetch when daysFilter changes
+  useEffect(() => {
+    setExpiryFilters({ days: daysFilter });
+  }, [daysFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    fetchExpiryItems(180);
-    
-    // Attempt to load settings to prefill owner/pharmacist phone number
-    api.getLicenseStatus() // we can fetch details from licensing/settings if available
-      .catch(err => console.error(err));
+    // Prefill phone from license settings
+    api.getLicenseStatus().catch(err => console.error(err));
   }, []);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
@@ -311,8 +309,6 @@ const Expiry = () => {
   });
 
   const isDateFiltered = !!(colFilterDate || debouncedFilters.date);
-  const totalPages = Math.ceil(filteredItems.length / pageSize);
-  const paginatedItems = isDateFiltered ? filteredItems : filteredItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="h-full flex flex-col fade-in space-y-6">
@@ -349,7 +345,7 @@ const Expiry = () => {
             </button>
           )}
           <button 
-            onClick={() => fetchExpiryItems(180, true)} 
+            onClick={() => { setRefreshing(true); fetchExpiryItems(); setTimeout(()=>setRefreshing(false),800); }} 
             disabled={refreshing}
             className="p-2 rounded-lg bg-white/5 border border-glass-border hover:bg-white/10 hover:text-white transition-all text-muted"
             title="Refresh list"
@@ -471,103 +467,12 @@ const Expiry = () => {
           <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
             <div className="flex items-center gap-2.5">
               <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
-              {!isDateFiltered ? (
-                <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
-                  <span className="text-muted">Show from row</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max={Math.max(0, filteredItems.length - 1)}
-                    value={filteredItems.length === 0 ? 0 : (currentPage - 1) * pageSize}
-                    onChange={e => {
-                      const val = Math.max(0, parseInt(e.target.value) || 0);
-                      const newPage = Math.floor(val / pageSize) + 1;
-                      setCurrentPage(Math.min(totalPages, newPage));
-                    }}
-                    className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
-                  />
-                  <span className="text-muted">to</span>
-                  <span className="text-text font-mono font-bold">
-                    {filteredItems.length === 0 ? 0 : Math.min(filteredItems.length, currentPage * pageSize)}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
-                  <span className="text-muted">Showing all</span>
-                  <span className="text-text font-mono font-bold">
-                    {filteredItems.length}
-                  </span>
-                </div>
-              )}
-              <span className="text-muted">
-                of <strong className="text-text font-bold">{filteredItems.length.toLocaleString()}</strong> expiring items
+              <span className="text-xs text-muted">
+                <strong className="text-text font-mono">{filteredItems.length.toLocaleString()}</strong>
+                {totalExpiryItems > filteredItems.length && (
+                  <> of <strong className="text-text font-mono">{totalExpiryItems.toLocaleString()}</strong></>
+                )} expiring items
               </span>
-            </div>
-
-            {!isDateFiltered && (
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted">Rows:</span>
-                  <select
-                    value={pageSize}
-                    onChange={e => {
-                      const newSize = parseInt(e.target.value);
-                      setPageSize(newSize);
-                      setCurrentPage(1);
-                    }}
-                    className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
-                  >
-                    <option value="15">15 rows</option>
-                    <option value="50">50 rows</option>
-                    <option value="100">100 rows</option>
-                    <option value="250">250 rows</option>
-                    <option value="500">500 rows</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1 || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                    title="First Page"
-                  >
-                    <ChevronsLeft size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1 || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                    title="Previous Page"
-                  >
-                    <ChevronLeft size={14} /> Prev
-                  </button>
-                  <div className="px-3 text-muted">
-                    Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                    title="Next Page"
-                  >
-                    Next <ChevronRight size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                    title="Last Page"
-                  >
-                    <ChevronsRight size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 p-4 overflow-hidden bg-bg2/15">
@@ -740,7 +645,7 @@ const Expiry = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedItems.map(item => {
+                    {filteredItems.map(item => {
                       const daysDiff = getExpiryDaysDiff(item.expiry_date);
                       const details = getExpiryStatusDetails(daysDiff);
                       const isSelected = selectedIds.has(item.id);
@@ -796,6 +701,18 @@ const Expiry = () => {
                     })}
                   </tbody>
                 </table>
+                {hasMore && (
+                  <div ref={sentinelRef} className="py-4 text-center text-xs text-muted">
+                    {loadingMore
+                      ? <span className="flex items-center justify-center gap-2"><RefreshCw size={12} className="animate-spin"/> Loading more…</span>
+                      : <span className="opacity-30">scroll for more</span>}
+                  </div>
+                )}
+                {!hasMore && items.length > 0 && (
+                  <div className="py-3 text-center text-[10px] text-muted opacity-40">
+                    All {totalExpiryItems.toLocaleString()} expiry items loaded
+                  </div>
+                )}
               </div>
             )}
           </div>

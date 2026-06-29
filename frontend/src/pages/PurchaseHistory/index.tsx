@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../services/api';
-import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { appCache } from '../../services/appCache';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
+import { Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle, Database, RefreshCw, Paperclip, Trash2, Edit, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 
 interface PurchaseTransaction {
   id: number;
@@ -37,13 +39,12 @@ const getNDaysAgoString = (n: number) => {
 };
 
 // Module-level cache for instant re-mount
-let cachedTransactions: PurchaseTransaction[] | null = null;
+// Module-level cache removed — useInfiniteScroll manages state
 
 const PurchaseHistory = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [transactions, setTransactions] = useState<PurchaseTransaction[]>(cachedTransactions || []);
-  const [loading, setLoading] = useState(!cachedTransactions);
+  // transactions + loading come from useInfiniteScroll below
   
   const [colFilterId, setColFilterId] = useState('');
   const [colFilterDistributor, setColFilterDistributor] = useState('');
@@ -106,14 +107,7 @@ const PurchaseHistory = () => {
     return () => clearTimeout(handler);
   }, [colFilterId, colFilterDistributor, colFilterInvoiceNo, colFilterDate, colFilterMinAmount, colFilterMaxAmount]);
 
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
 
-  // Reset pagination when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedFilters]);
 
   // Reconciliation States
   const [activeTab, setActiveTab] = useState<'history' | 'reconciliation'>(
@@ -132,24 +126,35 @@ const PurchaseHistory = () => {
   const [resolvingUid, setResolvingUid] = useState<number | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
 
-  const fetchHistory = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getPurchases({
-        limit: 5000 // Fetch a large history so local column filtering works over all recent items
-      });
-      setTransactions(Array.isArray(data) ? data : []);
-      cachedTransactions = Array.isArray(data) ? data : [];
-    } catch (err) {
-      console.error('Error fetching purchase history', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ── Infinite scroll (replaces fetchHistory + 5000-row fetch) ──────────────
+  const BATCH_SIZE = 100;
+  const {
+    rows: transactions,
+    total: totalTransactions,
+    loading,
+    loadingMore,
+    hasMore,
+    setFilters: setPHFilters,
+    sentinelRef,
+    reset: fetchHistory,
+  } = useInfiniteScroll<PurchaseTransaction, typeof debouncedFilters>({
+    cacheKey: 'purchase_history',
+    batchSize: BATCH_SIZE,
+    initialFilters: debouncedFilters,
+    fetcher: async (offset, filters) => {
+      const params: Record<string, any> = { limit: BATCH_SIZE, offset };
+      if (filters.date) { params.date_from = filters.date; params.date_to = filters.date; }
+      const data = await api.getPurchases(params);
+      const list: PurchaseTransaction[] = Array.isArray(data) ? data
+        : ((data as any)?.data ?? (data as any)?.purchases ?? []);
+      const total = (data as any)?.meta?.total ?? (Array.isArray(data) ? 99999 : list.length);
+      return { data: list, meta: { total } };
+    },
+  });
 
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    setPHFilters(debouncedFilters);
+  }, [debouncedFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchReconciliation();
@@ -309,8 +314,6 @@ const PurchaseHistory = () => {
   });
 
   const isDateFiltered = !!(colFilterDate || debouncedFilters.date);
-  const totalPages = Math.ceil(filteredData.length / pageSize);
-  const paginatedData = isDateFiltered ? filteredData : filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Purchase Analytics
   const totalPurchases = filteredData.length;
@@ -569,6 +572,22 @@ const PurchaseHistory = () => {
                       )}
                     </tbody>
                   </table>
+                  {hasMore && (
+                    <div ref={sentinelRef} className="py-4 text-center text-xs text-muted">
+                      {loadingMore ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <RefreshCw size={12} className="animate-spin" /> Loading more…
+                        </span>
+                      ) : (
+                        <span className="opacity-30">scroll for more</span>
+                      )}
+                    </div>
+                  )}
+                  {!hasMore && transactions.length > 0 && (
+                    <div className="py-3 text-center text-[10px] text-muted opacity-40">
+                      All {totalTransactions.toLocaleString()} transactions loaded
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Edit, 
@@ -7,13 +7,12 @@ import {
   Check, 
   AlertTriangle, 
   Package,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  SlidersHorizontal
+  SlidersHorizontal,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
+import { appCache } from '../../services/appCache';
 
 interface SearchFilters {
   q: string;
@@ -151,10 +150,7 @@ const InvestigationCenter = () => {
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   // Pagination States
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
-  const [totalItems, setTotalItems] = useState(cachedTotalItems || 0);
-  const [totalPages, setTotalPages] = useState(cachedTotalPages || 1);
+  // pagination replaced by useInfiniteScroll
 
   // Modals / Confirmation State
   const [confirmModal, setConfirmModal] = useState<{
@@ -251,79 +247,47 @@ const InvestigationCenter = () => {
     return () => clearTimeout(handler);
   }, [colFilterMedicine, colFilterBatch, colFilterDateFrom, colFilterDateTo, colFilterInvoice, colFilterParty, colFilterType]);
 
-  // Reset page to 1 when filters are updated
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedFilters]);
 
-  // Track if this is the initial mount to allow silent background hydration
-  const isFirstMountRef = useRef(true);
 
-  const runSearch = useCallback(async (signal?: AbortSignal, silent = false) => {
-    if (!silent) {
-      setLoading(true);
-    }
-    try {
-      const isDateFiltered = !!(debouncedFilters.dateFrom || debouncedFilters.dateTo);
-      const activeFilters = {
-        page: isDateFiltered ? 1 : currentPage,
-        limit: isDateFiltered ? 100000 : pageSize,
-        dateFrom: debouncedFilters.dateFrom ? debouncedFilters.dateFrom : getNDaysAgoString(15),
-        dateTo: debouncedFilters.dateTo ? debouncedFilters.dateTo : getTodayString(),
-        type: debouncedFilters.type,
-        medicineName: debouncedFilters.medicine,
-        batchNo: debouncedFilters.batch,
-        reference: debouncedFilters.invoice,
-        party: debouncedFilters.party
+  // ── Infinite scroll — replaces runSearch + page/limit ─────────────────────
+  const BATCH_SIZE = 100;
+  const {
+    rows: searchResults,
+    total: totalItems,
+    loading,
+    loadingMore,
+    hasMore,
+    setFilters: setInvFilters,
+    sentinelRef,
+    reset: runSearch,
+  } = useInfiniteScroll<any, typeof debouncedFilters>({
+    cacheKey: 'investigation',
+    batchSize: BATCH_SIZE,
+    initialFilters: debouncedFilters,
+    fetcher: async (offset, filters) => {
+      const page = Math.floor(offset / BATCH_SIZE) + 1;
+      const params: Record<string, any> = {
+        page,
+        limit: BATCH_SIZE,
+        dateFrom: filters.dateFrom || getNDaysAgoString(15),
+        dateTo:   filters.dateTo   || getTodayString(),
       };
-      const cleanFilters = Object.fromEntries(
-        Object.entries(activeFilters).filter(([_, val]) => val && String(val).trim() !== '')
-      );
-      const response = await api.getInvestigationTimeline(cleanFilters, { signal });
-      if (response && response.data) {
-        setSearchResults(response.data);
-        setTotalItems(response.totalItems || 0);
-        setTotalPages(response.totalPages || 1);
+      if (filters.type && filters.type !== 'All') params.type = filters.type;
+      if (filters.medicine) params.medicineName = filters.medicine;
+      if (filters.batch)    params.batchNo      = filters.batch;
+      if (filters.invoice)  params.reference    = filters.invoice;
+      if (filters.party)    params.party        = filters.party;
+      const response = await api.getInvestigationTimeline(params);
+      const list: any[] = response?.data ?? (Array.isArray(response) ? response : []);
+      const total: number = response?.totalItems ?? list.length;
+      return { data: list, meta: { total } };
+    },
+  });
 
-        // Cache the results for instant tab re-mount
-        cachedSearchResults = response.data;
-        cachedTotalItems = response.totalItems || 0;
-        cachedTotalPages = response.totalPages || 1;
-      } else {
-        const list = Array.isArray(response) ? response : [];
-        setSearchResults(list);
-        setTotalItems(list.length);
-        setTotalPages(1);
-
-        // Cache the results for instant tab re-mount
-        cachedSearchResults = list;
-        cachedTotalItems = list.length;
-        cachedTotalPages = 1;
-      }
-    } catch (err: any) {
-      if (err.name === 'CanceledError' || err.name === 'AbortError' || err.__CANCEL__) {
-        // Quietly ignore cancelled requests in the background
-        return;
-      }
-      showToast('Search failed. Please try again.', 'error');
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false);
-      }
-    }
-  }, [currentPage, pageSize, debouncedFilters]);
-
+  // Re-run when debounced filters change
   useEffect(() => {
-    const controller = new AbortController();
-    // Run silently only on the very first mount if we already have cached data
-    const isSilent = isFirstMountRef.current && !!cachedSearchResults;
-    isFirstMountRef.current = false;
-
-    runSearch(controller.signal, isSilent);
-    return () => {
-      controller.abort();
-    };
-  }, [runSearch]);
+    setInvFilters(debouncedFilters);
+  }, [debouncedFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Direct Inventory Correction logic
   const handleAdjustStock = async (inventoryId: number) => {
@@ -1102,102 +1066,12 @@ const InvestigationCenter = () => {
           <div className="p-3 border-b border-glass-border/30 flex flex-wrap items-center justify-between bg-bg2/40 gap-3 shrink-0 select-none text-xs">
             <div className="flex items-center gap-2.5">
               <span className="text-muted font-bold uppercase tracking-wider text-[10px]">Range:</span>
-              {!(colFilterDateFrom || colFilterDateTo || debouncedFilters.dateFrom || debouncedFilters.dateTo) ? (
-                <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2 py-1">
-                  <span className="text-muted">Show from row</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max={Math.max(0, totalItems - 1)}
-                    value={totalItems === 0 ? 0 : (currentPage - 1) * pageSize}
-                    onChange={e => {
-                      const val = Math.max(0, parseInt(e.target.value) || 0);
-                      const newPage = Math.floor(val / pageSize) + 1;
-                      setCurrentPage(Math.min(totalPages, newPage));
-                    }}
-                    className="w-16 bg-transparent text-center font-mono font-bold outline-none text-primary border-0 p-0 focus:ring-0 text-text"
-                  />
-                  <span className="text-muted">to</span>
-                  <span className="text-text font-mono font-bold">
-                    {totalItems === 0 ? 0 : Math.min(totalItems, currentPage * pageSize)}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 bg-bg3 border border-glass-border rounded-lg px-2.5 py-1">
-                  <span className="text-muted">Showing all</span>
-                  <span className="text-text font-mono font-bold">
-                    {totalItems}
-                  </span>
-                </div>
-              )}
-              <span className="text-muted">
-                of <strong className="text-text font-bold">{totalItems.toLocaleString()}</strong> transaction entries
+              <span className="text-muted text-xs">
+                Showing <strong className="text-text font-mono">{filteredResults.length.toLocaleString()}</strong>
+                {totalItems > filteredResults.length && (
+                  <> of <strong className="text-text font-mono">{totalItems.toLocaleString()}</strong></>
+                )} entries
               </span>
-            </div>
-
-            {!(colFilterDateFrom || colFilterDateTo || debouncedFilters.dateFrom || debouncedFilters.dateTo) && (
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted">Rows:</span>
-                  <select
-                    value={pageSize}
-                    onChange={e => {
-                      const newSize = parseInt(e.target.value);
-                      setPageSize(newSize);
-                      setCurrentPage(1);
-                    }}
-                    className="bg-bg3 border border-glass-border rounded-lg text-text px-2 py-1 outline-none focus:border-primary/50 cursor-pointer font-bold font-mono"
-                  >
-                    <option value="50">50 rows</option>
-                    <option value="100">100 rows</option>
-                    <option value="250">250 rows</option>
-                    <option value="500">500 rows</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-1 bg-bg3 border border-glass-border rounded-lg p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1 || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                    title="First Page"
-                  >
-                    <ChevronsLeft size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1 || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                    title="Previous Page"
-                  >
-                    <ChevronLeft size={14} /> Prev
-                  </button>
-                  <div className="px-3 text-muted">
-                    Page <span className="font-bold text-text font-mono">{currentPage}</span> of <span className="font-bold text-text font-mono">{totalPages}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all flex items-center gap-1 font-bold text-[10px] uppercase tracking-wider cursor-pointer"
-                    title="Next Page"
-                  >
-                    Next <ChevronRight size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages || loading}
-                    className="p-1.5 rounded-md hover:bg-bg2/40 active:scale-95 disabled:opacity-30 disabled:pointer-events-none text-muted hover:text-text transition-all cursor-pointer"
-                    title="Last Page"
-                  >
-                    <ChevronsRight size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
           
 
@@ -1557,6 +1431,18 @@ const InvestigationCenter = () => {
                     )))}
                   </tbody>
                 </table>
+                {hasMore && (
+                  <div ref={sentinelRef} className="py-4 text-center text-xs text-muted">
+                    {loadingMore
+                      ? <span className="flex items-center justify-center gap-2"><RefreshCw size={12} className="animate-spin"/> Loading more…</span>
+                      : <span className="opacity-30">scroll for more</span>}
+                  </div>
+                )}
+                {!hasMore && searchResults.length > 0 && (
+                  <div className="py-3 text-center text-[10px] text-muted opacity-40">
+                    All {totalItems.toLocaleString()} entries loaded
+                  </div>
+                )}
               </div>
             </div>
         </div>

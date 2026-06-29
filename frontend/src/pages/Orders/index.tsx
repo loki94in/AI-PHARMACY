@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { SpecialOrder } from '../../services/api';
+import { appCache } from '../../services/appCache';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { toastEvent } from '../../services/events';
 
 const parseSqliteDate = (dateStr: string) => {
@@ -51,8 +53,7 @@ let cachedOrdersList: SpecialOrder[] | null = null;
 
 const Orders = () => {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState<SpecialOrder[]>(cachedOrdersList || []);
-  const [loading, setLoading] = useState(!cachedOrdersList);
+  // orders + loading from useInfiniteScroll below
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -60,14 +61,7 @@ const Orders = () => {
   const [dateTo, setDateTo] = useState(getTodayString());
   const [manualToDate, setManualToDate] = useState(false);
 
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
-
-  // Reset pagination when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, statusFilter, dateFrom, dateTo]);
+  // pagination replaced by useInfiniteScroll
 
   useEffect(() => {
     if (!manualToDate) {
@@ -159,36 +153,33 @@ const Orders = () => {
     setShowPrDropdown(false);
   };
 
-  // Fetch all orders
-  const fetchOrders = async (showRefresh = false, silent = false) => {
-    if (showRefresh) setRefreshing(true);
-    if (!silent && !cachedOrdersList) setLoading(true);
-    try {
-      const data = await api.getOrders();
-      // STRICT RULE: Only show last 100
-      const sliced = Array.isArray(data) ? data.slice(0, 100) : [];
-      setOrders(sliced);
-      cachedOrdersList = sliced;
-    } catch (err) {
-      console.error('Failed to fetch special orders:', err);
-      showNotification('Failed to load orders. Please check your connection.', 'error');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  // ── Infinite scroll ──────────────────────────────────────────────────────────
+  const BATCH_SIZE = 100;
+  const {
+    rows: orders,
+    total: totalOrders,
+    loading,
+    loadingMore,
+    hasMore: hasMoreOrders,
+    sentinelRef: orderSentinelRef,
+    reset: fetchOrders,
+  } = useInfiniteScroll<SpecialOrder, Record<string, never>>({
+    cacheKey: 'orders',
+    batchSize: BATCH_SIZE,
+    initialFilters: {},
+    fetcher: async (offset) => {
+      const data = await api.getOrders({ limit: BATCH_SIZE, offset });
+      const list: SpecialOrder[] = data?.data ?? (Array.isArray(data) ? data : []);
+      const total: number = data?.meta?.total ?? list.length;
+      return { data: list, meta: { total } };
+    },
+  });
 
   useEffect(() => {
-    fetchOrders(false, !!cachedOrdersList);
-
-    const handleRefresh = () => {
-      fetchOrders(true, true);
-    };
+    const handleRefresh = () => { setRefreshing(true); fetchOrders(); setTimeout(()=>setRefreshing(false),800); };
     window.addEventListener('refresh-special-orders', handleRefresh);
-    return () => {
-      window.removeEventListener('refresh-special-orders', handleRefresh);
-    };
-  }, []);
+    return () => window.removeEventListener('refresh-special-orders', handleRefresh);
+  }, [fetchOrders]);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
     toastEvent.trigger(message, type, '/orders');
@@ -418,8 +409,7 @@ const Orders = () => {
     return matchesSearch && matchesStatus && matchesDate;
   });
 
-  const totalPages = Math.ceil(filteredOrders.length / pageSize);
-  const paginatedOrders = filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
 
   const getPriorityBadgeColor = (p: string) => {
     switch (p) {
@@ -793,7 +783,7 @@ const Orders = () => {
                     </td>
                   </tr>
                 ) : (
-                  paginatedOrders.map(order => (
+                  filteredOrders.map(order => (
                     <tr key={order.id} className="hover:bg-white/5 border-b border-glass-border/20 transition-all">
                       {/* Product Name */}
                       <td className="p-4">
@@ -960,64 +950,25 @@ const Orders = () => {
             </table>
           </div>
 
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="px-4 py-3 bg-[#18181b]/60 backdrop-blur-sm border-t border-glass-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text select-none shrink-0">
-              <div className="text-muted text-gray-400">
-                Showing <span className="font-semibold text-white">{Math.min(filteredOrders.length, (currentPage - 1) * pageSize + 1)}</span> to{' '}
-                <span className="font-semibold text-white">{Math.min(filteredOrders.length, currentPage * pageSize)}</span> of{' '}
-                <span className="font-semibold text-white">{filteredOrders.length}</span> requests
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                
-                {/* Page numbers */}
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                    .map((p, idx, arr) => {
-                      const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
-                      return (
-                        <Fragment key={p}>
-                          {showEllipsisBefore && <span className="px-1 text-muted text-gray-500">...</span>}
-                          <button
-                            type="button"
-                            onClick={() => setCurrentPage(p)}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border transition-all ${
-                              currentPage === p
-                                ? 'bg-primary/20 text-primary border-primary/40'
-                                : 'bg-bg3 hover:bg-white/10 text-text border-glass-border'
-                            }`}
-                          >
-                            {p}
-                          </button>
-                        </Fragment>
-                      );
-                    })}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 bg-bg3 hover:bg-white/10 text-text border border-glass-border rounded-lg font-semibold disabled:opacity-40 disabled:hover:bg-bg3 transition-all cursor-pointer disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
+          {/* Infinite scroll sentinel */}
+          {hasMoreOrders && (
+            <div ref={orderSentinelRef} className="py-3 text-center text-xs text-muted border-t border-glass-border">
+              {loadingMore ? (
+                <span className="flex items-center justify-center gap-2">
+                  <RefreshCw size={12} className="animate-spin"/> Loading more…
+                </span>
+              ) : <span className="opacity-30">scroll for more</span>}
+            </div>
+          )}
+          {!hasMoreOrders && orders.length > 0 && (
+            <div className="py-2 text-center text-[10px] text-muted opacity-40 border-t border-glass-border">
+              All {totalOrders.toLocaleString()} orders loaded
             </div>
           )}
 
           {/* Table Footer Stats */}
           <div className="p-3 border-t border-glass-border bg-black/10 text-muted select-none flex justify-between items-center px-4">
-            <span>Total Requests: <strong>{filteredOrders.length}</strong></span>
+            <span>Total Requests: <strong>{filteredOrders.length}</strong>{totalOrders > filteredOrders.length ? <span className="text-muted"> of {totalOrders}</span> : ''}</span>
             {orders.some(o => o.status === 'Ready') && (
               <span className="flex items-center gap-1.5 text-xs text-sky">
                 <Bell size={12} className="animate-bounce" />

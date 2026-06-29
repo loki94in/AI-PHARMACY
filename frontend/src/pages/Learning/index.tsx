@@ -229,7 +229,7 @@ const Learning: React.FC = () => {
         }
       };
       fetchQR();
-      timer = setInterval(fetchQR, 5000);
+      timer = setInterval(fetchQR, 20000); // 20s — QR valid 20s, no benefit polling faster
     }
     return () => clearInterval(timer);
   }, [settingsData?.whatsapp_enabled, waStatus.isReady]);

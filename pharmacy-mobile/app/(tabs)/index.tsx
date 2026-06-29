@@ -17,10 +17,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { colors, spacing, typography, radius, shadows } from '../../lib/theme';
-import { getDashboard, searchMedicine, SearchMedicineResult, getServerUrl, testConnection, createSale, searchPharmarack, addPharmarackCart, logAssistantChat } from '../../lib/api';
+import { getDashboard, searchMedicine, SearchMedicineResult, createSale, searchPharmarack, addPharmarackCart, logAssistantChat } from '../../lib/api';
 import * as SecureStore from '../../lib/secureStore';
 import { cartEvents } from '../../lib/cartEvents';
 import DrawerMenu from '../../components/DrawerMenu';
+import { useConnection } from '../../lib/ConnectionContext';
 
 import * as ImagePicker from 'expo-image-picker';
 
@@ -108,36 +109,8 @@ export default function AssistantScreen() {
   // Dynamic header visibility to maximize screen when list is scrolled
   const [hideHeader, setHideHeader] = useState(false);
   
-  // Dynamic Connection Status States
-  type ConnStatus = 'checking' | 'online' | 'no_url' | 'offline';
-  const [connStatus, setConnStatus] = useState<ConnStatus>('checking');
-  const [serverUrl, setServerUrl] = useState<string>('');
-  // Derived: treat as online only when truly connected
-  const isOnline = connStatus === 'online';
-
-  const checkStatus = useCallback(async () => {
-    try {
-      const url = await getServerUrl();
-      if (!url) {
-        setConnStatus('no_url');
-        setServerUrl('');
-        return;
-      }
-      setServerUrl(url);
-      const online = await testConnection(url);
-      setConnStatus(online ? 'online' : 'offline');
-    } catch {
-      setConnStatus('offline');
-    }
-  }, []);
-
-  useEffect(() => {
-    let intervalId: any;
-    setConnStatus('checking');
-    checkStatus();
-    intervalId = setInterval(checkStatus, 12000);
-    return () => clearInterval(intervalId);
-  }, [checkStatus]);
+  // Read live connection state from shared context — no local polling needed
+  const { isOnline, serverUrl } = useConnection();
   
   // New States for User Role & ABC Checklist
   const [userRole, setUserRole] = useState<'staff' | 'distributor'>('staff');
@@ -506,32 +479,24 @@ export default function AssistantScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       style={styles.container}
     >
-      {/* Connectivity Status Bar — tap to retry */}
+      {/* Connectivity Status Bar */}
       {!hideHeader && (
-        <TouchableOpacity
+        <View
           style={[
             styles.connectStatusBar,
-            { backgroundColor: connStatus === 'online' ? '#0c0a09' : connStatus === 'checking' ? '#1a1a2e' : '#1a0a0a' }
+            { backgroundColor: isOnline ? '#0c0a09' : '#1a0a0a' }
           ]}
-          onPress={() => { setConnStatus('checking'); checkStatus(); }}
-          activeOpacity={0.7}
         >
-          <View style={[styles.connectDot, {
-            backgroundColor:
-              connStatus === 'online'   ? colors.success :
-              connStatus === 'checking' ? colors.warning  :
-              colors.danger
-          }]} />
+          <View style={[styles.connectDot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
           <Text style={styles.connectStatusText} numberOfLines={1}>
-            {connStatus === 'online'   ? `✓ Server: ${serverUrl.replace(/^https?:\/\//, '')}` :
-             connStatus === 'checking' ? 'Checking connection...' :
-             connStatus === 'no_url'   ? 'No server configured — tap Settings to add PC IP' :
-             `Server unreachable — tap to retry`}
+            {isOnline
+              ? `✓ Server: ${serverUrl.replace(/^https?:\/\//, '')}`
+              : 'Server offline — working from local cache'}
           </Text>
-          {connStatus !== 'online' && connStatus !== 'checking' && (
-            <Ionicons name="refresh-outline" size={12} color={colors.danger} style={{ marginLeft: 4 }} />
+          {!isOnline && (
+            <Ionicons name="cloud-offline-outline" size={12} color={colors.danger} style={{ marginLeft: 4 }} />
           )}
-        </TouchableOpacity>
+        </View>
       )}
 
       {/* Header */}

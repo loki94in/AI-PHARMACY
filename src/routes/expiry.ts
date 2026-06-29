@@ -28,7 +28,9 @@ function parseExpiryDate(expiryDateStr: string | null | undefined): Date | null 
 
 // Get items nearing expiry / already expired
 router.get('/', async (req, res) => {
-  const days = req.query.days ? parseInt(req.query.days as string, 10) : 90;
+  const days   = req.query.days   ? parseInt(req.query.days   as string, 10) : 90;
+  const limit  = req.query.limit  ? parseInt(req.query.limit  as string, 10) : 100;
+  const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
   try {
     const db = await dbManager.getConnection();
     const allRows = await db.all(`
@@ -43,7 +45,7 @@ router.get('/', async (req, res) => {
     const thresholdDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
     thresholdDate.setHours(23, 59, 59, 999);
 
-    const formattedRows = allRows
+    const filtered = allRows
       .map(row => {
         const parsedDate = parseExpiryDate(row.expiry_date);
         let normalizedDateStr = row.expiry_date;
@@ -53,20 +55,15 @@ router.get('/', async (req, res) => {
           const dd = String(parsedDate.getDate()).padStart(2, '0');
           normalizedDateStr = `${yyyy}-${mm}-${dd}`;
         }
-        return {
-          ...row,
-          expiry_date: normalizedDateStr,
-          parsedDate
-        };
+        return { ...row, expiry_date: normalizedDateStr, parsedDate };
       })
-      .filter(row => {
-        if (!row.parsedDate) return false;
-        return row.parsedDate <= thresholdDate;
-      })
-      .sort((a, b) => (a.parsedDate as Date).getTime() - (b.parsedDate as Date).getTime())
-      .map(({ parsedDate, ...rest }) => rest);
+      .filter(row => row.parsedDate && row.parsedDate <= thresholdDate)
+      .sort((a, b) => (a.parsedDate as Date).getTime() - (b.parsedDate as Date).getTime());
 
-    res.json(formattedRows);
+    const total = filtered.length;
+    const page  = filtered.slice(offset, offset + limit).map(({ parsedDate, ...rest }) => rest);
+
+    res.json({ data: page, meta: { total, limit, offset } });
   } catch (err) {
     console.error('Expiry fetch error:', err);
     res.status(500).json({ error: 'Internal server error' });

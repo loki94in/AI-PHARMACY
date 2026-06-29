@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { api, apiClient } from '../../services/api';
+import { appCache } from '../../services/appCache';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { RotateCcw, Plus, Trash2, Search, FileText, AlertTriangle, Package, Layers, Camera, X, Loader2, Edit, Wand2 } from 'lucide-react';
 import AICamera from '../../components/AICamera';
 import { clearExpiryCache } from '../Expiry';
@@ -137,7 +139,7 @@ const Returns: React.FC = () => {
   const [activeTabId, setActiveTabId] = useState<string>(initialActiveTabId);
 
   const [items, setItems] = useState<ReturnItem[]>(initialActiveTab.items || []);
-  const [returnHistory, setReturnHistory] = useState<any[]>(cachedReturnHistory || []);
+  // returnHistory + loading now from useInfiniteScroll below
   const [loading, setLoading] = useState(!cachedReturnHistory);
   const [saving, setSaving] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -480,29 +482,39 @@ const Returns: React.FC = () => {
     }
   }, []);
 
-  const fetchReturnHistory = async (start = dateFrom, end = dateTo, min = minAmount, max = maxAmount, silent = false) => {
-    if (!silent && !cachedReturnHistory) setLoading(true);
-    try {
-      const params = {
-        date_from: start || undefined,
-        date_to: end || undefined,
-        min_amount: min ? parseFloat(min) : undefined,
-        max_amount: max ? parseFloat(max) : undefined,
-      };
+  // ── Infinite scroll ──────────────────────────────────────────────────────────
+  const BATCH_SIZE = 100;
+  type ReturnFilters = { dateFrom: string; dateTo: string; minAmount: string; maxAmount: string };
+  const returnFilters: ReturnFilters = { dateFrom, dateTo, minAmount, maxAmount };
+  const {
+    rows: returnHistory,
+    total: totalReturns,
+    loading,
+    loadingMore,
+    hasMore: hasMoreReturns,
+    setFilters: setReturnFilters,
+    sentinelRef: returnSentinelRef,
+    reset: fetchReturnHistory,
+  } = useInfiniteScroll<any, ReturnFilters>({
+    cacheKey: 'returns',
+    batchSize: BATCH_SIZE,
+    initialFilters: returnFilters,
+    fetcher: async (offset, filters) => {
+      const params: Record<string, any> = { limit: BATCH_SIZE, offset };
+      if (filters.dateFrom) params.date_from = filters.dateFrom;
+      if (filters.dateTo)   params.date_to   = filters.dateTo;
+      if (filters.minAmount) params.min_amount = parseFloat(filters.minAmount);
+      if (filters.maxAmount) params.max_amount = parseFloat(filters.maxAmount);
       const response = await api.getReturns(params);
-      const returns = Array.isArray(response) ? response : (response.data || []);
-      setReturnHistory(returns);
-      cachedReturnHistory = returns;
-    } catch (error) {
-      console.error('Error fetching returns:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      const list: any[] = response?.data ?? (Array.isArray(response) ? response : []);
+      const total: number = response?.meta?.total ?? list.length;
+      return { data: list, meta: { total } };
+    },
+  });
 
   useEffect(() => {
-    fetchReturnHistory(dateFrom, dateTo, minAmount, maxAmount, !!cachedReturnHistory);
-  }, [dateFrom, dateTo, minAmount, maxAmount]);
+    setReturnFilters({ dateFrom, dateTo, minAmount, maxAmount });
+  }, [dateFrom, dateTo, minAmount, maxAmount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searchTimeoutRef = React.useRef<any>(null);
 
@@ -910,6 +922,11 @@ const Returns: React.FC = () => {
                     </div>
                   );
                 })
+              )}
+              {hasMoreReturns && (
+                <div ref={returnSentinelRef} className="py-2 text-center text-[10px] text-muted">
+                  {loadingMore ? 'Loading more…' : ''}
+                </div>
               )}
             </div>
           </div>

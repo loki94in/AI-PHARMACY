@@ -7,6 +7,7 @@ import AICamera from '../../components/AICamera';
 import BrandBanner from '../../components/POS/BrandBanner';
 import { api, apiClient } from '../../services/api';
 import { clearExpiryCache } from '../Expiry';
+import { cacheInvalidators } from '../../services/appCache';
 
 // We will fetch common combinations dynamically instead of using hardcoded constants
 
@@ -158,8 +159,10 @@ const consolidateSearchResults = (rawResults: any[]): any[] => {
     
     if (!medKey) continue;
 
+    // POS never needs to show out-of-stock medicines — skip them entirely
     if (item.is_out_of_stock) {
       if (!consolidatedMap.has(medKey)) {
+        // still add so its alternatives (substitutes) can be shown
         consolidatedMap.set(medKey, {
           ...item,
           total_quantity: 0,
@@ -259,7 +262,74 @@ const consolidateSearchResults = (rawResults: any[]): any[] => {
     }
   }
 
-  return Array.from(consolidatedMap.values());
+  // Second pass: name-level deduplication.
+  // Some medicines have different medicine_id values per batch (added via separate purchase entries).
+  // After id-based consolidation, collapse any remaining duplicates by normalised name.
+  const nameMap = new Map<string, any>();
+  for (const item of consolidatedMap.values()) {
+    const nameKey = (item.medicine_name || '').trim().toUpperCase();
+    if (!nameKey) continue;
+    if (!nameMap.has(nameKey)) {
+      nameMap.set(nameKey, item);
+    } else {
+      const existing = nameMap.get(nameKey);
+      existing.total_quantity = (existing.total_quantity || 0) + (item.total_quantity || 0);
+      existing.total_loose_quantity = (existing.total_loose_quantity || 0) + (item.total_loose_quantity || 0);
+      // If we now have stock, clear the OOS flag regardless of which entry was base
+      if (existing.total_quantity > 0 || existing.total_loose_quantity > 0) {
+        existing.is_out_of_stock = false;
+      }
+      // Merge batches list
+      const batchNos = new Set((existing.batches || []).map((b: any) => b.batch_no));
+      for (const b of (item.batches || [])) {
+        if (!batchNos.has(b.batch_no)) {
+          existing.batches.push(b);
+          batchNos.add(b.batch_no);
+        }
+      }
+    }
+  }
+
+  // Helper: extract base medicine name by stripping packaging suffixes.
+  // "CALPOL 650MG STRIP OF 15 TABLETS" → "CALPOL 650MG"
+  // "DOLO 650MG BOX OF 10" → "DOLO 650MG"
+  const baseName = (name: string): string => {
+    return name
+      .replace(/\s+(STRIP|BOX|BOTTLE|VIAL|TUBE|PACK|BAG|SACHET|AMPOULE|BLISTER)\s+OF\s+.*/i, '')
+      .replace(/\s+\d+\s*(TABLET|TAB|CAPSULE|CAP|ML|MG|MCG|GM|G|IU|UNIT)S?\s*$/i, '')
+      .trim()
+      .toUpperCase();
+  };
+
+  // Third pass: deduplicate alternatives by BASE name within each result.
+  // Handles cases like "CALPOL 650MG STRIP OF 10 TABLETS" vs "CALPOL 650MG STRIP OF 15 TABLETS"
+  // which are the same medicine in different packaging — show only the one with more stock.
+  for (const item of nameMap.values()) {
+    if (!item.alternatives || item.alternatives.length === 0) continue;
+    const altBaseMap = new Map<string, any>();
+    for (const alt of item.alternatives) {
+      const key = baseName(alt.medicine_name || '');
+      if (!key) continue;
+      if (!altBaseMap.has(key)) {
+        altBaseMap.set(key, alt);
+      } else {
+        // Keep the one with more stock
+        const existing = altBaseMap.get(key);
+        const existingQty = (existing.quantity || 0) + (existing.loose_quantity || 0);
+        const altQty = (alt.quantity || 0) + (alt.loose_quantity || 0);
+        if (altQty > existingQty) altBaseMap.set(key, alt);
+      }
+    }
+    item.alternatives = Array.from(altBaseMap.values());
+  }
+
+  // Fourth pass: remove all zero-stock / out-of-stock entries — POS only shows available medicines.
+  // Check both the flag AND actual quantity, because some items arrive without the flag but with qty 0.
+  return Array.from(nameMap.values()).filter(item => {
+    if (item.is_out_of_stock) return false;
+    const hasStock = (item.total_quantity || 0) > 0 || (item.total_loose_quantity || 0) > 0;
+    return hasStock;
+  });
 };
 
 const POS = () => {
@@ -1314,6 +1384,7 @@ const POS = () => {
 
       const result = await api.createSale(payload);
       clearExpiryCache();
+      cacheInvalidators.onSaleCreated(); // invalidate Sells, Inventory, Dashboard caches
       const invoiceNo = result.invoice_no || result.invoiceNo || 'SAVED';
       
       setLastSavedInvoiceNo(invoiceNo);
@@ -1804,70 +1875,8 @@ const POS = () => {
                           );
                         };
 
-                        if (med.is_out_of_stock) {
-                          const isAlreadyInRefills = patientRefills.some(refill => {
-                            if (refill.items && Array.isArray(refill.items)) {
-                              return refill.items.some((refItem: any) => 
-                                refItem.medicine_id === med.medicine_id || 
-                                refItem.medicine_name?.toLowerCase().trim() === med.medicine_name.toLowerCase().trim()
-                              );
-                            }
-                            return refill.medicine_id === med.medicine_id || 
-                                   refill.medicine_name?.toLowerCase().trim() === med.medicine_name.toLowerCase().trim();
-                          });
-
-                          return (
-                            <div key={`oos_${med.medicine_id}`} className="flex flex-col border-b border-border/10">
-                              <div className="p-3 bg-red-500/5 text-xs w-full flex flex-col gap-2 border-l-2 border-red-500">
-                                 <div className="flex items-center justify-between flex-wrap gap-2">
-                                   <div className="flex items-center gap-2 flex-wrap">
-                                     <span className="font-bold text-red-400 line-through">{med.medicine_name}</span>
-                                     <span className="text-[9px] text-red-400 font-bold uppercase border border-red-500/20 px-1.5 py-0.5 rounded bg-red-500/10">Out of Stock</span>
-                                   </div>
-                                   
-                                   <div className="flex items-center gap-2">
-                                     <button
-                                       type="button"
-                                       onClick={(e) => {
-                                         e.stopPropagation();
-                                         handleAddSpecialOrder(med.medicine_name);
-                                       }}
-                                       className="px-2 py-0.5 rounded bg-red-500/15 border border-red-500/25 text-red-400 text-[10px] font-bold hover:bg-red-500/25 transition-all flex items-center gap-1"
-                                     >
-                                       📋 Add to Pending Action
-                                     </button>
-
-                                     {patientName.trim() && (
-                                       isAlreadyInRefills ? (
-                                         <span className="px-2 py-0.5 rounded bg-green/10 border border-green/20 text-green text-[10px] font-bold flex items-center gap-1 select-none">
-                                           🔄 Refill Active
-                                         </span>
-                                       ) : (
-                                         <button
-                                           type="button"
-                                           onClick={(e) => {
-                                             e.stopPropagation();
-                                             handleAddRefill(med.medicine_name, med.medicine_id);
-                                           }}
-                                           className="px-2 py-0.5 rounded bg-sky/10 border border-sky/20 text-sky text-[10px] font-bold hover:bg-sky/25 transition-all"
-                                         >
-                                           ➕ Link to Refills
-                                         </button>
-                                       )
-                                     )}
-                                   </div>
-                                 </div>
-                                 {med.alternatives && med.alternatives.length > 0 && (
-                                   <div className="text-[10px] text-sky font-bold flex items-center gap-1.5 mt-1 border-t border-border/5 pt-1">
-                                     <span className="h-1.5 w-1.5 bg-sky rounded-full animate-ping"></span> 
-                                     Alternatives in stock (same composition):
-                                   </div>
-                                 )}
-                              </div>
-                              {med.alternatives && med.alternatives.map((alt: any) => renderMedicineItem(alt, true))}
-                            </div>
-                          );
-                        }
+                        // Out-of-stock medicines are hidden from POS entirely
+                        if (med.is_out_of_stock) return null;
 
                         return (
                           <div key={`in_stock_${med.medicine_id}`} className="flex flex-col">
@@ -2127,7 +2136,7 @@ const POS = () => {
                           <div className="relative">
                             <input
                               type="text"
-                              className="w-28 text-center bg-bg/40 border border-border/40 hover:border-border/80 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-xs font-mono font-semibold py-1 px-1.5 rounded-lg"
+                              className="w-28 text-center bg-bg/40 border border-border/40 hover:border-border/80 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-sm font-mono font-semibold py-1 px-1.5 rounded-lg"
                               value={item.batch || ''}
                               placeholder="Batch"
                               onChange={e => updateCartItem(item.id, 'batch', e.target.value)}
@@ -2152,7 +2161,7 @@ const POS = () => {
                             />
                             
                             {activeBatchRowId === item.id && rowBatchesList.length > 1 && (
-                              <div className="absolute left-1 z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-36 overflow-y-auto w-52 text-left shadow-2xl">
+                              <div className="absolute left-1 z-[100] mt-1 bg-bg2 border border-border rounded-xl overflow-hidden max-h-48 overflow-y-auto w-44 text-left shadow-2xl">
                                 <div className="p-1.5 border-b border-border/30 bg-bg3/60 text-[9px] font-bold text-muted uppercase tracking-wider">
                                   Switch Batch:
                                 </div>
@@ -2176,10 +2185,10 @@ const POS = () => {
                                       }));
                                       setActiveBatchRowId(null);
                                     }}
-                                    className={`w-full text-left px-2.5 py-1.5 hover:bg-sky/15 border-b border-border/10 text-[10px] font-mono transition-all block ${b.batch_no === item.batch ? 'bg-sky/10 text-sky' : 'text-text'}`}
+                                    className={`w-full text-left px-3 py-2 hover:bg-sky/15 border-b border-border/10 font-mono transition-all block ${b.batch_no === item.batch ? 'bg-sky/10 text-sky' : 'text-text'}`}
                                   >
-                                    <span className="font-bold block">{b.batch_no}</span>
-                                    <span className="text-muted block text-[8px]">Exp: {b.expiry_date} | Stock: {b.quantity} | MRP: ₹{b.mrp}</span>
+                                    <span className="font-bold block text-sm">{b.batch_no}</span>
+                                    <span className="text-muted block text-xs">Exp: {b.expiry_date}</span>
                                   </button>
                                 ))}
                               </div>
@@ -2719,6 +2728,28 @@ const POS = () => {
                   }
                   setShowBarcodeModal(false);
                 }}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-green text-text hover:bg-green/90 transition-all shadow-[0_4px_12px_rgba(16,185,129,0.2)] flex items-center justify-center gap-2"
+              >
+                Create Medicine Barcodes
+              </button>
+
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await api.generateBillBarcode(lastSavedInvoiceNo);
+                    if (res && res.success && res.pdfUrl) {
+                      const backendUrl = apiClient.defaults.baseURL || window.location.origin;
+                      window.open(`${backendUrl}${res.pdfUrl}`, '_blank');
+                    } else {
+                      alert('Failed to generate bill barcode');
+                    }
+                  } catch (err) {
+                    console.error(err);
+                    alert('Error generating bill barcode');
+                  }
+
+                  setShowBarcodeModal(false);
+                }}
                 className="w-full py-2.5 px-4 rounded-xl text-xs font-bold uppercase tracking-wider bg-sky text-text hover:bg-sky/90 transition-all shadow-[0_4px_12px_rgba(14,165,233,0.2)] flex items-center justify-center gap-2"
               >
                 Create Bill Barcode
@@ -2740,6 +2771,7 @@ const POS = () => {
       
       {editMedicineId && (
         <UniversalMedicineEditModal 
+
           medicineId={editMedicineId} 
           onClose={() => setEditMedicineId(null)} 
           onSave={() => {

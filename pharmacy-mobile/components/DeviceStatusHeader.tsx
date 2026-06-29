@@ -2,50 +2,22 @@ import React, { useEffect, useState, useRef } from 'react';
 import { StyleSheet, View, Text, Platform, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import { getServerUrl, testConnection } from '../lib/api';
 import { colors, radius } from '../lib/theme';
+import { useConnection } from '../lib/ConnectionContext';
 
 export default function DeviceStatusHeader() {
   const [deviceName, setDeviceName] = useState('Device');
-  const [isOnline, setIsOnline] = useState<boolean>(true);
-  
+  // Read live connection state from the single shared context — no polling here
+  const { isOnline } = useConnection();
+
   // Opacity value for the breathing halo animation
   const pulseAnim = useRef(new Animated.Value(0)).current;
 
   // Initialize device name and details
   useEffect(() => {
-    const rawName = Constants.deviceName || 
+    const rawName = Constants.deviceName ||
                     (Platform.OS === 'ios' ? 'iPhone' : Platform.OS === 'android' ? 'Android' : 'Device');
-    // Keep it short enough for the header
     setDeviceName(rawName.length > 12 ? rawName.substring(0, 12) + '...' : rawName);
-  }, []);
-
-  // Poll connection status
-  useEffect(() => {
-    let active = true;
-    let intervalId: any;
-
-    const checkStatus = async () => {
-      try {
-        const url = await getServerUrl();
-        if (!url) {
-          if (active) setIsOnline(false);
-          return;
-        }
-        const online = await testConnection(url);
-        if (active) setIsOnline(online);
-      } catch (err) {
-        if (active) setIsOnline(false);
-      }
-    };
-
-    checkStatus();
-    intervalId = setInterval(checkStatus, 10000); // Check connectivity every 10 seconds
-
-    return () => {
-      active = false;
-      clearInterval(intervalId);
-    };
   }, []);
 
   // Soft breathing animation loop
