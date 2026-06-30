@@ -528,34 +528,37 @@ const CRM = () => {
     ));
   }, [waChats, activeWaChat]);
 
-  // Memoize interaction timeline
+  // Real purchase history timeline
   const timelineElement = useMemo(() => {
     if (!selectedPatient) return null;
     return (
       <div className="bg-sky-500/5 border border-sky-500/20 p-4 rounded-2xl shrink-0 fade-in">
         <h3 className="font-bold text-xs flex items-center gap-2 mb-3 text-sky">
-          <Clock size={14} /> Omnichannel Interaction History
+          <Clock size={14} /> Purchase History
         </h3>
-        <div className="space-y-3 pl-2 border-l-2 border-sky/20">
-          <div className="relative pl-4">
-            <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-[#25D366] shadow-[0_0_8px_rgba(37,211,102,0.6)]"></div>
-            <p className="text-[11px] font-semibold text-text">System sent WhatsApp Refill Reminder</p>
-            <p className="text-[9px] text-muted">2 days ago • Automated</p>
+        {historyLoading ? (
+          <p className="text-[11px] text-muted pl-2">Loading…</p>
+        ) : history.length === 0 ? (
+          <p className="text-[11px] text-muted pl-2">No purchase history found.</p>
+        ) : (
+          <div className="space-y-3 pl-2 border-l-2 border-sky/20 max-h-56 overflow-y-auto pr-1">
+            {history.map((inv: any) => (
+              <div key={inv.id} className="relative pl-4">
+                <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-sky shadow-[0_0_6px_rgba(14,165,233,0.5)]" />
+                <p className="text-[11px] font-semibold text-text">
+                  Purchase — {inv.invoice_no}
+                  {inv.total_amount ? ` · ₹${Number(inv.total_amount).toFixed(2)}` : ''}
+                </p>
+                <p className="text-[9px] text-muted">
+                  {inv.date ? new Date(inv.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''} · POS
+                </p>
+              </div>
+            ))}
           </div>
-          <div className="relative pl-4">
-            <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-red shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
-            <p className="text-[11px] font-semibold text-text">Customer emailed new prescription PDF</p>
-            <p className="text-[9px] text-muted">1 week ago • Inbox</p>
-          </div>
-          <div className="relative pl-4">
-            <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-sky shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-            <p className="text-[11px] font-semibold text-text">Completed Purchase (Invoice #1042)</p>
-            <p className="text-[9px] text-muted">1 month ago • POS</p>
-          </div>
-        </div>
+        )}
       </div>
     );
-  }, [selectedPatient]);
+  }, [selectedPatient, history, historyLoading]);
 
   const handlePatientWaClick = (phone?: string, name?: string) => {
     if (!phone) return showNotif('No phone number available', 'error');

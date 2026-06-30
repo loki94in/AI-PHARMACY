@@ -93,12 +93,13 @@ export const pageImports: Record<string, () => Promise<any>> = {
   '/database': () => import('./pages/Database'),
   '/composition-queue': () => import('./pages/CompositionQueue'),
   '/customer-returns': () => import('./pages/CustomerReturn'),
-  '/customer-return-history': () => import('./pages/CustomerReturnHistory'),
+  '/customer-returns-history': () => import('./pages/CustomerReturnHistory'),
   '/pharmarack-cart': () => import('./pages/PharmarackCart'),
   '/non-mapped-distributors': () => import('./pages/NonMappedDistributors'),
   '/automation-center': () => import('./pages/AutomationCenter'),
   '/investigation': () => import('./pages/Investigation'),
   '/phone-sales': () => import('./pages/PhoneSales'),
+  '/medicines/:id': () => import('./pages/MedicineDetail'),
 };
 
 const Dashboard = lazy(pageImports['/dashboard']);
@@ -123,12 +124,13 @@ const Learning = lazy(pageImports['/learning']);
 const DatabasePage = lazy(pageImports['/database']);
 const CompositionQueue = lazy(pageImports['/composition-queue']);
 const CustomerReturn = lazy(pageImports['/customer-returns']);
-const CustomerReturnHistory = lazy(pageImports['/customer-return-history']);
+const CustomerReturnHistory = lazy(pageImports['/customer-returns-history']);
 const PharmarackCart = lazy(pageImports['/pharmarack-cart']);
 const NonMappedDistributors = lazy(pageImports['/non-mapped-distributors']);
 const AutomationCenter = lazy(pageImports['/automation-center']);
 const InvestigationCenter = lazy(pageImports['/investigation']);
 const PhoneSales = lazy(pageImports['/phone-sales']);
+const MedicineDetail = lazy(pageImports['/medicines/:id']);
 
 // Minimal page-switch loading fallback — renders instantly, no layout shift
 const PageLoader = () => (
@@ -188,6 +190,7 @@ const Sidebar = ({
     { path: '/crm', label: 'CRM / Patients', icon: <Users size={18} /> },
     { path: '/catalog', label: 'Catalog Upload', icon: <Database size={18} /> },
     { path: '/customer-returns', label: 'Customer Returns', icon: <RotateCcw size={18} /> },
+    { path: '/customer-returns-history', label: 'Returns History', icon: <ClipboardList size={18} /> },
     { path: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { path: '/migration', label: 'Data Migration', icon: <Database size={18} /> },
     { path: '/dispatch', label: 'Dispatch', icon: <Activity size={18} /> },
@@ -780,6 +783,8 @@ const Topbar = ({
       '/crm': 'CRM / Patients',
       '/catalog': 'Catalog Upload',
       '/customer-returns': 'Customer Returns',
+      '/customer-returns-history': 'Customer Returns History',
+      '/medicines/:id': 'Medicine Detail',
       '/dashboard': 'Dashboard',
       '/migration': 'Data Migration',
       '/dispatch': 'Dispatch',
@@ -2043,6 +2048,7 @@ function App() {
             <Route path="/learning" element={<Learning />} />
             <Route path="/database" element={<DatabasePage />} />
             <Route path="/composition-queue" element={<CompositionQueue />} />
+            <Route path="/medicines/:id" element={<MedicineDetail />} />
             <Route path="/customer-returns" element={<CustomerReturn />} />
             <Route path="/customer-returns-history" element={<CustomerReturnHistory />} />
             <Route path="*" element={

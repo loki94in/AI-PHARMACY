@@ -261,6 +261,114 @@ router.post('/medicines/bulk-delete', async (req, res) => {
   }
 });
 
+// ─── GET /medicines/:id — full medicine detail for the Medicine Detail page ───
+router.get('/medicines/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await dbManager.getConnection();
+
+    // Core medicine record
+    const medicine = await db.get(`
+      SELECT m.*, d.name AS primary_distributor_name, d.id AS primary_distributor_id,
+             d.phone AS distributor_phone, d.email AS distributor_email
+      FROM medicines m
+      LEFT JOIN (
+        SELECT pi.medicine_id, p.distributor_id,
+               ROW_NUMBER() OVER (PARTITION BY pi.medicine_id ORDER BY p.date DESC) AS rn
+        FROM purchase_items pi
+        JOIN purchases p ON pi.purchase_id = p.id
+        WHERE p.distributor_id IS NOT NULL
+      ) latest ON latest.medicine_id = m.id AND latest.rn = 1
+      LEFT JOIN distributors d ON d.id = latest.distributor_id
+      WHERE m.id = ?
+    `, [id]);
+
+    if (!medicine) return res.status(404).json({ error: 'Medicine not found' });
+
+    // All inventory batches
+    const batches = await db.all(`
+      SELECT id, batch_no, expiry_date, quantity, loose_quantity, mrp, cost_price, rack_location
+      FROM inventory_master WHERE medicine_id = ? AND quantity > 0
+      ORDER BY expiry_date ASC
+    `, [id]);
+
+    // Purchase history (last 20 purchases)
+    const purchases = await db.all(`
+      SELECT pi.id, pi.batch_no, pi.expiry_date, pi.quantity, pi.free_qty,
+             pi.cost_price, pi.mrp, p.date, p.invoice_no,
+             d.name AS distributor_name, d.id AS distributor_id
+      FROM purchase_items pi
+      JOIN purchases p ON pi.purchase_id = p.id
+      LEFT JOIN distributors d ON p.distributor_id = d.id
+      WHERE pi.medicine_id = ?
+      ORDER BY p.date DESC LIMIT 20
+    `, [id]);
+
+    // Sales history (last 20 sale items)
+    const sales = await db.all(`
+      SELECT si.id, si.quantity, si.unit_price, si.loose_qty,
+             inv.invoice_no, inv.date, inv.patient_name
+      FROM sale_items si
+      JOIN sales_invoices inv ON si.invoice_id = inv.id
+      JOIN inventory_master im ON si.inventory_id = im.id
+      WHERE im.medicine_id = ?
+      ORDER BY inv.date DESC LIMIT 20
+    `, [id]);
+
+    // Returned batches (purchase returns — expiry returns)
+    const returned = await db.all(`
+      SELECT ri.batch_no, ri.quantity, ri.expiry_date, r.date, r.return_no,
+             d.name AS distributor_name
+      FROM return_items ri
+      JOIN returns r ON ri.return_id = r.id
+      LEFT JOIN distributors d ON r.distributor_id = d.id
+      WHERE ri.medicine_id = ? AND r.type = 'purchase'
+      ORDER BY r.date DESC LIMIT 10
+    `, [id]);
+
+    // Consumption rate: avg units sold per month over last 3 months
+    const consumptionRow = await db.get(`
+      SELECT COALESCE(SUM(si.quantity), 0) AS total_sold
+      FROM sale_items si
+      JOIN inventory_master im ON si.inventory_id = im.id
+      JOIN sales_invoices inv ON si.invoice_id = inv.id
+      WHERE im.medicine_id = ?
+        AND inv.date >= datetime('now', '-3 months')
+    `, [id]);
+    const totalSold3m = consumptionRow?.total_sold || 0;
+    const avgMonthlyConsumption = Math.round(totalSold3m / 3);
+
+    // Total stock
+    const totalStock = batches.reduce((s: number, b: any) => s + (b.quantity || 0), 0);
+    // Months of stock remaining
+    const monthsRemaining = avgMonthlyConsumption > 0 ? (totalStock / avgMonthlyConsumption).toFixed(1) : null;
+
+    // Reorder suggestion: reorder when stock < 2 months consumption
+    const reorderPoint = avgMonthlyConsumption * 2;
+    const suggestedOrderQty = avgMonthlyConsumption > 0
+      ? Math.max(0, avgMonthlyConsumption * 3 - totalStock)
+      : null;
+
+    res.json({
+      medicine,
+      batches,
+      purchases,
+      sales,
+      returned,
+      analytics: {
+        totalStock,
+        avgMonthlyConsumption,
+        monthsRemaining,
+        reorderPoint,
+        suggestedOrderQty,
+      },
+    });
+  } catch (err) {
+    console.error('Medicine detail error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.delete('/medicines/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -289,116 +397,30 @@ router.delete('/medicines/:id', async (req, res) => {
     
     await dbManager.close();
     res.json({ success: true, message: 'Medicine deleted successfully' });
-  } catch (error) {
-    await dbManager.close();
-    console.error('Failed to delete medicine:', error);
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (err: any) {
+    console.error('Delete medicine error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete medicine' });
   }
 });
 
-// Dynamic Online Search using OpenFDA API fallback
-router.get('/online-search', async (req, res) => {
-  const query = (req.query.q as string || '').trim();
-  if (!query || query.length < 2) {
-    return res.json([]);
-  }
-  try {
-    const { checkConnectivity } = await import('../utils/networkDetector.js');
-    const isOnline = await checkConnectivity();
-    if (!isOnline) {
-      return res.json([]);
-    }
-    const { OpenFdaClient } = await import('../services/apiClients/openFdaClient.js');
-    const client = new OpenFdaClient();
-    const result = await client.queryMedicine(query);
-    if (!result) {
-      return res.json([]);
-    }
-    res.json([{
-      name: result.medicineName,
-      api_reference: result.activeIngredients?.join(' + ') || '',
-      manufacturer: result.manufacturer || ''
-    }]);
-  } catch (error) {
-    console.error('Online search endpoint failed:', error);
-    res.status(500).json({ error: 'Internal server error during online search' });
-  }
-});
-
-// Auto-enrich composition by saving to database
-router.post('/auto-enrich', async (req, res) => {
-  const { name, api_reference, manufacturer } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Medicine name is required' });
-  }
-  try {
-    const { normalizeMedicineName } = await import('../utils/nameNormalizer.js');
-    const db = await dbManager.getConnection();
-    const cleanName = name.trim();
-    const cleanApi = (api_reference || '').trim();
-    const cleanMfr = (manufacturer || '').trim();
-    const adjustedName = normalizeMedicineName(cleanName, cleanMfr);
-
-    let existing = await db.get('SELECT * FROM medicines WHERE LOWER(name) = LOWER(?)', [cleanName]);
-    if (existing) {
-      await db.run(
-        "UPDATE medicines SET name = ?, api_reference = COALESCE(NULLIF(api_reference, ''), ?), manufacturer = COALESCE(NULLIF(manufacturer, ''), ?) WHERE id = ?",
-        [adjustedName, cleanApi, cleanMfr, existing.id]
-      );
-      const updated = await db.get('SELECT * FROM medicines WHERE id = ?', [existing.id]);
-      await dbManager.close();
-      return res.json({ success: true, data: updated, isNew: false });
-    } else {
-      const result = await db.run(
-        "INSERT INTO medicines (name, api_reference, manufacturer) VALUES (?, ?, ?)",
-        [adjustedName, cleanApi || null, cleanMfr || null]
-      );
-      const newMed = await db.get('SELECT * FROM medicines WHERE id = ?', [result.lastID]);
-      await dbManager.close();
-      return res.json({ success: true, data: newMed, isNew: true });
-    }
-  } catch (error) {
-    await dbManager.close();
-    console.error('Auto enrichment save failed:', error);
-    res.status(500).json({ error: 'Internal server error saving enrichment' });
-  }
-});
-
-// GET unique manufacturers list matching search term
+// ── GET /manufacturers — autocomplete distinct manufacturer names ──
 router.get('/manufacturers', async (req, res) => {
-  let db;
+  const q = (req.query.q as string || '').trim();
   try {
-    const q = (req.query.q as string || '').trim();
-    db = await dbManager.getConnection();
-    let rows;
-    if (q.length > 0) {
-      const likeQ = `%${q}%`;
-      rows = await db.all(
-        `SELECT DISTINCT manufacturer 
-         FROM medicines 
-         WHERE manufacturer LIKE ? AND manufacturer IS NOT NULL AND manufacturer != '' 
-         ORDER BY manufacturer ASC 
-         LIMIT 20`,
-        [likeQ]
-      );
-    } else {
-      rows = await db.all(
-        `SELECT DISTINCT manufacturer 
-         FROM medicines 
-         WHERE manufacturer IS NOT NULL AND manufacturer != '' 
-         ORDER BY manufacturer ASC 
-         LIMIT 20`
-      );
-    }
+    const db = await dbManager.getConnection();
+    const rows = await db.all(
+      `SELECT DISTINCT manufacturer FROM medicines
+       WHERE manufacturer IS NOT NULL AND manufacturer != ''
+         AND LOWER(manufacturer) LIKE ?
+       ORDER BY manufacturer ASC LIMIT 20`,
+      [`%${q.toLowerCase()}%`]
+    );
     await dbManager.close();
-    res.json(rows.map(r => r.manufacturer));
-  } catch (error) {
-    await dbManager.close();
-    console.error('Failed to fetch manufacturers:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.json(rows.map((r: any) => r.manufacturer));
+  } catch (err: any) {
+    console.error('Manufacturers fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch manufacturers' });
   }
 });
 
 export default router;
-
-

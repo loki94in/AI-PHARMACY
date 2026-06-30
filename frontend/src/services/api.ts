@@ -80,13 +80,15 @@ apiClient.interceptors.response.use(
 // Define API interface types here as needed
 export interface DashboardStats {
   todaySales: number;
+  yesterdaySales: number;
+  salesChange: number | null;
   lowStock: number;
+  expiryCount: number;
+  pendingOrders: number;
   pendingTasks: number;
-  alerts?: Array<{
-    id: number;
-    description: string;
-    created_at: string;
-  }>;
+  alerts?: Array<{ id: number; description: string; created_at: string }>;
+  recentSales?: Array<{ invoice_no: string; date: string; total_amount: number; payment_mode: string; patient_name: string | null }>;
+  recentPurchases?: Array<{ invoice_no: string; date: string; total_amount: number; distributor_name: string | null }>;
 }
 
 export interface Medicine {

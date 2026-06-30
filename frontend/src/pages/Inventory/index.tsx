@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { useDeferredEffect } from '../../hooks/useDeferredEffect';
 import { PackageSearch, Package, Plus, Minus, RefreshCw, X, AlertTriangle, ShieldAlert, BookOpen, Factory, Send, ChevronDown, Edit, Save } from 'lucide-react';
@@ -40,6 +41,7 @@ let cachedItems: any[] | null = null;
 let cachedSpecialOrders: any[] | null = null;
 
 const Inventory = () => {
+  const navigate = useNavigate();
   // Check appCache first (populated by prefetchAll on app start)
   // items, loading, totalItems now come from useInfiniteScroll hook below
   const [colFilters, setColFilters] = useState({
@@ -399,13 +401,21 @@ const Inventory = () => {
                         onClick={() => handleRowClick(item)}
                       >
                         <td className="p-4 text-sm text-muted">{item.id}</td>
-                        <td className="p-4 text-sm font-semibold flex items-center gap-2">
-                          {item.name}
+                        <td className="p-4 text-sm font-semibold">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={e => { e.stopPropagation(); navigate(`/medicines/${item.medicine_id || item.id}`); }}
+                              className="text-left hover:text-primary hover:underline transition-colors"
+                              title="View medicine detail"
+                            >
+                              {item.name}
+                            </button>
                           {hasPending && (
                             <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse">
                               ⚠️ Requested ({pendingMatches[0].qty})
                             </span>
                           )}
+                          </div>
                         </td>
                         <td className="p-4 text-sm">{item.batch_number || 'B-NEW'}</td>
                         <td className="p-4 text-sm">{item.expiry_date || '12/2028'}</td>

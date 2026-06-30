@@ -54,6 +54,7 @@ const Expiry = () => {
   const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
   const [daysFilter, setDaysFilter] = useState(90);
+  const [showExpiredTab, setShowExpiredTab] = useState(false); // false = show nearing-expiry only, true = show already-expired only
   const [customPhone, setCustomPhone] = useState('');
   const [sendingAlerts, setSendingAlerts] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -271,10 +272,13 @@ const Expiry = () => {
   };
 
   const filteredItems = items.filter(item => {
-    // Filter based on daysFilter scope tab
     const diff = getExpiryDaysDiff(item.expiry_date);
-    if (diff > daysFilter) {
-      return false;
+    // Tab: Already Expired shows only past-expiry; Expiring Soon shows only future within daysFilter
+    if (showExpiredTab) {
+      if (diff > 0) return false; // not yet expired
+    } else {
+      if (diff <= 0) return false; // already expired — exclude from "Expiring Soon"
+      if (diff > daysFilter) return false;
     }
 
     // Column-specific header filters using debounced values
@@ -317,6 +321,28 @@ const Expiry = () => {
 
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none pb-2 border-b border-glass-border/30">
+        {/* Tab: Expiring Soon / Already Expired */}
+        <div className="flex items-center gap-1 bg-white/5 border border-glass-border/40 rounded-xl p-1">
+          <button
+            onClick={() => setShowExpiredTab(false)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${!showExpiredTab ? 'bg-amber-500/20 border border-amber-500/50 text-amber-400' : 'text-muted hover:text-text'}`}
+          >
+            ⏳ Expiring Soon
+            <span className="ml-1.5 bg-amber-500/20 text-amber-400 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+              {items.filter(i => getExpiryDaysDiff(i.expiry_date) > 0 && getExpiryDaysDiff(i.expiry_date) <= daysFilter).length}
+            </span>
+          </button>
+          <button
+            onClick={() => setShowExpiredTab(true)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${showExpiredTab ? 'bg-red-500/20 border border-red-500/50 text-red-400' : 'text-muted hover:text-text'}`}
+          >
+            ❌ Already Expired
+            <span className="ml-1.5 bg-red-500/20 text-red-400 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+              {items.filter(i => getExpiryDaysDiff(i.expiry_date) <= 0).length}
+            </span>
+          </button>
+        </div>
+
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           <span className="text-[10px] font-bold text-muted uppercase tracking-wider mr-1.5 hidden sm:inline">Scope Days:</span>
           {[30, 60, 90, 180].map(days => (

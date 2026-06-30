@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../services/api';
 import { CheckCircle, RotateCcw, AlertCircle, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { toastEvent } from '../../services/events';
 
 interface SaleItem {
   sale_item_id: number;
@@ -23,6 +24,7 @@ export default function CustomerReturn() {
   const [items, setItems] = useState<SaleItem[]>([]);
   const [returnQuantities, setReturnQuantities] = useState<Record<number, number>>({});
   const [reason, setReason] = useState('');
+  const [refundMode, setRefundMode] = useState<'cash' | 'credit_note'>('cash');
   const navigate = useNavigate();
 
   const handleSearch = async () => {
@@ -82,7 +84,7 @@ export default function CustomerReturn() {
         return_items: returnItems,
         reason
       });
-      alert('Return processed successfully!');
+      toastEvent.trigger('Return processed successfully! Stock has been restocked.', 'success', '/customer-returns');
       setInvoice(null);
       setItems([]);
       setReturnQuantities({});
@@ -113,9 +115,11 @@ export default function CustomerReturn() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Refund = exactly what the customer paid (unit_price already includes tax; discount reduces it)
   const totalRefund = items.reduce((sum, item) => {
     const qty = returnQuantities[item.sale_item_id] || 0;
-    return sum + (qty * item.unit_price * (1 - (item.discount_per || 0) / 100));
+    const discountFactor = 1 - (item.discount_per || 0) / 100;
+    return sum + (qty * item.unit_price * discountFactor);
   }, 0);
 
   return (
@@ -237,13 +241,26 @@ export default function CustomerReturn() {
                   />
                 </div>
                 
-                <div className="pt-4 border-t border-white/10">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-muted">Est. Refund (inc. Tax)</span>
-                    <span className="text-xl font-bold text-emerald">₹{(totalRefund * 1.05).toFixed(2)}</span>
+                <div>
+                  <label className="block text-xs font-medium text-muted uppercase tracking-wider mb-2">Refund Mode</label>
+                  <div className="flex gap-2">
+                    {(['cash', 'credit_note'] as const).map(mode => (
+                      <button key={mode} onClick={() => setRefundMode(mode)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${refundMode === mode ? 'bg-primary/20 border-primary/40 text-primary' : 'bg-white/5 border-glass-border text-muted hover:bg-white/10'}`}>
+                        {mode === 'cash' ? '💵 Cash' : '📄 Credit Note'}
+                      </button>
+                    ))}
                   </div>
-                  <p className="text-[10px] text-muted leading-relaxed">
-                    By confirming this return, the selected quantities will automatically be added back into inventory stock under their respective batches.
+                </div>
+
+                <div className="pt-4 border-t border-white/10">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-muted text-sm">Refund Amount</span>
+                    <span className="text-xl font-bold text-emerald">₹{totalRefund.toFixed(2)}</span>
+                  </div>
+                  <p className="text-[10px] text-muted">Mode: <strong className="text-text capitalize">{refundMode === 'credit_note' ? 'Credit Note' : 'Cash'}</strong></p>
+                  <p className="text-[10px] text-muted leading-relaxed mt-1">
+                    Items will be automatically restocked into their original batches.
                   </p>
                 </div>
                 

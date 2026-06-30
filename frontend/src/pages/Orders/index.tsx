@@ -934,13 +934,30 @@ const Orders = () => {
                           <Trash2 size={13} />
                         </button>
                         {(order.status === 'Ready' || order.status === 'Completed') && (
-                          <button
-                            onClick={() => handleConvertToRefill(order)}
-                            className="p-1.5 hover:bg-emerald-500/10 text-muted hover:text-emerald-400 rounded-lg transition-all"
-                            title="Convert to Recurring Refill"
-                          >
-                            <RefreshCw size={13} />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleConvertToRefill(order)}
+                              className="p-1.5 hover:bg-emerald-500/10 text-muted hover:text-emerald-400 rounded-lg transition-all"
+                              title="Convert to Recurring Refill"
+                            >
+                              <RefreshCw size={13} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                // POS reads window.__posOrderPrefill on mount
+                                (window as any).__posOrderPrefill = {
+                                  medicineName: order.product,
+                                  patientName: order.requester,
+                                  patientPhone: order.phone || '',
+                                };
+                                navigate('/pos');
+                              }}
+                              className="px-2 py-1 text-[10px] font-bold bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 rounded-lg transition-all"
+                              title="Bill this order at POS"
+                            >
+                              Bill →
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>

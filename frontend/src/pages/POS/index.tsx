@@ -485,6 +485,36 @@ const POS = () => {
       fetchAndAddMedicine();
       window.history.replaceState({}, document.title, window.location.pathname);
     }
+
+    // Pre-fill from Orders "Bill This Order" button
+    const orderPrefill = (window as any).__posOrderPrefill;
+    if (orderPrefill) {
+      delete (window as any).__posOrderPrefill;
+      if (orderPrefill.patientName) setPatientName(orderPrefill.patientName);
+      if (orderPrefill.patientPhone) setPatientPhone(orderPrefill.patientPhone);
+      if (orderPrefill.medicineName) {
+        setSearchTerm(orderPrefill.medicineName);
+        // Trigger search after a short delay so the component is ready
+        setTimeout(async () => {
+          try {
+            const results = await api.searchMedicine(orderPrefill.medicineName);
+            if (results?.length > 0) {
+              const m = results[0];
+              setCart([{
+                id: m.id, name: m.name,
+                batch: m.batch_no || m.batch_number || 'AUTO',
+                expiry: m.expiry_date || '12/28',
+                mrp: m.mrp || 100,
+                qty: 1, quantity: 1,
+                unitPrice: m.unit_price || m.mrp || 100,
+                looseQty: 0, discount: 0,
+                packSize: m.pack_size || 10
+              }]);
+            }
+          } catch {}
+        }, 300);
+      }
+    }
   }, []);
 
   const [showPatientModal, setShowPatientModal] = useState(false);

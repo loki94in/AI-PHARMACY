@@ -38,6 +38,13 @@ router.get('/', async (req, res) => {
       FROM inventory_master im
       JOIN medicines m ON im.medicine_id = m.id
       WHERE im.quantity > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM return_items ri
+          JOIN returns r ON ri.return_id = r.id
+          WHERE r.type = 'purchase'
+            AND ri.medicine_id = im.medicine_id
+            AND ri.batch_no = im.batch_no
+        )
     `);
 
     const now = new Date();
@@ -82,6 +89,13 @@ router.post('/send-alerts', async (req, res) => {
       FROM inventory_master im
       JOIN medicines m ON im.medicine_id = m.id
       WHERE im.quantity > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM return_items ri
+          JOIN returns r ON ri.return_id = r.id
+          WHERE r.type = 'purchase'
+            AND ri.medicine_id = im.medicine_id
+            AND ri.batch_no = im.batch_no
+        )
     `);
 
     const now = new Date();
